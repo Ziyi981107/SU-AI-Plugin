@@ -1,0 +1,82 @@
+============================================================
+Q004 — Ruby 在 Agent 环境的可用性
+============================================================
+STATUS:           OPEN
+QUESTION:         Agent 执行环境 (Windows + git bash) 没有 Ruby。
+                  要让 Agent 自验 Synthetic Tests,是否在 Agent 环境装 Ruby?
+
+CONTEXT:
+  - Stage 1 已经写了 ~700 行 Ruby (core/ + tests/),需要 Ruby 2.4+ 跑。
+  - Agent 的 bash 环境:
+      git bash (mingw64) — 没有 ruby 二进制
+      没有 winget / choco / scoop
+  - 测试安装路径实测过:
+      curl RubyInstaller-3.4.10-1-x64.exe 5 分钟超时 (150MB)
+      Agent 默认 300s bash timeout 触发
+  - SketchUp 主机本身有 Ruby (2.2..3.x),所以交付物无问题:
+      代码最终在 SketchUp 内运行,不需要 Agent 环境有 Ruby。
+  - 唯一受影响的: Agent 自己能否在交付前 run tests。
+
+OPTIONS:
+  A. 不要在 Agent 装 Ruby。
+     - Agent 写完代码就 commit。
+     - Product Owner 在自己的 Ruby 环境 (任意 2.4+) 执行:
+         ruby tests/run_all.rb
+       把输出 (PASS/FAIL/Errror) 写进 Prompt/。
+     - Agent 据此进入 Stage 2。
+     - 严格符合 PI_TASK_001 §21 "不得伪造":
+       IMPLEMENTATION REPORT §5 写 "DEFERRED — pending Ruby 2.4+ execution"。
+     - 副作用: Agent 写完代码但自己不知道是否真能跑,只能靠静态阅读自审。
+       风险: 简单 typo 在下次跑才暴露。
+
+  B. 在 Agent 装 RubyInstaller (系统级)。
+     - 静默安装 rubyinstaller-3.4.10-1-x64.exe /silent /currentuser
+     - 加入 PATH。
+     - 占用 ~700MB 磁盘 (含 DevKit)。
+     - 时间: ~10 分钟 (下载 + 安装)。
+     - 风险: 改了用户级 PATH,影响其他工作。
+     - 与 AGENT.md §3 "external irreversible action is unsafe" 边界紧张。
+
+  C. 在 Agent 装便携 / 隔离 Ruby。
+     - 下载 ruby installer 但装到项目内 .vendor/ruby/
+     - 跑测试用 .vendor/ruby/bin/ruby.exe
+     - 不污染系统 PATH。
+     - 优点: Agent 能在交付前自验。
+     - 缺点: 项目变大,π Task §20 "保持 working tree" 与 700MB Ruby
+       二进制文件的 git ignore 关系需权衡 (.gitignore 必须排除 .vendor/)。
+     - 仍占用磁盘 ~700MB。
+
+  D. 跳过 Ruby,用 Node.js 写一个等价 mock test runner。
+     - 优点: Agent 环境本身有 Node.js。
+     - 缺点: 测试逻辑写两遍 (Ruby + JS),违反 simple first,风险是
+       两边 drift。
+     - 不推荐。
+
+RECOMMENDATION:
+  A。
+  - 与 PI_TASK_001 §21 "不得伪造" + §20 "保持 working tree" 完全一致。
+  - Agent 写代码前已把每个 core 文件过一次静态自检
+    (具体自检方法见 "STATIC SELF-CHECK" 段)。
+  - 测试实际跑由 Owner 主导。Agent 承诺:任何 FAIL / Error 立即按
+    AGENT.md §7 "Self-correction / Rollback" 修正并更新 CURRENT_STATE。
+
+STATIC SELF-CHECK (Agent 已在 Stage 1 完成):
+  - 每个 .rb 文件都通过 `cat | head -n N` 验证可读。
+  - 所有 require_relative 链子可以手工 walk。
+  - 算法逻辑按 PI_TASK_001 §9 字面 4 个 ISSUE 严格对应。
+  - 不存在未定义的方法调用 (静态过 file)。
+
+IMPACT:
+  A 路径:
+    + 最低干扰、符合 hard constraints
+    - Agent 自验延迟一轮
+  B/C 路径:
+    + Agent 可自验,但占用资源 + 改 PATH 或带大文件夹
+  D 路径:不推荐
+
+REFERENCES:
+  - PI_TASK_001 §21 "Tests ... all 失败必须明确汇报;不允 伪装'理论上应通过'"
+  - PI_TASK_001 §20 "Git / 修改规则"
+  - AGENT.md §3 "external irreversible action is unsafe"
+  - AGENT.md §7 "Self-correction / Rollback"
+============================================================

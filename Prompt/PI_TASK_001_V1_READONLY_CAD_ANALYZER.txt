@@ -1,0 +1,713 @@
+Pi Task Packet 001 — V1.0 Read-only CAD Analyzer
+
+PROJECT DIRECTORY
+D:\Projects\SU-AI-Plugin
+
+TASK 001 — V1.0 Read-only CAD Analyzer
+
+你现在负责开发一个 SketchUp 建筑方案自动化插件的第一阶段。
+
+本项目最终目标不是制作一个通用 SketchUp Cleaner，而是建立：
+
+CAD → 几何数据 → 场地自动建模 → 住宅自动建模
+
+的长期技术底座。
+
+当前只实施 V1.0 Read-only CAD Analyzer。
+
+==================================================
+1. 本阶段唯一目标
+==================================================
+
+建立一条能够真实运行的最小闭环：
+
+用户在 SketchUp 中选择一个已导入 CAD 的 Group / Component / Geometry
+→ Preflight
+→ Geometry Snapshot
+→ Read-only Analyzer
+→ Issue Registry
+→ Result UI
+→ 用户能够定位 / 高亮问题
+
+本阶段必须证明：
+
+1. 能读取真实 SketchUp CAD 导入几何；
+2. 能把 SketchUp Entity 转换为我们自己的内部几何数据；
+3. 能检测基础几何问题；
+4. 能把检测结果重新映射回 SketchUp；
+5. 能在 SketchUp 内让用户看到问题在哪里。
+
+本阶段不得自动修复任何几何。
+
+==================================================
+2. 开始开发前
+==================================================
+
+先完整检查当前 repository：
+
+- 阅读 AGENTS.md
+- 阅读已有 /docs
+- 阅读现有源码
+- 检查当前 Git 状态
+- 判断是否已经存在 SketchUp Extension shell
+- 判断已有测试设施
+- 判断当前目录结构是否合理
+
+不得假设 repository 为空。
+
+如果已有架构与本文档冲突：
+
+- 优先保护已有合理架构；
+- 不得直接大规模重构；
+- 在实施报告中说明冲突和处理方式。
+
+==================================================
+3. SketchUp 兼容基线
+==================================================
+
+核心代码最低目标：
+
+SketchUp 2017+
+
+因此：
+
+- 不得依赖只有新版 SketchUp 才存在的 API；
+- 不得使用超出目标 Ruby 版本能力的语法；
+- 新版本 SketchUp 能力未来通过 Compatibility / Capability Adapter 加入；
+- V1 Core 不允许因为新版 API 产生强依赖。
+
+当前插件入口假设为：
+
+用户已经通过自己现有的 SketchUp 工作流完成 CAD 导入。
+
+本阶段不实现 DWG/DXF 导入器。
+
+==================================================
+4. Source Geometry 原则
+==================================================
+
+这是整个项目的硬约束：
+
+NEVER MODIFY SOURCE CAD
+
+原始 CAD：
+
+- 不删除；
+- 不移动；
+- 不 Flatten；
+- 不 Weld；
+- 不 Merge；
+- 不添加 Edge；
+- 不改变 Layer / Tag；
+- 不改变 Group；
+- 不改变比例；
+- 不改变坐标。
+
+V1.0 必须是：
+
+100% Read-only Analyzer。
+
+如果需要临时几何进行算法验证：
+
+- 使用纯 Ruby 内部数据；
+- 或明确隔离的临时分析对象；
+- 不得污染原始 SketchUp Model。
+
+==================================================
+5. 第一阶段支持的输入
+==================================================
+
+至少支持：
+
+Case A
+用户选择一个 Group。
+
+Case B
+用户选择一个 ComponentInstance。
+
+Case C
+用户直接选择若干 Edge。
+
+如果输入无法分析：
+
+必须给用户清晰错误信息，而不是抛 Ruby exception。
+
+例如：
+
+No valid CAD geometry found in current selection.
+
+不要递归扫描整个大型模型，除非明确必要。
+
+优先分析用户主动选择的对象。
+
+==================================================
+6. Preflight
+==================================================
+
+建立 Preflight 层。
+
+至少收集：
+
+- SketchUp version
+- selection type
+- Group / Component / Edge 数量
+- Edge 总数
+- Vertex 数量
+- Layer / Tag 分布
+- 几何 bounding box
+- Z 值范围
+- 非零 Z Edge / Vertex 数量
+- 是否存在明显异常大坐标
+- 是否存在嵌套 Group / Component
+
+Preflight 不做修复。
+
+输出结构化结果供后续模块使用。
+
+==================================================
+7. Geometry Snapshot
+==================================================
+
+不要让后续算法直接到处操作 Sketchup::Edge。
+
+建立我们自己的只读 Geometry Snapshot。
+
+至少需要类似以下概念：
+
+GeometrySnapshot
+EdgeRecord
+VertexRecord
+LayerRecord
+SourceReference
+
+具体 class / struct 设计由你决定，但必须满足：
+
+EdgeRecord 至少拥有：
+
+- internal id
+- source entity reference
+- start point
+- end point
+- length
+- layer/tag
+- source persistent id（如果当前 SU 实体支持）
+- bounding information
+- relevant metadata
+
+VertexRecord 至少拥有：
+
+- coordinate
+- connected edge ids
+
+==================================================
+8. 坐标处理
+==================================================
+
+不要改变源 SketchUp Entity。
+
+内部分析允许建立：
+
+raw coordinate
+normalized analysis coordinate
+
+两套概念。
+
+当前阶段不要直接实现完整 Flatten Engine。
+
+如果 Z 不为零：
+
+记录为 Preflight / Issue 信息。
+
+以后由 Normalize 阶段处理。
+
+==================================================
+9. Analyzer V0
+==================================================
+
+本阶段只实现三类检测。
+
+不要扩大 Scope。
+
+ISSUE 001 — Duplicate Edge Candidate
+
+检测：
+
+- 完全相同端点；
+- A→B 与 B→A 应视作同一几何；
+- 在非常小的数值误差范围内允许识别为 duplicate candidate。
+
+必须：
+
+- 使用明确 tolerance；
+- 不得直接删除；
+- 只登记 Issue。
+
+ISSUE 002 — Short Edge
+
+识别长度小于设定阈值的 Edge。
+
+阈值不得散落在源码中。
+
+建立统一配置入口，例如：
+
+AnalysisConfig
+
+具体默认值可以先选择保守值，但：
+
+必须方便以后通过 Company Profile 调整。
+
+ISSUE 003 — Open Endpoint / Gap Candidate
+
+建立 Endpoint adjacency。
+
+检测：
+
+Open Endpoint
+只连接一条有效 Edge 的端点。
+
+Gap Candidate
+两个开放端点：
+
+- 距离在指定 tolerance 范围内；
+- 可能可以连接。
+
+当前阶段：
+
+只检测，不连接。
+
+必须避免简单 O(n²) 暴力扫描导致真实大 CAD 无法使用。
+
+如果当前规模尚不足以实现完整空间索引，可以先实现简单 spatial bucket / grid / hash 等合理策略。
+
+不要过度设计。
+
+==================================================
+10. Tolerance System
+==================================================
+
+不要使用一个 tolerance 解决所有问题。
+
+至少把概念拆为：
+
+duplicate_tolerance
+short_edge_threshold
+gap_search_tolerance
+coordinate_epsilon
+
+所有 tolerance 必须集中管理。
+
+不要散落 magic numbers。
+
+单位处理必须考虑 SketchUp Ruby API 内部单位特点。
+
+不要偷偷假设所有数值都是 mm。
+
+未来将建立：
+
+Company_Default_Profile
+
+所以当前设计必须允许 Profile 接管这些参数。
+
+==================================================
+11. Issue Registry
+==================================================
+
+所有 Analyzer 不直接负责 UI。
+
+建立统一：
+
+IssueRegistry
+
+每个 Issue 至少包含：
+
+issue_id
+issue_type
+severity
+confidence
+source entity ids
+geometry / location
+message
+metadata
+
+本阶段 confidence 可以简单分层：
+
+high
+medium
+low
+
+不要开发复杂 AI confidence。
+
+==================================================
+12. UI
+==================================================
+
+V1.0 UI 的目标是：
+
+能用，不追求漂亮。
+
+可以使用适合 SU2017+ 的稳定 UI 方式。
+
+结果至少显示：
+
+CAD Analyzer Result
+
+Edges: XXXX
+Vertices: XXXX
+
+Duplicate candidates: XX
+Short edges: XX
+Open endpoints: XX
+Gap candidates: XX
+Non-zero-Z geometry: XX
+
+并允许用户查看问题列表。
+
+==================================================
+13. Issue 定位 / 高亮
+==================================================
+
+这是本阶段非常重要的验收项。
+
+用户选择某个 Issue 后：
+
+SketchUp 中必须能够定位相关 Entity。
+
+优先考虑：
+
+- Selection 高亮；
+- Zoom / camera 定位；
+- 或稳定的临时视觉提示。
+
+不要永久修改原几何样式。
+
+不要为了高亮改变 Edge material / layer 等源数据。
+
+==================================================
+14. 模块边界
+==================================================
+
+不要写一个巨大 main.rb。
+
+推荐的逻辑边界类似：
+
+extension/
+core/
+compatibility/
+geometry/
+analysis/
+issues/
+ui/
+config/
+
+具体目录可以根据现有 repository 调整。
+
+关键要求：
+
+SketchUp API Layer
+负责和 SketchUp 对话。
+
+Geometry Core
+尽可能是纯 Ruby 数据和算法。
+
+Analyzer
+只分析 Snapshot。
+
+UI
+只消费分析结果。
+
+Repair
+当前不存在。
+
+不要提前创建大量空 Repair 模块。
+
+==================================================
+15. 性能原则
+==================================================
+
+真实建筑 CAD 可能包含大量线。
+
+因此禁止无必要的：
+
+Edge × Edge
+
+全量比较。
+
+Analyzer 应考虑：
+
+- Hash
+- quantized coordinate
+- spatial bucket
+- adjacency map
+
+等方式降低复杂度。
+
+但当前仍然遵守：
+
+simple first, measurable first.
+
+不要为了假设中的百万级线量写复杂 geometry kernel。
+
+==================================================
+16. Synthetic Tests
+==================================================
+
+建立最小 Synthetic Test Set。
+
+至少覆盖：
+
+Test 01
+两条完全重复 Edge。
+
+Test 02
+反向重复 Edge。
+
+Test 03
+正常长 Edge 不应被判为 Short。
+
+Test 04
+Short Edge 正确识别。
+
+Test 05
+独立开放 Endpoint。
+
+Test 06
+两个相近 Endpoint → Gap Candidate。
+
+Test 07
+距离超过 tolerance → 不应成为 Gap Candidate。
+
+Test 08
+不同 Z 的几何正确进入 Preflight 信息。
+
+Test 09
+正常闭合矩形没有 Open Endpoint。
+
+Test 10
+大量简单 Edge 的基础性能测试。
+
+优先让纯 Geometry Core 能脱离 UI 测试。
+
+==================================================
+17. 当前明确不做
+==================================================
+
+本阶段禁止实现：
+
+- 自动删除重复线；
+- Gap 自动连接；
+- Flatten；
+- Weld；
+- Polyline reconstruction；
+- Closed Loop reconstruction；
+- Face generation；
+- 道路识别；
+- 建筑识别；
+- Layer semantic mapping；
+- AI；
+- MCP；
+- 场地生成；
+- 住宅生成；
+- 自动 CAD import；
+- 完整 settings UI；
+- 云服务。
+
+如果发现这些需求：
+
+记录 TODO。
+
+不要顺手做。
+
+==================================================
+18. Error Handling
+==================================================
+
+插件不得因为一条异常 Entity 导致整个分析退出。
+
+至少处理：
+
+- invalid entity
+- erased entity
+- empty group
+- nested entities
+- unsupported selection
+- missing persistent_id capability
+- unexpected geometry
+
+错误要：
+
+report
+skip safely
+continue when possible
+
+==================================================
+19. Logging
+==================================================
+
+建立轻量开发日志。
+
+至少能够记录：
+
+analysis started
+entity count
+snapshot duration
+analyzer duration
+issue count
+exceptions
+analysis finished
+
+不要构建大型 logging framework。
+
+==================================================
+20. Git / 修改规则
+==================================================
+
+不得自动：
+
+- commit
+- push
+- rewrite history
+- delete existing user work
+
+开发完成后保持 working tree，让老板 Review。
+
+如果当前 repo 存在未提交修改：
+
+必须保护。
+
+==================================================
+21. 完成标准
+==================================================
+
+TASK 001 只有满足以下条件才能自行声明 IMPLEMENTATION COMPLETE：
+
+Functional
+
+- 插件能在目标 SketchUp 环境加载；
+- 可以分析用户选择的 CAD Geometry；
+- 原始 CAD 0 修改；
+- Preflight 正常；
+- Snapshot 正常；
+- Duplicate detection 正常；
+- Short Edge detection 正常；
+- Open Endpoint detection 正常；
+- Gap Candidate detection 正常；
+- Result UI 正常；
+- Issue → SketchUp Entity 定位正常。
+
+Architecture
+
+- Geometry Core 与 UI 分离；
+- Analyzer 不直接修改 SketchUp；
+- tolerance 集中配置；
+- Issue Registry 独立；
+- 未建立不必要的大型抽象层。
+
+Testing
+
+- Synthetic tests 存在；
+- 能运行的测试必须实际运行；
+- 所有失败必须明确汇报；
+- 不允许用“理论上应该通过”代替测试。
+
+==================================================
+22. 最终输出
+==================================================
+
+完成开发后停止。
+
+不要自行继续 V1.1。
+
+给老板输出：
+
+TASK 001 IMPLEMENTATION REPORT
+
+1. Status
+
+COMPLETE
+PARTIAL
+BLOCKED
+
+2. Implemented
+
+具体完成内容。
+
+3. Architecture
+
+实际建立的模块和职责。
+
+4. Files Changed
+
+列出所有新增 / 修改文件。
+
+5. Tests
+
+列出：
+
+test name
+PASS / FAIL / NOT RUN
+
+6. Manual SketchUp Verification
+
+说明实际在 SketchUp 内验证了什么。
+
+如果无法实际启动 SketchUp：
+
+明确写：
+
+NOT VERIFIED IN REAL SKETCHUP
+
+不得伪造。
+
+7. Known Issues
+
+所有已知问题。
+
+8. Architecture Deviations
+
+如果与本文要求不同：
+
+说明：
+
+what changed
+why
+impact
+
+9. Performance
+
+如果测试过：
+
+edge count
+snapshot time
+analysis time
+
+10. Source Integrity
+
+明确确认：
+
+Original source geometry modified: YES / NO
+
+如果 YES：
+
+本任务直接视为失败。
+
+11. Recommended Next Step
+
+最多提出 3 个建议。
+
+不要自行实施。
+
+==================================================
+23. 最后原则
+==================================================
+
+这一阶段不是为了证明：
+
+“我们已经有一个强大的 CAD Cleaner。”
+
+而是证明：
+
+“我们已经拥有一条可信、可测试、可扩展的 CAD Geometry Analysis Pipeline。”
+
+宁可功能少、边界清晰、数据可信。
+
+不要为了 Demo 效果提前加入自动修复。

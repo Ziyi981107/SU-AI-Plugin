@@ -1,0 +1,73 @@
+============================================================
+Q002 — Real SketchUp Verification Responsibility
+============================================================
+STATUS:           OPEN
+QUESTION:         Agent 没有真实 SketchUp 安装可跑。
+                  任务 §21 要求的 "Manual SketchUp Verification"
+                  由谁来执行、什么时候执行?
+
+CONTEXT:
+  - PI_TASK_001 §21 完成标准 Functional 项:
+      "插件能在目标 SketchUp 环境加载"
+      "Issue → SketchUp Entity 定位正常"
+  - 同节要求 "Manual SketchUp Verification" 必须写明"实际验证了什么",
+    并允许显式写:
+      NOT VERIFIED IN REAL SKETCHUP
+  - 我(Agent)的执行环境是 Windows + 文件工具,
+    没有 SketchUp 2017+ 安装,也没有 headless SketchUp Ruby API。
+  - PI_TASK_001 §20 "Git / 修改规则":
+      "开发完成后保持 working tree,让老板 Review"
+    暗示 Owner 主导最终实物评审。
+  - Stage 5 (SU Integration) / Stage 6 (UI + 高亮)
+    没有真机验证就无法证明 §21 Functional 项 PASS。
+
+OPTIONS:
+  A. Product Owner (你) 在自己 SketchUp 环境内手动跑测试。
+     - Agent 交付 Stage 0..7 全部代码与运行说明。
+     - 你执行"加载 .rbz → 选择 CAD Group → 运行 analyzer →
+       看 issue 列表 → 点 issue 看高亮"这条主流程。
+     - 你把结果 (PASS/FAIL/截图/console log 片段) 写回 Prompt/,
+       Agent 据此写 IMPLEMENTATION REPORT §6。
+
+  B. 另设一位 verifier (例如另一个同事/owner 自己改天跑)。
+     - 同 A,但 Agent 在 IMPLEMENTATION REPORT §6 写:
+         "DEFERRED — pending external verifier on SketchUp <version>"
+     - 等 verifier 反馈后再补 §6。
+
+  C. Agent 自行 mock SketchUp (用 rspec / minitest stub)
+     完整模拟 SketchUp::Entity / Sketchup::Model / HtmlDialog
+     等接口,在没有真机的情况下尽量接近。
+     - 仍然标 NOT VERIFIED IN REAL SKETCHUP (任务 §21 明确允许)。
+     - 优点:Agent 自闭环,可重复跑。
+     - 缺点:Mock 行为与真 SketchUp Ruby 引擎未必完全等价,
+       persistent_id、selection set、HtmlDialog JS bridge
+       等不可能 100% 复现。
+
+RECOMMENDATION:
+  A。
+  - 任务 §20 已经字面定调"老板 Review",
+    Owner 主动跑真实 SU 是最自然的责任分配。
+  - PI_TASK_001 §21 "不得伪造" 是硬约束,
+    Owner 自己跑实测比 Agent 写 mock 报告更可信。
+  - Agent 仍然把所有代码逻辑用纯 Ruby Synthetic Tests
+    (任务 §16 的 Test 01..10) 跑过,保证 Geometry Core
+    100% 可测;真机只验证 UI / Snapshot / 高亮 这些
+    只能靠 SketchUp 引擎的环节。
+
+IMPACT:
+  A 路径:
+    + IMPLEMENTATION REPORT §6 段是 Owner 第一手事实
+    + 任何"在 SU 内看到的具体行为" 都是可追溯的
+    - 流程耗时取决于 Owner 何时上 SketchUp
+  B 路径:
+    与 A 几乎等价,只是 timeline 更松。
+  C 路径:
+    + 不依赖 Owner 时间
+    - 与 §21 "不得伪造" 边界模糊,Agent 必须克制;
+      任何 mock PASS 都不能写进 "verified in real SketchUp"
+
+REFERENCES:
+  - PI_TASK_001 §20 "Git / 修改规则"
+  - PI_TASK_001 §21 "Manual SketchUp Verification"
+  - PI_TASK_001 §23 "最后原则" (可信、可测试、可扩展)
+============================================================

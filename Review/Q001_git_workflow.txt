@@ -1,0 +1,64 @@
+============================================================
+Q001 — Git Worktree / Git Workflow
+============================================================
+STATUS:           OPEN
+QUESTION:         本项目当前不是 git 仓库。Agent 是否应 git init 并为每个阶段本地 commit?
+
+CONTEXT:
+  - PI_TASK_001 §20 "Git / 修改规则":
+      "不得自动:commit / push / rewrite history / delete existing user work。
+       开发完成后保持 working tree,让老板 Review。"
+  - 但本工作目录当前根本不是 git 仓库 (`git status` 无输出)。
+  - AGENT.md §6 "Git Checkpoint Rule": 阶段稳定后建议创建 checkpoint。
+  - 上述两条在仓库不存在时会冲突:
+      §20 禁止自动 commit
+      §6 鼓励 checkpoint
+  - 本工作流协议把 Review/ 用作文档化"外部 review 锚点",
+    但是否仍需要 git 做版本回溯,Q001 不决就影响 Stage 0
+    是否要写 .gitignore。
+
+OPTIONS:
+  A. 不要 git init。纯 working tree。
+     所有产物直接铺在 D:\Projects\SU-AI-Plugin\ 下,代码 / 文件
+     没有版本回溯能力,只靠 Review/ 文档和 CURRENT_STATE.md 记录阶段。
+     完全符合 PI_TASK_001 §20 字面。
+     Reviewer 在没有 git diff 的情况下要靠手工对比 Review 锚点之间的变化。
+
+  B. 本地 git init,不 push。
+     - 写一份合理 .gitignore (拒绝 .skp / .dwg / 用户 CAD 等)。
+     - 每个 stage 完成后本地 commit (Agent 自动,非"自动 push")。
+     - 不创建 branch / 不 push / 不 rewrite history。
+     - 保留 AGENT.md §6 checkpoint 能力。
+     - 用户依然可以 `git log` 查看所有 stage 历史。
+     - 仍然不自动 push。
+
+  C. 不仅 git init,还要创建主分支 + README + .gitattributes
+     (项目级初始化)。
+     与 B 的区别只是额外元文件。
+     对 Agent 工作流无实质影响。
+
+RECOMMENDATION:
+  B。
+  - 完全兼容 PI_TASK_001 §20 (不 push、不 rewrite、不删用户工作)。
+  - 兼容 AGENT.md §6 (每个 stage 都有 checkpoint)。
+  - 让 Stage 7 的 IMPLEMENTATION REPORT 有真实 git log 可引用,
+    而非手工比对文件列表。
+
+IMPACT:
+  A 路径:
+    + 最简、最贴 §20 字面
+    - 阶段回滚只能靠目录复制 / Review 文档,粒度粗
+    - 多人/多 Agent 时难以协作
+  B 路径:
+    + 自动 commit 是 §20 字面允许的 (它禁的是 push / rewrite)
+    + checkpoint 落地自然,与 AGENT.md §6 一致
+    - Product Owner 多了一个"是否要把仓库 connect 到外部"的决策
+      (但这是 Owner 决策不是 Agent 决策)
+  C 路径:
+    与 B 几乎等效,只是 README 内容由谁写需另行决定。
+
+REFERENCES:
+  - PI_TASK_001 §20 "Git / 修改规则"
+  - AGENT.md §6 "Git Checkpoint Rule"
+  - AGENT.md §7 "Self-correction / Rollback"
+============================================================

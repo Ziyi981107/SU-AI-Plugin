@@ -1,0 +1,36 @@
+# --- SketchUp / CAD artifacts ---
+*.skp
+*.skb
+*.dwg
+*.dxf
+
+# --- Plugin build outputs ---
+*.rbz
+*.zip
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*~
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Ruby ---
+*.gem
+*.rbc
+.rspec_status
+coverage/
+vendor/bundle/
+.bundle/
+
+# --- Agent scratch (downloads, etc.) ---
+/tmp/
+*.tmp
+*.download

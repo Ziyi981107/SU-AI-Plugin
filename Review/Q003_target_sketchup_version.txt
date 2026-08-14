@@ -1,0 +1,75 @@
+============================================================
+Q003 — Target SketchUp Version Baseline
+============================================================
+STATUS:           OPEN
+QUESTION:         任务说 "SketchUp 2017+",但具体锁定哪一个基线?
+
+CONTEXT:
+  - PI_TASK_001 §3 "SketchUp 兼容基线":
+      "核心代码最低目标:SketchUp 2017+"
+      "不得依赖只有新版 SketchUp 才存在的 API"
+  - 实际 API 影响 (按 SU Ruby API 历史):
+      SU2017   : Ruby 2.2.4,无 Sketchup::Entity#persistent_id
+      SU2018+  : Sketchup::Entity#persistent_id 可用
+      SU2020+  : HtmlDialog 加固,部分 deprecation 警告
+      SU2021+  : Ruby 3.0 (语法有 breaking,例如 kwargs 分离)
+      SU2022+  : 部分 Edge / Face API 行为变化 (例如 entities.add_face)
+  - TASK_001 §7 Snapshot 要求:
+      "source persistent id (如果当前 SU 实体支持)"
+      这句 "如果当前 SU 实体支持" 已经隐含了 fallback 设计。
+  - 任务 §15 性能原则 + §4 Source Geometry 100% read-only:
+    影响 API 选型的根本约束。
+
+OPTIONS:
+  A. 锁定 SU2017 作为最严格基线
+     - Ruby 2.2.4,语法最受限。
+     - 放弃 Sketchup::Entity#persistent_id (SU2018+),改用
+       `entity.entityID` 或 `object_id` 作为临时 ID,
+       但需说明这种 ID 在 model save/reload 后不稳定。
+     - 兼容性最广,但要写 fallback 层。
+
+  B. 锁定 SU2018+ 作为基线 (推荐)
+     - Sketchup::Entity#persistent_id 稳定可用。
+     - Ruby 2.x (直到 SU2020),SU2021+ Ruby 3.x。
+     - 代码需在 Ruby 2.2..3.0 之间可移植 (避免使用 Ruby 3 kwargs
+       强类型语法、pattern matching 等)。
+     - 覆盖目前绝大多数 SU 用户。
+
+  C. 锁定 SU2021+ 作为基线
+     - 可用 Ruby 3 kwargs、URI.open 等现代特性。
+     - 跳过老客户。
+
+RECOMMENDATION:
+  B (SU2018+)。
+  - 与 task §7 "如果当前 SU 实体支持" 一致:
+      persistent_id 在 SU2018+ 是稳定 API,
+      只需要为潜在的更老 SU 留 fallback (例如 adapter 层
+      自动检测是否有 #persistent_id,没有则用 entityID)。
+  - 与 task §3 "2017+" "不得依赖只有新版才存在的 API" 兼容:
+      我会避免使用 SU2019 / SU2020 / SU2021+ 独占 API。
+  - Ruby 语法限制:只用 Ruby 2.0+ 都支持的语法,
+      kwargs 用 hash 风格,不用 Ruby 3 kwargs 糖。
+  - V1 Compatibility Adapter 层 (
+      compatibility/su_version_probe.rb)
+      会做 SU 版本探测,在必要时启用 SU2018+ 才有
+      的能力,其它版本走 fallback。
+
+IMPACT:
+  A 路径:
+    + 兼容性最好
+    - 失去 persistent_id,Issue → Entity 映射只能用
+      短生命周期的 entityID,关掉 SU 后失效
+  B 路径:
+    + persistent_id 稳定 (跨 save/reload)
+    + 覆盖绝大多数 SU 用户
+    - 需要 compatibility adapter (但不复杂)
+  C 路径:
+    + 最现代
+    - 放弃老客户;与 task §3 "2017+" 偏紧
+
+REFERENCES:
+  - PI_TASK_001 §3 "SketchUp 兼容基线"
+  - PI_TASK_001 §7 "Geometry Snapshot"
+  - AGENT.md §2 "Default Autonomy" (compatible libraries)
+  - AGENT.md §14 "模块边界" (compat 目录用途)
+============================================================
