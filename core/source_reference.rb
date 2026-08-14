@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # SourceReference — lightweight token that ties an analysis record back to
@@ -10,11 +9,16 @@
 #   - We need to ship values over JSON / to the UI / to the registry; an
 #     entity object can't be marshalled.
 #
-# Stability:
-#   - `persistent_id` is SketchUp 2018+. Older SketchUp returns nil here;
-#     `stable?` flags it, and consumer code can fall back to entity_id.
-#   - `entity_id` is Ruby `object_id`, NOT stable across reload. It is
-#     useful only within a single SketchUp session.
+# Stability (PI_TASK_001 + Codex Q003 answer, 2026-08-14):
+#   - `persistent_id` is available in SketchUp 2017+ for Edge, Vertex,
+#     Group, ComponentInstance, and most entity types (NOT a SU2018+
+#     feature, contrary to an earlier hypothesis).
+#   - Some entities / modes return nil even on supported SketchUp versions,
+#     so consumers MUST use capability detection (`respond_to?(:persistent_id)
+#     && entity.persistent_id`) rather than version number branches.
+#   - `stable?` returns true only when a non-nil persistent_id was obtained.
+#   - `entity_id` is Ruby `object_id`, NOT stable across reload or session;
+#     it is useful only as a transient in-memory key.
 #
 
 module SUAnalysis

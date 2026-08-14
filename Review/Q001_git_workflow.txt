@@ -1,7 +1,7 @@
 ============================================================
 Q001 — Git Worktree / Git Workflow
 ============================================================
-STATUS:           OPEN
+STATUS:           ANSWERED
 QUESTION:         本项目当前不是 git 仓库。Agent 是否应 git init 并为每个阶段本地 commit?
 
 CONTEXT:
@@ -61,4 +61,27 @@ REFERENCES:
   - PI_TASK_001 §20 "Git / 修改规则"
   - AGENT.md §6 "Git Checkpoint Rule"
   - AGENT.md §7 "Self-correction / Rollback"
+
+------------------------------------------------------------
+ANSWER (received 2026-08-14)
+------------------------------------------------------------
+
+DECISION: B, 与 Agent 推荐一致。
+
+允许:
+  - 本地 git init
+  - 合理 .gitignore
+  - meaningful stage 稳定后 checkpoint commit
+  - 隔离运行时 (.vendor/) 等不入 git
+  - 用本地 git 安全回退,但保护已有用户工作
+
+禁止:
+  - push 或接外部 remote
+  - rewrite history / rebase / 强改提交
+  - 自动删除用户工作
+  - 微小无效 commit
+  - 把 .skp / .dwg / 私有样本 / 构建产物 / 隔离运行时 commit 进 git
+
+当前两个 commit (6196107 / 9134653) 保持原样, 不重写不删。
+9134653 只是 checkpoint, 不代表 Stage 1 已 PASS — 没有 Q004=C 实跑证据。
 ============================================================

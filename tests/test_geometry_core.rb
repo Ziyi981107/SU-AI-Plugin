@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # tests/test_geometry_core.rb

@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # Tolerance — single source of truth for all geometric tolerances.

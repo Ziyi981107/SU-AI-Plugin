@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # tests/test_synthetic_01_through_10.rb

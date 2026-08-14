@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # tests/run_all.rb — entry point for the synthetic test set.

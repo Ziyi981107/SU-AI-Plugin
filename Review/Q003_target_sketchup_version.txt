@@ -1,7 +1,7 @@
 ============================================================
 Q003 — Target SketchUp Version Baseline
 ============================================================
-STATUS:           OPEN
+STATUS:           ANSWERED
 QUESTION:         任务说 "SketchUp 2017+",但具体锁定哪一个基线?
 
 CONTEXT:
@@ -72,4 +72,39 @@ REFERENCES:
   - PI_TASK_001 §7 "Geometry Snapshot"
   - AGENT.md §2 "Default Autonomy" (compatible libraries)
   - AGENT.md §14 "模块边界" (compat 目录用途)
+
+------------------------------------------------------------
+ANSWER (received 2026-08-14)
+------------------------------------------------------------
+
+DECISION: A — SketchUp 2017+ 是硬性最低兼容基线。
+(NOT B / SU2018+ — 之前 Agent 假设 B 被纠正)
+
+实施要求:
+  - 纯 Ruby Core 以 SketchUp 2017 内置 Ruby 2.2.4 为最低基线
+  - 不使用 Ruby 2.3+ / 2.4+ / 2.5+ / Ruby 3 才支持的
+    语法 / 行为 作为必需依赖
+  - 新版 SketchUp API 经 Compatibility / Capability Adapter 隔离
+  - capability detection (respond_to?) 优先于版本号判断
+  - Core 中不得写 SketchUp 版本分支
+  - SU2017 能力缺失时走 fallback, 并在 SourceReference 诚实
+    标记身份稳定性
+
+事实纠正:
+  - Sketchup::Entity#persistent_id 是 SketchUp 2017 起就有的
+    不是 SU2018 才新增
+  - SU2017 对 Edge / Vertex / Group / ComponentInstance 已支持
+    persistent_id
+  - 仍应 respond_to?, 因为并非所有实体类型在所有版本都支持 PID
+
+官方依据:
+  - https://ruby.sketchup.com/file.ReleaseNotes.html (SU2017 M0)
+  - https://ruby.sketchup.com/Sketchup/Entity.html#persistent_id-instance_method
+
+对 Agent 影响:
+  - README / CURRENT_STATE 中 "Ruby 2.4+" 必须改为 "Ruby 2.2.4+"
+  - 所有 .rb 文件移除 # frozen_string_literal: true magic comment
+    (Ruby 2.3+ 才有, SU2017 = 2.2.4 不识别)
+  - SourceReference#persistent_id 注释已更新
+    不再说 "SU2018+"
 ============================================================

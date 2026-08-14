@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 require_relative 'source_reference'
 require_relative 'edge_record'

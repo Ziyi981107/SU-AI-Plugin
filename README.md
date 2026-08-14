@@ -11,6 +11,8 @@
 
 ## 跑测试
 
+依赖: Ruby 2.2.4+ (兼容 SU2017 内置 Ruby; 推荐 2.2.x 做最低基线验证, 也可用 2.7+ / 3.x; 见 Review/Q003)
+
 ```sh
 ruby tests/run_all.rb                  # 全部
 ruby tests/run_all.rb TC-06            # 单个测试 (按 name 包含匹配)
@@ -49,13 +51,13 @@ config/               (Stage 4+) Profile 接管 tolerance
 tests/                Synthetic Test Set (PI_TASK_001 §16 Test 01..10)
 ```
 
-## 与 Review/ 假设的关系
+## 与 Review/ 的关系 (Q001-Q004 已全部 ANSWERED by Codex)
 
-| 项 | 当前假设 | 解释在 |
+| 项 | Decision | 实施位置 |
 |---|---|---|
-| Q001 (git workflow) | **B** — 本地 git init,不 push,每阶段 commit | Review/Q001_git_workflow.txt |
-| Q002 (real SU verification) | **A** — Product Owner 在自己 SU 环境实测 | Review/Q002_real_sketchup_verification.txt |
-| Q003 (target SU version) | **B** — SU2018+ 基线,SU2017 通过 adapter fallback | Review/Q003_target_sketchup_version.txt |
-| Q004 (Ruby in Agent env) | **PENDING** — 见下 | Review/Q004_ruby_in_agent_env.txt |
+| Q001 (git workflow) | **B** — 本地 git init,不 push,每阶段 commit | Stage 0 已落地 |
+| Q002 (real SU verification) | **A** — Product Owner 在真 SU 环境实测 | Stage 7 交付前清单 |
+| Q003 (target SU version) | **A** — **SU2017+ 硬最低**, Ruby 2.2.4 基线, capability detection | README + CURRENT_STATE 已修正 |
+| Q004 (Ruby in Agent env) | **C** — 隔离运行时,真实跑测试,长超时 | `.vendor/` 已在 .gitignore |
 
-任何假设与最终 Codex 答案不一致的地方,Stage 7 的 IMPLEMENTATION REPORT 会具体记录。
+所有假设已落地为实际实现 / 文档,不再有未答 OPEN 问题。

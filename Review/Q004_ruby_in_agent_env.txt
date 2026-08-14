@@ -1,7 +1,7 @@
 ============================================================
 Q004 — Ruby 在 Agent 环境的可用性
 ============================================================
-STATUS:           OPEN
+STATUS:           ANSWERED
 QUESTION:         Agent 执行环境 (Windows + git bash) 没有 Ruby。
                   要让 Agent 自验 Synthetic Tests,是否在 Agent 环境装 Ruby?
 
@@ -79,4 +79,35 @@ REFERENCES:
   - PI_TASK_001 §20 "Git / 修改规则"
   - AGENT.md §3 "external irreversible action is unsafe"
   - AGENT.md §7 "Self-correction / Rollback"
+
+------------------------------------------------------------
+ANSWER (received 2026-08-14)
+------------------------------------------------------------
+
+DECISION: C — 隔离运行时 + 必须真实执行测试 (否决 A)
+
+执行要求:
+  1. 不系统级装 Ruby, 不改 PATH
+  2. 优先项目外临时/工具缓存;
+     若只能放项目内用 .vendor/ruby/
+  3. .vendor/ 必须被 .gitignore 排除,
+     任何 Ruby 二进制 / 安装包 / 缓存都不得入 git
+  4. 允许为下载/安装设较长超时,
+     不能因为默认 300s 就把测试改为 "静态通过"
+  5. 安装完成后实际执行 tests/run_all.rb,
+     保存完整命令 + Ruby 版本 + PASS/FAIL/ERROR 摘要
+  6. 任何 FAIL / ERROR 必须先修复并重跑,
+     不能带着未运行 / 失败的 Synthetic Tests
+     进入下一稳定 checkpoint
+  7. 隔离运行时可以在验证完成后删除;
+     删除前确认路径仅指向隔离工具目录
+
+版本要求:
+  - 优先 Ruby 2.2.x 做最低基线验证
+  - 若当前只能拿到新版 (2.7+ / 3.x) 隔离 Ruby,
+    先用它执行功能测试, 但这不是 SU2017 Ruby 2.2.4 兼容证据
+  - 最终 Gate 前需补 Ruby 2.2.4 语法与目标环境证据
+
+CURRENT_STATE.md 中 "代码只需要 Ruby 2.4+" 的错误表述
+必须改正。
 ============================================================

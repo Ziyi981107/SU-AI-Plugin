@@ -1,7 +1,7 @@
 ============================================================
 Q002 — Real SketchUp Verification Responsibility
 ============================================================
-STATUS:           OPEN
+STATUS:           ANSWERED
 QUESTION:         Agent 没有真实 SketchUp 安装可跑。
                   任务 §21 要求的 "Manual SketchUp Verification"
                   由谁来执行、什么时候执行?
@@ -70,4 +70,35 @@ REFERENCES:
   - PI_TASK_001 §20 "Git / 修改规则"
   - PI_TASK_001 §21 "Manual SketchUp Verification"
   - PI_TASK_001 §23 "最后原则" (可信、可测试、可扩展)
+
+------------------------------------------------------------
+ANSWER (received 2026-08-14)
+------------------------------------------------------------
+
+DECISION: A, 与 Agent 推荐一致。
+
+Pi 责任:
+  - 完成代码
+  - 安装/加载说明 (含 .rbz 打包或单文件 loader)
+  - 短而可重复的手动验证清单
+  - 清单覆盖 (PI_TASK_001 §21 对应项):
+      - 插件加载
+      - 选 Group
+      - 选 ComponentInstance
+      - 选若干 Edge
+      - 运行 Analyzer
+      - 查看 Issue 列表
+      - 选 Issue 后定位 / 高亮
+      - 确认源 CAD 未被修改
+  - 明确建议验证的 SketchUp 版本 + 输入样本 + 预期现象
+
+Hard Rule:
+  - 在收到 Owner 真实结果前, 任何真实 SU 项只能写
+    NOT VERIFIED IN REAL SKETCHUP
+  - mock / stub 测试可作辅助证据, 但不得替代真实验证,
+    也不得写成真实环境 PASS
+  - 没有 Owner 实测证据 → 不得声明 TASK 001
+    IMPLEMENTATION COMPLETE, 也不得通过最终发布 Gate
+  - 本决策不阻止继续实现 Preflight / Snapshot / SU Adapter /
+    UI / 定位
 ============================================================

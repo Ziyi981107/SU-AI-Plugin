@@ -30,6 +30,11 @@ coverage/
 vendor/bundle/
 .bundle/
 
+# --- Per-Q004: isolated Ruby runtime, NEVER committed ---
+.vendor/
+.cache/
+rubyinst/
+
 # --- Agent scratch (downloads, etc.) ---
 /tmp/
 *.tmp

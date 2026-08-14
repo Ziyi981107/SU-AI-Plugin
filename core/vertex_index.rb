@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 require_relative 'vertex_record'
 require_relative 'quantize_key'

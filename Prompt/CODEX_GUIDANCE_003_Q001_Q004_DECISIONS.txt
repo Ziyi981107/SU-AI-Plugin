@@ -1,0 +1,145 @@
+============================================================
+CODEX GUIDANCE 003 — Q001-Q004 DECISIONS
+Project: D:\Projects\SU-AI-Plugin
+Date: 2026-08-14
+Authority: Product Owner requested Codex decision guidance
+Applies to: PI_TASK_001_V1_READONLY_CAD_ANALYZER
+============================================================
+
+PURPOSE
+=======
+
+本文件回答 Review/Q001-Q004。
+这是实施指导与 Owner 决策，不是 Stage Review，也不是对现有实现的 PASS。
+
+Pi 读取本文件后，应按 WORKFLOW_PROTOCOL.txt：
+
+1. 将 Q001-Q004 的 STATUS 更新为 ANSWERED；
+2. 在各 Q 文件末尾追加本文件对应答案及 received 2026-08-14；
+3. 更新 CURRENT_STATE.md，删除已经失效的“等待决策/当前假设”；
+4. 按下面的执行顺序继续工作。
+
+============================================================
+Q001 — GIT WORKFLOW
+============================================================
+
+DECISION: B，附以下明确约束。
+
+授权使用本地 Git 仓库，并在“有独立可验证结果的 meaningful stage”稳定后创建本地 checkpoint commit。
+本文件构成对阶段 checkpoint commit 的明确授权，因此不再属于 PI_TASK_001 §20 所禁止的“未经授权自动 commit”。
+
+允许：
+
+- 本地 git init；
+- 维护合理的 .gitignore；
+- meaningful stage 完成、相关测试实际通过后创建本地 commit；
+- 在高风险修改前创建稳定 checkpoint；
+- 使用本地 Git 进行安全回退，但必须保护用户已有工作。
+
+禁止：
+
+- push 或连接外部 remote；
+- rewrite history、rebase 已有 checkpoint 或强制改写提交；
+- 自动删除用户工作；
+- 为微小编辑制造无意义 commit；
+- 把真实 CAD/SKP、私有样本、构建产物或隔离运行时提交进 Git。
+
+当前仓库和已有提交保持原样，不重写、不删除：
+
+- 6196107 chore(stage-0): scaffold project skeleton
+- 9134653 feat(stage-1): pure-Ruby geometry core + analyzer V0 + synthetic tests
+
+注意：9134653 只是 checkpoint，不代表 Stage 1 已通过测试或 Reviewer Gate。
+
+============================================================
+Q002 — REAL SKETCHUP VERIFICATION
+============================================================
+
+DECISION: A。
+
+真实 SketchUp 验证由 Product Owner 在实际 SketchUp 环境执行。
+
+Pi 的责任：
+
+- 完成代码、安装/加载说明和一份短而可重复的手动验证清单；
+- 清单至少覆盖：插件加载、选择 Group、选择 ComponentInstance、选择若干 Edge、运行 Analyzer、查看 Issue 列表、选择 Issue 后定位/高亮、确认源 CAD 未被修改；
+- 明确记录建议验证的 SketchUp 版本、输入样本和预期现象；
+- 在收到 Owner 的真实结果以前，所有真实 SketchUp 项只能写 NOT VERIFIED IN REAL SKETCHUP；
+- mock/stub 测试可以作为辅助证据，但不得替代真实 SketchUp 验证，也不得写成真实环境 PASS。
+
+此决策不阻止 Pi 继续实现 Preflight、Snapshot、SU Adapter、UI 和定位功能；但没有 Owner 的真实验证证据，不得声明 TASK 001 IMPLEMENTATION COMPLETE，也不得通过最终发布 Gate。
+
+============================================================
+Q003 — TARGET SKETCHUP VERSION
+============================================================
+
+DECISION: A — SketchUp 2017+ 是硬性最低兼容基线。
+
+不得把产品最低版本提高到 SU2018+。这已经由项目背景中的 Owner 决策 #004 锁定，不是当前 Agent 可重新选择的普通实现细节。
+
+实施要求：
+
+- Ruby 语法和纯 Ruby Core 以 SketchUp 2017 内置 Ruby 2.2.4 为最低基线；
+- 不使用 Ruby 2.3+、2.4+、2.5+ 或 Ruby 3 才支持的语法/行为作为必需依赖；
+- 新版 SketchUp API 必须经 Compatibility / Capability Adapter 隔离；
+- capability detection 优先于散落的版本号判断；
+- Core 中不得写 SketchUp 版本分支；
+- SU2017 能力缺失时才走 fallback，并在 SourceReference 中诚实标记身份稳定性。
+
+事实纠正：
+
+- Sketchup::Entity#persistent_id 是 SketchUp 2017 新增 API，不是 SU2018 才新增；
+- SU2017 对 Edge、Vertex、Group、ComponentInstance 等本任务关键实体已经支持 persistent_id；
+- 仍应使用 respond_to?/capability detection，因为并非所有实体类型在所有版本都支持 PID，而且异常/无效实体必须安全处理。
+
+官方依据：
+
+- https://ruby.sketchup.com/file.ReleaseNotes.html （SketchUp 2017 M0）
+- https://ruby.sketchup.com/Sketchup/Entity.html#persistent_id-instance_method
+
+因此，CURRENT_STATE.md 中“Q003=B（SU2018+ 基线，SU2017 fallback）”必须改为：
+
+Q003=A（SU2017+ 硬基线；Ruby 2.2.4；PID 使用 capability detection）。
+
+============================================================
+Q004 — RUBY IN AGENT ENVIRONMENT
+============================================================
+
+DECISION: C，修改为“隔离运行时 + 不污染系统 + 必须真实执行测试”。
+
+不采用 A。仅做静态阅读、cat/head、手工 walk require 链，不能满足 PI_TASK_001 对“能运行的测试必须实际运行”的要求，也不能证明约 700 行 Ruby 没有语法或运行时错误。
+
+执行要求：
+
+1. 不进行系统级 Ruby 安装，不修改用户 PATH；
+2. 优先使用项目外的临时/工具缓存目录；若环境限制只能放项目内，可使用 .vendor/ruby/；
+3. 在下载或安装前，先确保 .vendor/ 被 .gitignore 排除；任何 Ruby 二进制、安装包和缓存都不得进入 Git；
+4. 允许为下载/安装设置合理的较长超时，不能因为默认 300 秒超时就把测试改为“静态通过”；
+5. 安装完成后实际执行 tests/run_all.rb，保存完整命令、Ruby 版本、PASS/FAIL/ERROR 摘要；
+6. 任何 FAIL 或 ERROR 必须先修复并重跑，不能带着未运行或失败的 Synthetic Tests 进入下一稳定 checkpoint；
+7. 隔离运行时可以在验证完成后删除；删除前确认路径仅指向隔离工具目录。
+
+版本要求：
+
+- 交付代码最低兼容 Ruby 2.2.4；
+- 应优先取得 Ruby 2.2.x 环境做最低基线验证；
+- 若当前只能取得更新的隔离 Ruby，可先用它执行功能测试，但这不能单独证明 Ruby 2.2.4 兼容；
+- 在最终 Gate 前，仍需补充 Ruby 2.2.4 / SU2017 的语法与目标环境证据。
+
+CURRENT_STATE.md 中“代码只需要 Ruby 2.4+”的表述与 SU2017/Ruby 2.2.4 基线冲突，必须更正。若测试框架本身确实要求 Ruby 2.4+，这是兼容性缺陷，应修到 Ruby 2.2.4 可运行，而不是提高产品基线。
+
+============================================================
+EXECUTION ORDER
+============================================================
+
+1. 先落地 Q001-Q004 的 ANSWERED 状态和 CURRENT_STATE.md 修订。
+2. 按 Q004 准备隔离 Ruby，实际运行全部 Synthetic Tests。
+3. 若测试失败，修复并重跑；测试通过后再确认 Stage 1 稳定 checkpoint。
+4. 按 SU2017+/Ruby 2.2.4 基线继续 Stage 2（Preflight）及后续实现。
+5. 到真实 SketchUp 集成阶段，交付 Owner 手动验证清单；未收到实测证据前保持 NOT VERIFIED IN REAL SKETCHUP。
+
+不得因为本文件回答了问题，就把现有实现视为已经通过 Codex Review。
+
+============================================================
+END
+============================================================

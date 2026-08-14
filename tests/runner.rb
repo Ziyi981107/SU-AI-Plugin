@@ -1,4 +1,3 @@
-# frozen_string_literal: true
 
 #
 # tests/runner.rb — tiny dependency-free test framework for SU-AI-Plugin.
