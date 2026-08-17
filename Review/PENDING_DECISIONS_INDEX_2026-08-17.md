@@ -18,36 +18,50 @@ re-listed — see git log `37db08f` for those answers.
 ITEMS WAITING
 =============
 
-R001  Preflight threshold defaults (big_z, large_coordinate)
-       File: R001_preflight_threshold_defaults.md
-       Default chosen:  big_z = 0.01 in, large_coordinate = 1e6 in,
-                        deepest_nesting_warning = 3
-       Owner may override via Company Profile later, but locking the
-       V1.0 default up front avoids surprise in Stage 2 verification.
+(none — R001-R005 all RESOLVED 2026-08-17 via CODEX_REVIEW_004;
+ the BLOCK rework is the open work, tracked in CURRENT_STATE.md,
+ not in this index)
 
-R002  Stage 5 capability probe scope
-       File: R002_stage5_capability_probe_scope.md
-       Default chosen: thin wrapper around compatibility/su_capability.rb
-                       + stub test (NOT unit-testable in SU env, only
-                       behavioral check)
-       Question: keep thin, or expand to richer capability matrix
-                 (HTML dialog version, model.save_copy, etc.)?
+----- historical, kept for traceability -----
 
-R003  Stage 6 UI design
-       File: R003_stage6_ui_design.md
-       High-impact: selection visualizer approach, dialog container,
-                   layout, color language.
-       Multiple sub-decisions; Owner pick A/B/C per sub-question.
+R001  Preflight threshold defaults (big_z, large_coordinate) — RESOLVED 2026-08-17
+       File: R001_preflight_threshold_defaults.md (Status: ANSWERED)
+       Source: CODEX_REVIEW_004 §R001-R005 DECISIONS
+       Decision: KEEP big_z=0.01/large_coord=1e6/warning=3 BUT root=level1,
+                 warning at deepest_nesting >= 3, big_z ONLY for significant-Z
+                 warning (NOT for non-zero counts). See R### ANSWER block.
 
-R004  Q004 caveat closure criteria
-       File: R004_q004_caveat_closure.md
-       When does "Ruby 2.2.4 baseline evidence" count as satisfied?
-       Three candidates proposed; Owner picks the gate posture.
+R002  Stage 5 capability probe scope — RESOLVED 2026-08-17
+       File: R002_stage5_capability_probe_scope.md (Status: ANSWERED)
+       Source: CODEX_REVIEW_004 §R001-R005 DECISIONS
+       Decision: Option C + amendment — DO NOT create su_version_probe.rb
+                 or YAML matrix. su_capability.rb IS the single entry point.
+                 Add HtmlDialog check + outside-SU stub tests during
+                 Stage 2 rework. Stage 5 as standalone CANCELLED.
 
-R005  Issue Registry presentation
-       File: R005_issue_registry_presentation.md
-       Per PI_TASK_001 §11, issues have severity/confidence/source.
-       How to render in UI? Flat list / grouped / sortable / filter?
+R003  Stage 6 UI design — RESOLVED 2026-08-17
+       File: R003_stage6_ui_design.md (Status: ANSWERED)
+       Source: CODEX_REVIEW_004 §R001-R005 DECISIONS
+       Decision: Q3.1=B (selection+camera ONLY, no overlay), Q3.2=A
+                 (HtmlDialog), Q3.3=A (single page + grouped sections),
+                 Q3.4=R005 language, Q3.5=A (Locate only), Q3.6=confirmed.
+                 HARD PROHIBITION on any overlay / mutation in V1.
+
+R004  Q004 caveat closure criteria — RESOLVED 2026-08-17
+       File: R004_q004_caveat_closure.md (Status: ANSWERED)
+       Source: CODEX_REVIEW_004 §R001-R005 DECISIONS
+       Decision: B conditional; C REJECTED. Caveat closes only after
+                 COMPLETE production entry path loads on real SU2017.
+                 If SU2017 unavailable -> posture A becomes REQUIRED.
+                 Caveat cannot be documented-only.
+
+R005  Issue Registry presentation — RESOLVED 2026-08-17
+       File: R005_issue_registry_presentation.md (Status: ANSWERED)
+       Source: CODEX_REVIEW_004 §R001-R005 DECISIONS
+       Decision: option 2 grouped, deterministic issue_id order,
+                 severity=low/medium/high ONLY (NOT :info/:warning),
+                 confidence separate, UI palette low=neutral/medium=orange/
+                 high=red. Suggested mapping for 7 issue types included.
 
 ALREADY-WAITING (NOT IN THIS BATCH)
 ====================================

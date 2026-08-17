@@ -2,7 +2,7 @@
 R002 — STAGE 5 CAPABILITY PROBE SCOPE
 ============================================================
 Date:    2026-08-17
-Status:  DEFAULT CHOSEN (thin wrapper), awaiting Owner/Codex confirmation
+Status:  ANSWERED (received 2026-08-17 via CODEX_REVIEW_004)
 Stage:   5 (planning)
 
 
@@ -99,6 +99,18 @@ IF OWNER PREFERS B OR C
   resolved in CURRENT_STATE.
 
 
+ANSWER (received 2026-08-17):
+  Codex decision: C, with narrow amendment.
+  - Do NOT create a separate compatibility/su_version_probe.rb
+  - Do NOT build a YAML capability matrix
+  - compatibility/su_capability.rb IS the single capability entry point
+  - Add only capabilities Stage 6 actually uses (e.g. HtmlDialog check)
+  - Add outside-SU stub tests for new probes
+  - Close the artificial standalone Stage 5; fold the minimal HtmlDialog
+    probe into the Stage 2 BLOCK rework integration fix.
+
+  Implication: Stage 5 (as a separate stage) is CANCELLED in favor of
+  inline capability additions during Stage 6 prep.
 ============================================================
 END
 ============================================================

@@ -2,14 +2,14 @@
 R004 — Q004 CAVEAT CLOSURE CRITERIA
 ============================================================
 Date:    2026-08-17
-Status:  POSTURE NEEDED before claiming TASK 001 IMPLEMENTATION COMPLETE
+Status:  ANSWERED (received 2026-08-17 via CODEX_REVIEW_004)
 Stage:   Gate (final)
 
 
 RECAP
 =====
 
-Q004=A ("隔离运行时 + 真实跑 tests"). Per CODEX_GUIDANCE_003 §Q004:
+Q004=C ("隔离运行时 + 真实跑 tests"). Per CODEX_GUIDANCE_003 §Q004:
 
   "应优先取得 Ruby 2.2.x 环境做最低基线验证;
    若当前只能取得更新的隔离 Ruby, 可先用它执行功能测试,
@@ -101,6 +101,27 @@ Q4.3  If B and you have SU2017:
 NO REPLY = POSTURE B WITH THE CAVEAT THAT IF OWNER LATER DECIDES
 SU2017 IS NOT AVAILABLE, AGENT WILL PIVOT TO POSTURE A.
 
+ANSWER (received 2026-08-17):
+  Codex decision: B conditional; C REJECTED.
+  - Caveat closes when the COMPLETE production extension entry path
+    loads and the core user flow runs on real SU2017 (whose embedded
+    interpreter IS the target Ruby 2.2.4 environment).
+  - "Complete" means every production Ruby file shipped for Task 001,
+    not only preflight_runner.rb.
+  - If SU2017 unavailable -> posture A becomes REQUIRED (obtain
+    Ruby 2.2.4-compatible runtime/parser evidence via another
+    authorized route).
+  - Project may continue development meanwhile, but final Gate
+    remains OPEN.
+  - Do NOT ship under posture C with caveat merely documented.
+
+  NIT FIX (Codex): R004 line 12 said "Q004=A"; the accepted prior
+  decision was Q004=C ("isolated runtime + real tests"). Label
+  corrected in-place below.
+
+  Tie-in with S2-BLOCK-003: &. safe-nav (Ruby 2.3+) violates
+  Ruby 2.2.4 syntax baseline; must be fixed in Stage 2 BLOCK rework
+  before posture B can close.
 ============================================================
 END
 ============================================================

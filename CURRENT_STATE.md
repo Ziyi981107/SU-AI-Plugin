@@ -1,9 +1,9 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
-                          Stage 2 SU-side awaiting Owner real-SU verification;
-                          6 R### pending decisions surfaced to Review/;
-                          AGENT.md §1b OWNER HANDOFF PROTOCOL canonicalized).
+Last updated: 2026-08-17 (Codex Review 004 received: Stage 2 SU adapter
+                          BLOCKED with 5 BLOCKS; pure-Ruby 33/33 PASS;
+                          R001-R005 all ANSWERED; Stage 2 BLOCK rework
+                          queued per CODEX_REVIEW_004 execution order).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -20,6 +20,31 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
 - ✅ 正确: **SU2017+**, **Ruby 2.2.4** 是硬最低基线
 - ✅ `Sketchup::Entity#persistent_id` 在 **SU2017 起就有**, 不是 SU2018+ 才有
 - ✅ capability detection (`respond_to?`) 优先于版本号判断
+
+## CODEX REVIEW 004 (2026-08-17) — VERDICT: BLOCKED on Stage 2 SU adapter
+
+Codex reviewed Stage 2 commit 6eb33e8. Pure-Ruby 33/33 tests PASS evidence
+remains valid for the paths it exercises. The SketchUp traversal / snapshot
+adapter is BLOCKED with 5 BLOCKS — see Review/CODEX_REVIEW_004_BLOCK_REWORK_PLAN.md
+(queued for next session).
+
+5 BLOCKS:
+  S2-BLOCK-001  Every SketchUp Edge becomes 2 EdgeRecords (doubling).
+  S2-BLOCK-002  Component traversal, accumulated transforms, instance-aware
+                identity missing in extension/preflight_runner.rb.
+  S2-BLOCK-003  &. safe-navigation operator used (post Ruby 2.3, violates
+                Ruby 2.2.4 baseline).
+  S2-BLOCK-004  Preflight metrics do not match task contract (non-zero-Z
+                counts, nesting level semantics, severity canonicalization).
+  S2-BLOCK-005  Owner verification checklist has invalid API setup paths
+                and weak source-integrity check.
+
+CURRENT_STATE label correction (Codex NIT):
+  Stage 2 is NOT 'DESIGN PASS'. It is: 'pure-Ruby Preflight tests pass;
+  SU adapter blocked / rework required'. Fixed below in section labels.
+
+R001-R005 are all ANSWERED (Codex decisions documented in each R### file
+per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
 
 ## 已完成 (Stage 0 + Stage 1)
 
@@ -43,7 +68,7 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
   endless method / kwargs 糖 / frozen_string_literal magic)
 - ✅ 隔离 Ruby 2.7.8 实跑: 26/26 PASS
 
-### Stage 2 — Preflight 设计 (已完成, 等 Owner 验证)
+### Stage 2 — Preflight (pure-Ruby 部分 PASS, SU 端 BLOCKED / rework 待执行)
 **纯 Ruby 部分 (Agent 已实跑通过):**
 - `core/tolerance.rb` 新增 2 字段: `big_z` (默认 0.01 in),
   `large_coordinate` (默认 1e6 in)
@@ -104,56 +129,27 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
   `config.big_z` 而不是 `config.tolerance.big_z`
   (后续重命名 Tolerance 字段时不需跳 Preflight)
 
-## Next Step (Phase B — Stage 2 DESIGN 已完成, 等待 Owner 验证 SU 端)
+## Next Step (Phase C — STAGE 2 BLOCK REWORK queued)
 
 1. ✅ **已结束** — Q001-Q004 ANSWERED + 代码兼容性修正 + 文档
-2. ✅ **已结束** — 隔离 Ruby 实跑 Stage 1 tests + 修 Stage 1 bug +
-   Stage 1 stable checkpoint (commit `5e32ab1`)
-3. ✅ **已结束** — Stage 2 DESIGN (本轮, commit 见下):
-   - 纯 Ruby 部分实跑 PASS (7/7)
-   - SU 端代码 + Owner 清单到位
-4. ⏳ **现在等 Owner** — Owner 在真 SU 里跑 Stage 2 清单 (per Q002=A),
-   报告写到 `Prompt/OWNER_REPORT_STAGE_2_<date>.txt`
-4. ✅ **已结束** — 后续 Stage 决策挂起点全部写到 Review/ (本轮, commit 见下):
-   - `Review/PENDING_DECISIONS_INDEX_2026-08-17.md` 总索引
-   - `Review/R001_preflight_threshold_defaults.md` 阈值默认
-   - `Review/R002_stage5_capability_probe_scope.md` Stage 5 scope
-   - `Review/R003_stage6_ui_design.md` Stage 6 UI 设计 (5 子问题)
-   - `Review/R004_q004_caveat_closure.md` Q004 caveat 关闭门限
-   - `Review/R005_issue_registry_presentation.md` Issue 展示形式
-5. ⏳ **现在等 Owner / Codex** — 读 R### 选 A/B/C, 反馈写到 `Prompt/`.
-   不反馈 = 走默认 (各 R### 都有明确 default, 见各 R 文件顶部)
-6. **下一步** — Stage 5: 集中 capability 检测入口
-   `compatibility/su_version_probe.rb` (把 `su_capability.rb` 的接口
-   收敛成单例 + 加一个 stub test 验证在 SU 外不爆炸)
-6. **Stage 6** — UI: HtmlDialog (SU2017+ 有)
-   + Selection 高亮 (临时 visualizer, 不持久改 material)
-7. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22 格式),
-   并交付 Owner 手动验证清单 (per Q002=A)
-8. **最终 Gate 前** — Ruby 2.2.4 / SU2017 真机证据补齐
-   (Owner 跑 SU2017 验证即满足 Q004 caveat, 详见 R004)
+2. ✅ **已结束** — 隔离 Ruby 实跑 Stage 1 tests + Stage 1 stable checkpoint
+   (commit `5e32ab1`)
+3. ✅ **已结束 (pure-Ruby 部分)** — Stage 2 Preflight 纯 Ruby 7/7 PASS
+   (commit `6eb33e8`), SU 端后被 Codex 标记 BLOCKED
+4. ✅ **已结束** — R001-R005 决策档 + OWNER HANDOFF PROTOCOL 落地
+   (commits `c9a3817`, `48bad47`)
+5. ✅ **已结束** — Codex Review 004 落地: R001-R005 全部标 ANSWERED,
+   CURRENT_STATE 反映 BLOCKED 现状 (本批次 commit)
+6. ⏳ **下一步 (本轮可继续)** — Stage 2 BLOCK REWORK — 修 S2-BLOCK-001..005
+   + adapter-level stub tests + 重跑 33/33 tests, 见
+   `Review/CODEX_REVIEW_004_BLOCK_REWORK_PLAN.md` (本批次 commit)
+7. **BLOCK recheck PASS 后** — Owner 跑真 SU 验证 (Q002=A) +
+   走 R004 posture B (SU2017 必须)
+8. **Stage 6** — UI (per R003 + R005): HtmlDialog + selection/camera Locate
+   + grouped issue sections + canonical severity
+9. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22)
+10. **最终 Gate 前** — Ruby 2.2.4 / SU2017 真机证据 (R004 posture B)
 
-### Agent carrying (no R file needed, 已注在 PENDING_DECISIONS_INDEX)
-
-- 默认立刻开始 Stage 5 (不等 Owner Stage 2 反馈),
-  原因: Stage 5 不依赖 Stage 2 SU-side 行为, 仅依赖 Q003 = SU2017+ lock
-  (已 ANSWERED) + 现有 `compatibility/su_capability.rb` (已 commit)。
-  Owner 若要 Stage 5 暂停等 Stage 2 反馈, 在 Prompt/ 里 flag 即可。
-
-## 2026-08-17 工作流规则变更 (Owner 指示)
-
-AGENT.md 已更新 (见本批次 commit):
-- §1 STARTUP READING 加 step 3: 启动时读 Prompt/ 最新文件 (按 mtime 排序)
-- 新增 §1b OWNER HANDOFF PROTOCOL — 明确 Review/ 和 Prompt/ 双向职责
-  - Review/ = Agent 写, Owner + Codex 读 (问题 / 决策 / blocker)
-  - Prompt/ = Owner 写, Agent 读 (Codex / 其他 agent 指导)
-  - Agent 永不写 Prompt/
-  - 标准循环: Agent 写 Review -> Owner 决 -> Owner 落 Prompt ->
-    Owner 通知 Agent -> Agent 重读 Prompt/ -> 更新 Review 为 ANSWERED +
-    更新 CURRENT_STATE -> 继续
-- 不在每次动作轮询 Prompt/, 只在 session 启动或
-  Owner 通知问题解决时读。Owner 通知词举例:
-  "<problem-name> resolved" 或 "看一下 prompt" 之类。
 
 ## Stage 2 设计边界 (NOT IN SCOPE, 明确不做, per PI_TASK_001 §17)
 

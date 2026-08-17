@@ -2,7 +2,7 @@
 R001 — PREFLIGHT THRESHOLD DEFAULTS
 ============================================================
 Date:    2026-08-17
-Status:  DEFAULT CHOSEN, awaiting Owner/Codex confirmation
+Status:  ANSWERED (received 2026-08-17 via CODEX_REVIEW_004)
 Stage:   2 (locked in commit 6eb33e8)
 For:     Owner + Codex
 
@@ -106,6 +106,20 @@ default is one-line. All PreflightAnalyzer tests reference config
 override per Company Profile, so defaults only matter for "no
 profile loaded" case.
 
+ANSWER (received 2026-08-17):
+  Codex decision:
+    - big_z: KEEP 0.01 in, BUT only as "significant off-plane warning"
+      threshold. It MUST NOT be used for required non-zero-Z counts.
+    - large_coordinate: KEEP 1.0e6 in (conservative V1 fallback).
+    - deepest_nesting_warning: KEEP 3, with root container = level 1
+      and warning condition `deepest_nesting >= 3` (NOT `> 3`).
+    - Z presentation: any Z above coordinate_epsilon is counted;
+      only Z above big_z raises the visible significant-Z warning.
+
+  Recheck evidence needed (will land in Stage 2 BLOCK rework):
+    - separate non_zero_z_vertex_count / non_zero_z_edge_count
+    - dedup vertices using coordinate_epsilon
+    - field renames + tests + warning message updates
 ============================================================
 END
 ============================================================

@@ -2,7 +2,7 @@
 R005 — ISSUE REGISTRY PRESENTATION
 ============================================================
 Date:    2026-08-17
-Status:  DECISIONS NEEDED before Stage 6 UI implementation
+Status:  ANSWERED (received 2026-08-17 via CODEX_REVIEW_004)
 Stage:   6 (planning)
 For:     Owner (primary) + Codex (review)
 
@@ -138,6 +138,36 @@ SUMMARY OF DEFAULTS IF NO OWNER REPLY
 
 If Owner wants different, edit this file and drop answer in Prompt/.
 
+ANSWER (received 2026-08-17):
+  Codex decisions:
+    - Presentation: option 2 (grouped by issue_type, collapsible,
+      count in each heading).
+    - Within-group order: deterministic issue_id, NOT raw Ruby object_id.
+    - Canonical severity values: low / medium / high ONLY.
+      (Do NOT mix :info / :warning with :low / :medium.)
+    - Canonical confidence values: low / medium / high, KEPT SEPARATE
+      from severity.
+    - UI treatment: low = neutral, medium = orange, high = red.
+    - Click = Locate (selection + zoom). No overlay. No Entity Info.
+    - No filterable / sortable table in V1.
+
+  Suggested initial severity mapping (centralized in Issue Registry,
+  not UI):
+    duplicate_edge_candidate   :medium
+    short_edge                 :low
+    open_endpoint              :medium
+    gap_candidate              :medium
+    significant non-zero-Z     :medium
+    abnormal large coordinate  :high
+    deep nesting               :low
+
+  Preflight facts that do not cross a warning threshold remain
+  summary metrics, NOT separate warning Issues.
+
+  Implication for current code: PreflightAnalyzer currently emits
+  :info / :warning severities. These MUST be migrated to the
+  canonical :low / :medium / :high set during Stage 2 BLOCK rework
+  (S2-BLOCK-004) before any UI consumes them.
 ============================================================
 END
 ============================================================

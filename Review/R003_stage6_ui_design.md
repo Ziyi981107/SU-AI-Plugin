@@ -2,7 +2,7 @@
 R003 — STAGE 6 UI DESIGN
 ============================================================
 Date:    2026-08-17
-Status:  DECISIONS NEEDED before Stage 6 implementation
+Status:  ANSWERED (received 2026-08-17 via CODEX_REVIEW_004)
 Stage:   6 (planning — not yet started)
 For:     Owner (primary) + Codex (review)
 
@@ -194,6 +194,23 @@ Agent proceeds with defaults:
 If Owner wants different, just edit this file and drop answer in
 Prompt/.
 
+ANSWER (received 2026-08-17):
+  Codex decisions:
+    Q3.1 = B  selection + camera zoom ONLY for V1. NO overlay.
+    Q3.2 = A  HtmlDialog with capability check / fallback error.
+    Q3.3 = A  Single-page summary + grouped issue sections.
+    Q3.4 = Use one consistent severity language defined under R005;
+           simple text labels / badges, no icon font dep.
+    Q3.5 = A  Click = Locate only.
+    Q3.6 = confirmed — no fix / edit / repair controls.
+
+  HARD PROHIBITION (overrides earlier Agent default of C hybrid):
+    Do NOT add construction lines, boxes, materials, layers/tags or
+    any other entities/properties to the model, EVEN TEMPORARILY.
+    Creating-and-erasing overlay geometry still mutates the model and
+    violates the 100% read-only constraint (PI_TASK_001 §91).
+    Selection / camera state are OK because they don't change source
+    entity geometry or properties. NO Alt-click overlay in V1.
 ============================================================
 END
 ============================================================
