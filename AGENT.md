@@ -46,6 +46,32 @@ Do not reconstruct project truth from old chat history if current project files 
 1b. OWNER HANDOFF PROTOCOL — Review/ and Prompt/ folder conventions
 ====================================================================
 
+DIRECTIONALITY (memorize this — Cicada 2026-08-17):
+
+  Review/  = Agent's output to Codex/other agents to READ.
+             (questions, decisions surfaced, status reports,
+              rework plans, owner checklists — anything the
+              Agent summarizes FOR someone else to read.)
+
+  Prompt/  = Codex/other agents' decisions FOR the Agent to execute.
+             (Codex guidance, reviewer output, owner-approved
+              instructions — what the Agent reads then acts on.)
+
+  Flow is strictly:
+      Agent  --writes-->  Review/  --Owner routes-->  Codex
+      Codex  --writes-->  Prompt/  --Owner routes-->  Agent
+      Agent  NEVER writes Prompt/. Owner is gatekeeper of Prompt/.
+
+  What does NOT belong in Review/:
+    - The Agent's own internal working notes (use scratch space
+      or chat context; only materialize to Review/ when the
+      content is meant for Codex/other agents to consume).
+    - Raw Codex answers copied wholesale. Per WORKFLOW_PROTOCOL
+      the Agent MAY append a short ANSWER pointer to a
+      Review/Q### file (so the full Q&A is co-located for
+      Codex re-read), but the canonical decision lives in
+      Prompt/<file>.txt — Prompt/ is the source of truth.
+
 This project uses two dedicated folders as the official inter-agent
 message bus between Agent (here), Codex Reviewer, and Product Owner
 (Cicada). They are NOT free-form scratch — they are the contract.
