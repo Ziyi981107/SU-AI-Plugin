@@ -1,9 +1,10 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Codex Review 004 received: Stage 2 SU adapter
-                          BLOCKED with 5 BLOCKS; pure-Ruby 33/33 PASS;
-                          R001-R005 all ANSWERED; Stage 2 BLOCK rework
-                          queued per CODEX_REVIEW_004 execution order).
+Last updated: 2026-08-17 (Codex Review 005 partial BLOCK RECHECK:
+                          S2-BLOCK-001 / S2-BLOCK-003 CLOSED;
+                          S2-BLOCK-002 / 004 / 005 REMAINS OPEN;
+                          S2-BLOCK-006 NEW (capability namespace);
+                          pure-Ruby 50/50 PASS; rework queued for 4 BLOCKS).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -20,6 +21,24 @@ Last updated: 2026-08-17 (Codex Review 004 received: Stage 2 SU adapter
 - ✅ 正确: **SU2017+**, **Ruby 2.2.4** 是硬最低基线
 - ✅ `Sketchup::Entity#persistent_id` 在 **SU2017 起就有**, 不是 SU2018+ 才有
 - ✅ capability detection (`respond_to?`) 优先于版本号判断
+
+## CODEX REVIEW 005 (2026-08-17) — VERDICT: PARTIAL PASS, 4 BLOCKS remain
+
+Codex did focused recheck (Commit eb3cd41) for S2-BLOCK-001..005.
+Result:
+  S2-BLOCK-001  CLOSED  (one Edge -> one EdgeRecord confirmed)
+  S2-BLOCK-003  CLOSED  (no &. in production entry path)
+  S2-BLOCK-002  REMAINS OPEN  (3 sub-issues)
+  S2-BLOCK-004  REMAINS OPEN  (3 sub-issues + perf)
+  S2-BLOCK-005  REMAINS OPEN  (5 sub-issues)
+  S2-BLOCK-006  NEW BLOCK   (capability probe uses wrong namespace)
+
+Plus NITs:
+  - SourceReference instance_path mutability inconsistency
+  - Recheck packet told Owner to verify before recheck PASS (should pause)
+
+NEXT: focused rework on S2-BLOCK-002 / 004 / 005 / 006 only.
+S2-BLOCK-001 / -003 stay closed.
 
 ## CODEX REVIEW 004 (2026-08-17) — VERDICT: BLOCKED on Stage 2 SU adapter
 
@@ -129,26 +148,32 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
   `config.big_z` 而不是 `config.tolerance.big_z`
   (后续重命名 Tolerance 字段时不需跳 Preflight)
 
-## Next Step (Phase C — STAGE 2 BLOCK REWORK queued)
+## Next Step (Phase D — STAGE 2 BLOCK REWORK 2nd pass queued)
 
-1. ✅ **已结束** — Q001-Q004 ANSWERED + 代码兼容性修正 + 文档
-2. ✅ **已结束** — 隔离 Ruby 实跑 Stage 1 tests + Stage 1 stable checkpoint
-   (commit `5e32ab1`)
-3. ✅ **已结束 (pure-Ruby 部分)** — Stage 2 Preflight 纯 Ruby 7/7 PASS
-   (commit `6eb33e8`), SU 端后被 Codex 标记 BLOCKED
-4. ✅ **已结束** — R001-R005 决策档 + OWNER HANDOFF PROTOCOL 落地
-   (commits `c9a3817`, `48bad47`)
-5. ✅ **已结束** — Codex Review 004 落地: R001-R005 全部标 ANSWERED,
-   CURRENT_STATE 反映 BLOCKED 现状 (本批次 commit)
-6. ⏳ **下一步 (本轮可继续)** — Stage 2 BLOCK REWORK — 修 S2-BLOCK-001..005
-   + adapter-level stub tests + 重跑 33/33 tests, 见
-   `Review/CODEX_REVIEW_004_BLOCK_REWORK_PLAN.md` (本批次 commit)
-7. **BLOCK recheck PASS 后** — Owner 跑真 SU 验证 (Q002=A) +
+1. ✅ **已结束** — Q001-R005 全部 ANSWERED, BLOCKED 现状反映到 CURRENT_STATE
+   (commits `5e1d1e0`, `c9a3817`, `48bad47`)
+2. ✅ **已结束** — Codex Review 004 BLOCK rework 第 1 轮
+   (commit `eb3cd41`): S2-BLOCK-001 + S2-BLOCK-003 已 CLOSED;
+   50/50 tests PASS
+3. ✅ **已结束** — BLOCK RECHECK 请求包 `Review/BLOCK_RECHECK_REQUEST_2026-08-17.md`
+   (commit `24b06b9`)
+4. ✅ **已结束** — Codex Review 005 部分 PASS, 4 BLOCKS remain
+5. ⏳ **下一步 (本轮)** — 修剩余 4 BLOCKS:
+   - S2-BLOCK-002 (instance_path 改 PID path + active edit-context +
+     非交换性嵌套变换 + 同父 2 instance 测试)
+   - S2-BLOCK-004 (non_zero_z_edge_count 改 OR 语义 + 用 config epsilon +
+     复用 VertexIndex 避免 O(V²) + perf 测试 <2s)
+   - S2-BLOCK-005 (去掉 v.position= 用 Entities#add_line + 真正的递归
+     fingerprint helper + 强化 fake erased edge + 不合成 [0,0,0] +
+     safe_each 真保护)
+   - S2-BLOCK-006 NEW (HtmlDialog 是 UI::HtmlDialog 不是 Sketchup::HtmlDialog;
+     Sketchup.version 是字符串不是 Integer 年份)
+   见 `Review/CODEX_REVIEW_005_BLOCK_REWORK_PLAN.md` (本批次新建)
+6. **BLOCK recheck 2 PASS 后** — Owner 跑真 SU 验证 (Q002=A) +
    走 R004 posture B (SU2017 必须)
-8. **Stage 6** — UI (per R003 + R005): HtmlDialog + selection/camera Locate
-   + grouped issue sections + canonical severity
-9. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22)
-10. **最终 Gate 前** — Ruby 2.2.4 / SU2017 真机证据 (R004 posture B)
+7. **Stage 6** — UI (per R003 + R005)
+8. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22)
+9. **最终 Gate 前** — Ruby 2.2.4 / SU2017 真机证据 (R004 posture B)
 
 
 ## Stage 2 设计边界 (NOT IN SCOPE, 明确不做, per PI_TASK_001 §17)
