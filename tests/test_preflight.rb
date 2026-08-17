@@ -347,6 +347,38 @@ test 'preflight.S2-BLOCK-004: perf — 5000 disconnected Edges Preflight under 2
 end
 
 # --------------------------------------------------------------------------
+# S2-BLOCK-004 (round 3) — boundary-bucket dedup (per Codex Review 007)
+# --------------------------------------------------------------------------
+
+test 'preflight.S2-BLOCK-004 (r3): two points < eps apart across bucket boundary -> merged' do
+  # coord_eps = 0.5. Points at [0.99, 0, 0] (bucket index 1) and
+  # [1.01, 0, 0] (bucket index 2) are 0.02 apart, well within eps.
+  # Single-bucket dedup would miss them; adjacent-bucket search must
+  # find the match. (10, 0, 0) and (10, 1, 0) are 1.0 apart, OUTSIDE
+  # eps=0.5, so they stay distinct.
+  src = SourceReference.new(entity_id: 1, kind: 'edge')
+  e1 = EdgeRecord.new(id: 0, source: src,
+                       start_point: [0.99, 0, 0], end_point: [10, 0, 0],
+                       layer: 'L')
+  e2 = EdgeRecord.new(id: 1, source: src,
+                       start_point: [1.01, 0, 0], end_point: [10, 1, 0],
+                       layer: 'L')
+  snap = GeometrySnapshot.new(edges: [e1, e2])
+  cfg = AnalysisConfig.new(
+    tolerance: Tolerance.new(
+      duplicate: 1.0e-4, short_edge: 0.5, gap_search: 0.1,
+      coordinate_epsilon: 0.5, big_z: 0.01, large_coordinate: 1.0e6
+    )
+  )
+
+  deduped = PreflightAnalyzer.collect_distinct_vertices(
+    [e1, e2], coord_eps: 0.5
+  )
+  # 3 distinct: [0.99-or-1.01 merged], [10, 0, 0], [10, 1, 0].
+  assert_equal 3, deduped.size
+end
+
+# --------------------------------------------------------------------------
 # Extra: HtmlDialog capability probe (R002 + S2-BLOCK-006) — namespace fix.
 # --------------------------------------------------------------------------
 
@@ -372,24 +404,50 @@ ensure
 end
 
 # --------------------------------------------------------------------------
-# Extra: product_year + sketchup_version semantics (S2-BLOCK-006)
+# Extra: sketchup_version + sketchup_major_version semantics
+# (S2-BLOCK-006 round 2, per CODEX_GUIDANCE_006)
 # --------------------------------------------------------------------------
 
-test 'capability.version: product_year returns nil outside SU; sketchup_version returns nil too (S2-BLOCK-006)' do
-  assert_nil SUAnalysis::Compatibility::SUCapability.product_year
+test 'capability.version: sketchup_version returns nil outside SU' do
   assert_nil SUAnalysis::Compatibility::SUCapability.sketchup_version
+  assert_nil SUAnalysis::Compatibility::SUCapability.sketchup_major_version
 end
 
-test 'capability.version: product_year maps Sketchup.version_number -> calendar year (S2-BLOCK-006)' do
-  # Stub a minimal Sketchup module with version_number = 24 (=> 2024).
+test 'capability.version: sketchup_version preserves dotted String verbatim (S2-BLOCK-006 r2)' do
+  # Stub Sketchup.version = '17.2.0' (real SU2017 shape).
   unless defined?(Sketchup)
     Object.const_set(:Sketchup, Module.new)
   end
-  Sketchup.define_singleton_method(:version_number) { 24 }
-  assert_equal 2024, SUAnalysis::Compatibility::SUCapability.product_year
+  Sketchup.define_singleton_method(:version) { '17.2.0' }
+  assert_equal '17.2.0', SUAnalysis::Compatibility::SUCapability.sketchup_version
 ensure
-  if defined?(Sketchup) && Sketchup.respond_to?(:version_number)
-    Sketchup.singleton_class.send(:remove_method, :version_number)
+  if defined?(Sketchup) && Sketchup.respond_to?(:version)
+    Sketchup.singleton_class.send(:remove_method, :version)
+  end
+end
+
+test 'capability.version: sketchup_major_version extracts leading integer from dotted String (S2-BLOCK-006 r2)' do
+  unless defined?(Sketchup)
+    Object.const_set(:Sketchup, Module.new)
+  end
+  Sketchup.define_singleton_method(:version) { '17.2.0' }
+  assert_equal 17, SUAnalysis::Compatibility::SUCapability.sketchup_major_version
+ensure
+  if defined?(Sketchup) && Sketchup.respond_to?(:version)
+    Sketchup.singleton_class.send(:remove_method, :version)
+  end
+end
+
+test 'capability.version: sketchup_major_version on modern SU returns 24 (NOT calendar year)' do
+  unless defined?(Sketchup)
+    Object.const_set(:Sketchup, Module.new)
+  end
+  Sketchup.define_singleton_method(:version) { '24.0.0' }
+  assert_equal 24, SUAnalysis::Compatibility::SUCapability.sketchup_major_version
+  refute_equal 2024, SUAnalysis::Compatibility::SUCapability.sketchup_major_version
+ensure
+  if defined?(Sketchup) && Sketchup.respond_to?(:version)
+    Sketchup.singleton_class.send(:remove_method, :version)
   end
 end
 

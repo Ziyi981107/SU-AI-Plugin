@@ -222,6 +222,10 @@ module SUAnalysis
       # Collect distinct vertices from edges, deduped in coord-epsilon
       # neighborhood. Uses an O(V) spatial hash (per S2-BLOCK-004 round
       # 2 — replaces previous O(V^2) `result.any?` scan).
+      #
+      # Per S2-BLOCK-004 round 3 (Codex Review 007): searches current
+      # bucket AND all 26 adjacent buckets. Two points within coord_eps
+      # but on opposite sides of a bucket boundary are still merged.
       # Returns Array<[x, y, z]>.
       def collect_distinct_vertices(edges, coord_eps: 1.0e-6)
         bucket_size = coord_eps
@@ -231,9 +235,28 @@ module SUAnalysis
         edges.each do |e|
           [e.start_point, e.end_point].each do |v|
             key = bucket_key(v, bucket_size)
-            seen = buckets[key]
-            unless seen && seen.any? { |existing| points_equal?(existing, v, coord_eps) }
-              buckets[key] = (seen || []) << v
+            merged = false
+            # Search the 27 buckets in a 3x3x3 neighborhood (current + 26 adjacent).
+            (-1..1).each do |dx|
+              (-1..1).each do |dy|
+                (-1..1).each do |dz|
+                  neighbor_key = [key[0] + dx, key[1] + dy, key[2] + dz]
+                  seen = buckets[neighbor_key]
+                  next if seen.nil?
+                  seen.each do |existing|
+                    if points_equal?(existing, v, coord_eps)
+                      merged = true
+                      break
+                    end
+                  end
+                  break if merged
+                end
+                break if merged
+              end
+              break if merged
+            end
+            unless merged
+              buckets[key] = (buckets[key] || []) << v
               result << v
             end
           end

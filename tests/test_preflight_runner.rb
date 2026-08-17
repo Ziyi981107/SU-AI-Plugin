@@ -394,21 +394,24 @@ end
 # --------------------------------------------------------------------------
 
 test 'S2-BLOCK-002 (r2): active edit-context seeds walk transform (selected Edges inside active Group)' do
-  # Outer Group with no transform. Inner Edge at (5, 0, 0) -> (10, 0, 0).
-  # Active edit-context: a fake InstancePath with translation (100, 200, 0)
-  # and PID path [42]. Expected world coords of selected Edge: add
-  # active context transform to the Edge's local coords.
+  # Per S2-BLOCK-002 round 3 (Codex Review 007 + GUIDANCE 006): real
+  # Model#active_path is Array of drawing elements; edit_transform
+  # belongs to Model. We build a fake Model whose active_path is an
+  # Array containing a Group with persistent_id 42, and edit_transform
+  # translates by (100, 200, 0). Expected world coords of selected Edge:
+  # add the edit_transform to the Edge's local coords.
   edge = fake_edge([5, 0, 0], [10, 0, 0])
-  outer = FakeSU::Group.new(name: 'outer', children: [edge])
-  active_path = FakeSU::InstancePath.new(
-    persistent_id_path: [42],
-    transformation: FakeSU.translation(100, 200, 0)
+  outer = FakeSU::Group.new(name: 'outer', children: [edge], persistent_id: 42)
+  edit_t = FakeSU.translation(100, 200, 0)
+  model = FakeSU::Model.new(
+    entities: [outer],
+    active_path: [outer],
+    edit_transform: edit_t
   )
-  model = FakeSU::Model.new(entities: [outer], active_path: active_path)
   sel = FakeSU::Selection.new([edge])
   snap = PreflightRunner.build_snapshot(sel, model: model)
   e = snap.edges.first
-  # World = active_t * edge_local. active adds (100,200,0).
+  # World = edit_transform * edge_local. active adds (100,200,0).
   assert_in_delta 105.0, e.start_point[0], 1.0e-9
   assert_in_delta 200.0, e.start_point[1], 1.0e-9
   assert_in_delta 110.0, e.end_point[0],   1.0e-9
@@ -417,7 +420,7 @@ end
 
 test 'S2-BLOCK-002 (r2): no active edit-context -> identity seed (no offset)' do
   edge = fake_edge([5, 0, 0], [10, 0, 0])
-  model = FakeSU::Model.new(entities: [edge], active_path: nil)
+  model = FakeSU::Model.new(entities: [edge], active_path: nil, edit_transform: nil)
   sel = FakeSU::Selection.new([edge])
   snap = PreflightRunner.build_snapshot(sel, model: model)
   e = snap.edges.first
@@ -436,19 +439,72 @@ test 'S2-BLOCK-002 (r2): snapshot PID paths resolve back through model.instance_
   sel = FakeSU::Selection.new([outer])
   snap = PreflightRunner.build_snapshot(sel)
 
-  # Build a model with a registry keyed by the same PID paths.
+  # Build a model with a registry keyed by dot-delimited String.
   model = FakeSU::Model.new(entities: [outer])
-  pid_path = snap.edges.first.source.persistent_id_path
+  pid_path_arr = snap.edges.first.source.persistent_id_path
+  # Snapshot internal form is Array<Integer>; real SU API takes String.
   ip_expected = FakeSU::InstancePath.new(
-    persistent_id_path: pid_path,
+    persistent_id_path: pid_path_arr,
     transformation: FakeSU.translation(0, 0, 0)
   )
-  model.register_pid_path(pid_path, ip_expected)
+  pid_path_str = SUAnalysis::Compatibility::SUCapability.serialize_pid_path(pid_path_arr)
+  model.register_pid_path(pid_path_str, ip_expected)
 
-  # Resolve through the resolver helper.
-  resolved = SUAnalysis::Compatibility::SUCapability.resolve_pid_path(model, pid_path)
+  # Resolve through the resolver helper (serializes internally).
+  resolved = SUAnalysis::Compatibility::SUCapability.resolve_pid_path(model, pid_path_arr)
   refute_nil resolved
-  assert_equal pid_path, resolved.persistent_id_path
+  assert_equal pid_path_str, resolved.persistent_id_path
+end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-002 (round 3) — real API contract: entityID + Array active_path
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-002 (r3): SourceReference uses entity.entityID when available (per round 3 API contract)' do
+  edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    entityID: 4242
+  )
+  src = SUAnalysis::Compatibility::SUCapability.build_source_reference(edge)
+  assert_equal 4242, src.entity_id
+end
+
+test 'S2-BLOCK-002 (r3): active edit-context uses Array active_path (not InstancePath) + edit_transform on Model' do
+  edge = fake_edge([5, 0, 0], [10, 0, 0])
+  outer = FakeSU::Group.new(name: 'outer', children: [edge], persistent_id: 42)
+  inner_active = FakeSU::Group.new(name: 'inner_active', persistent_id: 7)
+  edit_t = FakeSU.translation(100, 200, 0)
+  # Real SU shape: model.active_path is Array; edit_transform on Model.
+  model = FakeSU::Model.new(
+    entities: [outer],
+    active_path: [outer, inner_active],
+    edit_transform: edit_t
+  )
+  sel = FakeSU::Selection.new([edge])
+  snap = PreflightRunner.build_snapshot(sel, model: model)
+  e = snap.edges.first
+  # World = edit_transform * edge_local = (100+5, 200, 0) -> (110, 200, 0).
+  assert_in_delta 105.0, e.start_point[0], 1.0e-9
+  assert_in_delta 200.0, e.start_point[1], 1.0e-9
+  # persistent_id_path is prefixed by the active edit path PIDs:
+  # [42, 7, edge_pid].
+  pid_path = e.source.persistent_id_path
+  assert_equal 42, pid_path[0]
+  assert_equal 7,  pid_path[1]
+end
+
+test 'S2-BLOCK-002 (r3): resolve_pid_path rejects Array<Integer>, only String works' do
+  model = FakeSU::Model.new
+  # Direct array should NOT resolve (real API takes String).
+  result = model.instance_path_from_pid_path([10, 20, 30])
+  assert_nil result
+  # Dot-delimited String resolves to registered InstancePath.
+  ip = FakeSU::InstancePath.new(persistent_id_path: '10.20.30')
+  model.register_pid_path('10.20.30', ip)
+  result = model.instance_path_from_pid_path('10.20.30')
+  refute_nil result
+  assert_equal '10.20.30', result.persistent_id_path
 end
 
 # --------------------------------------------------------------------------

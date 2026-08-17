@@ -33,50 +33,37 @@ module SUAnalysis
 
       # ---- SketchUp version ------------------------------------------------
 
-      # Returns the SU version as a comparable Integer (e.g. 2017, 2024).
-      # Per Codex Review 005 S2-BLOCK-006: Sketchup.version returns a
-      # dotted String in modern SU ('24.0.318'). Calling .to_i on that
-      # yields the leading numeric component (e.g. 24), NOT the calendar
-      # year. Outside SU returns nil. Prefer product_year for Q003-style
-      # year-based assertions; this method is for diagnostic display.
+      # Returns Sketchup.version as a String for diagnostic display.
+      # Real SU returns a dotted String like '17.2.0' or '24.0.318'.
+      # Outside SU returns nil.
+      #
+      # Per Codex Review 007 + CODEX_GUIDANCE_006 (mandatory): this method
+      # preserves the dotted String verbatim. We DO NOT call .to_i on it
+      # (that yields the leading major 24, NOT the calendar year).
       def sketchup_version
         return nil unless defined?(Sketchup)
         return nil unless Sketchup.respond_to?(:version)
         v = Sketchup.version
         return nil if v.nil?
-        v.is_a?(Integer) ? v : nil
+        v.is_a?(Integer) ? v.to_s : v.to_s
       end
 
-      # Normalized calendar-year integer of the SketchUp product.
-      # Returns nil outside SU. In real SU, derives from
-      # Sketchup.version_number when available (returns the product
-      # release year on modern SU). Falls back to a manual parse of
-      # Sketchup.version only if version_number is missing.
-      def product_year
-        return nil unless defined?(Sketchup)
-        # Modern SU exposes a numeric release identifier. Map known
-        # identifiers back to their calendar year.
-        if Sketchup.respond_to?(:version_number)
-          vn = Sketchup.version_number
-          return su_release_to_year(vn) if vn.is_a?(Integer)
-        end
-        # Fallback: legacy Sketchup.version Integer (SU <= 2017).
+      # Returns the leading major version as Integer (17, 18, 24, ...).
+      # Use this for the SU2017+ baseline assertion
+      # (`sketchup_major_version >= 17`).
+      #
+      # Per CODEX_GUIDANCE_006: derive the major via .to_i on the dotted
+      # version String. Do NOT infer a calendar year from version_number
+      # (version_number is an encoded comparison integer, e.g. ~1.7e9 for
+      # the SU2017 family — NOT 17).
+      def sketchup_major_version
         v = sketchup_version
-        return v if v.is_a?(Integer)
-        nil
-      end
-
-      # Map SketchUp release version_number to its calendar year.
-      # Source: SketchUp release notes (major release only). 2017 is
-      # the locked baseline (per Q003+A); we expose the full table so
-      # any later version is recognized correctly.
-      def su_release_to_year(version_number)
-        table = {
-          17 => 2017, 18 => 2018, 19 => 2019, 20 => 2020,
-          21 => 2021, 22 => 2022, 23 => 2023, 24 => 2024,
-          25 => 2025, 26 => 2026
-        }
-        table[version_number]
+        return nil if v.nil?
+        s = v.to_s
+        return nil unless s.is_a?(String)
+        # Take leading integer (e.g. "24.0.318" -> 24, "17" -> 17).
+        m = s.match(/\A\s*(\d+)/)
+        m.nil? ? nil : m[1].to_i
       end
 
       # ---- HtmlDialog (SU 2017+, per R002) ---------------------------------
@@ -183,10 +170,11 @@ module SUAnalysis
 
       # ---- Build a SourceReference from a SU entity -----------------------
 
-      # entity_id: SU's internal Entity object_id is the only globally-unique
-      # handle guaranteed across versions. We DO NOT use it for cross-session
-      # stability — that's what persistent_id is for. We pass both and let
-      # the SourceReference mark itself stable?() iff persistent_id is present.
+      # entity_id: prefer entity.entityID (real SU API, integer per session);
+      # fall back to entity.object_id (Ruby transient) only outside SU or
+      # when entityID is unavailable (per Codex Review 007 S2-BLOCK-002).
+      # entityID is per-session but integer-stable within a session; object_id
+      # is Ruby transient. For cross-session stability use persistent_id.
       #
       # persistent_id_path: optional Array<Integer> of container PIDs from
       # model root to this entity, with the entity's own PID last (added per
@@ -203,8 +191,13 @@ module SUAnalysis
           label = entity.definition.name.to_s
         end
         label = entity.respond_to?(:typename) ? entity.typename.to_s : 'entity' if label.nil? || label.empty?
+        eid = if entity.respond_to?(:entityID) && !entity.entityID.nil?
+                entity.entityID
+              else
+                entity.object_id
+              end
         SUAnalysis::Core::SourceReference.new(
-          entity_id:          entity.object_id,
+          entity_id:          eid,
           persistent_id:      pid,
           kind:               kind.to_s,
           label:              label,
@@ -215,64 +208,74 @@ module SUAnalysis
 
       # ---- Active edit-context -----------------------------------------
 
-      # Per S2-BLOCK-002 round 2: when the user selects an entity while
-      # editing inside a Group / Component, the Entity's coordinates are
-      # local to the active edit context. The Snapshot builder needs to
-      # seed its world transform with the active path's transformation.
+      # Per S2-BLOCK-002 round 3 (Codex Review 007 + GUIDANCE 006):
+      # real Model#active_path returns an Array of drawing elements
+      # (Group / ComponentInstance), NOT an InstancePath-like object.
+      # The edit transform is model.edit_transform. Active container
+      # PIDs come from iterating model.active_path and calling
+      # safe_persistent_id on each entity.
       #
-      # Returns a 2-tuple [active_path_transform, active_pid_path]:
-      #   - active_path_transform: an SU Transform-like or test Fake
-      #     representing the cumulative edit-context transform (identity
-      #     if no active edit context).
-      #   - active_pid_path: Array<Integer> of the PIDs of containers in
-      #     the active edit path, from model root down to the deepest
-      #     active container (empty if no active edit).
-      # Returns [identity_transform, []] outside SU.
+      # Returns a 2-tuple [edit_transform, active_pid_path]:
+      #   - edit_transform: an SU Transform (or nil outside SU / tests)
+      #   - active_pid_path: Array<Integer> of PIDs of entities in
+      #     model.active_path (empty if no active edit context).
       def active_edit_context(model = nil)
         model ||= (defined?(Sketchup) ? Sketchup.active_model : nil)
-        return [identity_transform_outside_su, [].freeze] if model.nil?
-        # Real SU path. model.active_path is nil when not in edit mode.
-        if model.respond_to?(:active_path) && !model.active_path.nil?
-          path = model.active_path
-          pid_path = path_persistent_ids(path)
-          transform = path.respond_to?(:transformation) ? path.transformation : identity_transform_outside_su
-          [transform, pid_path]
-        else
-          [identity_transform_outside_su, [].freeze]
-        end
+        return [nil, [].freeze] if model.nil?
+        transform = model_edit_transform(model)
+        pid_path = active_path_pids(model)
+        [transform, pid_path]
       rescue StandardError
-        [identity_transform_outside_su, [].freeze]
+        [nil, [].freeze]
       end
 
-      def path_persistent_ids(path)
-        return [].freeze unless path.respond_to?(:persistent_id_path)
-        # SketchUp returns Array<Integer> directly.
-        Array(path.persistent_id_path).map { |x| Integer(x) }.freeze
+      def model_edit_transform(model)
+        if model.respond_to?(:edit_transform)
+          v = model.edit_transform
+          return nil if v.nil?
+          v
+        else
+          nil
+        end
+      rescue StandardError
+        nil
+      end
+
+      def active_path_pids(model)
+        return [].freeze unless model.respond_to?(:active_path)
+        path = model.active_path
+        return [].freeze if path.nil?
+        return [].freeze unless path.respond_to?(:each)
+        pids = []
+        path.each do |entity|
+          pid = safe_persistent_id(entity)
+          pids << pid unless pid.nil?
+        end
+        pids.freeze
       rescue StandardError
         [].freeze
       end
 
-      def identity_transform_outside_su
-        # SU has Geom::Transformation; tests don't. Use SU when available.
-        if defined?(Geom::Transformation)
-          Geom::Transformation.new
-        else
-          nil
-        end
-      end
+      # ---- Resolution back from PID path -------------------------------
 
-      # ---- Resolution back from PID path (used by Owner checklist) -----
-
-      # Given a PID path, resolve it through a model. Returns the leaf
-      # Sketchup::InstancePath or nil if unresolvable. Outside SU returns
-      # nil unless `model` is a test fake that responds to
-      # :instance_path_from_pid_path.
+      # Resolve a PID path through a model. Per CODEX_GUIDANCE_006: real
+      # Sketchup::Model#instance_path_from_pid_path expects a dot-delimited
+      # String. We serialize Array<Integer> -> "10.20.555" before calling.
+      # Returns the resolved Sketchup::InstancePath (or test fake) or nil.
       def resolve_pid_path(model, pid_path)
         return nil if model.nil? || pid_path.nil? || pid_path.empty?
         return nil unless model.respond_to?(:instance_path_from_pid_path)
-        model.instance_path_from_pid_path(pid_path)
+        serialized = serialize_pid_path(pid_path)
+        model.instance_path_from_pid_path(serialized)
       rescue StandardError
         nil
+      end
+
+      # Serialize Array<Integer> PID path to dot-delimited String.
+      # Empty array returns "" (caller's responsibility to handle).
+      def serialize_pid_path(pid_path)
+        return '' if pid_path.nil? || pid_path.empty?
+        Array(pid_path).map { |x| Integer(x).to_s }.join('.')
       end
     end
   end

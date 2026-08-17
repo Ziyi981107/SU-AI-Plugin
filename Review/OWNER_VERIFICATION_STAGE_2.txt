@@ -62,6 +62,7 @@ Setup helper (Ruby Console, fresh empty model):
   model = Sketchup.active_model
   entities = model.active_entities
   test_group = entities.add_group
+  # Entities#add_line returns ONE Sketchup::Edge directly (NOT an array).
   test_group.entities.add_line([0,0,0], [10,0,0])
   test_group.entities.add_line([10,0,0], [10,5,0])
   test_group.entities.add_line([10,5,0], [0,5,0])
@@ -90,10 +91,10 @@ A. Plugin load
 B. Capability detection
    In Ruby Console:
      SUAnalysis::Compatibility::SUCapability.sketchup_version
-   Expected: nil or Integer (raw display; SU.version is a String in modern SU).
+   Expected: String like '17.2.0' or '24.0.318' (raw display).
    Then:
-     SUAnalysis::Compatibility::SUCapability.product_year
-   Expected: Integer >= 2017 (calendar year, NOT a parsed version).
+     SUAnalysis::Compatibility::SUCapability.sketchup_major_version
+   Expected: Integer >= 17 (SU2017+ baseline; major version, NOT calendar year).
    Then:
      SUAnalysis::Compatibility::SUCapability.html_dialog?
    Expected: true (on SU 2017+; probes UI::HtmlDialog).
@@ -151,41 +152,63 @@ G. Source integrity fingerprint (BLOCK-005 evidence)
    Preflight run on the selected test_group; the two hashes must match.
 
    # -- Begin fingerprint helper --
+   def su_safe_pid(entity)
+     return nil unless entity.respond_to?(:persistent_id)
+     begin
+       v = entity.persistent_id
+       v.is_a?(Integer) ? v : nil
+     rescue StandardError
+       nil
+     end
+   end
+
+   def su_safe_4x4(entity)
+     return nil unless entity.respond_to?(:transformation)
+     return nil if entity.transformation.nil?
+     t = entity.transformation
+     t.respond_to?(:to_a) ? t.to_a : nil
+   rescue StandardError
+     nil
+   end
+
    def su_fingerprint(root)
-     return nil unless root.respond_to?(:persistent_id)
-     {
-       kind:               root.typename,
-       persistent_id:      root.respond_to?(:persistent_id) ? root.persistent_id : nil,
-       transformation:     root.respond_to?(:transformation) ? root.transformation.to_a : nil,
-       layer:              root.respond_to?(:layer) ? root.layer.name : nil,
-       edges:              if root.respond_to?(:entities)
-                            root.entities.grep(Sketchup::Edge).map do |e|
-                              {
-                                start: e.start.position.to_a,
-                                finish: e.end.position.to_a,
-                                pid:   e.persistent_id
-                              }
-                            end.sort_by { |h| h[:pid].to_s }
-                          else
-                            []
-                          end,
-       groups:             if root.respond_to?(:entities)
-                            root.entities.grep(Sketchup::Group).map do |g|
-                              su_fingerprint(g)
-                            end
-                          else
-                            []
-                          end,
-       components:         if root.respond_to?(:definition)
-                            [{ definition_name: root.definition.name, definition_pid: root.definition.persistent_id }]
-                          elsif root.respond_to?(:entities)
-                            root.entities.grep(Sketchup::ComponentInstance).map do |c|
-                              { definition_name: c.definition.name, definition_pid: c.definition.persistent_id }
-                            end
-                          else
-                            []
-                          end
+     return nil if root.nil?
+     fp = {
+       kind:               root.respond_to?(:typename) ? root.typename : nil,
+       persistent_id:      su_safe_pid(root),
+       transformation:     su_safe_4x4(root),
+       layer:              (root.respond_to?(:layer) && root.layer) ? root.layer.name.to_s : nil,
+       edges:              [],
+       groups:             [],
+       component_instances:[]
      }
+     if root.respond_to?(:entities)
+       fp[:edges] = root.entities.grep(Sketchup::Edge).map do |e|
+         {
+           start: e.respond_to?(:start) && e.start.respond_to?(:position) ? e.start.position.to_a : nil,
+           finish: e.respond_to?(:end) && e.end.respond_to?(:position) ? e.end.position.to_a : nil,
+           pid: su_safe_pid(e)
+         }
+       end.sort_by { |h| (h[:pid] || 0).to_s }
+       fp[:groups] = root.entities.grep(Sketchup::Group).map { |g| su_fingerprint(g) }
+       fp[:component_instances] = root.entities.grep(Sketchup::ComponentInstance).map do |c|
+         ip_fp = {
+           transformation: su_safe_4x4(c),
+           persistent_id:  su_safe_pid(c),
+           definition:     nil
+         }
+         # Recurse INTO the definition contents (capability-safe).
+         if c.respond_to?(:definition) && c.definition
+           d = c.definition
+           ip_fp[:definition] = {
+             name: d.respond_to?(:name) ? d.name.to_s : nil,
+             entities_fp: d.respond_to?(:entities) ? su_fingerprint(d) : nil
+           }
+         end
+         ip_fp
+       end
+     end
+     fp
    end
    # -- End fingerprint helper --
 
@@ -195,21 +218,35 @@ G. Source integrity fingerprint (BLOCK-005 evidence)
    4. Verify `fp_before == fp_after` (Ruby == on the two hashes).
    Expected: identical fingerprints. No source mutation.
 
+   The helper uses capability-safe PID access (su_safe_pid) and
+   capability-safe transformation access (su_safe_4x4). It also recurses
+   into component-definition contents + occurrence transforms so it can
+   detect source mutation inside components.
+
 H. Invalid / erased entity handling (BLOCK-005 evidence)
-   1. Build disposable group with 2 edges:
+   1. Build disposable group with 2 edges. Entities#add_line returns
+      ONE Edge directly (NOT an array):
         inv_group = Sketchup.active_model.active_entities.add_group
-        e1 = inv_group.entities.add_line([0,0,0], [10,0,0])[0]  # add_line returns array
-        # Add via add_edges for the second:
-        inv_group.entities.add_edges([0,5,0], [10,5,0])
-   2. Erase one edge:
-        edges = inv_group.entities.grep(Sketchup::Edge)
-        edges.first.erase!
-   3. Run Preflight on inv_group selection.
+        e1 = inv_group.entities.add_line([0,0,0], [10,0,0])
+        e2 = inv_group.entities.add_line([10,5,0], [20,5,0])
+        # Hold a reference to e1; we'll invalidate it AFTER selection.
+        # Selecting inv_group (its parent) + an explicit array containing
+        # both e1 (invalid) and e2 (valid) keeps the invalid reference
+        # reachable even after erase.
+        selection_array = [inv_group, e1, e2]
+   2. Erase e1 (the retained reference). In real SU, this invalidates
+      the reference:
+        e1.erase!
+   3. Run Preflight with the held selection:
+        report = SUAnalysis::Extension::PreflightRunner.run(selection_array)
    Expected:
      - Report still produced (no exception).
-     - Exactly 1 EdgeRecord (the surviving edge), not 2.
+     - Exactly 1 EdgeRecord (from e2). The erased e1 contributes 0.
      - Console may show: [SU-AI-Plugin] skipped invalid edge: ...
    4. Cleanup: `inv_group.erase!`
+   5. If real SU2017 prevents the explicit invalid reference from being
+      passed (e.g. validation in iteration), record the actual host
+      behavior and use the closest reproducible shape.
 
 I. Translated ComponentInstance (BLOCK-002 transform evidence)
    1. Place a ComponentInstance at non-origin via

@@ -140,12 +140,13 @@ module FakeSU
   # Fake Group. Inherits .entities / .name; .definition returns nil (real
   # SU Groups have no definition). Use as outer container.
   class Group
-    attr_reader :children, :transformation, :name
-    def initialize(name: 'Group', children: [], transformation: nil, persistent_id: nil)
+    attr_reader :children, :transformation, :name, :entityID
+    def initialize(name: 'Group', children: [], transformation: nil, persistent_id: nil, entityID: nil)
       @name = name.to_s
       @children = children
       @transformation = transformation || Transformation.new
       @persistent_id = persistent_id
+      @entityID = entityID.nil? ? fake_entity_id : entityID
     end
 
     def entities
@@ -177,16 +178,21 @@ module FakeSU
     def deleted?
       false
     end
+
+    def fake_entity_id
+      [@name, @persistent_id, :group].hash
+    end
   end
 
   # Fake ComponentInstance. Responds to .definition.entities (NOT
   # .entities directly — that's the S2-BLOCK-002 fix point).
   class ComponentInstance
-    attr_reader :definition, :transformation
-    def initialize(definition: nil, transformation: nil, persistent_id: nil)
+    attr_reader :definition, :transformation, :entityID
+    def initialize(definition: nil, transformation: nil, persistent_id: nil, entityID: nil)
       @definition = definition || ComponentDefinition.new
       @transformation = transformation || Transformation.new
       @persistent_id = persistent_id
+      @entityID = entityID.nil? ? fake_entity_id : entityID
     end
 
     def typename
@@ -208,15 +214,20 @@ module FakeSU
     def deleted?
       false
     end
+
+    def fake_entity_id
+      [@definition, @persistent_id, :component].hash
+    end
   end
 
   # Fake ComponentDefinition gains persistent_id too.
   class ComponentDefinition
-    attr_reader :name, :children, :persistent_id
-    def initialize(name: 'Component', children: [], persistent_id: nil)
+    attr_reader :name, :children, :persistent_id, :entityID
+    def initialize(name: 'Component', children: [], persistent_id: nil, entityID: nil)
       @name = name.to_s
       @children = children
       @persistent_id = persistent_id
+      @entityID = entityID.nil? ? fake_entity_id : entityID
     end
 
     def entities
@@ -238,6 +249,10 @@ module FakeSU
     def deleted?
       false
     end
+
+    def fake_entity_id
+      [@name, @persistent_id, :component_definition].hash
+    end
   end
 
   # Fake Edge (mocks Sketchup::Edge). Responds to .start, .end,
@@ -247,8 +262,8 @@ module FakeSU
   # clearing start/end/vertices (calling code must skip via respond_to?
   # + valid? checks before accessing them).
   class Edge
-    attr_reader :start, :end, :vertices, :layer, :persistent_id_value, :definition_value
-    def initialize(start:, finish: nil, end_pos: nil, layer: nil, persistent_id: nil, definition_name: 'edge')
+    attr_reader :start, :end, :vertices, :layer, :persistent_id_value, :definition_value, :entityID
+    def initialize(start:, finish: nil, end_pos: nil, layer: nil, persistent_id: nil, definition_name: 'edge', entityID: nil)
       @start  = start
       # Accept both `finish:` (legacy / clearer) and `end_pos:` (avoids
       # reserved-word shenanigans) as the second endpoint.
@@ -258,11 +273,19 @@ module FakeSU
       @persistent_id_value = persistent_id
       @definition_value = Struct.new(:name).new(definition_name)
       @erased = false
+      # Per S2-BLOCK-002 round 3: real Sketchup::Entity exposes entityID
+      # (an integer per session). Defaults to a deterministic hash of
+      # persistent_id + label so tests get stable, distinct values.
+      @entityID = entityID.nil? ? fake_entity_id : entityID
     end
 
     def persistent_id
       raise InvalidEntityError, 'edge is erased' if @erased
       @persistent_id_value
+    end
+
+    def fake_entity_id
+      [@persistent_id_value, @layer.name, @definition_value.name].hash
     end
 
     def definition
@@ -312,37 +335,57 @@ module FakeSU
   class InvalidEntityError < StandardError; end
 
   # Fake InstancePath (used to test active edit-context + PID path
-  # resolution back). Holds a sequence of PIDs and a transformation.
+  # resolution back). Per CODEX_GUIDANCE_006: persistent_id_path is
+  # String (dot-delimited) on the API surface. We keep a String +
+  # optional parsed Array for internal use.
   class InstancePath
     attr_reader :persistent_id_path, :transformation, :leaf_pid
-    def initialize(persistent_id_path: [], transformation: nil, leaf_pid: nil)
-      @persistent_id_path = persistent_id_path.dup.freeze
+    def initialize(persistent_id_path: '', transformation: nil, leaf_pid: nil)
+      # Accept either Array<Integer> (internal) or String (API surface).
+      @persistent_id_path =
+        if persistent_id_path.is_a?(Array)
+          persistent_id_path.map(&:to_s).join('.').freeze
+        else
+          persistent_id_path.to_s.freeze
+        end
       @transformation = transformation
-      @leaf_pid = leaf_pid.nil? ? @persistent_id_path.last : leaf_pid
+      @leaf_pid = leaf_pid.nil? ? parse_last_pid(@persistent_id_path) : leaf_pid
+    end
+
+    def parse_last_pid(s)
+      return nil if s.nil? || s.empty?
+      parts = s.split('.')
+      return nil if parts.empty?
+      parts.last.to_i
     end
   end
 
-  # Fake Model. Holds entities + active_path; supports
-  # instance_path_from_pid_path resolution for tests.
+  # Fake Model. Per Codex Review 007: real Model#active_path is an
+  # Array of entities; edit_transform is on Model (not InstancePath);
+  # instance_path_from_pid_path accepts ONLY dot-delimited String
+  # (rejects arrays).
   class Model
-    attr_reader :entities, :active_path
-    def initialize(entities: [], active_path: nil)
+    attr_reader :entities, :active_path, :edit_transform
+    def initialize(entities: [], active_path: nil, edit_transform: nil)
       @entities = entities
       @active_path = active_path
+      @edit_transform = edit_transform
     end
 
-    # Mock resolver. Looks up by full PID path in @pid_path_to_instance;
-    # returns the registered InstancePath or nil.
+    # Mock resolver. Accepts ONLY dot-delimited String. Returns the
+    # registered InstancePath or nil.
     def instance_path_from_pid_path(pid_path)
-      return nil if pid_path.nil? || pid_path.empty?
+      return nil unless pid_path.is_a?(String)
+      return nil if pid_path.empty?
       @pid_path_registry ||= {}
-      @pid_path_registry[pid_path] || @pid_path_registry[pid_path.dup]
+      @pid_path_registry[pid_path]
     end
 
-    # Test helper: register a PID path -> InstancePath mapping.
-    def register_pid_path(pid_path, instance_path)
+    # Test helper: register a dot-delimited PID path String -> InstancePath.
+    def register_pid_path(pid_path_string, instance_path)
+      raise ArgumentError, 'pid_path_string must be a String' unless pid_path_string.is_a?(String)
       @pid_path_registry ||= {}
-      @pid_path_registry[pid_path.dup.freeze] = instance_path
+      @pid_path_registry[pid_path_string.freeze] = instance_path
     end
   end
 
