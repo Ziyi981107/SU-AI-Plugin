@@ -45,7 +45,7 @@ module SUAnalysis
         return nil unless Sketchup.respond_to?(:version)
         v = Sketchup.version
         return nil if v.nil?
-        v.is_a?(Integer) ? v.to_s : v.to_s
+        v.to_s
       end
 
       # Returns the leading major version as Integer (17, 18, 24, ...).

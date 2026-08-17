@@ -230,10 +230,11 @@ H. Invalid / erased entity handling (BLOCK-005 evidence)
         e1 = inv_group.entities.add_line([0,0,0], [10,0,0])
         e2 = inv_group.entities.add_line([10,5,0], [20,5,0])
         # Hold a reference to e1; we'll invalidate it AFTER selection.
-        # Selecting inv_group (its parent) + an explicit array containing
-        # both e1 (invalid) and e2 (valid) keeps the invalid reference
-        # reachable even after erase.
-        selection_array = [inv_group, e1, e2]
+        # Selection shape: inv_group (parent) + retained invalid e1.
+        # e2 is reached via inv_group traversal — DO NOT include e2
+        # explicitly in selection_array, that would cause duplicate
+        # traversal and inflate the EdgeRecord count.
+        selection_array = [inv_group, e1]
    2. Erase e1 (the retained reference). In real SU, this invalidates
       the reference:
         e1.erase!
@@ -241,7 +242,8 @@ H. Invalid / erased entity handling (BLOCK-005 evidence)
         report = SUAnalysis::Extension::PreflightRunner.run(selection_array)
    Expected:
      - Report still produced (no exception).
-     - Exactly 1 EdgeRecord (from e2). The erased e1 contributes 0.
+     - Exactly 1 EdgeRecord (from e2, reached via inv_group traversal).
+       The erased e1 contributes 0.
      - Console may show: [SU-AI-Plugin] skipped invalid edge: ...
    4. Cleanup: `inv_group.erase!`
    5. If real SU2017 prevents the explicit invalid reference from being

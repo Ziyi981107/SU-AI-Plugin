@@ -579,3 +579,33 @@ test 'S2-BLOCK-005 (r2): invalid container with one bad child -> siblings still 
   # enumerator raise must NOT abort the walk.
   assert_equal 1, snap.edge_count
 end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-005 (round 4) — Owner checklist H corrected shape (per
+# Codex Review 008). Selection_array = [inv_group, e1_invalid] only;
+# e2_valid is reached via inv_group traversal (no explicit duplicate).
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-005 (r4): checklist H shape [inv_group, e1_invalid] -> exactly 1 EdgeRecord' do
+  e1 = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 1
+  )
+  e2 = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(10, 5, 0),
+    finish: FakeSU::Vertex.new(20, 5, 0),
+    persistent_id: 2
+  )
+  inv_group = FakeSU::Group.new(name: 'inv_group', children: [e1, e2])
+  e1.erase!
+  # Correct shape per Codex Review 008 fix: parent + retained invalid
+  # reference only. e2 is reached via parent traversal.
+  sel = FakeSU::Selection.new([inv_group, e1])
+  snap = PreflightRunner.build_snapshot(sel)
+  # Exactly 1 EdgeRecord (from e2 via inv_group). Erased e1 contributes 0.
+  assert_equal 1, snap.edge_count
+  # The surviving edge is e2 (PID 2, end at x=20).
+  e = snap.edges.first
+  assert_equal 20.0, e.end_point[0]
+end

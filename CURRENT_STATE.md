@@ -1,11 +1,11 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Codex Review 007 BLOCK recheck 2:
-                          S2-BLOCK-001 + S2-BLOCK-003 still CLOSED;
-                          S2-BLOCK-006 HtmlDialog subpart CLOSED;
-                          S2-BLOCK-002/004/005/006-version REMAINS OPEN
-                          (4 subparts); 65/65 PASS; rework pass 3 queued
-                          per CODEX_GUIDANCE_006 corrections).
+Last updated: 2026-08-17 (Codex Review 008 BLOCK recheck 3:
+                          S2-BLOCK-002 + S2-BLOCK-004 +
+                          S2-BLOCK-006-version now CLOSED;
+                          S2-BLOCK-005 REMAINS OPEN (checklist H
+                          selection shape has overlap); 71/71 PASS;
+                          final checklist correction + 1 test queued).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -22,6 +22,19 @@ Last updated: 2026-08-17 (Codex Review 007 BLOCK recheck 2:
 - ✅ 正确: **SU2017+**, **Ruby 2.2.4** 是硬最低基线
 - ✅ `Sketchup::Entity#persistent_id` 在 **SU2017 起就有**, 不是 SU2018+ 才有
 - ✅ capability detection (`respond_to?`) 优先于版本号判断
+
+## CODEX REVIEW 008 (2026-08-17) — BLOCK recheck 3 result
+
+CODEX_REVIEW_008 (BLOCK recheck 3, commit 88ad609 + recheck packet):
+  S2-BLOCK-002  CLOSED  (real API contract accepted)
+  S2-BLOCK-004  CLOSED  (adjacent-bucket dedup accepted)
+  S2-BLOCK-006 version subpart  CLOSED  (dotted diagnostic + major)
+  S2-BLOCK-005  REMAINS OPEN  (only checklist H selection shape has
+                              overlap; traversal itself OK)
+  S2-BLOCK-001 + S2-BLOCK-003 + S2-BLOCK-006 HtmlDialog  still CLOSED
+
+NEXT: 修 S2-BLOCK-005 checklist H (selection_array 去掉 e2_valid),
+加 1 个自动化测试用修正后的形状。
 
 ## CODEX REVIEW 007 (2026-08-17) + GUIDANCE 006 — BLOCK recheck 2 result
 
@@ -173,7 +186,7 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
   `config.big_z` 而不是 `config.tolerance.big_z`
   (后续重命名 Tolerance 字段时不需跳 Preflight)
 
-## Next Step (Phase E — STAGE 2 BLOCK REWORK pass 3 queued)
+## Next Step (Phase F — STAGE 2 BLOCK REWORK final pass queued)
 
 1. ✅ **已结束** — Q001-R005 全部 ANSWERED, BLOCKED 现状反映到 CURRENT_STATE
 2. ✅ **已结束** — Codex Review 004 BLOCK rework pass 1
@@ -183,8 +196,8 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
    S2-BLOCK-006 HtmlDialog CLOSED; 65/65 PASS
 4. ✅ **已结束** — Codex Review 007 BLOCK recheck 2 + GUIDANCE 006
    plan corrections received (最新 Prompt/)
-5. ⏳ **下一步 (本轮)** — pass 3 rework 修剩余 4 BLOCK
-   (S2-BLOCK-002/004/005/006-version), 强制吸收
+5. ⏳ **下一步 (本轮)** — pass 4 final 修 S2-BLOCK-005 checklist H
+   selection_array 修正 + 1 自动化测试 (生产 traversal 不动)
    CODEX_GUIDANCE_006 三条修正:
    - Version API: sketchup_version 保留 String 诊断;
      baseline = `Sketchup.version.to_i >= 17`; 不从 version_number 推日历年
