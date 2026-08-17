@@ -1,7 +1,8 @@
 # CURRENT STATE
 
 Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
-                          Stage 2 SU-side awaiting Owner real-SU verification).
+                          Stage 2 SU-side awaiting Owner real-SU verification;
+                          6 R### pending decisions surfaced to Review/).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -112,7 +113,16 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
    - SU 端代码 + Owner 清单到位
 4. ⏳ **现在等 Owner** — Owner 在真 SU 里跑 Stage 2 清单 (per Q002=A),
    报告写到 `Prompt/OWNER_REPORT_STAGE_2_<date>.txt`
-5. **下一步** — Stage 5: 集中 capability 检测入口
+4. ✅ **已结束** — 后续 Stage 决策挂起点全部写到 Review/ (本轮, commit 见下):
+   - `Review/PENDING_DECISIONS_INDEX_2026-08-17.md` 总索引
+   - `Review/R001_preflight_threshold_defaults.md` 阈值默认
+   - `Review/R002_stage5_capability_probe_scope.md` Stage 5 scope
+   - `Review/R003_stage6_ui_design.md` Stage 6 UI 设计 (5 子问题)
+   - `Review/R004_q004_caveat_closure.md` Q004 caveat 关闭门限
+   - `Review/R005_issue_registry_presentation.md` Issue 展示形式
+5. ⏳ **现在等 Owner / Codex** — 读 R### 选 A/B/C, 反馈写到 `Prompt/`.
+   不反馈 = 走默认 (各 R### 都有明确 default, 见各 R 文件顶部)
+6. **下一步** — Stage 5: 集中 capability 检测入口
    `compatibility/su_version_probe.rb` (把 `su_capability.rb` 的接口
    收敛成单例 + 加一个 stub test 验证在 SU 外不爆炸)
 6. **Stage 6** — UI: HtmlDialog (SU2017+ 有)
@@ -120,7 +130,14 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
 7. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22 格式),
    并交付 Owner 手动验证清单 (per Q002=A)
 8. **最终 Gate 前** — Ruby 2.2.4 / SU2017 真机证据补齐
-   (Owner 跑 SU2017 验证即满足 Q004 caveat)
+   (Owner 跑 SU2017 验证即满足 Q004 caveat, 详见 R004)
+
+### Agent carrying (no R file needed, 已注在 PENDING_DECISIONS_INDEX)
+
+- 默认立刻开始 Stage 5 (不等 Owner Stage 2 反馈),
+  原因: Stage 5 不依赖 Stage 2 SU-side 行为, 仅依赖 Q003 = SU2017+ lock
+  (已 ANSWERED) + 现有 `compatibility/su_capability.rb` (已 commit)。
+  Owner 若要 Stage 5 暂停等 Stage 2 反馈, 在 Prompt/ 里 flag 即可。
 
 ## Stage 2 设计边界 (NOT IN SCOPE, 明确不做, per PI_TASK_001 §17)
 
