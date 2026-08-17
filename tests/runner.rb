@@ -84,6 +84,30 @@ module Tests
     nil
   end
 
+  def self.assert_nil(value, msg = nil)
+    return if value.nil?
+    raise AssertionError, msg || "expected nil, got #{value.inspect}"
+  end
+
+  def self.refute_nil(value, msg = nil)
+    return unless value.nil?
+    raise AssertionError, msg || 'expected non-nil value, got nil'
+  end
+
+  def self.assert_operator(a, op, b, msg = nil)
+    ok =
+      case op
+      when :==  then a == b
+      when :!=  then a != b
+      when :>   then a > b
+      when :>=  then a >= b
+      when :<   then a < b
+      when :<=  then a <= b
+      else raise ArgumentError, "assert_operator: unsupported op #{op.inspect}"
+      end
+    raise AssertionError, msg || "expected #{a.inspect} #{op} #{b.inspect}" unless ok
+  end
+
   # Execute all collected test cases, print a summary, and return
   # 0 if everything passed, 1 otherwise. Accepts an optional substring
   # filter on test name (e.g. Tests.run!('TC-06')).
@@ -125,4 +149,7 @@ def assert_equal(*a, &b);  Tests.assert_equal(*a, &b);  end
 def assert_in_delta(*a, &b); Tests.assert_in_delta(*a, &b); end
 def assert_empty(*a, &b);  Tests.assert_empty(*a, &b);  end
 def assert_raises(*a, &b); Tests.assert_raises(*a, &b); end
+def assert_nil(*a, &b);    Tests.assert_nil(*a, &b);    end
+def refute_nil(*a, &b);    Tests.refute_nil(*a, &b);    end
+def assert_operator(*a, &b); Tests.assert_operator(*a, &b); end
 def test(*a, &b);          Tests.test(*a, &b);          end

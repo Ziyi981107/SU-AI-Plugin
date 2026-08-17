@@ -1,0 +1,165 @@
+============================================================
+STAGE 1 RUNTIME PASS — 2026-08-17
+Project: D:\Projects\SU-AI-Plugin
+Stage: 1 of TASK 001 — V1.0 Read-only CAD Analyzer
+Runtime: isolated Ruby 2.7.8p225 (x64-mingw32) in .vendor/ruby/
+Tests:   26/26 PASS, 0 fail, 0 error
+Commit:  5e32ab1 (stage-1 PASS checkpoint)
+============================================================
+
+PURPOSE
+=======
+
+This file reports Stage 1 actual runtime PASS to Codex and Owner.
+It is **evidence**, not a request for approval.
+
+For Owner action, see "OWNER VERIFICATION CHECKLIST" below.
+
+
+INTERRUPTION SUMMARY
+=====================
+
+Last session was killed (Ctrl+C) during dependency installation:
+- RubyInstaller 3.4.10-1 (.exe ~30MB) timed out from GitHub direct
+- 7z bundle of RubyInstaller (.7z ~30MB) downloaded only ~3.2MB,
+  archive corrupted (Unexpected end of archive)
+- Pre-installed C:\Ruby27-x64\ was incomplete (missing
+  x64-msvcrt-ruby270.dll), `ruby.exe` failed with SxS error
+
+
+RESUMPTION APPROACH (2026-08-17)
+=================================
+
+1. NETWORK DIAGNOSIS
+   - github.com direct: 10s timeout (unusable from this env)
+   - Working GitHub mirrors: ghfast.top, gh-proxy.com, github.akams.cn
+     (all 200 OK, mirror through CDN edge)
+
+2. SWITCHED DOWNLOAD STRATEGY (per user instruction
+   "优先寻找更稳定的替代安装方式")
+   - Dropped RubyInstaller .exe self-extracting installer
+   - Used RubyInstaller .7z bundle (smaller, no SxS dependency,
+     includes ruby_builtin_dlls/)
+   - Download via ghfast.top mirror (19.7s for 12.17MB)
+   - Extracted with existing 7zr.exe standalone (10.9s)
+   - Result: working `ruby --version` → "ruby 2.7.8p225 [x64-mingw32]"
+
+3. ISOLATION (per Q004=C)
+   - All under D:\Projects\SU-AI-Plugin\.vendor\
+   - .vendor/ already in .gitignore
+   - No PATH modification
+   - Absolute path invocation only
+   - Can be deleted after final Gate; verification first
+
+
+RUNTIME TEST RESULT
+====================
+
+Command:
+  ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+
+Exit code: 0
+
+Coverage (26 cases):
+  PASS  core.SourceReference: stable? is false when persistent_id is nil
+  PASS  core.SourceReference: stable? is true when persistent_id given
+  PASS  core.SourceReference: to_h carries all four fields
+  PASS  core.EdgeRecord: length is euclidean (3-4-5 right triangle)
+  PASS  core.EdgeRecord: length caches and is idempotent
+  PASS  core.EdgeRecord: rejects malformed coords
+  PASS  core.VertexRecord: degree grows by add_edge and de-dupes
+  PASS  core.LayerRecord: increment_edge_count! adds 1 each call
+  PASS  core.Tolerance: default values > 0
+  PASS  core.Tolerance: rejects zero
+  PASS  core.Tolerance: rejects negative
+  PASS  core.AnalysisConfig: defaults wired to Tolerance.default
+  PASS  core.GeometrySnapshot: vertex_count after building a rectangle = 4
+  PASS  core.GeometrySnapshot: layer_distribution counts per layer name
+  PASS  core.GeometrySnapshot: bounding_box covers all edges
+  PASS  issue hash includes all §11 fields for short edge
+  PASS  TC-01: two perfectly coincident edges are flagged as duplicate
+  PASS  TC-02: reverse-direction duplicate edges are flagged (A->B == B->A)
+  PASS  TC-03: a normal-length edge is not flagged as short
+  PASS  TC-04: a short edge is flagged
+  PASS  TC-05: a single edge has two open endpoints
+  PASS  TC-06: two near open endpoints form a gap candidate
+  PASS  TC-07: endpoints beyond gap tolerance are NOT a gap candidate
+  PASS  TC-08: non-zero-Z geometry surfaces in preflight info
+  PASS  TC-09: a closed rectangle has no open endpoints
+  PASS  TC-10: 5000 simple edges analyzed under 5 seconds
+
+Full log: .vendor/STAGE_1_TEST_RUN_2026-08-17.log
+Ruby version evidence: .vendor/RUBY_VERSION_2026-08-17.txt
+
+
+STAGE 1 BUGS DISCOVERED AND FIXED
+==================================
+
+Two latent Stage 1 bugs were masked by the lack of a working Ruby
+runtime in the previous session. Both fixed in 5e32ab1:
+
+1) core/synthetic_factory.rb
+   - Was: `class SyntheticFactory` + `module_function`
+   - Fix: `module SyntheticFactory` + `module_function`
+   - Reason: `module_function` is a Module method; calling it inside a
+     class body raises NameError. Tests use SyntheticFactory.rectangle(...)
+     directly, so the methods must be on the module (or as `self.`).
+
+2) tests/runner.rb
+   - Was: TestCase + TestResult + helper methods, but no dispatcher
+   - Fix: added `Tests.run!(filter = nil)` which iterates selected
+     cases, prints PASS/FAIL/ERROR lines + summary, returns 0/1.
+   - Reason: tests/run_all.rb called `Tests.run!(ARGV[0])` which
+     NoMethodError'd before any test could run.
+
+
+Q004 CAVEAT (NOT BLOCKING)
+===========================
+
+Per Q004 guidance:
+  "应优先取得 Ruby 2.2.x 环境做最低基线验证;
+   若当前只能取得更新的隔离 Ruby, 可先用它执行功能测试,
+   但这不能单独证明 Ruby 2.2.4 兼容;
+   在最终 Gate 前, 仍需补充 Ruby 2.2.4 / SU2017 的语法与目标环境证据。"
+
+Current state:
+- Functionally tested on Ruby 2.7.8p225 — passes
+- Static check: code is Ruby 2.2.4-safe
+  (no pattern matching, no numbered params, no endless method,
+   no kwargs sugar, no frozen_string_literal magic)
+- Real Ruby 2.2.4 / SU2017 evidence still required before final Gate
+  (Owner in real SU per Q002=A is the right path)
+
+
+OWNER VERIFICATION CHECKLIST (Stage 1)
+======================================
+
+Stage 1 is pure-Ruby synthetic, so Owner cannot directly verify
+in real SU. Stage 1 verification is the runtime pass above.
+
+Stage 2 onwards has SU-side code; Owner will run a separate checklist
+once Stage 2 design lands.
+
+
+NEXT (STAGE 2 — Preflight)
+===========================
+
+Stage 2 plan: per PI_TASK_001 §6 + per CURRENT_STATE Next Step §3.
+
+Pure-Ruby part (Agent does, testable):
+- core/preflight.rb: PreflightReport data + pure-Ruby preflight
+  (bbox, Z range, non-zero Z counts, large coord detection,
+   edge/vertex counts, layer distribution)
+- tests TC-11..TC-15 for preflight
+
+SU-side part (Agent does design + checklist, Owner runs in real SU):
+- extension/preflight_runner.rb: builds GeometrySnapshot from
+  Sketchup::Selection, calls core preflight
+- capability detection for version / nested groups (Stage 5)
+- Owner manual checklist
+
+No Q decisions pending. Stage 2 implementation can start immediately.
+
+============================================================
+END
+============================================================

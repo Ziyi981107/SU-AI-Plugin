@@ -30,6 +30,18 @@ module SUAnalysis
           deepest_nesting_warning: @deepest_nesting_warning
         }
       end
+
+      # Convenience passthrough so PreflightAnalyzer can write
+      #   config.big_z / config.large_coordinate
+      # without needing to know the Tolerance attribute layout. Keeps the
+      # threshold call sites stable when Tolerance fields are renamed.
+      def big_z
+        @tolerance.big_z
+      end
+
+      def large_coordinate
+        @tolerance.large_coordinate
+      end
     end
   end
 end

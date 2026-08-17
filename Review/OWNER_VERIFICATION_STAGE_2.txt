@@ -1,0 +1,173 @@
+============================================================
+OWNER VERIFICATION CHECKLIST — STAGE 2 (Preflight)
+Project: D:\Projects\SU-AI-Plugin
+Date:    2026-08-17
+For:     Product Owner (real-SU verification, per Q002=A)
+Tested by Agent: 33/33 pure-Ruby synthetic tests PASS
+                 on isolated Ruby 2.7.8p225 (Stage 1 + Stage 2 core/)
+============================================================
+
+PURPOSE
+=======
+
+Per Q002=A, real-SketchUp verification is Owner's responsibility.
+Agent cannot run SketchUp. This file is the minimal, repeatable
+manual checklist for Stage 2 SU-side paths.
+
+Suggested SketchUp target: 2017 (lowest locked baseline) + the version
+Owner uses daily, to confirm no regression on newer releases.
+
+Files in scope for this checklist (all NEW since Stage 1 commit 5e32ab1):
+
+  core/tolerance.rb                    (added big_z, large_coordinate)
+  core/analysis_config.rb              (passthroughs big_z / large_coordinate)
+  core/preflight.rb                    (NEW: PreflightReport + PreflightAnalyzer)
+  tests/test_preflight.rb              (NEW: TC-11..TC-15 + 2 EXTRA)
+  compatibility/su_capability.rb       (NEW: capability detection shim)
+  extension/preflight_runner.rb        (NEW: SU-side selection -> snapshot)
+
+
+SCOPE OF STAGE 2
+=================
+
+Stage 2 implements PI_TASK_001 §6 "Preflight":
+
+  Collect (from a real Sketchup::Selection):
+    [x] SketchUp version
+    [x] selection type (Group / ComponentInstance / Edges / mixed)
+    [x] Group count + Component count (recursive)
+    [x] Edge total
+    [x] Vertex total (implicit via VertexIndex)
+    [x] Layer / Tag distribution
+    [x] geometry bounding box
+    [x] Z value range
+    [x] non-zero-Z Edge / Vertex count (warning if > config.big_z)
+    [x] abnormal-large-coord detection (warning if axis > config.large_coordinate)
+    [x] nested Group / Component depth (warning if > config.deepest_nesting_warning)
+
+  Preflight does NOT (per §6 + §17):
+    - auto-fix anything
+    - delete edges
+    - weld
+    - rebuild faces
+
+
+HOW TO RUN THE CHECKLIST
+=========================
+
+A. Plugin load
+   1. Open SketchUp (2017 or newer).
+   2. Window > Ruby Console (or Extension > Developer > Ruby Console).
+   3. Verify plugin loads without error:
+        load 'D:/Projects/SU-AI-Plugin/compatibility/su_capability.rb'
+        load 'D:/Projects/SU-AI-Plugin/extension/preflight_runner.rb'
+      Expected: no errors, no warnings.
+
+B. Capability detection (Q003 = SU2017+ lock)
+   In Ruby Console:
+     SUAnalysis::Compatibility::SUCapability.sketchup_version
+   Expected: returns Integer >= 2017.
+
+C. Preflight on a real selection
+   1. Import or open any simple 2D CAD rectangle (4 edges on Layer0, Z=0).
+   2. Select the imported Group / Component / Edges.
+   3. In Ruby Console:
+        report = SUAnalysis::Extension::PreflightRunner.run(Sketchup.active_model.selection)
+        puts report.to_h.inspect
+   Expected:
+     - selection_type = "Group" / "ComponentInstance" / "Edges" (depending on what you picked)
+     - edge_count = 4 (or scaled-up count if you picked a complex sketch)
+     - bounding_box.min/max coherent with the geometry
+     - z_range = [0.0, 0.0]
+     - non_zero_z_count = 0
+     - warnings = []
+
+D. Z non-zero detection (TC-13 equivalent)
+   1. Move one vertex of an edge to Z = 5 inches (use Move tool or entity.positions[0].z = 5).
+   2. Re-run the Preflight command from step C.
+   Expected:
+     - non_zero_z_count > 0
+     - warnings contains exactly one entry with code :non_zero_z_geometry
+       and severity :info
+
+E. Abnormal-large-coord detection (TC-14 equivalent)
+   1. Take any edge. Manually set one endpoint to (1_500_000, 0, 0):
+        edge = Sketchup.active_model.selection.first
+        edge.vertices[0].position = Geom::Point3d.new(1_500_000, 0, 0)
+   2. Re-run Preflight.
+   Expected:
+     - large_coordinate_count > 0
+     - warnings contains exactly one entry with code :abnormal_large_coord
+       and severity :warning
+   3. Cleanup: undo the move.
+
+F. Nested Group / Component (TC deep_nesting equivalent)
+   1. Build a Group, then nest a ComponentInstance inside it, then a Group
+      inside the component (>=3 levels).
+   2. Select the outermost Group.
+   3. Run Preflight.
+   Expected:
+     - group_count > 0 and component_count > 0
+     - deepest_nesting >= 3
+     - warnings contains entry with code :deep_nesting and severity :warning
+
+G. Source CAD untouched (NEVER MODIFY SOURCE CAD, §91)
+   1. Note any single entity's object_id before Preflight.
+   2. Run Preflight.
+   3. Verify entity still exists and object_id is unchanged.
+   Expected: identical object_id, no geometry drift.
+
+H. Error handling (PI_TASK_001 §18)
+   1. Manually invalidate one vertex (set its position to a deleted Point3d)
+      OR delete an edge mid-analysis (race-condition simulation is hard;
+      simplest: create an Edge, then `edge.erase!` immediately before passing).
+   2. Run Preflight on the parent Group.
+   Expected: Preflight finishes, invalid edge is skipped, warning printed
+             to console ("[SU-AI-Plugin] skipped invalid edge: ..."),
+             other edges still analyzed. No exception propagates out.
+
+I. Logged perf on a moderately sized import
+   1. Import a real architectural CAD with 500-5000 edges.
+   2. Run Preflight.
+   3. Time it with `t0 = Time.now; ...; puts Time.now - t0`.
+   Expected: finishes in < 2 seconds (TC-10 target was 5000 edges < 5s; with
+             the additional container walk we still have plenty of headroom).
+
+
+WHAT TO RECORD BACK
+====================
+
+After running this checklist, please drop a short report into:
+
+  D:\Projects\SU-AI-Plugin\Prompt\OWNER_REPORT_STAGE_2_<date>.txt
+
+with:
+  - SketchUp version + build used
+  - Pass / Fail per step (A through I)
+  - Any unexpected console output (especially [SU-AI-Plugin] skipped lines)
+  - Any geometry drift observed (Step G)
+
+If anything fails, do NOT fix in real SU yourself unless it's a one-line
+clear bug. Open an issue / write Review/ entry and Agent will pick it up.
+
+
+KNOWN CAVEATS
+=============
+
+- Ruby 2.7.8 (not 2.2.4) is what Agent used to PASS the synthetic suite.
+  Static check confirms Stage 2 code is also 2.2.4-safe (no pattern
+  matching / numbered params / endless method / kwargs sugar /
+  frozen_string_literal magic). Real Ruby 2.2.4 / SU2017 evidence is
+  still required before final Gate (Q004 caveat).
+
+- capability detection for persistent_id uses respond_to? + safe-rescue,
+  per Q003+A "capability detection 优先于散落的版本号判断".
+
+- extension/preflight_runner.rb intentionally avoids making the
+  Sketchup::Edge objects visible to core/. SU-side facts flow through
+  GeometrySnapshot#preflight as a plain Hash so the pure-Ruby analyzer
+  stays SketchUp-independent.
+
+============================================================
+END
+============================================================
