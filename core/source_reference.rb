@@ -20,21 +20,48 @@
 #   - `entity_id` is Ruby `object_id`, NOT stable across reload or session;
 #     it is useful only as a transient in-memory key.
 #
+# Instance identity (per Codex S2-BLOCK-002, 2026-08-17):
+#   - Two ComponentInstances sharing one definition are two distinct
+#     occurrences. Each Edge inside those instances therefore needs a
+#     composite source identity that includes the instance path.
+#   - `instance_path` is a list of String entries describing the container
+#     chain from the model root to this entity, e.g.
+#       ["Group:outer", "ComponentInstance:Window#1", "Group:inner_frame"]
+#     - Each entry is "Kind:Name"; Name is the definition's name (or the
+#       object_id hex for anonymous / unnamed containers).
+#     - The list is empty for entities directly selected in the model
+#       root (i.e. no enclosing group / component).
+#   - This is stored alongside persistent_id and entity_id; SourceReference
+#     is purely data, so all three fields survive serialization.
+#
 
 module SUAnalysis
   module Core
     class SourceReference
-      attr_reader :entity_id, :persistent_id, :kind, :label
+      attr_reader :entity_id, :persistent_id, :kind, :label, :instance_path
 
-      def initialize(entity_id:, persistent_id: nil, kind: 'edge', label: nil)
+      def initialize(entity_id:, persistent_id: nil, kind: 'edge', label: nil, instance_path: nil)
         @entity_id     = entity_id
         @persistent_id = persistent_id
         @kind          = kind
         @label         = label
+        # Default to empty array (root-level entity). Caller passes nil
+        # for "no enclosing containers" or an explicit Array for nested.
+        @instance_path = if instance_path.nil?
+                           []
+                         else
+                           instance_path.dup.freeze
+                         end
       end
 
       def stable?
         !@persistent_id.nil?
+      end
+
+      # Returns the path joined by ' > ' for display purposes only.
+      # Empty string for root-level entities.
+      def instance_path_string
+        @instance_path.join(' > ')
       end
 
       def to_h
@@ -42,7 +69,8 @@ module SUAnalysis
           entity_id:     @entity_id,
           persistent_id: @persistent_id,
           kind:          @kind,
-          label:         @label
+          label:         @label,
+          instance_path: @instance_path
         }
       end
     end

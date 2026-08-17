@@ -108,6 +108,25 @@ module Tests
     raise AssertionError, msg || "expected #{a.inspect} #{op} #{b.inspect}" unless ok
   end
 
+  def self.refute_match(pattern, str, msg = nil)
+    return unless str.is_a?(String)
+    return unless pattern.is_a?(Regexp)
+    return unless str.match(pattern)
+    raise AssertionError, msg || "expected string NOT to match #{pattern.inspect}, but it did"
+  end
+
+  def self.assert_match(pattern, str, msg = nil)
+    return unless str.is_a?(String)
+    return unless pattern.is_a?(Regexp)
+    return if str.match(pattern)
+    raise AssertionError, msg || "expected string to match #{pattern.inspect}, got #{str.inspect[0,80]}"
+  end
+
+  def self.refute_equal(a, b, msg = nil)
+    return if a != b
+    raise AssertionError, msg || "expected #{a.inspect} != #{b.inspect}"
+  end
+
   # Execute all collected test cases, print a summary, and return
   # 0 if everything passed, 1 otherwise. Accepts an optional substring
   # filter on test name (e.g. Tests.run!('TC-06')).
@@ -152,4 +171,7 @@ def assert_raises(*a, &b); Tests.assert_raises(*a, &b); end
 def assert_nil(*a, &b);    Tests.assert_nil(*a, &b);    end
 def refute_nil(*a, &b);    Tests.refute_nil(*a, &b);    end
 def assert_operator(*a, &b); Tests.assert_operator(*a, &b); end
+def refute_match(*a, &b);  Tests.refute_match(*a, &b);  end
+def assert_match(*a, &b);  Tests.assert_match(*a, &b);  end
+def refute_equal(*a, &b); Tests.refute_equal(*a, &b); end
 def test(*a, &b);          Tests.test(*a, &b);          end
