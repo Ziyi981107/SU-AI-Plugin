@@ -32,13 +32,18 @@ At the start of a project/session, read:
 3) **Prompt/** — list files, sort by mtime, read the LATEST one first.
    This is Owner-managed Codex / other-agent guidance. It may have
    changed since the last session. See §1b OWNER HANDOFF PROTOCOL.
-4) relevant repository state / Git history
-5) only the code/docs needed for the current stage
+4) **Review/EOD_HANDOFF_<latest-date>.md** (if present) — End-of-day
+   hand-off from the previous session. Cicada 2026-08-17 protocol:
+   Agent MUST read the latest EOD hand-off FIRST at session start
+   (before doing any work) for full state context.
+5) relevant repository state / Git history
+6) only the code/docs needed for the current stage
 
 Treat:
 PROJECT_HANDOFF = stable project contract
 CURRENT_STATE = current working memory
 Prompt/        = latest external guidance (snapshot in time)
+Review/ EOD    = previous-session hand-off (full state resume)
 
 Do not reconstruct project truth from old chat history if current project files and Git are available.
 
@@ -50,8 +55,10 @@ DIRECTIONALITY (memorize this — Cicada 2026-08-17):
 
   Review/  = Agent's output to Codex/other agents to READ.
              (questions, decisions surfaced, status reports,
-              rework plans, owner checklists — anything the
-              Agent summarizes FOR someone else to read.)
+              rework plans, owner checklists, BLOCK recheck packets,
+              AND end-of-day hand-off notes for the next Agent session —
+              Cicada 2026-08-17 protocol; Agent reads latest
+              EOD_HANDOFF_*.md first at session start.)
 
   Prompt/  = Codex/other agents' decisions FOR the Agent to execute.
              (Codex guidance, reviewer output, owner-approved
@@ -65,7 +72,8 @@ DIRECTIONALITY (memorize this — Cicada 2026-08-17):
   What does NOT belong in Review/:
     - The Agent's own internal working notes (use scratch space
       or chat context; only materialize to Review/ when the
-      content is meant for Codex/other agents to consume).
+      content is meant for Codex/other agents to consume, OR when
+      it is the end-of-day hand-off per Cicada 2026-08-17).
     - Raw Codex answers copied wholesale. Per WORKFLOW_PROTOCOL
       the Agent MAY append a short ANSWER pointer to a
       Review/Q### file (so the full Q&A is co-located for

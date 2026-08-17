@@ -1,11 +1,11 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Codex Review 009 BLOCK recheck 4: VERDICT PASS.
-                          ALL 6 BLOCKS CLOSED (S2-BLOCK-001/002/003/004/005
-                          /006-HtmlDialog/006-version). 72/72 tests PASS.
-                          Stage 2 implementation BLOCK-checks complete.
-                          Next: Owner real-SU verification (per Q002=A,
-                          must include SU2017 per R004).)
+Last updated: 2026-08-17 (Owner verification PASS on SketchUp 2020
+                          (9/9 steps); SU2017 verification PENDING (release
+                          Gate, not blocker); Stage 2 BLOCK rework COMPLETE;
+                          cleared to start Stage 6 UI per R003+R005.
+                          End-of-day handoff in
+                          Review/EOD_HANDOFF_2026-08-17.md.)
 
 ## 决策落地 (PI_TASK_001)
 
