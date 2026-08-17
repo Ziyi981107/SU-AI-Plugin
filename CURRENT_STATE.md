@@ -1,11 +1,11 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Codex Review 008 BLOCK recheck 3:
-                          S2-BLOCK-002 + S2-BLOCK-004 +
-                          S2-BLOCK-006-version now CLOSED;
-                          S2-BLOCK-005 REMAINS OPEN (checklist H
-                          selection shape has overlap); 71/71 PASS;
-                          final checklist correction + 1 test queued).
+Last updated: 2026-08-17 (Codex Review 009 BLOCK recheck 4: VERDICT PASS.
+                          ALL 6 BLOCKS CLOSED (S2-BLOCK-001/002/003/004/005
+                          /006-HtmlDialog/006-version). 72/72 tests PASS.
+                          Stage 2 implementation BLOCK-checks complete.
+                          Next: Owner real-SU verification (per Q002=A,
+                          must include SU2017 per R004).)
 
 ## 决策落地 (PI_TASK_001)
 
@@ -22,6 +22,26 @@ Last updated: 2026-08-17 (Codex Review 008 BLOCK recheck 3:
 - ✅ 正确: **SU2017+**, **Ruby 2.2.4** 是硬最低基线
 - ✅ `Sketchup::Entity#persistent_id` 在 **SU2017 起就有**, 不是 SU2018+ 才有
 - ✅ capability detection (`respond_to?`) 优先于版本号判断
+
+## CODEX REVIEW 009 (2026-08-17) — VERDICT: PASS (BLOCK recheck 4)
+
+CODEX_REVIEW_009 (BLOCK recheck 4, commit 9ff2e49 + recheck packet):
+  VERDICT: PASS
+  ALL BLOCKS CLOSED:
+    S2-BLOCK-001                CLOSED
+    S2-BLOCK-002                CLOSED  (real API contract accepted)
+    S2-BLOCK-003                CLOSED
+    S2-BLOCK-004                CLOSED  (adjacent-bucket dedup accepted)
+    S2-BLOCK-005                CLOSED  (checklist H correction accepted)
+    S2-BLOCK-006 HtmlDialog     CLOSED
+    S2-BLOCK-006 version         CLOSED  (dotted diagnostic + major)
+
+  Stage 2 implementation BLOCK-checks PASSED. This is NOT a release
+  verdict and NOT a substitute for real-host evidence.
+
+  Owner should now execute Review/OWNER_VERIFICATION_STAGE_2.txt
+  steps A-I in real SketchUp. SU2017 required to close R004 caveat.
+  Owner drops report to Prompt/OWNER_REPORT_STAGE_2_<date>.txt.
 
 ## CODEX REVIEW 008 (2026-08-17) — BLOCK recheck 3 result
 
@@ -186,7 +206,7 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
   `config.big_z` 而不是 `config.tolerance.big_z`
   (后续重命名 Tolerance 字段时不需跳 Preflight)
 
-## Next Step (Phase F — STAGE 2 BLOCK REWORK final pass queued)
+## Next Step (Phase G — Stage 2 BLOCK-checks COMPLETE, awaiting Owner real-SU verification)
 
 1. ✅ **已结束** — Q001-R005 全部 ANSWERED, BLOCKED 现状反映到 CURRENT_STATE
 2. ✅ **已结束** — Codex Review 004 BLOCK rework pass 1
