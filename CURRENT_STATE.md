@@ -1,10 +1,11 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Codex Review 005 partial BLOCK RECHECK:
-                          S2-BLOCK-001 / S2-BLOCK-003 CLOSED;
-                          S2-BLOCK-002 / 004 / 005 REMAINS OPEN;
-                          S2-BLOCK-006 NEW (capability namespace);
-                          pure-Ruby 50/50 PASS; rework queued for 4 BLOCKS).
+Last updated: 2026-08-17 (Codex Review 007 BLOCK recheck 2:
+                          S2-BLOCK-001 + S2-BLOCK-003 still CLOSED;
+                          S2-BLOCK-006 HtmlDialog subpart CLOSED;
+                          S2-BLOCK-002/004/005/006-version REMAINS OPEN
+                          (4 subparts); 65/65 PASS; rework pass 3 queued
+                          per CODEX_GUIDANCE_006 corrections).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -21,6 +22,30 @@ Last updated: 2026-08-17 (Codex Review 005 partial BLOCK RECHECK:
 - ✅ 正确: **SU2017+**, **Ruby 2.2.4** 是硬最低基线
 - ✅ `Sketchup::Entity#persistent_id` 在 **SU2017 起就有**, 不是 SU2018+ 才有
 - ✅ capability detection (`respond_to?`) 优先于版本号判断
+
+## CODEX REVIEW 007 (2026-08-17) + GUIDANCE 006 — BLOCK recheck 2 result
+
+CODEX_REVIEW_007 (BLOCK recheck 2, commit d7ac371 + Review recheck packet):
+  S2-BLOCK-001  CLOSED  (still)
+  S2-BLOCK-003  CLOSED  (still)
+  S2-BLOCK-006 HtmlDialog subpart  CLOSED  (namespace fix accepted)
+  S2-BLOCK-002  REMAINS OPEN  (real API contract issues)
+  S2-BLOCK-004  REMAINS OPEN  (boundary-bucket dedup)
+  S2-BLOCK-005  REMAINS OPEN  (checklist + invalid geometry)
+  S2-BLOCK-006 version subpart  REMAINS OPEN  (version_number not calendar year)
+
+CODEX_GUIDANCE_006 (plan corrections, MANDATORY):
+  1. Version API: sketchup_version to_s for diagnostics; baseline
+     `Sketchup.version.to_i >= 17`. NO calendar-year inference from
+     version_number.
+  2. Active edit context: use model.edit_transform; model.active_path
+     is Array (NOT InstancePath); resolver takes dot-delimited String.
+  3. Vertex dedup: search current + adjacent buckets; preserve
+     5000-Edge perf target.
+
+NEXT: pass-3 rework incorporating CODEX_GUIDANCE_006 corrections.
+Closed scopes stay closed (S2-BLOCK-001, S2-BLOCK-003, S2-BLOCK-006
+HtmlDialog).
 
 ## CODEX REVIEW 005 (2026-08-17) — VERDICT: PARTIAL PASS, 4 BLOCKS remain
 
@@ -148,28 +173,26 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
   `config.big_z` 而不是 `config.tolerance.big_z`
   (后续重命名 Tolerance 字段时不需跳 Preflight)
 
-## Next Step (Phase D — STAGE 2 BLOCK REWORK 2nd pass queued)
+## Next Step (Phase E — STAGE 2 BLOCK REWORK pass 3 queued)
 
 1. ✅ **已结束** — Q001-R005 全部 ANSWERED, BLOCKED 现状反映到 CURRENT_STATE
-   (commits `5e1d1e0`, `c9a3817`, `48bad47`)
-2. ✅ **已结束** — Codex Review 004 BLOCK rework 第 1 轮
-   (commit `eb3cd41`): S2-BLOCK-001 + S2-BLOCK-003 已 CLOSED;
-   50/50 tests PASS
-3. ✅ **已结束** — BLOCK RECHECK 请求包 `Review/BLOCK_RECHECK_REQUEST_2026-08-17.md`
-   (commit `24b06b9`)
-4. ✅ **已结束** — Codex Review 005 部分 PASS, 4 BLOCKS remain
-5. ⏳ **下一步 (本轮)** — 修剩余 4 BLOCKS:
-   - S2-BLOCK-002 (instance_path 改 PID path + active edit-context +
-     非交换性嵌套变换 + 同父 2 instance 测试)
-   - S2-BLOCK-004 (non_zero_z_edge_count 改 OR 语义 + 用 config epsilon +
-     复用 VertexIndex 避免 O(V²) + perf 测试 <2s)
-   - S2-BLOCK-005 (去掉 v.position= 用 Entities#add_line + 真正的递归
-     fingerprint helper + 强化 fake erased edge + 不合成 [0,0,0] +
-     safe_each 真保护)
-   - S2-BLOCK-006 NEW (HtmlDialog 是 UI::HtmlDialog 不是 Sketchup::HtmlDialog;
-     Sketchup.version 是字符串不是 Integer 年份)
-   见 `Review/CODEX_REVIEW_005_BLOCK_REWORK_PLAN.md` (本批次新建)
-6. **BLOCK recheck 2 PASS 后** — Owner 跑真 SU 验证 (Q002=A) +
+2. ✅ **已结束** — Codex Review 004 BLOCK rework pass 1
+   (commit `eb3cd41`): S2-BLOCK-001 + S2-BLOCK-003 CLOSED; 50/50 PASS
+3. ✅ **已结束** — Codex Review 005 BLOCK recheck + pass 2 rework
+   (commits `fd0a0ab`, `d7ac371`): S2-BLOCK-001/003 stay CLOSED;
+   S2-BLOCK-006 HtmlDialog CLOSED; 65/65 PASS
+4. ✅ **已结束** — Codex Review 007 BLOCK recheck 2 + GUIDANCE 006
+   plan corrections received (最新 Prompt/)
+5. ⏳ **下一步 (本轮)** — pass 3 rework 修剩余 4 BLOCK
+   (S2-BLOCK-002/004/005/006-version), 强制吸收
+   CODEX_GUIDANCE_006 三条修正:
+   - Version API: sketchup_version 保留 String 诊断;
+     baseline = `Sketchup.version.to_i >= 17`; 不从 version_number 推日历年
+   - Active edit context: model.edit_transform + active_path 是 Array;
+     resolver 接收 dot-delimited String
+   - Vertex dedup: 扫当前 + 邻接 buckets; 保留 5000-edge perf
+   见 `Review/CODEX_REVIEW_007_BLOCK_REWORK_PLAN.md`
+6. **BLOCK recheck 3 PASS 后** — Owner 跑真 SU 验证 (Q002=A) +
    走 R004 posture B (SU2017 必须)
 7. **Stage 6** — UI (per R003 + R005)
 8. **Stage 7** — TASK 001 IMPLEMENTATION REPORT (PI_TASK_001 §22)
