@@ -29,14 +29,75 @@ At the start of a project/session, read:
 
 1) PROJECT_HANDOFF.txt
 2) CURRENT_STATE.txt
-3) relevant repository state / Git history
-4) only the code/docs needed for the current stage
+3) **Prompt/** — list files, sort by mtime, read the LATEST one first.
+   This is Owner-managed Codex / other-agent guidance. It may have
+   changed since the last session. See §1b OWNER HANDOFF PROTOCOL.
+4) relevant repository state / Git history
+5) only the code/docs needed for the current stage
 
 Treat:
 PROJECT_HANDOFF = stable project contract
 CURRENT_STATE = current working memory
+Prompt/        = latest external guidance (snapshot in time)
 
 Do not reconstruct project truth from old chat history if current project files and Git are available.
+
+
+1b. OWNER HANDOFF PROTOCOL — Review/ and Prompt/ folder conventions
+====================================================================
+
+This project uses two dedicated folders as the official inter-agent
+message bus between Agent (here), Codex Reviewer, and Product Owner
+(Cicada). They are NOT free-form scratch — they are the contract.
+
+--------------------------------------------------------------------
+Review/   Agent WRITES  ;  Owner + Codex READ
+--------------------------------------------------------------------
+Purpose:  every problem, decision, blocker, or pending question the
+          Agent encounters is written here as a .txt or .md file.
+When:     immediately when the Agent identifies the issue — do NOT
+          carry problems silently in chat context.
+Naming:   short description, optionally prefixed Q### (Codex questions)
+          or R### (post-Stage decisions surfaced by Agent).
+Format:   See Review/WORKFLOW_PROTOCOL.txt for the per-file schema.
+The Agent MUST update the file when status changes
+(OPEN -> ANSWERED / CANCELLED).
+
+--------------------------------------------------------------------
+Prompt/   Owner WRITES  ;  Agent READS
+--------------------------------------------------------------------
+Purpose:  Codex / other agents / Owner guidance documents. Owner is
+          the sole gatekeeper of this folder — Agent NEVER writes here.
+When to READ Prompt/:
+  1) Session start — step 3 of §1 STARTUP READING (mandatory).
+  2) After Owner signals that a problem has been resolved, e.g.
+     "<problem-name> resolved" or "看一下 prompt" or similar.
+     Re-read the latest file in Prompt/ (sort by mtime) before
+     continuing work. Do NOT assume the answer — read the file.
+When NOT to READ Prompt/:
+  Do NOT poll Prompt/ on every action or every tool call.
+  Wait for either (1) session start or (2) Owner resolution signal.
+
+--------------------------------------------------------------------
+Standard cycle (per Cicada 2026-08-17)
+--------------------------------------------------------------------
+  Agent encounters problem
+    -> writes Review/<name>.txt   (status=OPEN)
+    -> continues with high-autonomy work where possible
+       (does NOT block waiting for an answer; uses documented defaults
+        if R### files propose a default)
+  Owner reads Review/, decides / routes to Codex
+  Owner drops answer / guidance into Prompt/<file>.txt
+  Owner tells Agent: "<problem-name> resolved"
+  Agent re-reads latest Prompt/ file
+    -> updates corresponding Review/ file to status=ANSWERED
+    -> updates CURRENT_STATE.md
+    -> resumes work
+
+The Agent MUST NOT mark a Review/ item as ANSWERED in CURRENT_STATE
+until Owner has explicitly confirmed resolution AND a corresponding
+file exists in Prompt/.
+
 
 
 2. DEFAULT AUTONOMY

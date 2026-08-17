@@ -2,7 +2,8 @@
 
 Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
                           Stage 2 SU-side awaiting Owner real-SU verification;
-                          6 R### pending decisions surfaced to Review/).
+                          6 R### pending decisions surfaced to Review/;
+                          AGENT.md §1b OWNER HANDOFF PROTOCOL canonicalized).
 
 ## 决策落地 (PI_TASK_001)
 
@@ -138,6 +139,21 @@ Last updated: 2026-08-17 (Stage 1 + Stage 2 DESIGN PASS, 33/33 tests;
   原因: Stage 5 不依赖 Stage 2 SU-side 行为, 仅依赖 Q003 = SU2017+ lock
   (已 ANSWERED) + 现有 `compatibility/su_capability.rb` (已 commit)。
   Owner 若要 Stage 5 暂停等 Stage 2 反馈, 在 Prompt/ 里 flag 即可。
+
+## 2026-08-17 工作流规则变更 (Owner 指示)
+
+AGENT.md 已更新 (见本批次 commit):
+- §1 STARTUP READING 加 step 3: 启动时读 Prompt/ 最新文件 (按 mtime 排序)
+- 新增 §1b OWNER HANDOFF PROTOCOL — 明确 Review/ 和 Prompt/ 双向职责
+  - Review/ = Agent 写, Owner + Codex 读 (问题 / 决策 / blocker)
+  - Prompt/ = Owner 写, Agent 读 (Codex / 其他 agent 指导)
+  - Agent 永不写 Prompt/
+  - 标准循环: Agent 写 Review -> Owner 决 -> Owner 落 Prompt ->
+    Owner 通知 Agent -> Agent 重读 Prompt/ -> 更新 Review 为 ANSWERED +
+    更新 CURRENT_STATE -> 继续
+- 不在每次动作轮询 Prompt/, 只在 session 启动或
+  Owner 通知问题解决时读。Owner 通知词举例:
+  "<problem-name> resolved" 或 "看一下 prompt" 之类。
 
 ## Stage 2 设计边界 (NOT IN SCOPE, 明确不做, per PI_TASK_001 §17)
 
