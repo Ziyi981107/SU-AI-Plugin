@@ -83,6 +83,40 @@ module Tests
   rescue klass
     nil
   end
+
+  # Execute all collected test cases, print a summary, and return
+  # 0 if everything passed, 1 otherwise. Accepts an optional substring
+  # filter on test name (e.g. Tests.run!('TC-06')).
+  def self.run!(filter = nil)
+    selected = cases
+    if filter && !filter.to_s.empty?
+      needle = filter.to_s
+      selected = selected.select { |c| c.name.include?(needle) }
+      raise "no tests matched #{needle.inspect}" if selected.empty?
+    end
+
+    results = selected.map(&:run)
+    passed  = results.count(&:passed?)
+    failed  = results.count(&:failed?)
+    errored = results.count(&:errored?)
+
+    # Per-test lines so failures / errors are immediately readable.
+    results.each do |r|
+      tag = case r.status
+            when :pass  then 'PASS '
+            when :fail  then 'FAIL '
+            when :error then 'ERROR'
+            end
+      line = "#{tag}  #{r.name}"
+      line << "\n        #{r.message}" unless r.passed?
+      puts line
+    end
+
+    summary = "--- #{results.size} tests: " \
+              "#{passed} pass, #{failed} fail, #{errored} error ---"
+    puts summary
+    results.all?(&:passed?) ? 0 : 1
+  end
 end
 
 # Top-level helpers usable inside `test 'name' do ... end` blocks.

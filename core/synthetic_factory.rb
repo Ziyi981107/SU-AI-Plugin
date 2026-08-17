@@ -12,7 +12,7 @@ module SUAnalysis
     # Test 01..10). Lives in `core/` (not `tests/`) so that any future
     # fuzz / golden-case harness can reuse it.
     #
-    class SyntheticFactory
+    module SyntheticFactory
       module_function
 
       def edge(id, start_point, end_point, layer: 'Layer0', source: nil)
