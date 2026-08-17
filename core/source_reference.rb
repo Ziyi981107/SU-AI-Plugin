@@ -38,17 +38,28 @@
 module SUAnalysis
   module Core
     class SourceReference
-      attr_reader :entity_id, :persistent_id, :kind, :label, :instance_path
+      attr_reader :entity_id, :persistent_id, :kind, :label,
+                  :persistent_id_path, :instance_path
 
-      def initialize(entity_id:, persistent_id: nil, kind: 'edge', label: nil, instance_path: nil)
+      def initialize(entity_id:, persistent_id: nil, kind: 'edge', label: nil,
+                     instance_path: nil, persistent_id_path: nil)
         @entity_id     = entity_id
         @persistent_id = persistent_id
         @kind          = kind
         @label         = label
-        # Default to empty array (root-level entity). Caller passes nil
-        # for "no enclosing containers" or an explicit Array for nested.
+        # Per Codex Review 005 S2-BLOCK-002: persistent_id_path is the
+        # canonical machine-resolvable identity. It is an Array<Integer>
+        # of container PIDs from model root to the leaf, with the leaf
+        # PID last. Empty array for root-level entities.
+        # instance_path remains as a display label (legacy / human-readable).
+        @persistent_id_path = if persistent_id_path.nil?
+                                 [].freeze
+                               else
+                                 persistent_id_path.dup.freeze
+                               end
+        # instance_path is now derived from labels (not PIDs). Default empty.
         @instance_path = if instance_path.nil?
-                           []
+                           [].freeze
                          else
                            instance_path.dup.freeze
                          end
@@ -58,19 +69,26 @@ module SUAnalysis
         !@persistent_id.nil?
       end
 
-      # Returns the path joined by ' > ' for display purposes only.
+      # Returns the PID path joined by '/' for display / debugging.
       # Empty string for root-level entities.
+      def persistent_id_path_string
+        @persistent_id_path.map(&:to_s).join('/')
+      end
+
+      # Returns the instance_path joined by ' > ' for display purposes only.
+      # Empty string for root-level entities. NOT used as canonical identity.
       def instance_path_string
         @instance_path.join(' > ')
       end
 
       def to_h
         {
-          entity_id:     @entity_id,
-          persistent_id: @persistent_id,
-          kind:          @kind,
-          label:         @label,
-          instance_path: @instance_path
+          entity_id:          @entity_id,
+          persistent_id:      @persistent_id,
+          kind:               @kind,
+          label:              @label,
+          instance_path:      @instance_path,
+          persistent_id_path: @persistent_id_path
         }
       end
     end

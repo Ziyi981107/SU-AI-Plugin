@@ -274,3 +274,252 @@ test 'end-to-end: nested translated component rectangle -> PreflightReport with 
   assert_in_delta 54.0, rep.bounding_box[:max][0], 1.0e-6
   assert_in_delta 63.0, rep.bounding_box[:max][1], 1.0e-6
 end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-002 (round 2) — persistent_id_path as machine-resolvable identity
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-002 (r2): persistent_id_path is Array<Integer> with one PID per container + leaf PID' do
+  edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 555
+  )
+  inner = FakeSU::Group.new(name: 'inner', children: [edge], persistent_id: 100)
+  outer = FakeSU::Group.new(name: 'outer', children: [inner], persistent_id: 200)
+  sel = FakeSU::Selection.new([outer])
+  snap = PreflightRunner.build_snapshot(sel)
+  e = snap.edges.first
+  pid_path = e.source.persistent_id_path
+  assert_kind_of Array, pid_path
+  assert pid_path.all? { |p| p.is_a?(Integer) }
+  # Container PIDs in order, then leaf PID last.
+  assert_equal [200, 100, 555], pid_path
+end
+
+test 'S2-BLOCK-002 (r2): two ComponentInstances sharing one definition INSIDE ONE outer Group -> 2 occurrences' do
+  edge = fake_edge([0, 0, 0], [10, 0, 0])
+  defn = FakeSU::ComponentDefinition.new(name: 'Window', children: [edge])
+  inst_a = FakeSU::ComponentInstance.new(
+    definition: defn,
+    transformation: FakeSU.translation(100, 0, 0),
+    persistent_id: 501
+  )
+  inst_b = FakeSU::ComponentInstance.new(
+    definition: defn,
+    transformation: FakeSU.translation(0, 100, 0),
+    persistent_id: 502
+  )
+  outer = FakeSU::Group.new(name: 'parent', children: [inst_a, inst_b], persistent_id: 999)
+  sel = FakeSU::Selection.new([outer])
+  snap = PreflightRunner.build_snapshot(sel)
+  assert_equal 2, snap.edge_count
+  paths = snap.edges.map { |e| e.source.persistent_id_path }
+  # Each path starts with the outer Group's PID, then the ComponentInstance's PID.
+  assert paths.all? { |p| p[0] == 999 }
+  refute_equal paths[0][1], paths[1][1]
+end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-002 (r2) — non-commutative nested transforms
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-002 (r2): rotation + non-uniform scale + translation nested -> exact world coords' do
+  # Build helper matrices.
+  def rotate_z(deg)
+    rad = deg * Math::PI / 180.0
+    c = Math.cos(rad)
+    s = Math.sin(rad)
+    FakeSU::Transformation.new([
+      [c, -s, 0.0, 0.0],
+      [s,  c, 0.0, 0.0],
+      [0.0, 0.0, 1.0, 0.0],
+      [0.0, 0.0, 0.0, 1.0]
+    ])
+  end
+  def scale_nu(sx, sy, sz)
+    FakeSU::Transformation.new([
+      [sx, 0.0, 0.0, 0.0],
+      [0.0, sy, 0.0, 0.0],
+      [0.0, 0.0, sz, 0.0],
+      [0.0, 0.0, 0.0, 1.0]
+    ])
+  end
+
+  inner_edge = fake_edge([1.0, 0.0, 0.0], [2.0, 0.0, 0.0])
+  # Inner: rotate 30deg about z.
+  inner_grp = FakeSU::Group.new(
+    name: 'rot',
+    children: [inner_edge],
+    transformation: rotate_z(30)
+  )
+  # Middle: non-uniform scale (2, 3, 1).
+  mid_grp = FakeSU::Group.new(
+    name: 'scale',
+    children: [inner_grp],
+    transformation: scale_nu(2.0, 3.0, 1.0)
+  )
+  # Outer: translation (10, 20, 30).
+  outer_grp = FakeSU::Group.new(
+    name: 'trans',
+    children: [mid_grp],
+    transformation: FakeSU.translation(10, 20, 30)
+  )
+  sel = FakeSU::Selection.new([outer_grp])
+  snap = PreflightRunner.build_snapshot(sel)
+  e = snap.edges.first
+  # Manual compose: rot30 -> scale(2,3,1) -> trans(10,20,30) applied to
+  # (1,0,0) and (2,0,0). Compute expected:
+  rad = 30 * Math::PI / 180.0
+  c = Math.cos(rad); s = Math.sin(rad)
+  # After rot30: (1,0,0) -> (c, s, 0); (2,0,0) -> (2c, 2s, 0)
+  x1r = c;  y1r = s
+  x2r = 2*c; y2r = 2*s
+  # After scale(2,3,1): (c, s, 0) -> (2c, 3s, 0); (2c, 2s, 0) -> (4c, 6s, 0)
+  x1s = 2*c;  y1s = 3*s
+  x2s = 4*c;  y2s = 6*s
+  # After trans(10,20,30):
+  x1 = x1s + 10;  y1 = y1s + 20;  z1 = 30.0
+  x2 = x2s + 10;  y2 = y2s + 20;  z2 = 30.0
+  assert_in_delta x1, e.start_point[0], 1.0e-9
+  assert_in_delta y1, e.start_point[1], 1.0e-9
+  assert_in_delta z1, e.start_point[2], 1.0e-9
+  assert_in_delta x2, e.end_point[0],   1.0e-9
+  assert_in_delta y2, e.end_point[1],   1.0e-9
+  assert_in_delta z2, e.end_point[2],   1.0e-9
+end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-002 (r2) — active edit-context seeds transform
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-002 (r2): active edit-context seeds walk transform (selected Edges inside active Group)' do
+  # Outer Group with no transform. Inner Edge at (5, 0, 0) -> (10, 0, 0).
+  # Active edit-context: a fake InstancePath with translation (100, 200, 0)
+  # and PID path [42]. Expected world coords of selected Edge: add
+  # active context transform to the Edge's local coords.
+  edge = fake_edge([5, 0, 0], [10, 0, 0])
+  outer = FakeSU::Group.new(name: 'outer', children: [edge])
+  active_path = FakeSU::InstancePath.new(
+    persistent_id_path: [42],
+    transformation: FakeSU.translation(100, 200, 0)
+  )
+  model = FakeSU::Model.new(entities: [outer], active_path: active_path)
+  sel = FakeSU::Selection.new([edge])
+  snap = PreflightRunner.build_snapshot(sel, model: model)
+  e = snap.edges.first
+  # World = active_t * edge_local. active adds (100,200,0).
+  assert_in_delta 105.0, e.start_point[0], 1.0e-9
+  assert_in_delta 200.0, e.start_point[1], 1.0e-9
+  assert_in_delta 110.0, e.end_point[0],   1.0e-9
+  assert_in_delta 200.0, e.end_point[1],   1.0e-9
+end
+
+test 'S2-BLOCK-002 (r2): no active edit-context -> identity seed (no offset)' do
+  edge = fake_edge([5, 0, 0], [10, 0, 0])
+  model = FakeSU::Model.new(entities: [edge], active_path: nil)
+  sel = FakeSU::Selection.new([edge])
+  snap = PreflightRunner.build_snapshot(sel, model: model)
+  e = snap.edges.first
+  assert_in_delta 5.0,  e.start_point[0], 1.0e-9
+  assert_in_delta 10.0, e.end_point[0],   1.0e-9
+end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-002 (r2) — PID path resolution back via model.instance_path_from_pid_path
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-002 (r2): snapshot PID paths resolve back through model.instance_path_from_pid_path' do
+  edge = fake_edge([0, 0, 0], [10, 0, 0])
+  inner = FakeSU::Group.new(name: 'inner', children: [edge], persistent_id: 100)
+  outer = FakeSU::Group.new(name: 'outer', children: [inner], persistent_id: 200)
+  sel = FakeSU::Selection.new([outer])
+  snap = PreflightRunner.build_snapshot(sel)
+
+  # Build a model with a registry keyed by the same PID paths.
+  model = FakeSU::Model.new(entities: [outer])
+  pid_path = snap.edges.first.source.persistent_id_path
+  ip_expected = FakeSU::InstancePath.new(
+    persistent_id_path: pid_path,
+    transformation: FakeSU.translation(0, 0, 0)
+  )
+  model.register_pid_path(pid_path, ip_expected)
+
+  # Resolve through the resolver helper.
+  resolved = SUAnalysis::Compatibility::SUCapability.resolve_pid_path(model, pid_path)
+  refute_nil resolved
+  assert_equal pid_path, resolved.persistent_id_path
+end
+
+# --------------------------------------------------------------------------
+# S2-BLOCK-005 (round 2) — invalid handling
+# --------------------------------------------------------------------------
+
+test 'S2-BLOCK-005 (r2): erased Edge -> ZERO EdgeRecords from that Edge (count == 1, not >= 1)' do
+  # Build two Edges, erase one. The erased one must NOT appear in the
+  # snapshot at all (its start/end/vertices raise InvalidEntityError,
+  # so vertex_point_world raises InvalidGeometryError, so the per-Edge
+  # rescue skips the entire Edge).
+  good_edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 1
+  )
+  bad_edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(1, 0, 0),
+    persistent_id: 2
+  )
+  bad_edge.erase!
+  sel = FakeSU::Selection.new([good_edge, bad_edge])
+  snap = PreflightRunner.build_snapshot(sel)
+  # Exactly ONE EdgeRecord, from good_edge. The erased one is fully
+  # excluded — no fallback, no origin synthesis.
+  assert_equal 1, snap.edge_count
+  e = snap.edges.first
+  assert_equal 10.0, e.end_point[0]
+  assert e.source.persistent_id.nil? || e.source.persistent_id == 1
+end
+
+test 'S2-BLOCK-005 (r2): invalid vertex (start nil) -> Edge skipped, no origin EdgeRecord' do
+  # Build an Edge whose start Vertex has nil position. vertex_point_world
+  # raises InvalidGeometryError; the per-Edge rescue skips the Edge.
+  v_start = FakeSU::Vertex.new(0, 0, 0)
+  v_start.position = nil
+  v_end = FakeSU::Vertex.new(10, 0, 0)
+  bad_edge = FakeSU::Edge.new(start: v_start, finish: v_end)
+  good_edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(20, 0, 0),
+    finish: FakeSU::Vertex.new(30, 0, 0)
+  )
+  sel = FakeSU::Selection.new([bad_edge, good_edge])
+  snap = PreflightRunner.build_snapshot(sel)
+  # Only the good Edge; bad Edge produces NO origin record.
+  assert_equal 1, snap.edge_count
+  e = snap.edges.first
+  assert_in_delta 20.0, e.start_point[0], 1.0e-9
+  assert_in_delta 30.0, e.end_point[0],   1.0e-9
+end
+
+test 'S2-BLOCK-005 (r2): invalid container with one bad child -> siblings still walked' do
+  # Two children: one bad (raises on .entities), one good. The good one
+  # must still produce EdgeRecords. FakeSU Group's children access is
+  # a normal array, so we simulate a bad container by stubbing it.
+  good_edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0)
+  )
+  bad_container = Object.new
+  def bad_container.typename; 'BadContainer'; end
+  def bad_container.entities
+    raise 'simulated bad container'
+  end
+  def bad_container.definition
+    nil
+  end
+  sel = FakeSU::Selection.new([bad_container, good_edge])
+  snap = PreflightRunner.build_snapshot(sel)
+  # The good edge should be picked up; the bad container's
+  # enumerator raise must NOT abort the walk.
+  assert_equal 1, snap.edge_count
+end

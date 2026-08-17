@@ -155,21 +155,23 @@ module SUAnalysis
         bbox       = snapshot.bounding_box
         z_range    = snapshot.z_range
 
-        # Non-zero-Z awareness (PI_TASK_001 §6 + R001):
+        # Non-zero-Z awareness (PI_TASK_001 §6 + R001 + S2-BLOCK-004 round 2):
         #   - non_zero_z_* counts use coordinate_epsilon (tight, point-
         #     equality tolerance), NOT big_z. Big_z is a separate
         #     "significant off-plane" warning threshold.
-        #   - Vertex dedup is REQUIRED: a shared endpoint of two edges
-        #     must be counted ONCE as a vertex (S2-BLOCK-004 evidence).
+        #   - Vertex dedup REQUIRED: shared endpoint counted ONCE as a
+        #     vertex. Dedup uses O(V) spatial hash (no result.any? scan).
+        #   - Edge count uses OR semantics: an Edge with one off-plane
+        #     endpoint and one on-plane endpoint IS a non-zero-Z Edge.
         coord_eps = config.tolerance.coordinate_epsilon
         big_z_thr = config.big_z
 
-        distinct_z_vertices = collect_distinct_vertices(edges)
+        distinct_z_vertices = collect_distinct_vertices(edges, coord_eps: coord_eps)
         non_zero_z_vertex_count = distinct_z_vertices.count do |v|
           v[2].abs > coord_eps
         end
         non_zero_z_edge_count = edges.count do |e|
-          e.start_point[2].abs > coord_eps && e.end_point[2].abs > coord_eps
+          e.start_point[2].abs > coord_eps || e.end_point[2].abs > coord_eps
         end
         significant_z_extrema_count = distinct_z_vertices.count do |v|
           v[2].abs > big_z_thr
@@ -218,20 +220,33 @@ module SUAnalysis
       end
 
       # Collect distinct vertices from edges, deduped in coord-epsilon
-      # neighborhood. Returns Array<[x, y, z]>.
+      # neighborhood. Uses an O(V) spatial hash (per S2-BLOCK-004 round
+      # 2 — replaces previous O(V^2) `result.any?` scan).
+      # Returns Array<[x, y, z]>.
       def collect_distinct_vertices(edges, coord_eps: 1.0e-6)
-        all = []
+        bucket_size = coord_eps
+        buckets = {}
+        result  = []
+
         edges.each do |e|
-          all << e.start_point
-          all << e.end_point
-        end
-        result = []
-        all.each do |v|
-          unless result.any? { |existing| points_equal?(existing, v, coord_eps) }
-            result << v
+          [e.start_point, e.end_point].each do |v|
+            key = bucket_key(v, bucket_size)
+            seen = buckets[key]
+            unless seen && seen.any? { |existing| points_equal?(existing, v, coord_eps) }
+              buckets[key] = (seen || []) << v
+              result << v
+            end
           end
         end
         result
+      end
+
+      def bucket_key(point, size)
+        [
+          (point[0] / size).floor,
+          (point[1] / size).floor,
+          (point[2] / size).floor
+        ]
       end
 
       def points_equal?(a, b, eps)

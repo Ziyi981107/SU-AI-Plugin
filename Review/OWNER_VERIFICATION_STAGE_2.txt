@@ -90,10 +90,13 @@ A. Plugin load
 B. Capability detection
    In Ruby Console:
      SUAnalysis::Compatibility::SUCapability.sketchup_version
-   Expected: Integer >= 2017.
+   Expected: nil or Integer (raw display; SU.version is a String in modern SU).
+   Then:
+     SUAnalysis::Compatibility::SUCapability.product_year
+   Expected: Integer >= 2017 (calendar year, NOT a parsed version).
    Then:
      SUAnalysis::Compatibility::SUCapability.html_dialog?
-   Expected: true (on SU 2017+).
+   Expected: true (on SU 2017+; probes UI::HtmlDialog).
 
 C. Preflight on a single test_group (real selection)
    1. Select the disposable test_group.
@@ -109,26 +112,29 @@ C. Preflight on a single test_group (real selection)
      - warnings = [] (no non-zero-Z, no large coord, no deep nesting)
 
 D. Non-zero-Z detection (BLOCK-004 evidence)
-   1. Move one vertex of an edge to Z = 5 inches:
-        edge = test_group.entities.grep(Sketchup::Edge).first
-        v = edge.start
-        v.position = Geom::Point3d.new(v.position.x, v.position.y, 5.0)
-   2. Re-run Preflight.
+   1. Build a new disposable group with one edge at Z = 5 inches using
+      Entities#add_line (NOT Vertex#position= — that setter does not
+      exist on real SU):
+        z_group = Sketchup.active_model.active_entities.add_group
+        z_group.entities.add_line([0,0,0], [10,0,5.0])
+   2. Select z_group, run Preflight.
    Expected:
-     - non_zero_z_vertex_count = 1 (the moved vertex)
+     - non_zero_z_vertex_count = 1 (the Z=5 endpoint)
      - significant_z_extrema_count = 1 (Z=5 > big_z=0.01)
      - warnings contains one entry with code :significant_non_zero_z
        and severity :medium
+   3. Cleanup: `z_group.erase!`
 
 E. Abnormal large coord (BLOCK-004 evidence)
-   1. Move the same vertex to x = 1_500_000:
-        v.position = Geom::Point3d.new(1_500_000, 0, 0)
-   2. Re-run Preflight.
+   1. Build a disposable group with one edge at large coords:
+        big_group = Sketchup.active_model.active_entities.add_group
+        big_group.entities.add_line([0,0,0], [1_500_000,0,0])
+   2. Select big_group, run Preflight.
    Expected:
      - large_coordinate_extrema_count > 0
      - warnings contains one entry with code :abnormal_large_coord
        and severity :high
-   3. Cleanup: undo via `Sketchup.active_model.active_entities.erase_entities(test_group)` (or undo via UI).
+   3. Cleanup: `big_group.erase!`
 
 F. Nested Group / Component (BLOCK-002 + R001 evidence)
    1. Build: outer Group containing a ComponentInstance containing an
@@ -141,26 +147,69 @@ F. Nested Group / Component (BLOCK-002 + R001 evidence)
      - warnings contains one entry with code :deep_nesting and severity :low
 
 G. Source integrity fingerprint (BLOCK-005 evidence)
-   1. Capture fingerprint:
-        fp_before = {
-          entity_count: Sketchup.active_model.active_entities.size,
-          persistent_ids: Sketchup.active_model.active_entities
-                          .grep(Sketchup::Entity)
-                          .map(&:persistent_id).compact.sort,
-          # ... endpoint coords, layer names, etc.
-        }
-   2. Run Preflight (selective — pick the test group, run report).
-   3. Capture fp_after the same way.
-   4. Verify fp_before == fp_after (modulo any selection state).
+   Paste this helper into Ruby Console, then run it before AND after a
+   Preflight run on the selected test_group; the two hashes must match.
+
+   # -- Begin fingerprint helper --
+   def su_fingerprint(root)
+     return nil unless root.respond_to?(:persistent_id)
+     {
+       kind:               root.typename,
+       persistent_id:      root.respond_to?(:persistent_id) ? root.persistent_id : nil,
+       transformation:     root.respond_to?(:transformation) ? root.transformation.to_a : nil,
+       layer:              root.respond_to?(:layer) ? root.layer.name : nil,
+       edges:              if root.respond_to?(:entities)
+                            root.entities.grep(Sketchup::Edge).map do |e|
+                              {
+                                start: e.start.position.to_a,
+                                finish: e.end.position.to_a,
+                                pid:   e.persistent_id
+                              }
+                            end.sort_by { |h| h[:pid].to_s }
+                          else
+                            []
+                          end,
+       groups:             if root.respond_to?(:entities)
+                            root.entities.grep(Sketchup::Group).map do |g|
+                              su_fingerprint(g)
+                            end
+                          else
+                            []
+                          end,
+       components:         if root.respond_to?(:definition)
+                            [{ definition_name: root.definition.name, definition_pid: root.definition.persistent_id }]
+                          elsif root.respond_to?(:entities)
+                            root.entities.grep(Sketchup::ComponentInstance).map do |c|
+                              { definition_name: c.definition.name, definition_pid: c.definition.persistent_id }
+                            end
+                          else
+                            []
+                          end
+     }
+   end
+   # -- End fingerprint helper --
+
+   1. Run: `fp_before = su_fingerprint(test_group)`
+   2. Run Preflight on test_group selection.
+   3. Run: `fp_after = su_fingerprint(test_group)`
+   4. Verify `fp_before == fp_after` (Ruby == on the two hashes).
    Expected: identical fingerprints. No source mutation.
 
 H. Invalid / erased entity handling (BLOCK-005 evidence)
-   1. Build test group with 2 edges (e1, e2). Erase one mid-analysis:
-        e1.erase!
-   2. Run Preflight on test_group.
-   Expected: report still produced, the surviving edge (e2) is counted,
-             a [SU-AI-Plugin] warn line may appear in console for the
-             erased edge. No exception propagates out.
+   1. Build disposable group with 2 edges:
+        inv_group = Sketchup.active_model.active_entities.add_group
+        e1 = inv_group.entities.add_line([0,0,0], [10,0,0])[0]  # add_line returns array
+        # Add via add_edges for the second:
+        inv_group.entities.add_edges([0,5,0], [10,5,0])
+   2. Erase one edge:
+        edges = inv_group.entities.grep(Sketchup::Edge)
+        edges.first.erase!
+   3. Run Preflight on inv_group selection.
+   Expected:
+     - Report still produced (no exception).
+     - Exactly 1 EdgeRecord (the surviving edge), not 2.
+     - Console may show: [SU-AI-Plugin] skipped invalid edge: ...
+   4. Cleanup: `inv_group.erase!`
 
 I. Translated ComponentInstance (BLOCK-002 transform evidence)
    1. Place a ComponentInstance at non-origin via

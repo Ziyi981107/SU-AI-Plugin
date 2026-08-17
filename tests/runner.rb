@@ -127,6 +127,16 @@ module Tests
     raise AssertionError, msg || "expected #{a.inspect} != #{b.inspect}"
   end
 
+  def self.assert_kind_of(klass, obj, msg = nil)
+    return if obj.is_a?(klass)
+    raise AssertionError, msg || "expected #{obj.inspect} to be a #{klass}, got #{obj.class}"
+  end
+
+  def self.assert_includes(coll, item, msg = nil)
+    return if coll.respond_to?(:include?) && coll.include?(item)
+    raise AssertionError, msg || "expected #{coll.inspect} to include #{item.inspect}"
+  end
+
   # Execute all collected test cases, print a summary, and return
   # 0 if everything passed, 1 otherwise. Accepts an optional substring
   # filter on test name (e.g. Tests.run!('TC-06')).
@@ -174,4 +184,6 @@ def assert_operator(*a, &b); Tests.assert_operator(*a, &b); end
 def refute_match(*a, &b);  Tests.refute_match(*a, &b);  end
 def assert_match(*a, &b);  Tests.assert_match(*a, &b);  end
 def refute_equal(*a, &b); Tests.refute_equal(*a, &b); end
+def assert_kind_of(*a, &b); Tests.assert_kind_of(*a, &b); end
+def assert_includes(*a, &b); Tests.assert_includes(*a, &b); end
 def test(*a, &b);          Tests.test(*a, &b);          end

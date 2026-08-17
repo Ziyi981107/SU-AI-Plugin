@@ -141,10 +141,11 @@ module FakeSU
   # SU Groups have no definition). Use as outer container.
   class Group
     attr_reader :children, :transformation, :name
-    def initialize(name: 'Group', children: [], transformation: nil)
+    def initialize(name: 'Group', children: [], transformation: nil, persistent_id: nil)
       @name = name.to_s
       @children = children
       @transformation = transformation || Transformation.new
+      @persistent_id = persistent_id
     end
 
     def entities
@@ -160,24 +161,91 @@ module FakeSU
     def typename
       'Group'
     end
+
+    def persistent_id
+      @persistent_id
+    end
+
+    def valid?
+      true
+    end
+
+    def erased?
+      false
+    end
+
+    def deleted?
+      false
+    end
   end
 
   # Fake ComponentInstance. Responds to .definition.entities (NOT
   # .entities directly — that's the S2-BLOCK-002 fix point).
   class ComponentInstance
     attr_reader :definition, :transformation
-    def initialize(definition: nil, transformation: nil)
+    def initialize(definition: nil, transformation: nil, persistent_id: nil)
       @definition = definition || ComponentDefinition.new
       @transformation = transformation || Transformation.new
+      @persistent_id = persistent_id
     end
 
     def typename
       'ComponentInstance'
     end
+
+    def persistent_id
+      @persistent_id
+    end
+
+    def valid?
+      true
+    end
+
+    def erased?
+      false
+    end
+
+    def deleted?
+      false
+    end
+  end
+
+  # Fake ComponentDefinition gains persistent_id too.
+  class ComponentDefinition
+    attr_reader :name, :children, :persistent_id
+    def initialize(name: 'Component', children: [], persistent_id: nil)
+      @name = name.to_s
+      @children = children
+      @persistent_id = persistent_id
+    end
+
+    def entities
+      @children
+    end
+
+    def typename
+      'ComponentDefinition'
+    end
+
+    def valid?
+      true
+    end
+
+    def erased?
+      false
+    end
+
+    def deleted?
+      false
+    end
   end
 
   # Fake Edge (mocks Sketchup::Edge). Responds to .start, .end,
   # .vertices, .layer, .persistent_id, .definition (with .name).
+  #
+  # S2-BLOCK-005 round 2: erase! makes the Edge actually invalid by
+  # clearing start/end/vertices (calling code must skip via respond_to?
+  # + valid? checks before accessing them).
   class Edge
     attr_reader :start, :end, :vertices, :layer, :persistent_id_value, :definition_value
     def initialize(start:, finish: nil, end_pos: nil, layer: nil, persistent_id: nil, definition_name: 'edge')
@@ -189,27 +257,92 @@ module FakeSU
       @layer = layer || Layer.new('Layer0')
       @persistent_id_value = persistent_id
       @definition_value = Struct.new(:name).new(definition_name)
+      @erased = false
     end
 
     def persistent_id
+      raise InvalidEntityError, 'edge is erased' if @erased
       @persistent_id_value
     end
 
     def definition
+      raise InvalidEntityError, 'edge is erased' if @erased
       @definition_value
+    end
+
+    def start
+      raise InvalidEntityError, 'edge is erased' if @erased
+      @start
+    end
+
+    def end
+      raise InvalidEntityError, 'edge is erased' if @erased
+      @end
+    end
+
+    def vertices
+      raise InvalidEntityError, 'edge is erased' if @erased
+      @vertices
     end
 
     def typename
       'Edge'
     end
 
-    # Erase for invalid-entity tests.
-    def erase!
-      @erased = true
+    def valid?
+      !@erased
     end
 
     def erased?
       @erased == true
+    end
+
+    def deleted?
+      false
+    end
+
+    # Erase for invalid-entity tests.
+    def erase!
+      @erased = true
+    end
+  end
+
+  # Raised when an invalid (erased) entity is accessed. S2-BLOCK-005
+  # round 2: callers (build_snapshot walk) treat this as skip-not-fail.
+  class InvalidEntityError < StandardError; end
+
+  # Fake InstancePath (used to test active edit-context + PID path
+  # resolution back). Holds a sequence of PIDs and a transformation.
+  class InstancePath
+    attr_reader :persistent_id_path, :transformation, :leaf_pid
+    def initialize(persistent_id_path: [], transformation: nil, leaf_pid: nil)
+      @persistent_id_path = persistent_id_path.dup.freeze
+      @transformation = transformation
+      @leaf_pid = leaf_pid.nil? ? @persistent_id_path.last : leaf_pid
+    end
+  end
+
+  # Fake Model. Holds entities + active_path; supports
+  # instance_path_from_pid_path resolution for tests.
+  class Model
+    attr_reader :entities, :active_path
+    def initialize(entities: [], active_path: nil)
+      @entities = entities
+      @active_path = active_path
+    end
+
+    # Mock resolver. Looks up by full PID path in @pid_path_to_instance;
+    # returns the registered InstancePath or nil.
+    def instance_path_from_pid_path(pid_path)
+      return nil if pid_path.nil? || pid_path.empty?
+      @pid_path_registry ||= {}
+      @pid_path_registry[pid_path] || @pid_path_registry[pid_path.dup]
+    end
+
+    # Test helper: register a PID path -> InstancePath mapping.
+    def register_pid_path(pid_path, instance_path)
+      @pid_path_registry ||= {}
+      @pid_path_registry[pid_path.dup.freeze] = instance_path
     end
   end
 

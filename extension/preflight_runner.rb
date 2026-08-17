@@ -55,26 +55,42 @@ module SUAnalysis
       # Groups / ComponentInstances), build EdgeRecords and a preflight
       # facts hash. Never mutates the source entities.
       #
-      # S2-BLOCK-001 fix: each source Edge yields exactly ONE EdgeRecord.
-      # The two endpoints are read once via edge.start.position and
-      # edge.end.position. Orientation-insensitive duplicate detection
-      # lives in DuplicateDetector (already correct).
+      # S2-BLOCK-001 fix (round 1): each source Edge yields exactly ONE
+      # EdgeRecord. Orientation-insensitive duplicate detection lives in
+      # DuplicateDetector.
       #
-      # S2-BLOCK-002 fix: each yielded edge carries the accumulated
-      # transformation (in world coords) so the EdgeRecord is created
-      # in world space. instance_path is set on the SourceReference so
-      # the same definition Edge used by two ComponentInstances stays
-      # two distinct analysis occurrences.
-      def build_snapshot(selection)
+      # S2-BLOCK-002 fix (round 2): each yielded edge carries the
+      # accumulated transformation (in world coords) so the EdgeRecord is
+      # created in world space. persistent_id_path is set on the
+      # SourceReference so the same definition Edge used by two
+      # ComponentInstances stays two distinct analysis occurrences.
+      #
+      # Active edit-context support: when model has an active edit path,
+      # walk seeds its world transform with the active path's transform
+      # instead of identity. The active path's PIDs are prepended to
+      # each yielded entity's pid_path.
+      def build_snapshot(selection, model: nil)
         edges     = []
         preflight = collect_preflight_facts(selection)
 
-        walk_selection_world(selection) do |entity, world_points, instance_path|
+        active_t, active_pid_path = SUAnalysis::Compatibility::SUCapability.active_edit_context(model)
+        # If active_t is nil (outside SU; test fakes may use FakeSU::Transformation
+        # for identity), substitute our adapter's identity.
+        seed_t = active_t.nil? ? identity_transform : active_t
+
+        walk_selection_world(
+          selection,
+          seed_t:               seed_t,
+          seed_pid_path:        active_pid_path
+        ) do |entity, world_points, pid_path, label_path|
           next unless SUAnalysis::Compatibility::SUCapability.edge?(entity)
-          next if world_points.size < 2
+          next if world_points.nil? || world_points.size < 2
           begin
             src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
-              entity, kind: 'edge', instance_path: instance_path
+              entity,
+              kind:               'edge',
+              persistent_id_path: pid_path,
+              instance_path:      label_path
             )
             layer = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
             layer = 'Layer0' if layer.nil? || layer.empty?
@@ -115,34 +131,79 @@ module SUAnalysis
       #
       # Mock-friendly: every step uses respond_to? checks so test
       # fakes don't need the real Geom::Transformation class.
-      def walk_selection_world(selection, &block)
+      def walk_selection_world(selection, seed_t: nil, seed_pid_path: nil, &block)
         return unless selection
         return unless selection.respond_to?(:each)
+        seed_t        ||= identity_transform
+        seed_pid_path ||= []
         selection.each do |root|
-          walk_entity_world(root, identity_transform, [], nil, &block)
+          walk_entity_world(root, seed_t, seed_pid_path, [], nil, &block)
         end
       end
 
-      def walk_entity_world(entity, parent_t, parent_path, parent_kind, &block)
+      def walk_entity_world(entity, parent_t, parent_pid_path, parent_label_path, parent_kind, &block)
         return if entity.nil?
+        # If entity is invalid (erased / deleted / raises on respond_to?),
+        # skip cleanly without aborting siblings. The block is never
+        # yielded for invalid entities. Per S2-BLOCK-005 round 2.
+        return unless entity_valid?(entity)
+
         # Apply this entity's own transformation (relative to parent).
         own_t = read_transformation(entity, parent_kind)
         world_t = combine_transforms(parent_t, own_t)
 
+        # PID path: append this container's PID (if any).
+        my_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
+        new_pid_path = my_pid.nil? ? parent_pid_path.dup : parent_pid_path.dup << my_pid
+
         if SUAnalysis::Compatibility::SUCapability.container?(entity)
-          path = parent_path + [container_label(entity)]
-          children = container_children(entity)
+          new_label_path = parent_label_path + [container_label(entity)]
+          children = safe_each(container_children(entity))
           if children.nil?
             # Empty / locked / deleted definition — skip silently.
             return
           end
           children.each do |child|
             child_kind = container_kind(entity)
-            walk_entity_world(child, world_t, path, child_kind, &block)
+            begin
+              walk_entity_world(child, world_t, new_pid_path, new_label_path, child_kind, &block)
+            rescue StandardError => e
+              # §18 + S2-BLOCK-005 r2: per-child rescue so one bad
+              # child does not abort siblings.
+              warn "[SU-AI-Plugin] skipped invalid child: #{e.class}: #{e.message}"
+            end
           end
         elsif SUAnalysis::Compatibility::SUCapability.edge?(entity)
-          yield entity, edge_world_endpoints(entity, world_t), parent_path
+          begin
+            endpoints = edge_world_endpoints(entity, world_t)
+          rescue InvalidGeometryError => e
+            # Per S2-BLOCK-005 r2: skip the entire Edge; do NOT
+            # synthesize origin geometry.
+            warn "[SU-AI-Plugin] skipped invalid edge: #{e.message}"
+            return
+          end
+          yield entity, endpoints, new_pid_path, parent_label_path
         end
+      end
+
+      # Returns true if the entity is safe to traverse / yield. Fails
+      # closed: any unexpected condition returns false.
+      def entity_valid?(entity)
+        return false if entity.nil?
+        # Real SU exposes .valid? on Entity. We don't strictly require it
+        # because fakes may not implement it; respond_to? is enough.
+        if entity.respond_to?(:valid?)
+          return false unless entity.valid?
+        end
+        if entity.respond_to?(:deleted?) && entity.deleted?
+          return false
+        end
+        if entity.respond_to?(:erased?) && entity.erased?
+          return false
+        end
+        true
+      rescue StandardError
+        false
       end
 
       # Children of a container. For Group: `group.entities`. For
@@ -160,11 +221,19 @@ module SUAnalysis
         safe_each(entity.entities)
       end
 
+      # Returns the collection, or an empty Array if enumeration raises.
+      # Per S2-BLOCK-005 round 2: must actually wrap iteration, not just
+      # return the collection and hope downstream iteration is safe.
       def safe_each(coll)
         return nil if coll.nil?
-        coll
-      rescue StandardError
-        nil
+        result = []
+        begin
+          coll.each { |item| result << item }
+        rescue StandardError
+          # Caller gets the items successfully enumerated up to the
+          # failure. Sibling entities continue normally.
+        end
+        result
       end
 
       def container_kind(entity)
@@ -293,17 +362,24 @@ module SUAnalysis
       end
 
       def vertex_point_world(vertex, world_t)
+        # Per S2-BLOCK-005 round 2: invalid vertices must NOT silently
+        # be converted to origin. Raise so the per-Edge rescue skips
+        # the entire Edge. The caller catches this in build_snapshot.
         if vertex.nil?
-          return [0.0, 0.0, 0.0]
+          raise InvalidGeometryError, 'vertex is nil'
         end
         pos = vertex.respond_to?(:position) ? vertex.position : nil
         if pos.nil?
-          return [0.0, 0.0, 0.0]
+          raise InvalidGeometryError, 'vertex.position is nil'
         end
         apply_transform(world_t, [pos.x.to_f, pos.y.to_f, pos.z.to_f])
+      rescue InvalidGeometryError
+        raise
       rescue StandardError
-        [0.0, 0.0, 0.0]
+        raise InvalidGeometryError, "vertex extraction failed: #{$ERROR_MESSAGE}"
       end
+
+      class InvalidGeometryError < StandardError; end
 
       # -----------------------------------------------------------------
       # Preflight facts (SU-side fields)
