@@ -123,3 +123,67 @@ test 'issue_id_assigner: id does not contain raw object_id or entity_id' do
   assert_match(/42/, id)
   refute_match(/1000000/, id)
 end
+
+# --- BLOCK-002 adversarial: no-PID/no-location branch ---
+
+test 'issue_id_assigner: no-PID + no-location -> no-source key (no entity_id/object_id)' do
+  id = IssueIdAssigner.assign(
+    issue_type: 'short_edge',
+    source_tokens: [
+      { persistent_id_path: [], entity_id: 999_999,
+        nested: false, pid_path_complete: false, edge_ids: [] }
+    ],
+    counter_within_type: 1
+  )
+  # Must NOT contain entity_id 999999 or any object_id derivative.
+  refute_match(/999999/, id)
+  refute_match(/object_id/, id)
+  # Uses the deterministic no-source key.
+  assert_match(/no-source/, id)
+end
+
+test 'issue_id_assigner: no-PID + sorted edge_ids -> deterministic edges key' do
+  id1 = IssueIdAssigner.assign(
+    issue_type: 'short_edge',
+    source_tokens: [
+      { persistent_id_path: [], entity_id: 111,
+        nested: false, pid_path_complete: false, edge_ids: [3, 1, 2] }
+    ],
+    counter_within_type: 1
+  )
+  id2 = IssueIdAssigner.assign(
+    issue_type: 'short_edge',
+    source_tokens: [
+      { persistent_id_path: [], entity_id: 222,
+        nested: false, pid_path_complete: false, edge_ids: [2, 3, 1] }
+    ],
+    counter_within_type: 1
+  )
+  # Same edge_ids in different order -> same id (sorted internally).
+  assert_equal id1, id2
+  assert_match(/edges:1,2,3/, id1)
+end
+
+test 'issue_id_assigner: location fallback is deterministic across perturbations' do
+  id1 = IssueIdAssigner.assign(
+    issue_type: 'short_edge',
+    source_tokens: [
+      { persistent_id_path: [], entity_id: 1,
+        nested: false, pid_path_complete: false, edge_ids: [] }
+    ],
+    location: [10.0, 0.0, 0.0],
+    counter_within_type: 1
+  )
+  id2 = IssueIdAssigner.assign(
+    issue_type: 'short_edge',
+    source_tokens: [
+      { persistent_id_path: [], entity_id: 99,
+        nested: false, pid_path_complete: false, edge_ids: [] }
+    ],
+    location: [10.0, 0.0, 0.0],
+    counter_within_type: 1
+  )
+  # Location is identical; entity_id is ignored.
+  assert_equal id1, id2
+  assert_match(/geo:/, id1)
+end

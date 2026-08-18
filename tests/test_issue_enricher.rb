@@ -220,3 +220,53 @@ test 'issue_enricher.enrich_all: assigns sequential counter within type' do
   counters = out.map { |x| x[:issue_id].match(/\|(\d+)$/)[1].to_i }
   assert_equal [1, 2], counters
 end
+
+# --- BLOCK-002 counter stability: input order must NOT change counters ---
+
+test 'issue_enricher.enrich_all: counter is order-independent (reversed input)' do
+  e1 = edge_with(persistent_id_path: [10], structural_depth: 0, pid_path_complete: true)
+  e1.instance_variable_set(:@id, 1)
+  e2 = edge_with(persistent_id_path: [20], structural_depth: 0, pid_path_complete: true)
+  e2.instance_variable_set(:@id, 2)
+  e3 = edge_with(persistent_id_path: [30], structural_depth: 0, pid_path_complete: true)
+  e3.instance_variable_set(:@id, 3)
+  lkp = snap(e1, e2, e3)
+  mk = ->(id) {
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'short_edge', severity: 'low', confidence: 'medium',
+      source_entity_ids: [], edge_ids: [id], location: nil,
+      message: "m#{id}", metadata: {})
+  }
+  forward = [mk.call(1), mk.call(2), mk.call(3)]
+  reversed = [mk.call(3), mk.call(2), mk.call(1)]
+  out_f = IssueEnricher.enrich_all(forward,  snapshot_lookup: lkp)
+  out_r = IssueEnricher.enrich_all(reversed, snapshot_lookup: lkp)
+  # Same logical Issue -> same issue_id (counter and all).
+  ids_f = out_f.map { |x| x[:issue_id] }.sort
+  ids_r = out_r.map { |x| x[:issue_id] }.sort
+  assert_equal ids_f, ids_r
+end
+
+test 'issue_enricher.enrich_all: counter is order-independent (shuffled input)' do
+  e1 = edge_with(persistent_id_path: [10], structural_depth: 0, pid_path_complete: true)
+  e1.instance_variable_set(:@id, 1)
+  e2 = edge_with(persistent_id_path: [20], structural_depth: 0, pid_path_complete: true)
+  e2.instance_variable_set(:@id, 2)
+  e3 = edge_with(persistent_id_path: [30], structural_depth: 0, pid_path_complete: true)
+  e3.instance_variable_set(:@id, 3)
+  lkp = snap(e1, e2, e3)
+  mk = ->(id) {
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'short_edge', severity: 'low', confidence: 'medium',
+      source_entity_ids: [], edge_ids: [id], location: nil,
+      message: "m#{id}", metadata: {})
+  }
+  a = [mk.call(1), mk.call(2), mk.call(3)]
+  b = [mk.call(2), mk.call(3), mk.call(1)]
+  c = [mk.call(3), mk.call(1), mk.call(2)]
+  out_a = IssueEnricher.enrich_all(a, snapshot_lookup: lkp).map { |x| x[:issue_id] }.sort
+  out_b = IssueEnricher.enrich_all(b, snapshot_lookup: lkp).map { |x| x[:issue_id] }.sort
+  out_c = IssueEnricher.enrich_all(c, snapshot_lookup: lkp).map { |x| x[:issue_id] }.sort
+  assert_equal out_a, out_b
+  assert_equal out_a, out_c
+end

@@ -199,3 +199,16 @@ test 'issue_registry.groups: within-group sort by issue_id ASC' do
                 'duplicate_edge_candidate|mmm|1',
                 'duplicate_edge_candidate|zzz|1'], issue_ids
 end
+
+test 'issue_registry.groups: unknown issue_type is appended AFTER canonical list (CodeX NIT)' do
+  issues = [
+    reg_issue(issue_id: 'duplicate_edge_candidate|1|1', issue_type: 'duplicate_edge_candidate'),
+    reg_issue(issue_id: 'custom_alert|1|1', issue_type: 'custom_alert', severity: 'medium'),
+    reg_issue(issue_id: 'short_edge|1|1', issue_type: 'short_edge')
+  ]
+  reg = IssueRegistry.new(issues)
+  groups = reg.groups
+  types = groups.map { |g| g[:type] }
+  # Unknown appears after canonical; canonical order is preserved.
+  assert_equal true, types.index('custom_alert') > types.index('short_edge')
+end

@@ -32,7 +32,9 @@ module SUAnalysis
 
       # Compute the three structural facts for a single source path.
       # Returns a Hash with three keys:
-      #   :structural_depth    — total structural depth (active + containers + leaf)
+      #   :structural_depth    — count of structural ancestors + active path
+      #                          entities. EXCLUDES the leaf itself.
+      #                          root leaf = 0; one container = 1; etc.
       #   :pid_path_complete    — true iff every PID slot is non-nil AND leaf is non-nil
       #   :pid_path             — Array<Integer> with only non-nil integers
       #
@@ -43,15 +45,23 @@ module SUAnalysis
       #   active_path_count: Integer — number of entities in the
       #     current active edit path. 0 when not editing.
       #
-      # Formula (Stage 6 contract):
-      #   structural_depth = active_path_count + ancestry_count + 1
-      #     The +1 accounts for the leaf itself.
+      # Formula (Stage 6 pass4 contract, BLOCK-001 v3 fix):
+      #   structural_depth = active_path_count + ancestry_count
+      #     (leaf is NOT counted; the leaf is +1 relative to depth)
+      #   expected_pid_count = structural_depth + 1
       #   pid_path_complete = every ancestry slot non-nil AND leaf_pid non-nil
       #   pid_path = ancestry.compact + [leaf_pid] if leaf_pid non-nil
+      #
+      # Note: when active_path_count > 0, the pid_path does NOT include
+      # active edit PIDs (they live in the active context, separate from
+      # the resolved InstancePath). expected_pid_count therefore
+      # counts entity slots including the active ones, but the
+      # InstancePath resolution will use only the ancestry portion.
       def compute(ancestry_pids_with_nil:, leaf_pid:, active_path_count: 0)
         ancestry_complete = ancestry_pids_with_nil.all? { |p| !p.nil? }
         leaf_complete     = !leaf_pid.nil?
-        structural_depth = active_path_count.to_i + ancestry_pids_with_nil.length + 1
+        # structural_depth excludes the leaf (CodeX BLOCK-001 v3 fix).
+        structural_depth = active_path_count.to_i + ancestry_pids_with_nil.length
         pid_path = ancestry_pids_with_nil.compact
         pid_path = pid_path + [leaf_pid] if !leaf_pid.nil?
         {
@@ -62,15 +72,17 @@ module SUAnalysis
       end
 
       # Convenience: derive facts from a CANONICAL pid_path that
-      # INCLUDES the leaf at the end. Treats the last element as the
-      # leaf; ancestry is pid_path[0..-2].
+      # INCLUDES the leaf at the end. The leaf is the LAST entry;
+      # ancestors are pid_path[0..-2].
       def from_canonical_path(pid_path:, active_path_count: 0)
         pp = pid_path || []
-        ancestry = pp[0..-2] || []
+        ancestry = pp.size >= 2 ? pp[0..-2] : []
+        ancestry = ancestry.is_a?(Array) ? ancestry : []
         leaf_pid = pp.last
-        ancestry_complete = ancestry.is_a?(Array) && ancestry.all? { |p| !p.nil? }
+        ancestry_complete = ancestry.all? { |p| !p.nil? }
         leaf_complete = !leaf_pid.nil?
-        structural_depth = active_path_count.to_i + ancestry.length + 1
+        # structural_depth excludes the leaf (CodeX BLOCK-001 v3 fix).
+        structural_depth = active_path_count.to_i + ancestry.length
         {
           structural_depth: structural_depth,
           pid_path_complete: !!(ancestry_complete && leaf_complete),

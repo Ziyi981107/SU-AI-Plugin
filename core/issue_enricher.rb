@@ -14,6 +14,11 @@
 #       locatable iff at least one token is complete-root,
 #       complete-nested, or incomplete-root (entity_id present).
 #
+# Per CodeX Review 015 (2026-08-18) BLOCK-002:
+#   - enrich_all sorts by canonical_source_keys BEFORE assigning
+#     counter, so reversed input order produces the same issue_id.
+#   - Missing edge_id is recorded in metadata (no_source_marker).
+#
 # This module is pure Ruby. It does NOT call SketchUp or access
 # compatibility/. It only maps Hash -> Hash.
 #
@@ -34,11 +39,6 @@ module SUAnalysis
         return nil unless normalized.is_a?(Hash)
         sources = build_source_tokens(normalized, snapshot_lookup)
         locatable = compute_locatable(sources)
-        canonical_keys = IssueIdAssigner.canonical_source_keys(
-          source_tokens: sources,
-          location: normalized[:location],
-          coord_epsilon: coord_epsilon
-        )
         issue_id = IssueIdAssigner.assign(
           issue_type: normalized[:issue_type],
           source_tokens: sources,
@@ -62,13 +62,17 @@ module SUAnalysis
         }
       end
 
-      # Enrich a batch of normalized issues. Issues are sorted into
-      # issue_type buckets; the counter_within_type is sequential
-      # inside each bucket after sorting by canonical source keys.
+      # Enrich a batch of normalized issues.
+      # Per CodeX BLOCK-002: sort by canonical_source_keys BEFORE
+      # assigning counter, so reversed input order produces the same
+      # issue_id for the same logical Issue.
       def enrich_all(normalized_issues, snapshot_lookup:,
                     coord_epsilon: 1.0e-6)
-        bullets = Array(normalized_issues).map { |iss| enrich_one(iss, snapshot_lookup: snapshot_lookup, coord_epsilon: coord_epsilon) }.compact
-        # Re-group by issue_type and assign counter per type.
+        bullets = Array(normalized_issues).map do |iss|
+          # Build a single bullet without a counter; counter is
+          # assigned after sorting.
+          build_bullet_without_id(iss, snapshot_lookup, coord_epsilon)
+        end.compact
         by_type = {}
         bullets.each do |bullet|
           by_type[bullet[:issue_type]] ||= []
@@ -76,8 +80,15 @@ module SUAnalysis
         end
         result = []
         by_type.each do |_type, list|
-          list.each_with_index do |bullet, idx|
-            # Re-derive issue_id with sequential counter.
+          # Sort by canonical source keys for stable counter assignment.
+          sorted = list.sort_by do |bullet|
+            IssueIdAssigner.canonical_source_keys(
+              source_tokens: bullet[:sources],
+              location: bullet[:location],
+              coord_epsilon: coord_epsilon
+            )
+          end
+          sorted.each_with_index do |bullet, idx|
             bullet[:issue_id] = IssueIdAssigner.assign(
               issue_type: bullet[:issue_type],
               source_tokens: bullet[:sources],
@@ -95,14 +106,15 @@ module SUAnalysis
       # Returns Array<Hash> (Symbol keys). PIDs may be empty when
       # source lookup misses; the SourceToken preserves the
       # structural fields regardless.
+      # Missing edge_ids are recorded in metadata with the
+      # :no_source_marker field (CodeX NIT 4).
       def build_source_tokens(normalized, snapshot_lookup)
         tokens = []
+        missing_edge_ids = []
         Array(normalized[:edge_ids]).each do |edge_id|
           rec = snapshot_lookup[Integer(edge_id)]
           if rec.nil?
-            # Missing edge in snapshot. Record as a token with empty
-            # pid_path so the enricher can still produce a deterministic
-            # id (geometry-fallback used).
+            missing_edge_ids << Integer(edge_id)
             tokens << {
               persistent_id_path: [].freeze,
               entity_id:          nil,
@@ -119,6 +131,12 @@ module SUAnalysis
             nested:             src.structural_depth.to_i > 0,
             pid_path_complete:  src.pid_path_complete ? true : false
           }
+        end
+        # Stash missing edge_ids in `normalized[:metadata]` so the
+        # caller can surface them. We mutate a copy, not the input.
+        if !missing_edge_ids.empty? && normalized[:metadata].is_a?(Hash)
+          normalized[:metadata] = normalized[:metadata].dup
+          normalized[:metadata][:no_source_marker] = missing_edge_ids.map(&:to_s).sort.join(',')
         end
         dedup_whole_tokens(tokens)
       end
@@ -145,6 +163,28 @@ module SUAnalysis
           out << t
         end
         out
+      end
+
+      # Private helper: build a bullet without a counter. The
+      # counter is assigned after sorting in enrich_all.
+      def build_bullet_without_id(normalized, snapshot_lookup, coord_epsilon)
+        return nil unless normalized.is_a?(Hash)
+        sources = build_source_tokens(normalized, snapshot_lookup)
+        locatable = compute_locatable(sources)
+        {
+          issue_id:           nil, # assigned by enrich_all
+          issue_type:         normalized[:issue_type],
+          severity:           normalized[:severity],
+          confidence:         normalized[:confidence],
+          sources:            sources,
+          source_entity_ids:  sources.map { |t| t[:entity_id] }.compact,
+          edge_ids:           normalized[:edge_ids].dup,
+          location:           normalized[:location],
+          message:            normalized[:message],
+          metadata:           normalized[:metadata].dup,
+          locatable:          locatable,
+          display_length:     nil
+        }
       end
     end
   end

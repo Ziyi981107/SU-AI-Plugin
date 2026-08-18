@@ -105,10 +105,16 @@ module SUAnalysis
       # Default-open policy (CodeX Q1):
       #   - If any Issue has severity == 'high': open groups with :high.
       #   - Else: open the first non-empty group only.
+      #
+      # Per CodeX NIT Round 015: unknown issue_types are appended AFTER
+      # the canonical list, in lex order of the type itself, so they
+      # are deterministically visible.
       def groups(group_order: DEFAULT_GROUP_ORDER)
         by_type = Hash.new { |h, k| h[k] = [] }
         @issues.each { |iss| by_type[iss[:issue_type]] << iss }
-        ordered_types = (group_order + CANONICAL_ISSUE_TYPES).uniq
+        canonical_types_in_order = (group_order + CANONICAL_ISSUE_TYPES).uniq
+        unknown_types = by_type.keys.reject { |t| canonical_types_in_order.include?(t) }.sort
+        ordered_types = canonical_types_in_order + unknown_types
         any_high = @issues.any? { |iss| iss[:severity] == 'high' }
         result = []
         first_emitted = false
