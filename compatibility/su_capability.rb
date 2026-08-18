@@ -14,14 +14,17 @@
 #   - Capability detection uses `respond_to?` first, version second;
 #     we never hardcode SU 20xx checks in analyzers.
 #
+# Stage 6 additions (CodeX Review 013, 014, 015):
+#   - active_edit_context_facts: returns 5 independent facts about the
+#     current SketchUp active edit context. structural_depth is the
+#     actual entity count, NOT the filtered PID array length.
+#   - find_entity_by_id: safe wrapper for Model#find_entity_by_id,
+#     fails closed on missing capability / nil / error.
+#
 # No tests here: this module only runs inside SketchUp. Owner verification
 # (per Q002=A) covers the real-SU paths; the design is locked to SU2017+
 # capability flags so behavior is identical from 2017 onward for the
 # features this extension actually uses.
-#
-# Added in Stage 2 BLOCK rework (Codex R002):
-#   - html_dialog? — capability probe for Sketchup::HtmlDialog, used by
-#     Stage 6 UI. Tested outside SU with a stub test in test_preflight.rb.
 #
 
 require_relative '../core/source_reference'
@@ -173,9 +176,6 @@ module SUAnalysis
       # entity_id: prefer entity.entityID (real SU API, integer per session);
       # fall back to entity.object_id (Ruby transient) only outside SU or
       # when entityID is unavailable (per Codex Review 007 S2-BLOCK-002).
-      # entityID is per-session but integer-stable within a session; object_id
-      # is Ruby transient. For cross-session stability use persistent_id.
-      #
       # persistent_id_path: optional Array<Integer> of container PIDs from
       # model root to this entity, with the entity's own PID last (added per
       # S2-BLOCK-002 round 2 for machine-resolvable source identity).
@@ -184,7 +184,9 @@ module SUAnalysis
       # (display label only; NOT used as canonical identity).
       def build_source_reference(entity, kind: 'edge',
                                   persistent_id_path: nil,
-                                  instance_path: nil)
+                                  instance_path: nil,
+                                  structural_depth: nil,
+                                  pid_path_complete: nil)
         pid = safe_persistent_id(entity)
         label = nil
         if entity.respond_to?(:definition) && entity.definition && entity.definition.respond_to?(:name)
@@ -202,31 +204,87 @@ module SUAnalysis
           kind:               kind.to_s,
           label:              label,
           instance_path:      instance_path,
-          persistent_id_path: persistent_id_path
+          persistent_id_path: persistent_id_path,
+          structural_depth:    structural_depth.nil? ? 0 : structural_depth.to_i,
+          pid_path_complete:   pid_path_complete.nil? ? false : (pid_path_complete ? true : false)
         )
       end
 
-      # ---- Active edit-context -----------------------------------------
+      # ---- Active edit-context (Stage 6 source-identity) -----------------
 
-      # Per S2-BLOCK-002 round 3 (Codex Review 007 + GUIDANCE 006):
-      # real Model#active_path returns an Array of drawing elements
-      # (Group / ComponentInstance), NOT an InstancePath-like object.
-      # The edit transform is model.edit_transform. Active container
-      # PIDs come from iterating model.active_path and calling
-      # safe_persistent_id on each entity.
+      # Per CodeX Stage 6 contract (Review 012, 013, 014, 015):
+      # active_edit_context returns the basic transform + filtered PID
+      # array. This is the LIGHT helper. Round 013 BLOCK-001 v3 found
+      # that returning only the filtered PID array collapses two facts
+      # (entity count vs PID completeness) into one. The LOCATOR
+      # CONTRACT needs three independent facts.
       #
-      # Returns a 2-tuple [edit_transform, active_pid_path]:
-      #   - edit_transform: an SU Transform (or nil outside SU / tests)
-      #   - active_pid_path: Array<Integer> of PIDs of entities in
-      #     model.active_path (empty if no active edit context).
-      def active_edit_context(model = nil)
+      # active_edit_context_facts is the AUTHORITATIVE helper. It returns:
+      #   :transform        — model.edit_transform (or nil)
+      #   :pid_path         — Array<Integer> of captured PIDs (only non-nil)
+      #   :structural_depth — actual entity count in active_path (NOT filtered length)
+      #   :pid_path_complete — true iff every entity in active_path supplied a PID
+      #   :raw_with_nil     — original Array<Integer|nil> for fact calculation
+      #
+      # Gate B proofs (Round 014):
+      #   1. structural_depth == real entity count, NOT filtered length
+      #   2. pid_path_complete computed BEFORE nil PIDs are discarded
+      #   3. missing any active-path container PID -> caller fails closed
+      def active_edit_context_facts(model = nil)
         model ||= (defined?(Sketchup) ? Sketchup.active_model : nil)
-        return [nil, [].freeze] if model.nil?
+        return default_empty_facts if model.nil?
         transform = model_edit_transform(model)
-        pid_path = active_path_pids(model)
-        [transform, pid_path]
+        raw = active_path_with_nil(model)
+        # pid_path drops the nils (preserves slot order).
+        pid_path = raw.compact
+        # structural_depth = number of entities in active_path.
+        # Independent of pid_path completeness.
+        structural_depth = raw.length
+        # pid_path_complete = every active entity supplied a non-nil PID.
+        # Computed BEFORE nils are discarded. Empty active path is
+        # considered incomplete (no edit context = nothing to resolve).
+        pid_path_complete = !raw.empty? && raw.all? { |p| !p.nil? }
+        {
+          transform:        transform,
+          pid_path:         pid_path.freeze,
+          structural_depth: structural_depth,
+          pid_path_complete: pid_path_complete,
+          raw_with_nil:     raw.freeze
+        }
       rescue StandardError
-        [nil, [].freeze]
+        default_empty_facts
+      end
+
+      # Active path with nil-preserved slots. Used by active_edit_context_facts
+      # to compute completeness BEFORE nils are discarded.
+      def active_path_with_nil(model)
+        return [].freeze unless model.respond_to?(:active_path)
+        path = model.active_path
+        return [].freeze if path.nil?
+        return [].freeze unless path.respond_to?(:each)
+        pids = []
+        path.each do |entity|
+          pids << safe_persistent_id(entity)
+        end
+        pids.freeze
+      end
+
+      def default_empty_facts
+        {
+          transform:        nil,
+          pid_path:         [].freeze,
+          structural_depth: 0,
+          pid_path_complete: false,
+          raw_with_nil:     [].freeze
+        }
+      end
+
+      # Active edit-context: LEGACY helper. Returned the filtered PID
+      # array. New code should prefer active_edit_context_facts.
+      # Kept for backward compatibility with existing extension code.
+      def active_edit_context(model = nil)
+        facts = active_edit_context_facts(model)
+        [facts[:transform], facts[:pid_path]]
       end
 
       def model_edit_transform(model)
@@ -241,19 +299,28 @@ module SUAnalysis
         nil
       end
 
-      def active_path_pids(model)
-        return [].freeze unless model.respond_to?(:active_path)
-        path = model.active_path
-        return [].freeze if path.nil?
-        return [].freeze unless path.respond_to?(:each)
-        pids = []
-        path.each do |entity|
-          pid = safe_persistent_id(entity)
-          pids << pid unless pid.nil?
-        end
-        pids.freeze
+      # ---- find_entity_by_id (Stage 6 Gate B hardening) --------------------
+
+      # Safe wrapper around Model#find_entity_by_id. Returns the
+      # Sketchup::Entity or nil. Fails closed (no exception, no crash) on:
+      #   - nil model
+      #   - model lacks :find_entity_by_id (older SketchUp)
+      #   - nil entity_id
+      #   - entity_id not found
+      #   - any StandardError
+      #
+      # Per CodeX Round 014 BLOCK-001 v3: this is the ROOT-ONLY
+      # fallback used by IssueLocatorPolicy when the source has
+      # nested=false and pid_path_complete=false (i.e., root entity
+      # whose own PID is missing). Nested sources NEVER use this
+      # fallback; entityID alone cannot pick the correct shared
+      # component occurrence.
+      def find_entity_by_id(model, entity_id)
+        return nil if model.nil? || entity_id.nil?
+        return nil unless model.respond_to?(:find_entity_by_id)
+        model.find_entity_by_id(entity_id)
       rescue StandardError
-        [].freeze
+        nil
       end
 
       # ---- Resolution back from PID path -------------------------------

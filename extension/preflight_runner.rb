@@ -73,24 +73,38 @@ module SUAnalysis
         edges     = []
         preflight = collect_preflight_facts(selection)
 
-        active_t, active_pid_path = SUAnalysis::Compatibility::SUCapability.active_edit_context(model)
-        # If active_t is nil (outside SU; test fakes may use FakeSU::Transformation
-        # for identity), substitute our adapter's identity.
-        seed_t = active_t.nil? ? identity_transform : active_t
+        # Use the AUTHORITATIVE helper for active-edit-context facts.
+        # Per CodeX Round 014 Gate B proof #1: structural_depth is
+        # the REAL entity count from model.active_path, NOT the filtered
+        # PID array length.
+        active_facts = SUAnalysis::Compatibility::SUCapability.active_edit_context_facts(model)
+        # If active facts.transform is nil (outside SU; test fakes may
+        # use FakeSU::Transformation for identity), substitute our
+        # adapter's identity.
+        seed_t = active_facts[:transform].nil? ? identity_transform : active_facts[:transform]
 
         walk_selection_world(
           selection,
           seed_t:               seed_t,
-          seed_pid_path:        active_pid_path
-        ) do |entity, world_points, pid_path, label_path|
+          seed_pid_path:        active_facts[:pid_path],
+          seed_struct_depth:    active_facts[:structural_depth],
+          seed_path_complete:    active_facts[:pid_path_complete]
+        ) do |entity, world_points, pid_path, label_path, struct_depth, path_complete|
           next unless SUAnalysis::Compatibility::SUCapability.edge?(entity)
           next if world_points.nil? || world_points.size < 2
           begin
+            # pid_path_complete for the leaf: AND of parent completeness
+            # AND leaf PID non-nil.
+            leaf_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
+            leaf_complete = !leaf_pid.nil?
+            full_complete = path_complete && leaf_complete
             src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
               entity,
               kind:               'edge',
               persistent_id_path: pid_path,
-              instance_path:      label_path
+              instance_path:      label_path,
+              structural_depth:   struct_depth,
+              pid_path_complete:  full_complete
             )
             layer = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
             layer = 'Layer0' if layer.nil? || layer.empty?
@@ -122,26 +136,27 @@ module SUAnalysis
       # along with its 2 endpoints in WORLD coordinates and an
       # instance_path describing its container chain.
       #
-      # Transform multiplication order: SU applies parent -> child.
-      # Going deeper multiplies on the right: world = parent * child.
-      # We track `accum_transform` as a chain; each entry is applied to
-      # the next depth via `*` (Geom::Transformation overloads * for
-      # matrix concatenation). For tests we use the duck-type matrix
-      # multiply via apply_to_point (if defined) or treat as identity.
-      #
-      # Mock-friendly: every step uses respond_to? checks so test
-      # fakes don't need the real Geom::Transformation class.
-      def walk_selection_world(selection, seed_t: nil, seed_pid_path: nil, &block)
+      # Per CodeX Round 014 Gate B: yield also carries
+      # structural_depth and path_complete (computed on the leaf side
+      # of the pipeline). Active edit-context seed is passed via
+      # seed_struct_depth / seed_path_complete (= 0 / true when no
+      # active edit).
+      def walk_selection_world(selection, seed_t: nil, seed_pid_path: nil,
+                                seed_struct_depth: 0, seed_path_complete: false, &block)
         return unless selection
         return unless selection.respond_to?(:each)
         seed_t        ||= identity_transform
         seed_pid_path ||= []
         selection.each do |root|
-          walk_entity_world(root, seed_t, seed_pid_path, [], nil, &block)
+          walk_entity_world(
+            root, seed_t, seed_pid_path, [], nil,
+            seed_struct_depth, seed_path_complete, &block
+          )
         end
       end
 
-      def walk_entity_world(entity, parent_t, parent_pid_path, parent_label_path, parent_kind, &block)
+      def walk_entity_world(entity, parent_t, parent_pid_path, parent_label_path, parent_kind,
+                            parent_struct_depth, parent_path_complete, &block)
         return if entity.nil?
         # If entity is invalid (erased / deleted / raises on respond_to?),
         # skip cleanly without aborting siblings. The block is never
@@ -157,6 +172,12 @@ module SUAnalysis
         new_pid_path = my_pid.nil? ? parent_pid_path.dup : parent_pid_path.dup << my_pid
 
         if SUAnalysis::Compatibility::SUCapability.container?(entity)
+          # Structural depth: this container adds 1 to the parent's depth.
+          # The leaf is NOT counted (CodeX BLOCK-001 v3 / v4 contract).
+          new_struct_depth = parent_struct_depth + 1
+          # Path completeness: the absence of my_pid flips completeness
+          # to false (fail closed).
+          child_path_complete = parent_path_complete && !my_pid.nil?
           new_label_path = parent_label_path + [container_label(entity)]
           children = safe_each(container_children(entity))
           if children.nil?
@@ -166,7 +187,10 @@ module SUAnalysis
           children.each do |child|
             child_kind = container_kind(entity)
             begin
-              walk_entity_world(child, world_t, new_pid_path, new_label_path, child_kind, &block)
+              walk_entity_world(
+                child, world_t, new_pid_path, new_label_path, child_kind,
+                new_struct_depth, child_path_complete, &block
+              )
             rescue StandardError => e
               # §18 + S2-BLOCK-005 r2: per-child rescue so one bad
               # child does not abort siblings.
@@ -182,7 +206,12 @@ module SUAnalysis
             warn "[SU-AI-Plugin] skipped invalid edge: #{e.message}"
             return
           end
-          yield entity, endpoints, new_pid_path, parent_label_path
+          # At the leaf: structural_depth EXCLUDES the leaf itself.
+          # path_complete is the parent's; the leaf pid_completeness
+          # is ANDed in by the caller (build_snapshot) so non-leaf
+          # callers like tests can inspect it separately.
+          yield entity, endpoints, new_pid_path, parent_label_path,
+                parent_struct_depth, parent_path_complete
         end
       end
 

@@ -1,0 +1,107 @@
+/*
+ * extension/html/style.css — severity palette (R005).
+ *   :low    = neutral
+ *   :medium = orange
+ *   :high   = red
+ * No animation, no overlay, no source-model mutation.
+ */
+
+:root {
+  --sev-low:    #6e6e6e;
+  --sev-medium: #d97706;
+  --sev-high:   #c0392b;
+  --bg:         #fafafa;
+  --fg:         #1a1a1a;
+  --muted:      #888;
+  --border:     #ddd;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+}
+
+header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+header h1 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+}
+
+.muted { color: var(--muted); font-size: 12px; }
+
+main {
+  padding: 12px 16px;
+}
+
+section {
+  margin-bottom: 16px;
+}
+
+#summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#summary .stat {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+details {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+details summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+details[open] summary { border-bottom: 1px solid var(--border); }
+
+.issue {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.issue:hover { background: #f5f5f5; }
+.issue .id { font-family: monospace; font-size: 11px; color: var(--muted); }
+.issue .msg { font-size: 13px; margin-top: 2px; }
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-left: 6px;
+  color: #fff;
+  background: var(--sev-low);
+}
+.badge.sev-medium { background: var(--sev-medium); }
+.badge.sev-high   { background: var(--sev-high); }
+
+.toast {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+}
