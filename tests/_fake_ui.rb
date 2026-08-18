@@ -44,7 +44,15 @@ module FakeUI
   end
 
   # A sketchup::Menu stand-in. add_submenu / add_item behave like
-  # the real SU API.
+  # the real SU API:
+  #   - add_submenu(name) creates a NEW submenu every call (does NOT
+  #     find-or-create by name). The real Sketchup::Menu does not
+  #     guarantee create-or-return semantics across versions, and
+  #     per CodeX Round 019 BLOCK-002-R2 a nonstandard find-or-create
+  #     would HIDE a real duplicate. Production code MUST rely on
+  #     file_loaded? + module-level @registered sentinels for
+  #     idempotency, NOT on this method.
+  #   - add_item(cmd) appends unconditionally.
   class FakeMenu
     attr_reader :name, :items, :submenus
     def initialize(name)
@@ -56,13 +64,8 @@ module FakeUI
       @items << cmd
       cmd
     end
-    # Per CodeX Round 018 BLOCK-002: add_submenu is the official
-    # API. We create-or-return; if a submenu of the same name
-    # already exists, return it (idempotent at the level the real
-    # API allows).
     def add_submenu(name)
-      existing = @submenus.find { |s| s.name == name.to_s }
-      return existing if existing
+      # Honest mirror of the real API: always creates a new submenu.
       sub = self.class.new(name)
       @submenus << sub
       sub

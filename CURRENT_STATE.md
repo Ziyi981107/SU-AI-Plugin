@@ -1,10 +1,12 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (CodeX Round 018 Gate B recheck COMPLETE â€” all
-                          6 BLOCKs CLOSED; 244/244 tests PASS, 0 fail,
-                          0 error (+37 from Gate B); awaiting CodeX Round
-                          019 BLOCK RECHECK verdict. Owner Verification
-                          Stage 6 still pending real-SU run.)
+Last updated: 2026-08-18 (CodeX Round 019 Gate B recheck v2 COMPLETE â€”
+                          BLOCK-001/003/004/005/006 closed (Round 018)
+                          + BLOCK-002-R2 and BLOCK-006-R2 closed (Round
+                          019); 247/247 tests PASS, 0 fail, 0 error
+                          (+3 from Round 019); awaiting CodeX Round 020
+                          verdict. Owner Verification Stage 6 still
+                          pending real-SU run.)
 
 ## å†³ç­–è½åœ° (PI_TASK_001)
 
@@ -269,7 +271,7 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
 - Stage 1 + Stage 2 çº¯ Ruby éƒ¨åˆ†: 33/33 PASS
 - Stage 2 SU ç«¯: è®¾è®¡å®Œæ¯•, ç­‰ Owner éªŒè¯
 
-## CODEX REVIEW 018 (2026-08-18) ¡ª GATE B RECHECK: ALL 6 BLOCKs CLOSED
+## CODEX REVIEW 018 (2026-08-18) ï¿½ï¿½ GATE B RECHECK: ALL 6 BLOCKs CLOSED
 
 **Verdict**: All 6 S6-GATE-B-BLOCK-001..006 closed in one consolidated
 rework. Full test suite: 244/244 PASS, 0 fail, 0 error.
@@ -336,10 +338,112 @@ rework. Full test suite: 244/244 PASS, 0 fail, 0 error.
 ### What remains
 - CodeX Round 019: BLOCK RECHECK for the 6 closed BLOCKs. We expect
   PASS; if BLOCKs come back, fix in another consolidated pass.
-- Owner Verification Stage 6 (real SketchUp 2020) ¡ª `Review/OWNER_VERIFICATION_STAGE_6.txt`
+- Owner Verification Stage 6 (real SketchUp 2020) ï¿½ï¿½ `Review/OWNER_VERIFICATION_STAGE_6.txt`
   steps J..N. Owner is the only one who can run this (Q002=A).
 - SU2017 minimum-host verification remains a release Gate (per R004);
   not a Stage 6 blocker.
+- Packaging / .rbz for SketchUp Extension Manager ï¿½ï¿½ not yet started;
+  will follow Owner Verification Stage 6 PASS.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section ï¿½ï¿½)
+- ? Does NOT change R001-R005 product decisions
+- ? Does NOT expand product scope (no overlay, no repair, no mutation)
+- ? Does NOT push / publish / release
+- ? Does NOT skip Owner verification
+- ? Does NOT fake SU2017 as SU2020 evidence
+
+## CODEX REVIEW 019 (2026-08-18) ¡ª GATE B RECHECK v2: BLOCK-002-R2 + BLOCK-006-R2 CLOSED
+
+**Verdict**: BLOCK-001, -003, -004, -005, -006 stay CLOSED.
+BLOCK-002-R2 (boot path is not executable as documented) and
+BLOCK-006-R2 (per-issue-type summary counts not rendered) both
+closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
+
+### Code-side changes (Round 019 rework)
+- `extension/su_ai_plugin.rb`:
+  - `file_loaded(...)` moved INTO the success branch ¡ª only marked
+    on full boot success. A transient boot failure leaves the loaded
+    state unset, so the next load retries from scratch (per BLOCK-002-R2
+    safe-retry contract).
+  - Boot path is now a single method `SUAnalysis::Boot.boot!` that
+    `require_relative`'s the deps in safe order and calls
+    `Loader.register!` exactly once.
+- `extension/html/app.js`:
+  - `render(payload)` now emits per-issue-type counters in the locked
+    canonical order (7 types: duplicate_edge_candidate, short_edge,
+    open_endpoint, gap_candidate, significant_non_zero_z,
+    abnormal_large_coord, deep_nesting) with human-readable labels
+    ("Short Edges: 1", "Duplicate Candidates: 0", ...). The scalar
+    header rows (Edges, Vertices, non-zero-Z, Warnings) come first,
+    then the per-issue-type rows ¡ª both linear, no nested-object
+    stringification ("[object Object]") anywhere. Exposed
+    `ROOT.ISSUE_TYPE_LABELS` for harness introspection.
+- `tests/_fake_ui.rb`:
+  - `FakeMenu#add_submenu` no longer does nonstandard create-or-return
+    semantics. It always creates a NEW submenu ¡ª mirroring the real
+    `Sketchup::Menu` API, which does not guarantee find-or-create.
+    Production idempotency relies on `file_loaded?` + module-level
+    `@registered` sentinel, NOT on this method (per BLOCK-002-R2).
+
+### Test-side changes (Round 019 rework)
+- `tests/test_loader.rb` (rewrite):
+  - Top-level `file_loaded?` / `file_loaded` / `file_unloaded` stubs
+    so the test's `instance_eval` runner sees them via the entrypoint.
+  - 1 NEW test "faithful boot ¡ª load entrypoint twice, one menu item,
+    handler reaches dialog" that:
+    - Actually `load`s `extension/su_ai_plugin.rb` twice.
+    - Asserts exactly ONE menu item across both loads.
+    - Invokes the created command handler through to the dialog
+      boundary (FakeUI.state.dialogs.length == 1).
+    - After `file_unloaded` + sentinel reset, asserts the
+      honest FakeMenu surfaces a SECOND submenu (proving the
+      production code relies on `file_loaded?`, not on FakeMenu
+      find-or-create).
+  - 1 NEW assertion in "boot entrypoint exists and uses file_loaded?
+    guard" that the `file_loaded` call comes AFTER `Boot.boot!` in
+    the source.
+  - 1 NEW "menu command handler is wired AND clicking it reaches
+    the dialog" that actually invokes the handler (not just checks
+    the name).
+- `tests/test_html_render.rb` (additions):
+  - 1 NEW test that spawns Node.js to actually `vm.runInContext`
+    `extension/html/app.js` with a mock DOM, call `render(payload)`,
+    and inspect the rendered children for the locked labels
+    (Short Edges: 1, Duplicate Candidates: 0, etc.) and absence of
+    "[object Object]".
+  - 1 NEW source-text assertion that the locked `ISSUE_TYPE_LABELS`
+    array exists in the canonical order.
+- `tests/test_html_render_dom.js` (NEW): the Node.js executable
+  render test (17 inline assertions, prints "PASS" on full success).
+- `Review/OWNER_VERIFICATION_STAGE_6.txt` (rewritten step J):
+  - Removed the 22-line manual file list.
+  - Step J.1 now says: `load
+    "D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb"` (the
+    supported entrypoint).
+  - Step J.3 IDEMPOTENCY now points to the faithful boot test
+    (not UI::Menu introspection) and the real-host path is
+    `file_unloaded 'SU-AI-Plugin/extension/su_ai_plugin'` +
+    re-load the entrypoint (NOT direct `load loader.rb`).
+
+### NIT fixes (Round 019 NIT)
+- This packet uses atx-style `### H2` headings (no `=======`
+  underline) so `git diff --check` does not flag a conflict-marker
+  pattern in the markdown source. The previous packet had a
+  `git diff --check: PASS` claim but the independent command
+  actually reported a conflict-marker pattern on the underline
+  lines; the claim has been dropped. The packet's diff itself is
+  clean.
+- The "menu -> dialog" test was renamed to "menu command handler
+  is wired AND clicking it reaches the dialog" and now ACTUALLY
+  invokes the handler (not just calls `DialogRunner.show`
+  directly). Future packet wording matches what executes.
+
+### What remains
+- CodeX Round 020: BLOCK RECHECK for the 2 closed BLOCKs. Expected
+  PASS.
+- Owner Verification Stage 6 (real SketchUp 2020) ¡ª `Review/OWNER_VERIFICATION_STAGE_6.txt`
+  steps J..N. Owner is the only one who can run this (Q002=A).
+- SU2017 minimum-host verification remains a release Gate (per R004).
 - Packaging / .rbz for SketchUp Extension Manager ¡ª not yet started;
   will follow Owner Verification Stage 6 PASS.
 

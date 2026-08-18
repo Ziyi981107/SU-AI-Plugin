@@ -1,0 +1,637 @@
+============================================================
+OWNER VERIFICATION CHECKLIST — STAGE 6 UI (revised v2 per Codex Review 013)
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-18 (revised after S6-VERIFY-BLOCK-001 v2)
+For:       Product Owner (real-SU verification, per Q002=A)
+Depends on: CodeX Review 015 (Gate B) APPROVED verdict
+============================================================
+
+PURPOSE
+-------
+
+Per Q002=A, real-SketchUp verification is Owner's responsibility. Agent
+cannot run SketchUp. This file is the minimal, repeatable manual
+checklist for the Stage 6 HtmlDialog UI after Gate B APPROVED.
+
+Per CodeX Review 010 Q3 + Review 011 NIT + Review 012 S6-VERIFY-BLOCK-001
++ Review 013 S6-VERIFY-BLOCK-001 v2, this checklist is FOCUSED on
+Stage 6 only. Stage 2's A..I checklist already passed on SU2020
+(2026-08-17) and does NOT need to be re-run. SU2017 minimum-host
+verification (per R004) remains a separate release Gate, not a
+Stage 6 blocker.
+
+S6-VERIFY-BLOCK-001 v2 fixes applied (per CodeX Review 013):
+- K.7 (dangling fixture): `dangling` is a Group containing an Edge.
+  The Edge is structurally nested (`structural_depth > 0`), not
+  root-level. Both open-endpoint Issues share one source Edge and
+  Locate selects the root Group occurrence.
+- K.6 (outer_g fixture): two connected edges in an L shape produce
+  TWO open-endpoint issues alongside the deep-nesting warning.
+  The expected counts list both.
+- M.8 (post-erase behavior): erasing the only Edge in `dangling`
+  leaves an empty Group; the next analysis shows zero Issues
+  (the analyzer's "no analyzable geometry" fallback), not
+  "1 remaining Open endpoint row".
+- L.1 (duplicate tokens): both tokens are nested definition-edge
+  occurrences; the "root + nested leaf" wording is removed.
+
+S6-VERIFY-BLOCK-001 v1 fixes (still in force):
+- Duplicate fixture uses world-coincident edges in two distinct
+  container occurrences, not a 0.001 offset.
+- One duplicate pair produces ONE Issue row with TWO SourceTokens.
+- su_active_path_size_safe() handles nil active_path at root.
+- Stale-source verification is mandatory and keeps the dialog open.
+  Compare fingerprints immediately before and after the Locate click,
+  NOT before and after the deliberate erase.
+- N (non-mutating end-to-end) cannot use the destructive stale
+  fixture.
+- Menu idempotency is proven by the FakeUI adapter test, not by
+  UI::Menu introspection.
+- Geometry fingerprint is RECURSIVE across reachable Groups /
+  ComponentDefinitions — but it is a GEOMETRY/COUNT fingerprint.
+  Property-only mutations (material/layer/hidden/soft) require
+  the lint + real-host behavior evidence alongside it.
+
+
+SCOPE OF STAGE 6 SU-SIDE VERIFICATION
+======================================
+
+Re-verify the 5-step checklist J..N below. Each step should match the
+behavior the adapter-level stub tests now exercise automatically.
+
+Files in scope for this checklist (added/modified in Stage 6 Gate B):
+  core/source_reference.rb                     (modified: +structural_depth, +pid_path_complete EXPLICIT, no defaults)
+  core/structural_facts.rb                     (NEW per NIT: pid_path_complete arithmetic)
+  core/issue_registry.rb
+  core/issue_id_assigner.rb
+  core/issue_enricher.rb
+  core/issue_normalizer.rb
+  core/issue_grouper.rb
+  core/analysis_result.rb
+  core/issue_locator_policy.rb
+  extension/preflight_runner.rb                (modified: walks structural facts)
+  extension/issue_locator.rb
+  extension/display_unit_formatter.rb
+  extension/loader.rb                          (UI.menu / UI::Command registration)
+  extension/analyzers_runner.rb                (one-snapshot-per-command)
+  extension/dialog_runner.rb                   (HtmlDialog lifecycle)
+  extension/dialog_controller.rb
+  extension/ui_bridge.rb
+  extension/html/index.html
+  extension/html/style.css
+  extension/html/app.js
+  compatibility/su_capability.rb               (modified: +find_entity_by_id)
+  tests/_fake_ui.rb
+  tests/_fake_instance_path.rb
+  tests/test_no_overlay_lint.rb                (proves absence of a finite forbidden-token set)
+
+
+PRE-FLIGHT (ONE-TIME PER SESSION)
+=================================
+
+Open SketchUp 2017+ (suggested 2020 + a SU2017 if available).
+
+Create a fresh empty model. Do NOT use production / source CAD.
+
+Setup helper (Ruby Console, fresh empty model):
+
+  model = Sketchup.active_model
+  entities = model.active_entities
+
+  # Fixture 1: a planar 4-edge closed square (closed, no duplicates,
+  # no open endpoints).
+  test_group = entities.add_group
+  test_group.entities.add_line([0,0,0],      [10,0,0])
+  test_group.entities.add_line([10,0,0],     [10,5,0])
+  test_group.entities.add_line([10,5,0],     [0,5,0])
+  test_group.entities.add_line([0,5,0],      [0,0,0])
+
+  # Fixture 2: a duplicate candidate via SHARED ComponentDefinition
+  # with two occurrences whose edges are world-coincident (FIXED:
+  # no 0.001 offset; the shared definition edge is re-used by both
+  # occurrences, producing two Edges at the same world coords).
+  shared_def = Sketchup.active_model.definitions.add('SharedDupComp')
+  shared_def.entities.add_line([0,0,0], [10,0,0])
+  occ_a = entities.add_component_instance(shared_def, Geom::Transformation.new([20, 0, 0]))
+  occ_b = entities.add_component_instance(shared_def, Geom::Transformation.new([20, 0, 0]))
+
+  # Fixture 3: a nested Group/Component (2 connected edges in an L
+  # shape, depth 3). The two end vertices have degree 1, so
+  # OpenEndpointDetector emits 2 open-endpoint issues ALONGSIDE
+  # the deep-nesting warning. (FIXED per K.6.)
+  outer_g = entities.add_group
+  inner_comp = outer_g.entities.add_component_instance(
+    Sketchup.active_model.definitions.add('InnerComponent'))
+  inner_g = inner_comp.definition.entities.add_group
+  inner_g.entities.add_line([0,0,0],  [5,0,0])
+  inner_g.entities.add_line([5,0,0],  [5,5,0])
+  # Total: depth 3 (outer_g / inner_comp / inner_g), 2 edges.
+  # Stage 6 reports:
+  #   - 1 deep_nesting warning (severity :low)
+  #   - 2 open_endpoint issues (severity :medium), both resolving to
+  #     the root occurrence of outer_g (the analysis walks the leaf
+  #     edges into the model root transformation)
+
+  # Fixture 4: a single isolated edge inside a Group (`dangling`).
+  # The Edge is structurally nested (`structural_depth > 0`),
+  # not root-level. Both endpoints are degree 1, so the analyzer
+  # emits TWO open-endpoint issues, both resolving to the same
+  # source Edge, and Locate selects the root Group occurrence
+  # (NOT the leaf). (FIXED per K.7.)
+  dangling = entities.add_group
+  dangling_edge = dangling.entities.add_line([100,0,0], [100,1,0])
+
+FIXTURE EXPECTED ISSUE COUNTS (CORRECTED per S6-VERIFY-BLOCK-001 v2):
+  - test_group:  0 duplicate, 0 short, 0 open, 0 gap, 0 non-zero-Z, 0 large, 0 deep
+  - occ_a+occ_b: 1 duplicate_issue (two SourceTokens, both nested
+                 definition-edge occurrences — see L.1)
+  - outer_g:     0 duplicate, 0 short, 2 open (L-shape degree-1
+                 endpoints), 0 gap, 0 non-zero-Z, 0 large, 1 deep
+  - dangling:    0 duplicate, 0 short, 2 open (both endpoints of
+                 one Edge), 0 gap, 0 non-zero-Z, 0 large, 0 deep
+  - All fixtures share the same model; the analyzer rebuilds the
+    registry on each Analyze selection click.
+
+
+HOW TO RUN THE CHECKLIST
+========================
+
+  1. Select the desired fixture in the model.
+  2. Click the plugin "Plugins > SU-AI-Plugin > Analyze selection"
+     menu item.
+  3. The HtmlDialog should open.
+  4. After each step, capture evidence (screenshot, console log,
+     or Ruby fingerprint output).
+  5. Use the nil-safe active_path helper below for all active_path
+     queries — root-level entities have `active_path == nil`.
+
+  Capture PRE-analysis Ruby fingerprint (paste in Ruby Console):
+
+    # -- Begin fingerprint helper v6.2 (recursive geometry/count) --
+    def su_count_geometry_recursive(entities)
+      counts = { edges: 0, faces: 0, groups: 0,
+                 components: 0, definitions: 0 }
+      entities.each do |e|
+        case e
+        when Sketchup::Edge
+          counts[:edges] += 1
+        when Sketchup::Face
+          counts[:faces] += 1
+        when Sketchup::Group
+          counts[:groups] += 1
+          counts.merge!(su_count_geometry_recursive(e.entities)) { |_, a, b| a + b }
+        when Sketchup::ComponentInstance
+          counts[:components] += 1
+          counts.merge!(su_count_geometry_recursive(e.definition.entities)) { |_, a, b| a + b }
+        end
+      end
+      counts
+    end
+
+    def su_active_path_size_safe(model)
+      return 0 unless model.respond_to?(:active_path)
+      ap = model.active_path
+      ap.nil? ? 0 : ap.length
+    end
+
+    # GEOMETRY/COUNT fingerprint only. This fingerprint detects
+    # COUNT changes (entities added or removed). It does NOT prove
+    # absence of property-only mutations (material / layer / hidden /
+    # soft / dictionary entries). For property-only mutations, the
+    # test_no_overlay_lint + real-host behavior evidence are
+    # complementary guards (see step N.6).
+    def su_fingerprint_v6(model)
+      m = model
+      geom = su_count_geometry_recursive(m.entities)
+      {
+        edges:           geom[:edges],
+        faces:           geom[:faces],
+        groups:          geom[:groups],
+        components:      geom[:components],
+        definitions:     m.definitions.length,
+        layers:          m.layers.length,
+        materials:       m.materials.length,
+        styles:          m.styles.length,
+        tags:            (m.respond_to?(:tags) ? m.tags.length : 0),
+        active_path_size: su_active_path_size_safe(m)
+      }
+    end
+
+    fp_before = su_fingerprint_v6(Sketchup.active_model)
+    puts "PRE  = #{fp_before.inspect}"
+    # -- End fingerprint helper --
+
+Then proceed to step J.
+
+
+J. Plugin load smoke + idempotent menu registration
+==================================================
+
+The plugin has ONE supported development entrypoint:
+  D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb
+
+That file uses the official SketchUp Ruby API (`file_loaded?` /
+`file_loaded`) to guard duplicate loads, requires all Gate B
+dependencies in safe order, then calls `Loader.register!` exactly
+once. On boot failure it does NOT mark `file_loaded` so the next
+load retries from scratch.
+
+In a real SketchUp 2020 session the file is loaded automatically
+via the .rbz manifest. In the dev tree, run all of J below by
+loading the entrypoint directly. Do NOT manually `load` core/
+or extension/ files — that bypasses the entrypoint and breaks
+idempotency (per CodeX Round 019 BLOCK-002-R2).
+
+   1. Verify the entrypoint loads without error. In Ruby Console:
+        load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+      Expected: no errors, no warnings. Sketchup console shows
+      no `[SU-AI-Plugin] boot failed:` line.
+
+   2. Confirm menu item appears under Plugins menu.
+        Plugins > SU-AI-Plugin > Analyze selection
+      Expected: ONE menu item, labeled "Analyze selection".
+
+   3. IDEMPOTENCY — proven by the FakeUI adapter test
+      (test_loader: faithful boot — load entrypoint twice ...).
+      That test actually `load`s `extension/su_ai_plugin.rb` twice
+      (with a `file_unloaded` simulation between loads), asserts
+      exactly ONE menu entry exists in the FakeUI registry, AND
+      invokes the created command handler through to the dialog
+      boundary (FakeUI.state.dialogs.length == 1 after click).
+
+      For a real-host visual confirmation:
+        - Reset the loaded-marker from the Ruby Console:
+            file_unloaded 'SU-AI-Plugin/extension/su_ai_plugin'
+        - Re-load the entrypoint:
+            load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+        - Open the Plugins menu.
+      Expected: still ONE "Analyze selection" item. The re-load
+      did not duplicate the entry.
+
+      DO NOT use `load 'D:/Projects/SU-AI-Plugin/extension/loader.rb'`
+      directly. That bypasses the entrypoint's `file_loaded?` guard
+      and resets the module-level @registered sentinel, so on a real
+      host a SECOND `register!` would add a second menu item. The
+      supported way to re-trigger boot is the entrypoint + the
+      `file_unloaded` reset above.
+
+   4. Capability probe:
+        SUAnalysis::Compatibility::SUCapability.html_dialog?
+      Expected: true (on SU 2017+; checks UI::HtmlDialog is defined).
+
+   5. find_entity_by_id wrapper (NEW in Gate B):
+        SUAnalysis::Compatibility::SUCapability.find_entity_by_id(
+          Sketchup.active_model, 0)
+      Expected: nil (entity_id 0 is not the transient id of any
+      fixture entity). The wrapper returns nil on missing /
+      unknown / errored lookups; never raises.
+
+   6. SourceReference explicit construction (NIT contract):
+        A quick safety check that the defaults were not used in
+        production:
+          SUAnalysis::Core::SourceReference.new(
+            entity_id: 42, persistent_id: 100, kind: 'edge',
+            label: 'test', instance_path: nil,
+            persistent_id_path: [100],
+            structural_depth: 0,        # explicit
+            pid_path_complete: true)    # explicit
+        Expected: no error. The keyword arguments must be supplied
+        explicitly; there is no default that would hide an empty-path
+        source as complete.
+
+
+K. Complete analysis on a disposable Group
+==========================================
+
+   1. Select test_group. Open the dialog.
+   2. Summary header — verify counts:
+        Selection: test_group
+        Edges: 4
+        Note: Vertices, etc. — derived from snapshot. Expect warnings=0.
+   3. Grouped issue sections — verify the order:
+        - Duplicate edge candidates (0)
+        - Short edges (0)
+        - Open endpoints (0)
+        - Gap candidates (0)
+        - Significant non-zero-Z geometry (0)
+        - Abnormal large coordinate (0)
+        - Deep nesting (0)
+      Each section header shows "(NN)" count. All groups are
+      closed (no `:high` Issue present + no non-empty group).
+   4. Close the dialog. Capture PRE/POST fingerprint:
+        fp_k = su_fingerprint_v6(Sketchup.active_model)
+        puts "AFTER K = #{fp_k.inspect}"
+        puts "MATCH    = #{fp_k == fp_before}"
+      Expected: "MATCH = true".
+
+   5. REPEAT with occ_a + occ_b selected (shift-click both
+      ComponentInstances in the model — they are world-coincident).
+      Expected:
+        - Duplicate edge candidates section is NON-EMPTY.
+        - ONE Issue row, not two.
+        - The row has TWO SourceTokens. Both tokens are nested
+          definition-edge occurrences (`nested == true`,
+          `pid_path_complete == true`, both resolving to the root
+          occurrence of the corresponding InstancePath — see L.1).
+        - Severity badge is medium (orange).
+        - The Duplicate section auto-opens (default-open rule: no
+          `:high` Issue present, so the first non-empty group opens).
+
+   6. REPEAT with outer_g selected (CORRECTED per K.6).
+      Expected:
+        - Deep nesting section shows 1 warning (severity :low,
+          neutral color).
+        - Open endpoints section shows 2 issues (severity :medium,
+          orange) — one per degree-1 vertex of the L-shape. The
+          2 Issues reference the same source Edge (the Open
+          endpoints of the L-shape) and resolve to the root
+          occurrence of outer_g.
+        - All other sections are 0 or "not applicable".
+
+   7. REPEAT with dangling selected (CORRECTED per K.7).
+      Expected:
+        - Open endpoints section shows 2 issues (severity :medium,
+          orange), one per degree-1 vertex.
+        - Both Issues share ONE source Edge (the dangling edge).
+        - The source Edge's `structural_depth > 0` (it is inside
+          the `dangling` Group). Resolution uses the root
+          occurrence of `dangling` (the Group), NOT the leaf Edge.
+        - The structural_depth trace is visible in the row's
+          detail line (e.g. "depth=1, complete").
+
+
+L. Root / nested / multi-source Locate
+======================================
+
+   For each sub-step, BEFORE clicking the Issue row, capture the
+   current selection state:
+        puts "SEL = #{Sketchup.active_model.selection.to_a.map(&:object_id).inspect}"
+        puts "AC  = #{su_active_path_size_safe(Sketchup.active_model)}"
+   And AFTER clicking the Issue row, capture again. The selection
+   should have changed; the active_path length should be UNCHANGED.
+
+   L.1 — Nested duplicate (occ_a + occ_b) — CORRECTED per VERIFY-001 v2:
+         1. Select both occurrences. Open dialog.
+         2. Click the duplicate Issue row.
+         Expected:
+           - The row has TWO SourceTokens. Both are nested
+             definition-edge occurrences:
+               token 1: nested=true, pid_path_complete=true,
+                        pid_path = [shared_def_pid, leaf_pid] OR
+                        [container_pid, shared_def_pid, leaf_pid]
+                        depending on the active edit path; resolved
+                        via InstPath#root → the ComponentInstance.
+               token 2: nested=true, pid_path_complete=true,
+                        analogous; resolved via InstPath#root → the
+                        other ComponentInstance.
+           - Selection now contains BOTH occurrences (selection.clear
+             then add), each pinned as the root occurrence of the
+             resolved InstancePath.
+           - Camera zooms to fit both occurrences.
+           - active_path length UNCHANGED.
+           - No overlay / no .material = / no .layer = change.
+
+   L.2 — Nested single-source (outer_g L-shape open endpoint):
+         1. Select outer_g. Open dialog.
+         2. Click one of the 2 open-endpoint Issues.
+         Expected:
+           - The token is nested (`structural_depth > 0`).
+           - Resolution uses InstPath#root → the root occurrence
+             of outer_g (the Group), NOT the leaf Edge definition.
+           - Selection contains the outer_g Group.
+           - Camera zooms to fit outer_g.
+           - active_path length UNCHANGED.
+
+   L.3 — Non-locatable warning (deep nesting):
+         1. Select outer_g. Open dialog.
+         2. Click the deep-nesting warning row.
+         Expected:
+           - This is a preflight warning with `locatable == false`.
+           - Clicking does NOT change selection or zoom.
+           - No toast; the row appears as a non-clickable label
+             (CSS marker "no-action").
+
+   L.4 — Selection.clear verification:
+         1. After L.1, click ANOTHER Issue row in the same dialog.
+         Expected: the previous selection is CLEARED first (no
+         accumulate), then the new targets are added. Capture
+         before each click and verify the selection set changes
+         cleanly.
+
+   L.5 — active_path never mutated:
+         Before any test in L.1..L.4, capture:
+           ap_active = su_active_path_size_safe(Sketchup.active_model)
+         After each click:
+           ap_after_click = su_active_path_size_safe(Sketchup.active_model)
+         Expected: `ap_active == ap_after_click` for every step.
+         The locator policy returns target entities / root
+         occurrences; it never assigns to `model.active_path`.
+
+   L.6 — incomplete-nested-partial-leaf (the v4 add):
+         This requires a builder that yields a nested source with
+         only the leaf PID (all container PIDs are nil). The agent's
+         automated tests cover this case via FakeSU stubs. On real
+         host, this is OPTIONAL — SketchUp usually reports complete
+         paths. If attempted:
+           - Document the fixture.
+           - Verify the corresponding Issue row appears as
+             non-locatable (no Locate action, no error).
+         Expected: missing the Locate action is correct; the row
+         is rendered as non-clickable, NOT an error.
+
+   L.7 — Multi-source rendering (cosmetic):
+         Confirm the duplicate Issue row in L.1 shows both source
+         edges in the detail line (e.g. "(occ_a, occ_b)"). The
+         detail line is rendered via `textContent` (no innerHTML)
+         per the JS contract discipline.
+
+
+M. Stale source behavior (mandatory, dialog stays open)
+======================================================
+
+   Per CodeX Review 012 + 013 S6-VERIFY-BLOCK-001 v2: this step
+   is mandatory, the dialog stays open, and post-erase behavior
+   is the analyzer's "no analyzable geometry" fallback (zero
+   Issues), not "1 remaining Open endpoint row".
+
+   1. Build a fresh dangling fixture and select it:
+        ents = Sketchup.active_model.active_entities
+        dangling = ents.add_group
+        dangling_edge = dangling.entities.add_line([200,0,0], [200,1,0])
+        Sketchup.active_model.selection.add(dangling)
+
+   2. Capture the dangling edge's reference BEFORE opening the
+      dialog:
+        dangling_edge_ref = dangling.entities.grep(Sketchup::Edge).first
+        puts "REF = #{dangling_edge_ref.object_id}"
+
+   3. Open the dialog. The Open endpoints section should show
+      2 issues (one per degree-1 vertex). Each issue_id is of the
+      form "open_endpoint|...|N".
+
+   4. WITHOUT closing the dialog, in Ruby Console, ERASE the
+      dangling edge in the SAME test model:
+        dangling_edge_ref.erase!
+      Expected: the dialog stays open (HtmlDialog is modeless; the
+      model can be modified while it's open).
+
+   5. Capture the fingerprint IMMEDIATELY AFTER the erase:
+        fp_m_erase = su_fingerprint_v6(Sketchup.active_model)
+        puts "AFTER ERASE = #{fp_m_erase.inspect}"
+
+   6. Click one of the now-stale Open endpoint rows in the dialog.
+      Expected:
+        - No exception popup.
+        - In-dialog toast appears at the bottom:
+          "source no longer available for: <issue_id>".
+        - One console line ($stdout.puts) — search Ruby Console for
+          "SU-AI-Plugin" prefix.
+        - Selection NOT changed.
+        - Camera NOT zoomed.
+
+   7. Capture the fingerprint IMMEDIATELY AFTER the Locate click:
+        fp_m_click = su_fingerprint_v6(Sketchup.active_model)
+        puts "AFTER CLICK = #{fp_m_click.inspect}"
+        puts "MATCH CLICK = #{fp_m_click == fp_m_erase}"
+      Expected: "MATCH CLICK = true". The Locate click must NOT
+      mutate the model; the only allowed change is the Selection
+      (which is view-state, not model state). The fingerprint
+      deliberately excludes Selection state.
+
+   8. RE-OPEN the dialog by clicking the menu again (CORRECTED
+      per VERIFY-001 v2). The registry is rebuilt from the
+      current model state. Expected:
+        - The previously-clicked stale Issue no longer exists.
+        - The fresh dialog shows ZERO open-endpoint issues (the
+          `dangling` Group now has no analyzable geometry).
+        - The analyzer's "no analyzable geometry" fallback is
+          what we expect; it is NOT a failure.
+
+   9. PRE/POST fingerprint for the whole M step (against the
+      original PRE_CAPTURE before M, NOT against fp_before which is
+      the destructive step start):
+        Cleanup involves intentional erase; do NOT compare against
+        fp_before. The grace here is the IMMEDIATELY-BEFORE-VS-
+        AFTER-CLICK comparison in step 7, which IS the no-mutation
+        evidence for the Locate handler. The destructive erase is
+        the Owner's intentional action, not the Locate handler's
+        action.
+
+
+N. Non-mutating end-to-end flow (separate from M)
+=================================================
+
+   Goal: prove the entire Stage 6 flow (menu click → analysis →
+   dialog → clicks → close) does NOT mutate any geometry/count
+   state. Per NIT: this is a GEOMETRY/COUNT fingerprint only. It
+   does NOT prove absence of property-only mutations. The
+   `test_no_overlay_lint` and real-host behavior evidence are
+   complementary guards.
+
+   1. Fresh model. Build fixtures test_group + shared_def+occ_a/occ_b
+      + outer_g (no dangling). Use the same setup as K's
+      pre-flight.
+
+   2. Capture PRE:
+        fp_n_before = su_fingerprint_v6(Sketchup.active_model)
+        puts "PRE  = #{fp_n_before.inspect}"
+
+   3. Run the full Stage 6 flow WITHOUT any intentional erase:
+        - Select test_group. Open dialog. Close it.
+        - Select occ_a + occ_b. Open dialog. Click the duplicate
+          Issue. Close the dialog.
+        - Select outer_g. Open dialog. Click one of the 2
+          open-endpoint Issues AND the deep-nesting warning.
+          Close the dialog.
+
+   4. Capture POST:
+        fp_n_after = su_fingerprint_v6(Sketchup.active_model)
+        puts "POST = #{fp_n_after.inspect}"
+        puts "MATCH = #{fp_n_before == fp_n_after}"
+
+   5. Expected: "MATCH = true".
+
+      Both fingerprints MUST be byte-identical:
+        - edges, faces, groups, components, definitions
+          (RECURSIVE across all reachable Groups and
+          ComponentDefinitions)
+        - layers, materials, styles, tags
+        - active_path_size
+
+      Selection state is NOT checked here (Selection is view-state,
+      not model state, and CodeX Review 005 §R003 allows it to
+      change).
+
+      If any field differs, the locate handler has a leak:
+        - First suspect: `model.active_path =` (lint should reject).
+        - Second suspect: `entities.add_*` (lint should reject).
+        - Third suspect: `material =`, `layer =`, `hidden =`, `soft =`
+          (lint should reject).
+        - Fourth suspect: any direct mutation on the SU model.
+
+   6. Cross-verify with the no-overlay lint internally:
+        load 'D:/Projects/SU-AI-Plugin/tests/test_no_overlay_lint.rb'
+        Tests.run!
+      Expected: all forbidden-token assertions PASS (zero
+      forbidden tokens in extension/*.rb). Per CodeX NIT: this
+      proves absence of a finite token set; the Ruby fingerprint
+      in step 5 is the geometry/count ground truth.
+
+   7. For property-only mutation evidence (material/layer/hidden/
+      soft), the owner can additionally:
+        - Spot-check a few entities via Ruby Console:
+            m = Sketchup.active_model
+            sample = m.entities.grep(Sketchup::Edge).first
+            puts "material=#{sample.material.name}, " \
+                 "layer=#{sample.layer.name}, " \
+                 "hidden=#{sample.hidden?}, " \
+                 "soft=#{sample.soft?}"
+        - Compare before and after the same flow in step 3.
+      Expected: byte-identical properties. This is NOT a
+      replacement for the geometry fingerprint; it is an
+      additional manual check.
+
+
+OVERALL RESULT
+==============
+
+After steps J..N, report one of:
+
+  PASS ON SKETCHUP <version>
+  - Plugin loads and menu registers idempotently.
+  - Dialog opens, summary + grouped sections render correctly.
+  - Root / nested / multi-source Locate works.
+  - Stale source shows in-dialog toast + console line.
+  - L.5 active_path length remains UNCHANGED through every click.
+  - N fingerprint STEP 5 is byte-identical.
+  - L.6 (if attempted) verifies incomplete-nested-partial-leaf
+    is non-locatable.
+
+  PARTIAL PASS
+  - List which steps passed and which failed.
+  - If any model-mutation is suspected, copy the offending
+    fingerprint field and the failing step's Ruby Console log.
+
+  BLOCKED
+  - If the menu item does not appear, or the dialog does not open,
+    or the loader raises on Ruby reload, list the symptom and the
+    Ruby Console error verbatim.
+
+
+NEXT ACTION (AFTER STAGE 6 OWNER VERIFICATION)
+==============================================
+
+- If OVERALL = PASS: SU-AI-Plugin Stage 6 is accepted on the
+  verified SketchUp version. Agent may proceed to Stage 7
+  (TASK 001 IMPLEMENTATION REPORT, per PI_TASK_001 §22).
+- SU2017 minimum-host verification remains a release Gate (per
+  R004). Repeat the J..N checklist on SU2017 before final ship.
+- The 4 BLOCKs from CodeX Review 010 (S6-PLAN-BLOCK-001..004) plus
+  the reopens from CodeX Reviews 011, 012, 013 are all closed
+  before this checklist is run.
+- The CodeX Review 015 (Gate B) verdict must be PASS or
+  PASS WITH NITS before this checklist is dispatched.
+
+============================================================
+END OF OWNER VERIFICATION CHECKLIST — STAGE 6 UI (revised v2)
+============================================================

@@ -7,6 +7,17 @@
  *   - All text rendered via textContent / setAttribute.
  *   - Click -> window.sketchup.locate(issue_id).
  *   - DOMContentLoaded -> window.sketchup.ready() (ready handshake).
+ *
+ * Per CodeX Round 019 BLOCK-006-R2: the locked Stage 6 plan section
+ * 6.7 summary MUST render per-issue-type counts as individual
+ * human-readable counters (e.g. "Short edges: 1", "Duplicate
+ * candidates: 0") in the canonical order, NOT as
+ * "Issues: [object Object]". The scalar header rows (Selection,
+ * Edges, Vertices, non-zero-Z vertices, Warnings) are emitted FIRST
+ * and the per-issue-type rows are emitted AFTER, one per canonical
+ * issue_type, all in a single linear summary block. The order of
+ * canonical issue types is locked and matches
+ * `SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES`.
  */
 (function () {
   'use strict';
@@ -14,26 +25,53 @@
   // Namespace MUST match extension/dialog_runner.rb ('window.SUAIP').
   var ROOT = window.SUAIP || (window.SUAIP = {});
 
+  // Locked issue-type labels (matches Stage 6 plan section 6.7).
+  // Order matters — the renderer emits them in this order.
+  var ISSUE_TYPE_LABELS = [
+    ['duplicate_edge_candidate',  'Duplicate Candidates'],
+    ['short_edge',                'Short Edges'],
+    ['open_endpoint',             'Open Endpoints'],
+    ['gap_candidate',             'Gap Candidates'],
+    ['significant_non_zero_z',    'Significant Non-zero Z'],
+    ['abnormal_large_coord',      'Abnormal Large Coordinate'],
+    ['deep_nesting',              'Deep Nesting']
+  ];
+
   function render(payload) {
     var sel = document.getElementById('selection-info');
     sel.textContent = payload.selectionLabel + ' (' + payload.selectionType + ')';
 
     var summary = document.getElementById('summary');
     summary.textContent = '';
-    // Locked summary (Stage 6 plan section 6.7): show edges/vertices/
-    // non-zero-Z vertices/warnings first, then per-issue-type counts.
-    var orderedKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings'];
-    var seen = {};
-    function emit(k) {
-      if (seen[k]) return;
-      seen[k] = true;
+    // Phase 1 — locked scalar header rows (Stage 6 plan section 6.7).
+    // The selection line is rendered separately as #selection-info,
+    // so the summary block is reserved for the snapshot+issue
+    // counts. We do NOT include the selection label here to avoid
+    // duplicating it.
+    var scalarKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings'];
+    scalarKeys.forEach(function (k) {
       var stat = document.createElement('div');
       stat.className = 'stat';
-      stat.textContent = humanizeKey(k) + ': ' + payload.summary[k];
+      stat.textContent = humanizeKey(k) + ': ' + (payload.summary ? payload.summary[k] : 0);
       summary.appendChild(stat);
-    }
-    orderedKeys.forEach(emit);
-    Object.keys(payload.summary || {}).forEach(emit);
+    });
+
+    // Phase 2 — locked per-issue-type counters in canonical order.
+    // The renderer NEVER falls back to stringifying a nested Hash,
+    // so the output is always human-readable. Missing issue types
+    // default to 0 (per the locked count-zero-required-categories
+    // contract).
+    var issues = (payload.summary && payload.summary.issues) || {};
+    ISSUE_TYPE_LABELS.forEach(function (pair) {
+      var type = pair[0];
+      var label = pair[1];
+      var stat = document.createElement('div');
+      stat.className = 'stat issue-stat issue-type-' + type;
+      stat.setAttribute('data-issue-type', type);
+      var count = (typeof issues[type] === 'number') ? issues[type] : 0;
+      stat.textContent = label + ': ' + count;
+      summary.appendChild(stat);
+    });
 
     var groupsEl = document.getElementById('groups');
     groupsEl.textContent = '';
@@ -109,6 +147,7 @@
 
   ROOT.render = render;
   ROOT.toast   = toast;
+  ROOT.ISSUE_TYPE_LABELS = ISSUE_TYPE_LABELS;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {

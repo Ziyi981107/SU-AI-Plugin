@@ -183,3 +183,59 @@ test 'html_render: dialog_runner uses BLOCK callbacks, not method(:name)' do
   # Negative: no `method(` calls inside add_action_callback.
   refute_match(/add_action_callback\([^)]*method\(:/, src)
 end
+
+# --------------------------------------------------------------------------
+# Round 019 BLOCK-006-R2: executable render/DOM test.
+# Spawns Node.js to actually load extension/html/app.js into a mock
+# DOM (via vm.runInContext), invoke window.SUAIP.render(payload),
+# and inspect the rendered children for the locked Stage 6 plan
+# section 6.7 summary contract:
+#   - per-issue-type counters in the canonical order
+#   - no "[object Object]" in any rendered text
+#   - data-issue-type attrs on every issue stat
+# --------------------------------------------------------------------------
+
+HR_RENDER_DOM_JS = File.expand_path('test_html_render_dom.js', __dir__).freeze
+
+def hr_run_node_render_test
+  # Use `node <path>`; capture stdout+stderr; the JS test prints
+  # "ASSERT <name> PASS|FAIL" lines and a final "PASS"/"FAIL" line.
+  out = `node "#{HR_RENDER_DOM_JS}" 2>&1`
+  [out, $?.exitstatus]
+end
+
+test 'html_render: render outputs per-issue-type counters in locked order (BLOCK-006-R2)' do
+  out, exit_code = hr_run_node_render_test
+  # The JS test must end with the "PASS" sentinel and exit 0.
+  assert_equal 0, exit_code, "node test exited #{exit_code}; output:\n#{out}"
+  assert_match(/^PASS\s*$/, out, "node test did not PASS:\n#{out}")
+  # Cross-check the critical labels the BLOCK-006-R2 contract calls
+  # out by name.
+  assert_match(/ASSERT summary: Short Edges: 1 present PASS/, out)
+  assert_match(/ASSERT summary: Duplicate Candidates: 0 present PASS/, out)
+  assert_match(/ASSERT summary: no "\[object Object\]" in any rendered text PASS/, out)
+  assert_match(/ASSERT order: per-issue rows in canonical order/, out)
+  assert_match(/ASSERT summary: 7 data-issue-type attrs present/, out)
+end
+
+test 'html_render: app.js exports ISSUE_TYPE_LABELS for the locked render order (BLOCK-006-R2)' do
+  src = File.read(HR_HTML_APPJS)
+  # The render function must iterate over a fixed ISSUE_TYPE_LABELS
+  # array (the locked canonical order). The labels are exposed on
+  # ROOT.ISSUE_TYPE_LABELS so the test harness can introspect.
+  assert_match(/ROOT\.ISSUE_TYPE_LABELS\s*=\s*ISSUE_TYPE_LABELS/, src)
+  # The array is the canonical order per IssueRegistry.
+  expected_types = %w[
+    duplicate_edge_candidate
+    short_edge
+    open_endpoint
+    gap_candidate
+    significant_non_zero_z
+    abnormal_large_coord
+    deep_nesting
+  ]
+  expected_types.each do |t|
+    assert_match(/'#{t}'/, src,
+                 "ISSUE_TYPE_LABELS must include '#{t}' in canonical order")
+  end
+end

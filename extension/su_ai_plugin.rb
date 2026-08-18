@@ -1,7 +1,7 @@
 #
 # extension/su_ai_plugin.rb — Real SketchUp boot entrypoint.
 #
-# Per CodeX Round 018 BLOCK-002:
+# Per CodeX Round 018 BLOCK-002 (rework per Round 019 BLOCK-002-R2):
 #   - This is the file SketchUp loads when the .rbz is registered.
 #   - Uses `file_loaded?` / `file_loaded` (the official SketchUp Ruby
 #     API for guarding duplicate loads; submenus/items introspection
@@ -9,25 +9,33 @@
 #   - Requires all Gate B dependencies in safe order.
 #   - Calls Loader.register! exactly once.
 #   - Is idempotent across reloads / multiple file_loaded? calls.
+#   - **file_loaded is marked ONLY after a successful boot.** A
+#     transient failure (e.g. a single require error) leaves the
+#     "loaded" state unset so the next load can retry. This is the
+#     safe-retry contract per CodeX Round 019 BLOCK-002-R2.
 #
 # SketchUp registers this file in the .rbz manifest. The Owner
 # loads the plugin via Extension Manager; this file is the entrypoint.
+# In the dev tree the Owner loads the same file via
+# `load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'`.
 #
 
 # Guard: file_loaded? is a SketchUp top-level API; if not available
-# (test environment), no-op out cleanly.
-if defined?(file_loaded?) && file_loaded?('SU-AI-Plugin/extension/su_ai_plugin')
-  # Already loaded; do nothing.
-elsif defined?(file_loaded?)
-  # First real load. Mark first to break re-entry cycles, then
-  # require dependencies in safe order, then call Loader.register!
-  # EXACTLY once.
-  file_loaded('SU-AI-Plugin/extension/su_ai_plugin')
+# (test environment), fall through to a no-op out path that still
+# allows the boot to attempt.
+$__su_ai_plugin_entry_name = 'SU-AI-Plugin/extension/su_ai_plugin' unless defined?($__su_ai_plugin_entry_name)
 
-  # Boot path: load Gate B core + extension pieces in dependency
-  # order. Failures in any require are logged and skipped (loader
-  # output is best-effort inside SketchUp).
-  module SUAnalysis
+# Step 1: cheap no-op if SketchUp already marked this file as loaded.
+# (This is the normal case: SU loads the file once at startup.)
+if defined?(file_loaded?) && file_loaded?($__su_ai_plugin_entry_name)
+  # Already loaded successfully on a previous run; do nothing.
+  return if false  # unreachable; keeps the if branch explicit
+end
+
+# Step 2: define the boot path. Failures are isolated to the rescue
+# below so a single bad require cannot leave the plugin half-loaded.
+module SUAnalysis
+  unless defined?(SUAnalysis::Boot)
     module Boot
       module_function
 
@@ -58,11 +66,35 @@ elsif defined?(file_loaded?)
       end
     end
   end
+end
 
+# Step 3: attempt the boot. Only mark file_loaded on FULL success.
+# On failure, the next load retries from scratch — file_loaded? will
+# still return false because we did not call file_loaded.
+if defined?(file_loaded?) && file_loaded?($__su_ai_plugin_entry_name)
+  # defensive re-check after module definition (covers test
+  # environments that re-define file_loaded? mid-flight).
+elsif defined?(file_loaded?)
+  begin
+    SUAnalysis::Boot.boot!
+    # Success: mark loaded. Subsequent loads of this file are a no-op.
+    file_loaded($__su_ai_plugin_entry_name)
+  rescue StandardError => e
+    # Boot failed. Do NOT mark loaded; the next load retries.
+    # Print to STDERR (visible in Ruby Console) and to $stdout
+    # (visible in test output) so the failure is observable.
+    msg = "[SU-AI-Plugin] boot failed: #{e.class}: #{e.message}"
+    if defined?(STDERR)
+      STDERR.puts(msg)
+    elsif $stdout.respond_to?(:puts)
+      $stdout.puts(msg)
+    end
+  end
+else
+  # No file_loaded? API (test env). Best-effort boot.
   begin
     SUAnalysis::Boot.boot!
   rescue StandardError => e
-    # Best-effort: do not raise; Loader output is informational.
     if defined?(STDERR)
       STDERR.puts("[SU-AI-Plugin] boot failed: #{e.class}: #{e.message}")
     end
