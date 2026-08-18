@@ -16,10 +16,17 @@ module SUAnalysis
       module_function
 
       def edge(id, start_point, end_point, layer: 'Layer0', source: nil)
+        # Synthetic edges have no PID path. Mark them as
+        # pid_path_complete=false so the IssueEnricher treats them
+        # as incomplete (matches the fail-closed default in
+        # SourceReference). Tests that need a complete-path token
+        # can pass an explicit `source` with pid_path_complete=true.
         src = source || SourceReference.new(
           entity_id: id,
           kind: 'edge',
-          label: "synthetic-edge-#{id}"
+          label: "synthetic-edge-#{id}",
+          structural_depth: 0,
+          pid_path_complete: false
         )
         EdgeRecord.new(
           id:          id,

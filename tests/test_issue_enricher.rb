@@ -1,0 +1,222 @@
+#
+# tests/test_issue_enricher.rb
+#
+# Pure-Ruby tests for IssueEnricher:
+#   - aligned SourceToken array from edge_ids -> snapshot_lookup
+#   - whole-token dedup
+#   - locatable derivation per CodeX BLOCK-001 v4
+#   - missing edge_id diagnostic
+#   - structural identity preserved (nested, pid_path_complete)
+#
+
+require_relative 'runner'
+require_relative '../core/source_reference'
+require_relative '../core/edge_record'
+require_relative '../core/synthetic_factory'
+require_relative '../core/issue_normalizer'
+require_relative '../core/issue_enricher'
+require_relative '../core/issue_id_assigner'
+
+include SUAnalysis::Core
+include SUAnalysis::Core::IssueNormalizer
+
+# --- helpers ---
+
+def edge_with(extras = {})
+  pid_path = extras[:persistent_id_path] || []
+  # pid_path_complete default: true iff pid_path is non-empty AND
+  # every entry is non-nil. This matches the inherited-invariance
+  # interpretation: the leaf is the LAST entry of pid_path.
+  pid_path_complete = if extras[:pid_path_complete].nil?
+                       pid_path.is_a?(Array) && !pid_path.empty? && pid_path.all? { |p| !p.nil? }
+                     else
+                       extras[:pid_path_complete]
+                     end
+  src = SUAnalysis::Core::SourceReference.new(
+    entity_id:          extras[:entity_id].nil? ? 1 : extras[:entity_id],
+    persistent_id:      extras[:persistent_id],
+    kind:               'edge',
+    label:              'e',
+    persistent_id_path: pid_path,
+    structural_depth:   extras[:structural_depth] || 0,
+    pid_path_complete:  pid_path_complete
+  )
+  EdgeRecord.new(
+    id: 100, source: src,
+    start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+    layer: 'Layer0'
+  )
+end
+
+def snap(*edges)
+  lookup = {}
+  edges.each_with_index { |e, i| lookup[e.id] = e }
+  lookup
+end
+
+# --- aligned source tokens ---
+
+test 'issue_enricher: one SourceToken per resolved EdgeRecord' do
+  edges = [edge_with(persistent_id_path: [10, 20, 555], structural_depth: 2)]
+  edges.first.instance_variable_set(:@id, 100)
+  lkp = snap(edges.first)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'duplicate_edge_candidate', severity: 'medium',
+    confidence: 'high', source_entity_ids: [1],
+    edge_ids: [100], location: nil, message: 'd', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal 1, out[:sources].length
+  tok = out[:sources][0]
+  assert_equal [10, 20, 555], tok[:persistent_id_path]
+  assert_equal 1, tok[:entity_id]
+  assert_equal true, tok[:nested]
+  assert_equal true, tok[:pid_path_complete]
+end
+
+test 'issue_enricher: dedup whole tokens (positional alignment preserved)' do
+  edges = []
+  2.times { |i|
+    e = edge_with(persistent_id_path: [10, 20, 555], structural_depth: 2)
+    e.instance_variable_set(:@id, 100 + i)
+    edges << e
+  }
+  lkp = snap(*edges)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'duplicate_edge_candidate', severity: 'medium',
+    confidence: 'high', source_entity_ids: [1, 2],
+    edge_ids: [100, 101], location: nil, message: 'd', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal 1, out[:sources].length
+end
+
+# --- locatable derivation ---
+
+test 'issue_enricher: locatable=true for complete-root (single leaf pid)' do
+  e = edge_with(persistent_id: 100, persistent_id_path: [100], structural_depth: 0)
+  e.instance_variable_set(:@id, 1)
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [1], edge_ids: [1], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal true, out[:locatable]
+end
+
+test 'issue_enricher: locatable=true for complete-nested' do
+  e = edge_with(persistent_id: 555, persistent_id_path: [10, 20, 555], structural_depth: 2)
+  e.instance_variable_set(:@id, 1)
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [1], edge_ids: [1], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal true, out[:locatable]
+end
+
+test 'issue_enricher: locatable=true for incomplete-root (entity_id fallback)' do
+  # leaf pid missing, but entity_id is non-nil and nested=false
+  e = edge_with(persistent_id: nil, persistent_id_path: [], structural_depth: 0,
+                pid_path_complete: false)
+  e.instance_variable_set(:@id, 1)
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [1], edge_ids: [1], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal true, out[:locatable]
+end
+
+test 'issue_enricher: locatable=false for incomplete-nested-partial-leaf' do
+  # nested=true, pid_path=[leaf_pid] only, complete=false
+  e = edge_with(persistent_id: 555, persistent_id_path: [555], structural_depth: 2,
+                pid_path_complete: false)
+  e.instance_variable_set(:@id, 1)
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [1], edge_ids: [1], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal false, out[:locatable]
+end
+
+test 'issue_enricher: locatable=false for incomplete-nested-partial-ancestry' do
+  # nested=true, pid_path=[], complete=false
+  e = edge_with(persistent_id: nil, persistent_id_path: [], structural_depth: 2,
+                pid_path_complete: false)
+  e.instance_variable_set(:@id, 1)
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [1], edge_ids: [1], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal false, out[:locatable]
+end
+
+test 'issue_enricher: locatable=false for fully-missing' do
+  # entity_id: nil + pid_path_complete: false + nested: false
+  # -> fully-missing -> non-locatable
+  src = SourceReference.new(entity_id: nil, kind: 'edge', label: 'e',
+                            persistent_id_path: [], structural_depth: 0,
+                            pid_path_complete: false)
+  e = EdgeRecord.new(id: 2, source: src, start_point: [0,0,0],
+                     end_point: [1,0,0], layer: 'Layer0')
+  lkp = snap(e)
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [], edge_ids: [2], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: lkp, counter_within_type: 1)
+  assert_equal false, out[:locatable]
+  assert_equal [nil], out[:sources].map { |t| t[:entity_id] }
+end
+
+# --- missing edge_id ---
+
+test 'issue_enricher: missing edge_id -> empty-source token + still locatable=false' do
+  raw = IssueNormalizer.normalize_analyzer_issue(
+    kind: 'short_edge', severity: 'low', confidence: 'medium',
+    source_entity_ids: [], edge_ids: [999], location: nil,
+    message: 'short', metadata: {}
+  )
+  out = IssueEnricher.enrich_one(raw, snapshot_lookup: {}, counter_within_type: 1)
+  assert_equal 1, out[:sources].length
+  assert_equal [], out[:sources][0][:persistent_id_path]
+  assert_equal false, out[:locatable]
+end
+
+# --- enrich_all: counter per type ---
+
+test 'issue_enricher.enrich_all: assigns sequential counter within type' do
+  e1 = edge_with(persistent_id_path: [10], structural_depth: 0, pid_path_complete: true)
+  e1.instance_variable_set(:@id, 1)
+  e2 = edge_with(persistent_id_path: [20], structural_depth: 0, pid_path_complete: true)
+  e2.instance_variable_set(:@id, 2)
+  lkp = snap(e1, e2)
+  raws = [
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'short_edge', severity: 'low', confidence: 'medium',
+      source_entity_ids: [], edge_ids: [1], location: nil,
+      message: 'a', metadata: {}),
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'short_edge', severity: 'low', confidence: 'medium',
+      source_entity_ids: [], edge_ids: [2], location: nil,
+      message: 'b', metadata: {})
+  ]
+  out = IssueEnricher.enrich_all(raws, snapshot_lookup: lkp)
+  assert_equal 2, out.length
+  counters = out.map { |x| x[:issue_id].match(/\|(\d+)$/)[1].to_i }
+  assert_equal [1, 2], counters
+end

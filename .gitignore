@@ -35,7 +35,8 @@ vendor/bundle/
 .cache/
 rubyinst/
 
-# --- Agent scratch (downloads, etc.) ---
+# --- Agent scratch (downloads, test state, monitor logs) ---
 /tmp/
+data/_check_tmp/
 *.tmp
 *.download

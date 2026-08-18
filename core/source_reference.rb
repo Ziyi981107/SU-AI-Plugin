@@ -1,4 +1,3 @@
-
 #
 # SourceReference — lightweight token that ties an analysis record back to
 # its SketchUp entity without holding a hard Ruby reference.
@@ -27,42 +26,54 @@
 #   - `instance_path` is a list of String entries describing the container
 #     chain from the model root to this entity, e.g.
 #       ["Group:outer", "ComponentInstance:Window#1", "Group:inner_frame"]
-#     - Each entry is "Kind:Name"; Name is the definition's name (or the
-#       object_id hex for anonymous / unnamed containers).
-#     - The list is empty for entities directly selected in the model
-#       root (i.e. no enclosing group / component).
-#   - This is stored alongside persistent_id and entity_id; SourceReference
-#     is purely data, so all three fields survive serialization.
+#   - `persistent_id_path` is the canonical machine-resolvable identity.
+#     It is an Array<Integer> of container PIDs from model root to the leaf,
+#     with the leaf PID last. Empty array for root-level entities.
+#
+# Structural identity (per CodeX Review 013, 2026-08-18):
+#   - `structural_depth` is the structural depth of this entity (root
+#     container = 0; +1 per nested container; +1 per active edit context
+#     entity). Populated in `extension/preflight_runner.rb` alongside
+#     `pid_path_complete`. The two are independent facts: structural
+#     depth is the entity count; pid_path_complete is whether every
+#     container pid was captured.
+#   - `pid_path_complete` is true iff every structural ancestor AND the
+#     leaf entity itself supplied a non-nil persistent_id.
+#   - Defaults are FAIL-CLOSED: `structural_depth: 0` and
+#     `pid_path_complete: false`. Production callers MUST pass both
+#     explicitly. Legacy test callers that omit these fields get an
+#     explicit "incomplete" marker, which is the correct behavior for
+#     synthetic edges with no PID path.
 #
 
 module SUAnalysis
   module Core
     class SourceReference
       attr_reader :entity_id, :persistent_id, :kind, :label,
-                  :persistent_id_path, :instance_path
+                  :persistent_id_path, :instance_path,
+                  :structural_depth, :pid_path_complete
 
-      def initialize(entity_id:, persistent_id: nil, kind: 'edge', label: nil,
-                     instance_path: nil, persistent_id_path: nil)
-        @entity_id     = entity_id
+      def initialize(entity_id: nil, persistent_id: nil, kind: 'edge', label: nil,
+                     instance_path: nil, persistent_id_path: nil,
+                     structural_depth: 0, pid_path_complete: false)
+        # entity_id is optional (nil allowed for fully-missing SourceReferences
+        # in test fixtures). In production, callers should always supply it.
+        @entity_id     = entity_id.nil? ? nil : Integer(entity_id)
         @persistent_id = persistent_id
         @kind          = kind
         @label         = label
-        # Per Codex Review 005 S2-BLOCK-002: persistent_id_path is the
-        # canonical machine-resolvable identity. It is an Array<Integer>
-        # of container PIDs from model root to the leaf, with the leaf
-        # PID last. Empty array for root-level entities.
-        # instance_path remains as a display label (legacy / human-readable).
         @persistent_id_path = if persistent_id_path.nil?
                                  [].freeze
                                else
-                                 persistent_id_path.dup.freeze
+                                 persistent_id_path.map { |p| p.nil? ? nil : Integer(p) }.compact.freeze
                                end
-        # instance_path is now derived from labels (not PIDs). Default empty.
         @instance_path = if instance_path.nil?
                            [].freeze
                          else
                            instance_path.dup.freeze
                          end
+        @structural_depth    = structural_depth.to_i
+        @pid_path_complete   = pid_path_complete ? true : false
       end
 
       def stable?
@@ -88,7 +99,9 @@ module SUAnalysis
           kind:               @kind,
           label:              @label,
           instance_path:      @instance_path,
-          persistent_id_path: @persistent_id_path
+          persistent_id_path: @persistent_id_path,
+          structural_depth:    @structural_depth,
+          pid_path_complete:   @pid_path_complete
         }
       end
     end
