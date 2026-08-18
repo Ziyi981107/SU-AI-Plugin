@@ -42,9 +42,23 @@ module SUAnalysis
         # (NoMethodError on nil) and abort the entire command.
         diagnostics = []
 
+        # Normalize the selection at the boundary so all downstream
+        # stages (preflight + walk + label + classification) see the
+        # same stable entity array. Per CodeX Round 020 REAL-HOST
+        # BLOCK: the real SketchUp::Selection is not always safe to
+        # iterate more than once.
+        normalized = SUAnalysis::Extension::PreflightRunner.normalize_selection(selection)
+
         # 1. Build snapshot + preflight.
-        snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(selection, model: model)
-        preflight = snapshot.preflight
+        snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(normalized, model: model)
+        # Run the pure-Ruby PreflightAnalyzer on the snapshot so the
+        # preflight is a real PreflightReport (responds to :edge_count,
+        # :vertex_count, etc.). Per CodeX Round 020 REAL-HOST BLOCK:
+        # the OWNER's repro was ".summary" returning "edges: 0" because
+        # the HASH returned by collect_preflight_facts does not respond
+        # to :edge_count; AnalysisResult#summary uses safe_attr which
+        # defaults to 0 for non-responsive objects.
+        preflight = SUAnalysis::Core::PreflightAnalyzer.run(snapshot)
 
         # 2. Run analyzers. Per-analyzer rescue — one bad analyzer must
         # not abort the others. PI_TASK_001 §18.
@@ -93,7 +107,7 @@ module SUAnalysis
         display_data = SUAnalysis::Extension::DisplayUnitFormatter.format_all(registry.issues)
 
         # 8. Selection label.
-        selection_label = selection_label_for(selection)
+        selection_label = selection_label_for(normalized)
 
         # 9. Frozen immutable result.
         SUAnalysis::Core::AnalysisResult.new(
@@ -102,7 +116,7 @@ module SUAnalysis
           snapshot_lookup:  snapshot_lookup,
           display_data:     display_data,
           diagnostics:      diagnostics,
-          selection_type:   classification_label(selection),
+          selection_type:   classification_label(normalized),
           selection_label:  selection_label
         )
       end

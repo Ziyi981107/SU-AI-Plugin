@@ -70,6 +70,13 @@ module SUAnalysis
       # instead of identity. The active path's PIDs are prepended to
       # each yielded entity's pid_path.
       def build_snapshot(selection, model: nil)
+        # Per CodeX Round 020 REAL-HOST BLOCK: the real SketchUp::Selection
+        # object is not always safe to iterate more than once. Some SU
+        # versions (and some Selection-like mocks) consume the iteration
+        # state on the first .each, so a subsequent .each yields 0 items.
+        # We normalize the input to a stable Array at the boundary so
+        # preflight + walk + label extraction all see the same set.
+        selection = normalize_selection(selection)
         edges     = []
         preflight = collect_preflight_facts(selection)
 
@@ -126,6 +133,44 @@ module SUAnalysis
           layers:    [],
           preflight: preflight
         )
+      end
+
+      # -----------------------------------------------------------------
+      # CodeX Round 020 REAL-HOST BLOCK: normalize selection at the
+      # boundary so both preflight + walk see the same stable entity
+      # array. The real SketchUp::Selection (and any one-shot
+      # Selection-like enumerable) is not always safe to iterate
+      # more than once.
+      # -----------------------------------------------------------------
+
+      # Public: convert any selection-like input to a stable Array.
+      # Returns [] for nil. For Array inputs, returns a copy (so
+      # downstream mutation of the result does not leak back).
+      # For Selection-like objects:
+      #   1. try to_ary (official Ruby coercion) and rescue on failure
+      #   2. fallback to manual each (rescue on iteration failure)
+      #   3. last resort: empty array
+      def normalize_selection(input)
+        return [] if input.nil?
+        return input.dup if input.is_a?(Array)
+        if input.respond_to?(:to_ary)
+          begin
+            arr = input.to_ary
+            return arr if arr.is_a?(Array)
+          rescue StandardError
+            # to_ary raised; fall through to manual each
+          end
+        end
+        if input.respond_to?(:each)
+          arr = []
+          begin
+            input.each { |e| arr << e }
+          rescue StandardError
+            # iteration raised; return whatever we collected so far
+          end
+          return arr
+        end
+        []
       end
 
       # -----------------------------------------------------------------

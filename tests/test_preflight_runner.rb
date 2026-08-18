@@ -610,7 +610,7 @@ test 'S2-BLOCK-005 (r4): checklist H shape [inv_group, e1_invalid] -> exactly 1 
   assert_equal 20.0, e.end_point[0]
 end
 # --------------------------------------------------------------------------
-# S6-GATE-B-BLOCK-001 ¡ª adapter integration tests through build_snapshot
+# S6-GATE-B-BLOCK-001 ï¿½ï¿½ adapter integration tests through build_snapshot
 # (per CodeX Round 018 BLOCK-001 minimum acceptable fix):
 #   - root Edge with a valid PID -> complete / root
 #   - nested valid-PID chain     -> complete / nested
@@ -691,4 +691,121 @@ test 'S6-GATE-B-BLOCK-001: active path with one nil PID -> incomplete, nested' d
   assert_equal 2, e.source.structural_depth
   # pid_path_complete: nil slot in active path -> false.
   assert_equal false, e.source.pid_path_complete
+end
+
+# --------------------------------------------------------------------------
+# CodeX Round 020 REAL-HOST BLOCK: selection normalization at the boundary.
+# Reproduces the symptom that `Sketchup.active_model.selection` (or any
+# one-shot Selection-like enumerable) caused the full analysis path to
+# return 0 edges when an Array with the same entities returned 4.
+# The fix is `PreflightRunner.normalize_selection` at the top of
+# `build_snapshot`. The regression test below uses a OneShotEnumerable
+# mock that consumes its items on the first .each call.
+# --------------------------------------------------------------------------
+
+# A Selection-like enumerable that consumes its items on first
+# iteration. Mimics a sketchup::Selection that, in some host versions,
+# is not safely iterable more than once. The current (pre-fix) code
+# iterates it twice (once for collect_preflight_facts, once for
+# walk_selection_world) and would see 0 items on the second pass.
+class OneShotEnumerable
+  attr_reader :iteration_count
+  def initialize(items)
+    @items = items.dup
+    @iteration_count = 0
+  end
+  def each
+    @iteration_count += 1
+    @items.each { |item| yield item }
+    @items.clear  # consume: next .each yields nothing
+  end
+  def count; @items.length; end
+  def length; @items.length; end
+  def first; @items.first; end
+  def to_a; @items.dup; end
+  def empty?; @items.empty?; end
+  # NO is_a? override â€” the real Sketchup::Selection is not an Array,
+  # and our normalize_selection explicitly checks Array first then
+  # falls through to to_ary / each. We must NOT trick the path into
+  # treating the one-shot source as an Array, or normalize_selection
+  # would short-circuit and return the OneShotEnumerable as-is.
+end
+
+test 'REAL-HOST BLOCK: OneShotEnumerable with 4-edge Group -> build_snapshot returns 4 edges' do
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  # Wrap the group in a OneShotEnumerable to mimic a real
+  # Sketchup::Selection that consumes its items on first .each.
+  one_shot = OneShotEnumerable.new([group])
+  snap = PreflightRunner.build_snapshot(one_shot)
+  # The fix: build_snapshot normalizes at the boundary, so the
+  # preflight + walk both iterate the SAME stable Array, not the
+  # one-shot source. Result: 4 edges.
+  assert_equal 4, snap.edge_count, "expected 4 edges from OneShotEnumerable, got #{snap.edge_count}"
+end
+
+test 'REAL-HOST BLOCK: OneShotEnumerable without normalization -> 0 edges (proves the fix is required)' do
+  # This test documents the broken behavior so future readers know
+  # WHY the fix exists. It uses the OneShotEnumerable WITHOUT going
+  # through build_snapshot's normalization. It manually invokes
+  # collect_preflight_facts + walk_selection_world, which is what
+  # build_snapshot WOULD do without the normalize-first step.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  one_shot = OneShotEnumerable.new([group])
+  # First iteration (collect_preflight_facts) consumes the items.
+  PreflightRunner.collect_preflight_facts(one_shot)
+  # Second iteration (walk_selection_world) sees 0 items.
+  edges_count = 0
+  PreflightRunner.walk_selection_world(one_shot) do |entity, world_points, _pid_path, _label_path, _struct_depth, _path_complete|
+    next unless SUAnalysis::Compatibility::SUCapability.edge?(entity)
+    next if world_points.nil? || world_points.size < 2
+    edges_count += 1
+  end
+  # With OneShotEnumerable NOT normalized: 0 edges (the bug).
+  assert_equal 0, edges_count,
+               'sanity check: OneShotEnumerable without normalization yields 0 edges (this is the bug)'
+end
+
+test 'REAL-HOST BLOCK: normalize_selection converts Selection-like to stable Array' do
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  one_shot = OneShotEnumerable.new([group])
+
+  normalized = PreflightRunner.normalize_selection(one_shot)
+  assert_kind_of Array, normalized
+  assert_equal 1, normalized.length
+  assert_equal group, normalized.first
+
+  # The normalized Array is stable: iterating it does not affect
+  # the original OneShotEnumerable.
+  normalized.each { |_| }
+  normalized.each { |_| }
+  assert_equal 1, normalized.length,
+               'normalized Array should be stable across multiple iterations'
+end
+
+test 'REAL-HOST BLOCK: AnalyzersRunner.run with OneShotEnumerable -> 4 edges, not 0' do
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  one_shot = OneShotEnumerable.new([group])
+  # AnalyzersRunner must accept a one-shot enumerable and still
+  # produce a complete result. This is the OWNER's real-host repro
+  # exercised in the fake-host test environment.
+  result = SUAnalysis::Extension::AnalyzersRunner.run(one_shot)
+  refute_nil result
+  assert_kind_of SUAnalysis::Core::AnalysisResult, result
+  # The locked preflight header must reflect the 4 edges, not 0.
+  summary = result.summary
+  assert_equal 4, summary['edges'],
+               "expected 4 edges in AnalyzersRunner summary, got #{summary['edges']}"
+end
+
+test 'REAL-HOST BLOCK: Array input still works (regression on the fix)' do
+  # The fix MUST NOT break the existing Array path. Control: pass
+  # the group as a plain Array and verify the same 4-edge result.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  result = SUAnalysis::Extension::AnalyzersRunner.run([group])
+  assert_equal 4, result.summary['edges']
 end

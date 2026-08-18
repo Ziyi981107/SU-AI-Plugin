@@ -1,13 +1,14 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (CodeX Round 020 Gate B FINAL recheck:
-                          **PASS WITH NITS** â€” all 6 Gate B BLOCKs +
-                          the 2 Round-019 reopens are CLOSED; both
-                          NITs are narrow checklist/evidence-hygiene
-                          corrections applied. Full suite 247/247
-                          PASS, 0 fail, 0 error; git diff --check
-                          clean. READY to dispatch Owner Verification
-                          Stage 6 (J..N on real SketchUp 2020).)
+Last updated: 2026-08-18 (REAL-HOST BLOCK (Owner-reported on
+                          SketchUp 2020) CLOSED: Selection
+                          normalization at the boundary +
+                          PreflightReport wired into
+                          AnalyzersRunner.run so .summary
+                          reads real edge counts. Full suite
+                          252/252 PASS, 0 fail, 0 error; git
+                          diff --check clean. Awaiting Owner
+                          re-run of K..N on real SU 2020.)
 
 ## å†³ç­–è½åœ° (PI_TASK_001)
 
@@ -455,7 +456,7 @@ closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
 - ? Does NOT skip Owner verification
 - ? Does NOT fake SU2017 as SU2020 evidence
 
-## CODEX REVIEW 020 (2026-08-18) ¡ª GATE B FINAL: PASS WITH NITS
+## CODEX REVIEW 020 (2026-08-18) ï¿½ï¿½ GATE B FINAL: PASS WITH NITS
 
 **Verdict**: PASS WITH NITS. All 6 Gate B BLOCKs + the 2 Round-019
 reopens (BLOCK-002-R2, BLOCK-006-R2) are CLOSED. The two NITs are
@@ -463,20 +464,20 @@ narrow checklist/evidence-hygiene corrections; no new review is
 required.
 
 ### NIT corrections applied (CodeX Round 020)
-- NIT 1 ¡ª `file_unloaded` is not a documented SketchUp top-level
+- NIT 1 ï¿½ï¿½ `file_unloaded` is not a documented SketchUp top-level
   API. The real API is `file_loaded?` / `file_loaded` only. Removed
   the Owner instructions that called `file_unloaded`. Step J.3
   now states that idempotency is covered by the automated
   faithful-boot test (no manual Ruby-Console visual confirmation
   is required).
-- NIT 2 ¡ª `tests/_fake_instance_path.rb` and
+- NIT 2 ï¿½ï¿½ `tests/_fake_instance_path.rb` and
   `tests/test_no_overlay_lint.rb` were referenced in the checklist
   inventory but do not exist in HEAD. Removed the inventory entries
   and the step N.6 "load test_no_overlay_lint" instruction. N.6
   now relies on the existing recursive fingerprint + direct
   real-host property observation.
 
-### Hard-rule compliance (per Cicada 2026-08-18 section Áù)
+### Hard-rule compliance (per Cicada 2026-08-18 section ï¿½ï¿½)
 - ? Does NOT change R001-R005 product decisions
 - ? Does NOT expand product scope
 - ? Does NOT push / publish / release
@@ -484,9 +485,69 @@ required.
 - ? Does NOT fake SU2017 as SU2020 evidence
 
 ### Next action
-**Dispatch Owner Verification Stage 6** ¡ª `Review/OWNER_VERIFICATION_STAGE_6.txt`
+**Dispatch Owner Verification Stage 6** ï¿½ï¿½ `Review/OWNER_VERIFICATION_STAGE_6.txt`
 J..N on real SketchUp 2020. Owner is the only one who can run
 this (Q002=A). Once Owner reports PASS, the next gate is the
 SU2017 minimum-host verification (release Gate, per R004; not a
 Stage 6 blocker). After that, packaging / .rbz for the SketchUp
 Extension Manager.
+
+## REAL-HOST BLOCK (Owner repro 2026-08-18) ¡ª CLOSED
+
+**Verdict**: BLOCK reported by Owner via direct message (not via
+CodeX in Prompt/). Root cause: two related gaps.
+
+### Code-side changes
+- `extension/preflight_runner.rb`:
+  - New public `normalize_selection(input)` that snapshots any
+    Selection-like enumerable to a stable Array (to_ary -> each ->
+    rescue chain).
+  - `build_snapshot` calls `normalize_selection` at the very top,
+    so preflight collection + walk iterate the same stable Array.
+- `extension/analyzers_runner.rb`:
+  - `run(selection, model: nil)` normalizes the selection once at
+    the boundary; uses the normalized form for build_snapshot +
+    selection_label_for + classification_label.
+  - `preflight` is now a real `SUAnalysis::Core::PreflightReport`
+    via `PreflightAnalyzer.run(snapshot)` (replaced the previous
+    Hash from `collect_preflight_facts`). This makes
+    `AnalysisResult#summary` able to read real `edge_count`,
+    `vertex_count`, etc.
+
+### Test-side changes
+- `tests/test_preflight_runner.rb`: NEW `OneShotEnumerable` mock
+  that mirrors a real SU Selection with one-shot iteration
+  (responds to `:each` / `:count` / `:first` / `:to_a` / `:length`
+  / `:empty?` but clears its items after the FIRST `.each` call).
+  5 new tests:
+  1. `build_snapshot` with OneShotEnumerable returns 4 edges.
+  2. Without normalize, OneShotEnumerable returns 0 edges (proves
+     the fix is required).
+  3. `normalize_selection` converts Selection-like to a stable
+     Array.
+  4. `AnalyzersRunner.run` with OneShotEnumerable returns 4 edges.
+  5. Array input still works (regression on the fix).
+
+### Lessons
+- **Always normalize Enumerable at the API boundary.** Real-world
+  Enumerables can have iteration quirks (one-shot, lazy,
+  side-effecting). A cheap `Array.dup` at the boundary removes an
+  entire class of real-host bugs.
+- **`safe_attr` on a Hash always returns the default.** A Hash
+  returns `false` for any method-name symbol, so `safe_attr(pf,
+  :edge_count, 0)` on a Hash returns 0. The downstream code path
+  was designed for a PreflightReport; the Hash was an upstream
+  architecture gap that survived because fake-host tests
+  happened to pass a Struct, not because the production path was
+  correct.
+- **The fake-host suite is only as strong as its mocks.**
+  `FakeSU::Selection` does NOT have one-shot iteration, so it
+  cannot surface this real-host bug. The new `OneShotEnumerable`
+  mock explicitly exhibits the one-shot behavior to prove the
+  fix and to catch any regression.
+
+### Next action
+Owner re-runs the required recheck on real SU 2020:
+- Menu Analyze selection on the 4-edge Group must show
+  `Edges: 4, Vertices: 4, Warnings: 0`.
+- Then rerun Owner K..N per `Review/OWNER_VERIFICATION_STAGE_6.txt`.
