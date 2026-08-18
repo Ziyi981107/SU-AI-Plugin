@@ -1,12 +1,10 @@
 #
 # extension/dialog_controller.rb — per-dialog state holder.
 #
-# Per CodeX Round 011..014:
-#   - Per-dialog state: registry snapshot, model ref, registry version,
-#     diagnostics. The controller owns the registry-projection;
-#     the dialog owns only the rendered UI.
-#   - Lifecycle: bind(dialog) attaches; release! clears references
-#     so the dialog can be GC'd when set_on_closed fires.
+# Per CodeX Round 018 BLOCK-004:
+#   - The View is `model.active_view` (capability-checked), NOT
+#     `dialog.get_view` (which does not exist on UI::HtmlDialog).
+#   - The model is REQUIRED for the Locate action to resolve.
 #
 
 require_relative '../core/analysis_result'
@@ -14,18 +12,19 @@ require_relative '../core/analysis_result'
 module SUAnalysis
   module Extension
     class DialogController
-      attr_reader :result, :bound_dialog
+      attr_reader :result, :bound_dialog, :model
 
-      def initialize(result)
+      def initialize(result, model: nil)
         raise ArgumentError, 'result is required' if result.nil?
         @result = result
+        @model = model
         @bound_dialog = nil
       end
 
-      # Attach the dialog; remember the live model reference.
+      # Attach the dialog and remember the live model reference.
       def bind(dialog, model = nil)
         @bound_dialog = dialog
-        @model = model
+        @model = model unless model.nil?
       end
 
       # Clear references so the dialog can be GC'd.
@@ -40,15 +39,19 @@ module SUAnalysis
         return nil unless issue_id.is_a?(String)
         issue = @result.find_issue(issue_id)
         return nil if issue.nil?
-        IssueLocator.locate_and_select(issue, model: @model,
-                                                 view: @bound_dialog ? view : nil)
+        IssueLocator.locate_and_select(issue, model: @model, view: view)
       end
 
       private
 
+      # Per CodeX Round 018 BLOCK-004: UI::HtmlDialog has no
+      # #get_view. The View lives on the Model.
       def view
-        return nil unless @bound_dialog
-        @bound_dialog.respond_to?(:get_view) ? @bound_dialog.get_view : nil
+        return nil unless @model
+        return nil unless @model.respond_to?(:active_view)
+        @model.active_view
+      rescue StandardError
+        nil
       end
     end
   end

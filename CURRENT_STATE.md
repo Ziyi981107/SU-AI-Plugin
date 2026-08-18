@@ -1,11 +1,10 @@
 # CURRENT STATE
 
-Last updated: 2026-08-17 (Owner verification PASS on SketchUp 2020
-                          (9/9 steps); SU2017 verification PENDING (release
-                          Gate, not blocker); Stage 2 BLOCK rework COMPLETE;
-                          cleared to start Stage 6 UI per R003+R005.
-                          End-of-day handoff in
-                          Review/EOD_HANDOFF_2026-08-17.md.)
+Last updated: 2026-08-18 (CodeX Round 018 Gate B recheck COMPLETE — all
+                          6 BLOCKs CLOSED; 244/244 tests PASS, 0 fail,
+                          0 error (+37 from Gate B); awaiting CodeX Round
+                          019 BLOCK RECHECK verdict. Owner Verification
+                          Stage 6 still pending real-SU run.)
 
 ## 决策落地 (PI_TASK_001)
 
@@ -269,3 +268,84 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
 ### Code — 无已知 block
 - Stage 1 + Stage 2 纯 Ruby 部分: 33/33 PASS
 - Stage 2 SU 端: 设计完毕, 等 Owner 验证
+
+## CODEX REVIEW 018 (2026-08-18) �� GATE B RECHECK: ALL 6 BLOCKs CLOSED
+
+**Verdict**: All 6 S6-GATE-B-BLOCK-001..006 closed in one consolidated
+rework. Full test suite: 244/244 PASS, 0 fail, 0 error.
+
+### Code-side changes
+- `extension/analyzers_runner.rb`: removed the second `diagnostics = []`
+  that wiped per-analyzer failure entries (BLOCK-005). Same `diagnostics`
+  array now flows from the analyzer rescue -> IssueRegistry -> AnalysisResult.
+- `extension/su_ai_plugin.rb` (new): real SketchUp boot entrypoint
+  with `file_loaded?` / `file_loaded` guard + safe `require_relative`
+  chain + `Loader.register!` exactly once (BLOCK-002).
+- `extension/loader.rb`: register! uses a module-level `@registered`
+  sentinel (NOT menu introspection) for idempotency; holds the live
+  dialog reference in `@live_dialog`; on_analyze_selection propagates
+  `model` into `DialogRunner.show` (BLOCK-002, BLOCK-004, BLOCK-006).
+- `extension/dialog_runner.rb`: model flows through to DialogController;
+  on_locate emits `window.SUAIP.toast(...)` on unresolved (BLOCK-003,
+  BLOCK-004).
+- `extension/dialog_controller.rb`: `view` resolves to
+  `model.active_view` (capability-checked), NOT nonexistent
+  `dialog.get_view` (BLOCK-004).
+- `core/analysis_result.rb#summary`: exposes the locked Edges /
+  Vertices / non-zero-Z vertices / warnings / issues[per-type]
+  sub-fields required by the Stage 6 plan (BLOCK-006).
+- `compatibility/su_capability.rb#active_edit_context_facts`:
+  empty/root active path is the neutral complete state
+  (`pid_path_complete: true`); non-empty with any nil slot is fail
+  closed. Structural depth = entity count, NOT filtered PID length
+  (BLOCK-001, Gate B proof #1+#2).
+
+### Test-side changes
+- `tests/_fake_ui.rb` (new): real Module for the UI constant with
+  `UI::Command` + `UI::HtmlDialog` constants and per-instance `menu` /
+  `HtmlDialog.new` delegation. `FakeUI::State` records menus + dialogs
+  per test, with `install!` / `reset!` / `uninstall!` lifecycle so the
+  no-UI world is restored after every test.
+- `tests/test_loader.rb` (new): 6 FakeUI-based tests proving register!
+  is idempotent, keeps the dialog reference, wires to the boot
+  entrypoint, and the menu command handler is on_analyze_selection
+  (BLOCK-002).
+- `tests/test_dialog_runner.rb` (new): 8 lifecycle tests + 3 BLOCK-004
+  end-to-end tests proving the menu -> dialog -> locate -> selection
+  flow + unresolved toast control + ready handshake (BLOCK-003, 004, 006).
+- `tests/test_html_render.rb` (new): 11 HTML/JS contract tests proving
+  namespace consistency, no forbidden patterns, no overlay,
+  textContent-only render, BLOCK callbacks not method(:) (BLOCK-003, 006).
+- `tests/test_analyzers_runner.rb` (new): 3 failing-analyzer injection
+  tests proving the per-analyzer recovery contract (BLOCK-005).
+- `tests/test_preflight_runner.rb`: 3 BLOCK-001 build_snapshot
+  integration tests (root Edge valid PID -> complete, nested
+  valid-PID chain -> complete, active path with nil PID -> incomplete)
+  per CodeX Round 018 BLOCK-001 minimum acceptable fix (BLOCK-001).
+- `tests/test_preflight.rb`: capability probe (positive) ensure-block
+  rewritten to be robust against UI already being a non-Module
+  (defensive cleanup; the FakeUI was a plain class instance before
+  this rework and leaked state).
+- `tests/test_ui_bridge.rb`: `summary` keys assertion corrected (per-
+  type counts live under `summary['issues']`, not at top level).
+- `tests/test_html_render.rb`: file paths corrected from `../../`
+  (resolves to D:/Projects/...) to `../` (resolves to the real
+  project root); comment-stripping for the `eval` / `new Function`
+  regex check; regex updated for `var ROOT = window.SUAIP` style.
+
+### What remains
+- CodeX Round 019: BLOCK RECHECK for the 6 closed BLOCKs. We expect
+  PASS; if BLOCKs come back, fix in another consolidated pass.
+- Owner Verification Stage 6 (real SketchUp 2020) �� `Review/OWNER_VERIFICATION_STAGE_6.txt`
+  steps J..N. Owner is the only one who can run this (Q002=A).
+- SU2017 minimum-host verification remains a release Gate (per R004);
+  not a Stage 6 blocker.
+- Packaging / .rbz for SketchUp Extension Manager �� not yet started;
+  will follow Owner Verification Stage 6 PASS.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section ��)
+- ? Does NOT change R001-R005 product decisions
+- ? Does NOT expand product scope (no overlay, no repair, no mutation)
+- ? Does NOT push / publish / release
+- ? Does NOT skip Owner verification
+- ? Does NOT fake SU2017 as SU2020 evidence

@@ -62,9 +62,12 @@ test 'ui_bridge.as_html_data: summary keys are Strings' do
   ])
   result = AnalysisResult.new(preflight: Object.new, registry: reg)
   payload = UIBridge.as_html_data(result)
+  # Per CodeX Round 018 BLOCK-006: per-issue-type counts live under
+  # summary['issues'], NOT at the top level of summary.
   assert payload['summary'].keys.all? { |k| k.is_a?(String) }
-  assert_equal 1, payload['summary']['duplicate_edge_candidate']
-  assert_equal 1, payload['summary']['short_edge']
+  assert payload['summary']['issues'].keys.all? { |k| k.is_a?(String) }
+  assert_equal 1, payload['summary']['issues']['duplicate_edge_candidate']
+  assert_equal 1, payload['summary']['issues']['short_edge']
 end
 
 test 'ui_bridge.as_html_data: groups shape is JS-safe' do

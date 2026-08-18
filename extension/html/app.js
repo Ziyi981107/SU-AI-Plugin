@@ -11,7 +11,8 @@
 (function () {
   'use strict';
 
-  var ROOT = window.SUAI || (window.SUAI = {});
+  // Namespace MUST match extension/dialog_runner.rb ('window.SUAIP').
+  var ROOT = window.SUAIP || (window.SUAIP = {});
 
   function render(payload) {
     var sel = document.getElementById('selection-info');
@@ -19,12 +20,20 @@
 
     var summary = document.getElementById('summary');
     summary.textContent = '';
-    Object.keys(payload.summary || {}).forEach(function (k) {
+    // Locked summary (Stage 6 plan section 6.7): show edges/vertices/
+    // non-zero-Z vertices/warnings first, then per-issue-type counts.
+    var orderedKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings'];
+    var seen = {};
+    function emit(k) {
+      if (seen[k]) return;
+      seen[k] = true;
       var stat = document.createElement('div');
       stat.className = 'stat';
-      stat.textContent = k + ': ' + payload.summary[k];
+      stat.textContent = humanizeKey(k) + ': ' + payload.summary[k];
       summary.appendChild(stat);
-    });
+    }
+    orderedKeys.forEach(emit);
+    Object.keys(payload.summary || {}).forEach(emit);
 
     var groupsEl = document.getElementById('groups');
     groupsEl.textContent = '';
@@ -39,6 +48,13 @@
       });
       groupsEl.appendChild(det);
     });
+  }
+
+  function humanizeKey(k) {
+    if (!k) return '';
+    return k.split('_').map(function (w) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(' ');
   }
 
   function renderIssue(issue) {

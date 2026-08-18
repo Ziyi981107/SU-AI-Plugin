@@ -240,10 +240,12 @@ module SUAnalysis
         # structural_depth = number of entities in active_path.
         # Independent of pid_path completeness.
         structural_depth = raw.length
-        # pid_path_complete = every active entity supplied a non-nil PID.
-        # Computed BEFORE nils are discarded. Empty active path is
-        # considered incomplete (no edit context = nothing to resolve).
-        pid_path_complete = !raw.empty? && raw.all? { |p| !p.nil? }
+        # pid_path_complete invariant:
+        #   - Empty active path: neutral complete (no edit context to
+        #     fail closed; walk seed is the identity).
+        #   - Non-empty with all PIDs: complete.
+        #   - Non-empty with any nil PID: fail closed (CodeX Round 014).
+        pid_path_complete = raw.empty? || raw.all? { |p| !p.nil? }
         {
           transform:        transform,
           pid_path:         pid_path.freeze,
@@ -270,11 +272,14 @@ module SUAnalysis
       end
 
       def default_empty_facts
+        # Empty active path is the NEUTRAL complete state (no edit
+        # context to fail closed). The walk seed is the identity;
+        # container/leaf PIDs are evaluated on their own.
         {
           transform:        nil,
           pid_path:         [].freeze,
           structural_depth: 0,
-          pid_path_complete: false,
+          pid_path_complete: true,
           raw_with_nil:     [].freeze
         }
       end

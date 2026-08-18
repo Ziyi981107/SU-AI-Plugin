@@ -37,6 +37,11 @@ module SUAnalysis
       # selection: SketchUp Selection (or any each-able duck type)
       # model:     SU model (or nil in tests)
       def run(selection, model: nil)
+        # Initialize diagnostics BEFORE any recoverable stage uses it.
+        # Otherwise an analyzer raising would crash on `diagnostics << {...}`
+        # (NoMethodError on nil) and abort the entire command.
+        diagnostics = []
+
         # 1. Build snapshot + preflight.
         snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(selection, model: model)
         preflight = snapshot.preflight
@@ -71,9 +76,12 @@ module SUAnalysis
         end
 
         # 5. Enrich (deterministic ids + locatable).
-        # diagnostics is collected BEFORE registry construction so the
-        # registry can append its own validation drops.
-        diagnostics = []
+        # diagnostics is the SAME array the analyzer rescue used above;
+        # do NOT re-initialize it here. Per CodeX Round 018 BLOCK-005:
+        # any `diagnostics = []` after the analyzer loop wipes the
+        # captured per-analyzer failure entries. The registry below
+        # appends to whatever array we pass in; the SAME array is
+        # what AnalysisResult.diagnostics reads.
         enriched = SUAnalysis::Core::IssueEnricher.enrich_all(
           normalized, snapshot_lookup: snapshot_lookup
         )

@@ -123,7 +123,32 @@ test 'analysis_result.find_issue: returns matching issue' do
   assert_equal r.registry.issues[0], r.find_issue('duplicate_edge_candidate|1|1')
 end
 
-test 'analysis_result.summary: returns registry summary' do
-  r = minimal_result
-  assert_equal r.registry.summary, r.summary
+test 'analysis_result.summary: includes Edges/Vertices and registry counts' do
+  # Per CodeX Round 018 BLOCK-006: AnalysisResult.summary must
+  # expose snapshot Edge/Vertex facts + per-issue-type counts.
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count).new(4, 5, 0, 1)
+  ar_issue_default = {
+    issue_id:          'short_edge|1|1',
+    issue_type:        'short_edge',
+    severity:          'low',
+    confidence:        'medium',
+    sources:           [],
+    source_entity_ids: [],
+    edge_ids:          [],
+    location:          nil,
+    message:           'm',
+    metadata:          {},
+    locatable:         false,
+    display_length:    nil
+  }
+  reg = IssueRegistry.new([ar_issue_default])
+  result = AnalysisResult.new(preflight: pf, registry: reg,
+                             selection_type: 'Group', selection_label: 'g')
+  summary = result.summary
+  assert_equal 4, summary['edges']
+  assert_equal 5, summary['vertices']
+  assert_equal 0, summary['non_zero_z_vertices']
+  assert_equal 1, summary['warnings']
+  assert_equal 1, summary['issues']['short_edge']
+  assert_equal 'g', summary['selection']
 end

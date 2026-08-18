@@ -39,11 +39,14 @@ end
 
 # --- structural_depth from real entity count ---
 
-test 'active_edit_context_facts: empty active path -> depth 0, complete=false' do
+test 'active_edit_context_facts: empty active path -> depth 0, complete=true' do
+  # Per CodeX Round 018 BLOCK-001: empty active path is the NEUTRAL
+  # complete state for snapshot traversal. The walk seed is identity;
+  # missing-PID failures from real containers/leafs are evaluated
+  # separately.
   facts = SUCapability.active_edit_context_facts(edit_facts_fake_model([]))
   assert_equal 0, facts[:structural_depth]
-  # Empty active path is incomplete (no source-identity at all).
-  assert_equal false, facts[:pid_path_complete]
+  assert_equal true, facts[:pid_path_complete]
   assert_equal [], facts[:pid_path]
 end
 
@@ -92,9 +95,11 @@ end
 # --- nil model returns default empty facts ---
 
 test 'active_edit_context_facts: nil model -> default empty facts' do
+  # Per CodeX Round 018 BLOCK-001: nil model -> default empty facts
+  # with pid_path_complete = true (neutral seed for snapshot traversal).
   facts = SUCapability.active_edit_context_facts(nil)
   assert_equal 0, facts[:structural_depth]
-  assert_equal false, facts[:pid_path_complete]
+  assert_equal true, facts[:pid_path_complete]
   assert_equal [], facts[:pid_path]
 end
 

@@ -1,13 +1,17 @@
 #
 # extension/dialog_runner.rb — HtmlDialog lifecycle.
 #
-# Per CodeX Round 010..014:
+# Per CodeX Round 018:
 #   - set_file with absolute path (NOT set_html with embedded asset).
 #   - add_action_callback with BLOCKS (NOT method(:name)).
-#   - ready handshake: JS calls window.sketchup.ready() after
+#   - ready handshake: JS calls window.SUAIP.ready() after
 #     DOMContentLoaded; Ruby then pushes data via execute_script.
 #   - set_on_closed releases the controller (GC the dialog).
-#   - locate_issue callback registered BEFORE show.
+#   - show(result, model) propagates the model to the controller so
+#     the Locate action can resolve against the real model.
+#   - The dialog reference is held in Loader.@live_dialog so the
+#     window is not GC'd; Loaderr.release_dialog! is called via
+#     set_on_closed.
 #
 
 require 'json'
@@ -22,11 +26,11 @@ module SUAnalysis
 
       # Show the HtmlDialog for one AnalysisResult.
       # Returns the dialog instance (or nil in tests).
-      def show(result)
+      def show(result, model: nil)
         return nil unless result
         return nil unless defined?(UI::HtmlDialog)
         return nil unless UI::HtmlDialog.respond_to?(:new)
-        controller = DialogController.new(result)
+        controller = DialogController.new(result, model: model)
         dialog = UI::HtmlDialog.new(
           dialog_title:    'CAD Analyzer Result',
           preferences_key: 'SU-AI-Plugin.cad_analyzer.v1',
@@ -44,9 +48,16 @@ module SUAnalysis
         # on the correct controller instance.
         dialog.add_action_callback('ready')   { |_ctx| push_data(dialog, controller) }
         dialog.add_action_callback('locate')  { |_ctx, issue_id| on_locate(dialog, controller, issue_id) }
-        dialog.add_action_callback('close')   { |_ctx| controller.release! }
-        dialog.set_on_closed { controller.release! }
-        controller.bind(dialog)
+        dialog.add_action_callback('close')   { |_ctx| on_close(dialog, controller) }
+        # set_on_closed releases the Loader-side cache so the window
+        # can be GC'd after the user closes it.
+        dialog.set_on_closed do
+          on_close(dialog, controller)
+        end
+        controller.bind(dialog, model)
+        # Hold the live dialog reference for the dialog lifetime.
+        # Per CodeX Round 018 BLOCK-006 + official SketchUp guidance.
+        Loader.keep_dialog!(dialog)
         dialog.show
         dialog
       end
@@ -69,7 +80,15 @@ module SUAnalysis
         if result[:status] == :unresolved
           msg = JSON.generate("source no longer available for: #{issue_id}")
           dialog.execute_script("window.SUAIP.toast(#{msg})")
+          $stdout.puts("[SU-AI-Plugin] locate_issue: #{result[:diagnostics].last || 'unresolved'}")
         end
+      end
+
+      # Idempotent close handler. Releases the controller and the
+      # Loader-side live-dialog cache.
+      def on_close(_dialog, controller)
+        controller.release!
+        Loader.release_dialog!
       end
     end
   end

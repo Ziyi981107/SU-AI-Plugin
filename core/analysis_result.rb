@@ -27,7 +27,6 @@ module SUAnalysis
         @preflight         = preflight
         @registry          = registry
         @snapshot_lookup   = (snapshot_lookup || {}).dup.freeze
-        # (no-op)
         @display_data      = (display_data || {}).dup.freeze
         @diagnostics       = (diagnostics || []).dup.freeze
         @selection_type    = selection_type.to_s
@@ -41,19 +40,46 @@ module SUAnalysis
         @registry.find(issue_id)
       end
 
-      # Convenience: count of issues by issue_type.
+      # Build the LOCKED-COMPLETE summary required by the Stage 6
+      # plan section 6.7 and Owner checklist K.2. Includes:
+      #   - Selection kind + label
+      #   - Edges / Vertices from preflight
+      #   - Non-zero-Z vertices
+      #   - Warnings count
+      #   - Issue counts per issue_type (from Registry)
+      # Returns String-keyed Hash so the UI bridge String-keys it once.
       def summary
-        @registry.summary
+        pf = @preflight
+        result = {
+          'selection' => @selection_label.to_s,
+          'edges'     => safe_attr(pf, :edge_count, 0),
+          'vertices'  => safe_attr(pf, :vertex_count, 0),
+          'non_zero_z_vertices' => safe_attr(pf, :non_zero_z_vertex_count, 0),
+          'warnings'  => safe_attr(pf, :warning_count, 0),
+          'issues'    => @registry.summary
+        }
+        result
       end
 
       # Test helper: assert top-level is frozen, frozen Array for
-      # diagnostics, frozen Hash for the others.
+      # Diagnostics, frozen Hash for the others.
       def invariants_ok?
         return false unless frozen?
         return false unless @diagnostics.frozen?
         return false unless @snapshot_lookup.frozen?
         return false unless @display_data.frozen?
         true
+      end
+
+      private
+
+      # Read an attribute from a (possibly missing) PreflightReport.
+      # PreflightReport may respond_to?(:foo) without having defined
+      # :foo; this returns the default cleanly.
+      def safe_attr(obj, name, default)
+        return default unless obj.respond_to?(name)
+        v = obj.send(name)
+        v.nil? ? default : v
       end
     end
   end

@@ -389,17 +389,29 @@ end
 
 test 'capability.HtmlDialog: positive — fake UI::HtmlDialog defined returns true (S2-BLOCK-006)' do
   # Stub UI::HtmlDialog into the global namespace so the probe sees it.
-  unless defined?(UI)
-    Object.const_set(:UI, Module.new)
-  end
-  unless UI.const_defined?(:HtmlDialog)
-    UI.const_set(:HtmlDialog, Class.new)
-  end
-  assert_equal true, SUAnalysis::Compatibility::SUCapability.html_dialog?
-ensure
-  # Clean up the stub so other tests see the no-UI world.
-  if defined?(UI) && UI.const_defined?(:HtmlDialog)
-    UI.send(:remove_const, :HtmlDialog)
+  # Use a fresh Module so we don't collide with any prior test stub
+  # (test_loader / test_dialog_runner may have left a non-Module UI
+  # object as the global constant).
+  prev_ui = Object.const_defined?(:UI) ? Object.const_get(:UI) : :__undefined__
+  prev_html_dialog =
+    if prev_ui.is_a?(Module) && prev_ui.const_defined?(:HtmlDialog)
+      prev_ui.const_get(:HtmlDialog)
+    else
+      :__undefined__
+    end
+  ui_module = Module.new
+  ui_module.const_set(:HtmlDialog, Class.new)
+  Object.send(:remove_const, :UI) if Object.const_defined?(:UI)
+  Object.const_set(:UI, ui_module)
+  begin
+    assert_equal true, SUAnalysis::Compatibility::SUCapability.html_dialog?
+  ensure
+    # Clean up: restore the prior UI state. Be defensive — UI may
+    # have been swapped by another test in the meantime.
+    Object.send(:remove_const, :UI) if Object.const_defined?(:UI)
+    if prev_ui != :__undefined__
+      Object.const_set(:UI, prev_ui) if prev_ui.is_a?(Module) || prev_ui.is_a?(Class)
+    end
   end
 end
 

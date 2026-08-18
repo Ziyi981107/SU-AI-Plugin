@@ -609,3 +609,86 @@ test 'S2-BLOCK-005 (r4): checklist H shape [inv_group, e1_invalid] -> exactly 1 
   e = snap.edges.first
   assert_equal 20.0, e.end_point[0]
 end
+# --------------------------------------------------------------------------
+# S6-GATE-B-BLOCK-001 ¡ª adapter integration tests through build_snapshot
+# (per CodeX Round 018 BLOCK-001 minimum acceptable fix):
+#   - root Edge with a valid PID -> complete / root
+#   - nested valid-PID chain     -> complete / nested
+#   - active path with a nil PID -> incomplete / nested
+# --------------------------------------------------------------------------
+
+test 'S6-GATE-B-BLOCK-001: root Edge with valid PID -> complete, structural_depth 0' do
+  # A single root-level Edge (no active edit, no container). The leaf
+  # PID is present, so pid_path_complete stays true.
+  edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 555
+  )
+  sel  = FakeSU::Selection.new([edge])
+  model = FakeSU::Model.new(entities: [edge], active_path: nil, edit_transform: nil)
+  snap = PreflightRunner.build_snapshot(sel, model: model)
+  e = snap.edges.first
+  refute_nil e
+  # structural_depth is 0 (no containers above the leaf, no active edit).
+  assert_equal 0, e.source.structural_depth
+  # pid_path_complete: leaf PID is present AND the seed (no active edit)
+  # is the neutral complete state. ANDed together: true.
+  assert_equal true, e.source.pid_path_complete
+end
+
+test 'S6-GATE-B-BLOCK-001: nested valid-PID chain -> complete, structural_depth 2' do
+  # Group(pid=200) -> Group(pid=100) -> Edge(pid=42). All PIDs present.
+  edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 42
+  )
+  inner = FakeSU::Group.new(name: 'inner', children: [edge], persistent_id: 100)
+  outer = FakeSU::Group.new(name: 'outer', children: [inner], persistent_id: 200)
+  sel   = FakeSU::Selection.new([outer])
+  snap  = PreflightRunner.build_snapshot(sel)
+  e = snap.edges.first
+  refute_nil e
+  # structural_depth is 2 (two container levels; leaf is NOT counted).
+  assert_equal 2, e.source.structural_depth
+  # pid_path_complete: every container + leaf has a non-nil PID.
+  assert_equal true, e.source.pid_path_complete
+  # persistent_id_path is the chain in order, leaf PID last.
+  assert_equal [200, 100, 42], e.source.persistent_id_path
+end
+
+test 'S6-GATE-B-BLOCK-001: active path with one nil PID -> incomplete, nested' do
+  # Active edit context has a container (pid 7) plus a missing-PID
+  # container (nil) and the selected Edge (pid 999). The leaf Edge
+  # itself has a valid PID, but the active path has a nil slot, so
+  # pid_path_complete fails closed.
+  edge = FakeSU::Edge.new(
+    start: FakeSU::Vertex.new(0, 0, 0),
+    finish: FakeSU::Vertex.new(10, 0, 0),
+    persistent_id: 999
+  )
+  active_container_with_pid = FakeSU::Group.new(
+    name: 'p1', children: [], persistent_id: 7
+  )
+  # A second active-path entity that exposes a nil PID. We use a
+  # minimal stub: responds to persistent_id by raising (so safe_persistent_id
+  # returns nil) and contributes one slot to active_path.
+  active_container_nil = Object.new
+  def active_container_nil.typename; 'Group'; end
+  def active_container_nil.persistent_id; raise 'simulated nil pid'; end
+  edit_t = FakeSU.translation(50, 50, 0)
+  model = FakeSU::Model.new(
+    entities: [edge],
+    active_path: [active_container_with_pid, active_container_nil],
+    edit_transform: edit_t
+  )
+  sel = FakeSU::Selection.new([edge])
+  snap = PreflightRunner.build_snapshot(sel, model: model)
+  e = snap.edges.first
+  refute_nil e
+  # structural_depth = active_path count = 2.
+  assert_equal 2, e.source.structural_depth
+  # pid_path_complete: nil slot in active path -> false.
+  assert_equal false, e.source.pid_path_complete
+end
