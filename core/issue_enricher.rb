@@ -63,9 +63,13 @@ module SUAnalysis
       end
 
       # Enrich a batch of normalized issues.
-      # Per CodeX BLOCK-002: sort by canonical_source_keys BEFORE
-      # assigning counter, so reversed input order produces the same
-      # issue_id for the same logical Issue.
+      # Per CodeX BLOCK-002 v2: sort by a COMPLETE deterministic issue
+      # key (canonical source keys + quantized location + sorted edge_ids)
+      # BEFORE assigning counter. The counter is the FINAL tie-breaker
+      # only after the complete stable key. Two open endpoints of one
+      # Edge share source_keys + edge_ids but differ in location; the
+      # location discriminator ensures they receive distinct counters
+      # consistently across input orderings.
       def enrich_all(normalized_issues, snapshot_lookup:,
                     coord_epsilon: 1.0e-6)
         bullets = Array(normalized_issues).map do |iss|
@@ -80,13 +84,9 @@ module SUAnalysis
         end
         result = []
         by_type.each do |_type, list|
-          # Sort by canonical source keys for stable counter assignment.
+          # Sort by complete stable key for stable counter assignment.
           sorted = list.sort_by do |bullet|
-            IssueIdAssigner.canonical_source_keys(
-              source_tokens: bullet[:sources],
-              location: bullet[:location],
-              coord_epsilon: coord_epsilon
-            )
+            stable_sort_key(bullet, coord_epsilon: coord_epsilon)
           end
           sorted.each_with_index do |bullet, idx|
             bullet[:issue_id] = IssueIdAssigner.assign(
@@ -100,6 +100,31 @@ module SUAnalysis
           end
         end
         result
+      end
+
+      # Build the complete deterministic sort key for one Issue.
+      # Includes:
+      #   1. canonical source keys (PID paths or geometry fallback)
+      #   2. quantized location (location discriminator)
+      #   3. sorted edge_ids (edge discriminator)
+      # Per CodeX BLOCK-002 v2: entity_id, object_id, traversal order
+      # and input position are NOT used.
+      def stable_sort_key(issue, coord_epsilon: 1.0e-6)
+        source_keys = IssueIdAssigner.canonical_source_keys(
+          source_tokens: issue[:sources],
+          location: issue[:location],
+          coord_epsilon: coord_epsilon
+        )
+        loc = issue[:location]
+        loc_key = if loc.is_a?(Array) && loc.size == 3
+                    q = loc.map { |c| (Float(c) / coord_epsilon).floor.to_i }
+                    "loc:#{q.join(',')}"
+                  else
+                    'loc:none'
+                  end
+        edge_ids = Array(issue[:edge_ids]).map { |x| Integer(x).to_s }.sort
+        edge_key = "edges:#{edge_ids.join(',')}"
+        "#{source_keys.join('+')}|#{loc_key}|#{edge_key}"
       end
 
       # Build the aligned SourceToken array for one issue.

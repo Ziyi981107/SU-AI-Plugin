@@ -270,3 +270,70 @@ test 'issue_enricher.enrich_all: counter is order-independent (shuffled input)' 
   assert_equal out_a, out_b
   assert_equal out_a, out_c
 end
+
+# --- BLOCK-002 v2: same-PID + different-location -> distinct stable counters ---
+
+test 'issue_enricher.enrich_all: same-PID + different-location get stable counters (CodeX Round 016)' do
+  # Two open endpoints of one Edge: same PID path, same edge_id, different locations.
+  e1 = edge_with(persistent_id_path: [10, 20, 555], structural_depth: 2,
+                  persistent_id: 555, pid_path_complete: true)
+  e1.instance_variable_set(:@id, 100)
+  lkp = snap(e1)
+  mk = ->(loc_idx) {
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'open_endpoint', severity: 'medium', confidence: 'high',
+      source_entity_ids: [1], edge_ids: [100],
+      location: [loc_idx.to_f, 0.0, 0.0],
+      message: 'open', metadata: {}
+    )
+  }
+  forward  = [mk.call(0),   mk.call(10)]
+  reversed = [mk.call(10),  mk.call(0)]
+  shuffled = [mk.call(10),  mk.call(0),   mk.call(5),  mk.call(5)]  # duplicates with same loc
+
+  out_f = IssueEnricher.enrich_all(forward,  snapshot_lookup: lkp)
+  out_r = IssueEnricher.enrich_all(reversed, snapshot_lookup: lkp)
+  out_s = IssueEnricher.enrich_all(shuffled, snapshot_lookup: lkp)
+
+  # Map issue_id -> location_x for each run.
+  map_f = out_f.map { |x| [x[:issue_id], x[:location][0]] }.sort_by { |id, loc| loc }
+  map_r = out_r.map { |x| [x[:issue_id], x[:location][0]] }.sort_by { |id, loc| loc }
+  map_s = out_s.map { |x| [x[:issue_id], x[:location][0]] }.sort_by { |id, loc| loc }
+
+  # The same logical location (x=0) gets the same issue_id across runs.
+  # The same logical location (x=10) gets the same issue_id across runs.
+  ids_0_f = map_f.find { |_, loc| loc == 0 }.first
+  ids_0_r = map_r.find { |_, loc| loc == 0 }.first
+  ids_0_s = map_s.find { |_, loc| loc == 0 }.first
+  ids_10_f = map_f.find { |_, loc| loc == 10 }.first
+  ids_10_r = map_r.find { |_, loc| loc == 10 }.first
+
+  assert_equal ids_0_f, ids_0_r
+  assert_equal ids_0_f, ids_0_s
+  assert_equal ids_10_f, ids_10_r
+  refute_equal ids_0_f, ids_10_f   # distinct counters for distinct locations
+end
+
+test 'issue_enricher.enrich_all: 3 distinct locations -> 3 distinct counters' do
+  e1 = edge_with(persistent_id_path: [10], structural_depth: 0, pid_path_complete: true)
+  e1.instance_variable_set(:@id, 1)
+  lkp = snap(e1)
+  mk = ->(loc_idx) {
+    IssueNormalizer.normalize_analyzer_issue(
+      kind: 'open_endpoint', severity: 'medium', confidence: 'high',
+      source_entity_ids: [1], edge_ids: [1],
+      location: [loc_idx.to_f, 0.0, 0.0],
+      message: 'open', metadata: {}
+    )
+  }
+  forward = [mk.call(0), mk.call(10), mk.call(5)]
+  reversed = [mk.call(5), mk.call(0), mk.call(10)]
+  out_f = IssueEnricher.enrich_all(forward,  snapshot_lookup: lkp)
+  out_r = IssueEnricher.enrich_all(reversed, snapshot_lookup: lkp)
+  # Sort each by location; the issue_id sequence should match.
+  ids_f = out_f.sort_by { |x| x[:location][0] }.map { |x| x[:issue_id] }
+  ids_r = out_r.sort_by { |x| x[:location][0] }.map { |x| x[:issue_id] }
+  assert_equal ids_f, ids_r
+  # And they are distinct.
+  assert_equal 3, ids_f.uniq.length
+end
