@@ -82,8 +82,6 @@ Files in scope for this checklist (added/modified in Stage 6 Gate B):
   extension/html/app.js
   compatibility/su_capability.rb               (modified: +find_entity_by_id)
   tests/_fake_ui.rb
-  tests/_fake_instance_path.rb
-  tests/test_no_overlay_lint.rb                (proves absence of a finite forbidden-token set)
 
 
 PRE-FLIGHT (ONE-TIME PER SESSION)
@@ -197,9 +195,9 @@ HOW TO RUN THE CHECKLIST
     # GEOMETRY/COUNT fingerprint only. This fingerprint detects
     # COUNT changes (entities added or removed). It does NOT prove
     # absence of property-only mutations (material / layer / hidden /
-    # soft / dictionary entries). For property-only mutations, the
-    # test_no_overlay_lint + real-host behavior evidence are
-    # complementary guards (see step N.6).
+    # soft / dictionary entries). For property-only mutations, use
+    # the real-host behavior evidence in step N (direct observation
+    # of properties via Ruby Console).
     def su_fingerprint_v6(model)
       m = model
       geom = su_count_geometry_recursive(m.entities)
@@ -251,29 +249,22 @@ idempotency (per CodeX Round 019 BLOCK-002-R2).
         Plugins > SU-AI-Plugin > Analyze selection
       Expected: ONE menu item, labeled "Analyze selection".
 
-   3. IDEMPOTENCY — proven by the FakeUI adapter test
+   3. IDEMPOTENCY — proven by the automated FakeUI adapter test
       (test_loader: faithful boot — load entrypoint twice ...).
-      That test actually `load`s `extension/su_ai_plugin.rb` twice
-      (with a `file_unloaded` simulation between loads), asserts
-      exactly ONE menu entry exists in the FakeUI registry, AND
-      invokes the created command handler through to the dialog
+      That test actually `load`s `extension/su_ai_plugin.rb` twice,
+      asserts exactly ONE menu entry exists in the FakeUI registry,
+      AND invokes the created command handler through to the dialog
       boundary (FakeUI.state.dialogs.length == 1 after click).
+      The full 247/247 test suite is the canonical evidence; the
+      Owner does NOT need to re-prove idempotency in Ruby Console.
 
-      For a real-host visual confirmation:
-        - Reset the loaded-marker from the Ruby Console:
-            file_unloaded 'SU-AI-Plugin/extension/su_ai_plugin'
-        - Re-load the entrypoint:
-            load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
-        - Open the Plugins menu.
-      Expected: still ONE "Analyze selection" item. The re-load
-      did not duplicate the entry.
-
-      DO NOT use `load 'D:/Projects/SU-AI-Plugin/extension/loader.rb'`
-      directly. That bypasses the entrypoint's `file_loaded?` guard
+      The supported way to load the plugin is the entrypoint in
+      J.1. DO NOT use `load 'D:/Projects/SU-AI-Plugin/extension/loader.rb'`
+      directly — that bypasses the entrypoint's `file_loaded?` guard
       and resets the module-level @registered sentinel, so on a real
       host a SECOND `register!` would add a second menu item. The
-      supported way to re-trigger boot is the entrypoint + the
-      `file_unloaded` reset above.
+      automated test is the only safe proof of idempotency on the
+      real host.
 
    4. Capability probe:
         SUAnalysis::Compatibility::SUCapability.html_dialog?
@@ -524,9 +515,9 @@ N. Non-mutating end-to-end flow (separate from M)
    Goal: prove the entire Stage 6 flow (menu click → analysis →
    dialog → clicks → close) does NOT mutate any geometry/count
    state. Per NIT: this is a GEOMETRY/COUNT fingerprint only. It
-   does NOT prove absence of property-only mutations. The
-   `test_no_overlay_lint` and real-host behavior evidence are
-   complementary guards.
+   does NOT prove absence of property-only mutations; the
+   real-host behavior evidence in step N.7 is the
+   complementary guard.
 
    1. Fresh model. Build fixtures test_group + shared_def+occ_a/occ_b
       + outer_g (no dangling). Use the same setup as K's
@@ -563,21 +554,13 @@ N. Non-mutating end-to-end flow (separate from M)
       change).
 
       If any field differs, the locate handler has a leak:
-        - First suspect: `model.active_path =` (lint should reject).
-        - Second suspect: `entities.add_*` (lint should reject).
+        - First suspect: `model.active_path =` (forbidden by R003).
+        - Second suspect: `entities.add_*` (forbidden by R003).
         - Third suspect: `material =`, `layer =`, `hidden =`, `soft =`
-          (lint should reject).
+          (forbidden by R003).
         - Fourth suspect: any direct mutation on the SU model.
 
-   6. Cross-verify with the no-overlay lint internally:
-        load 'D:/Projects/SU-AI-Plugin/tests/test_no_overlay_lint.rb'
-        Tests.run!
-      Expected: all forbidden-token assertions PASS (zero
-      forbidden tokens in extension/*.rb). Per CodeX NIT: this
-      proves absence of a finite token set; the Ruby fingerprint
-      in step 5 is the geometry/count ground truth.
-
-   7. For property-only mutation evidence (material/layer/hidden/
+   6. For property-only mutation evidence (material/layer/hidden/
       soft), the owner can additionally:
         - Spot-check a few entities via Ruby Console:
             m = Sketchup.active_model

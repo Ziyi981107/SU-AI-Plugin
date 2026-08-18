@@ -1,12 +1,13 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (CodeX Round 019 Gate B recheck v2 COMPLETE ‚Äî
-                          BLOCK-001/003/004/005/006 closed (Round 018)
-                          + BLOCK-002-R2 and BLOCK-006-R2 closed (Round
-                          019); 247/247 tests PASS, 0 fail, 0 error
-                          (+3 from Round 019); awaiting CodeX Round 020
-                          verdict. Owner Verification Stage 6 still
-                          pending real-SU run.)
+Last updated: 2026-08-18 (CodeX Round 020 Gate B FINAL recheck:
+                          **PASS WITH NITS** ‚Äî all 6 Gate B BLOCKs +
+                          the 2 Round-019 reopens are CLOSED; both
+                          NITs are narrow checklist/evidence-hygiene
+                          corrections applied. Full suite 247/247
+                          PASS, 0 fail, 0 error; git diff --check
+                          clean. READY to dispatch Owner Verification
+                          Stage 6 (J..N on real SketchUp 2020).)
 
 ## ÂÜ≥Á≠ñËêΩÂú∞ (PI_TASK_001)
 
@@ -352,7 +353,7 @@ rework. Full test suite: 244/244 PASS, 0 fail, 0 error.
 - ? Does NOT skip Owner verification
 - ? Does NOT fake SU2017 as SU2020 evidence
 
-## CODEX REVIEW 019 (2026-08-18) °™ GATE B RECHECK v2: BLOCK-002-R2 + BLOCK-006-R2 CLOSED
+## CODEX REVIEW 019 (2026-08-18) ÔøΩÔøΩ GATE B RECHECK v2: BLOCK-002-R2 + BLOCK-006-R2 CLOSED
 
 **Verdict**: BLOCK-001, -003, -004, -005, -006 stay CLOSED.
 BLOCK-002-R2 (boot path is not executable as documented) and
@@ -361,7 +362,7 @@ closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
 
 ### Code-side changes (Round 019 rework)
 - `extension/su_ai_plugin.rb`:
-  - `file_loaded(...)` moved INTO the success branch °™ only marked
+  - `file_loaded(...)` moved INTO the success branch ÔøΩÔøΩ only marked
     on full boot success. A transient boot failure leaves the loaded
     state unset, so the next load retries from scratch (per BLOCK-002-R2
     safe-retry contract).
@@ -375,12 +376,12 @@ closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
     abnormal_large_coord, deep_nesting) with human-readable labels
     ("Short Edges: 1", "Duplicate Candidates: 0", ...). The scalar
     header rows (Edges, Vertices, non-zero-Z, Warnings) come first,
-    then the per-issue-type rows °™ both linear, no nested-object
+    then the per-issue-type rows ÔøΩÔøΩ both linear, no nested-object
     stringification ("[object Object]") anywhere. Exposed
     `ROOT.ISSUE_TYPE_LABELS` for harness introspection.
 - `tests/_fake_ui.rb`:
   - `FakeMenu#add_submenu` no longer does nonstandard create-or-return
-    semantics. It always creates a NEW submenu °™ mirroring the real
+    semantics. It always creates a NEW submenu ÔøΩÔøΩ mirroring the real
     `Sketchup::Menu` API, which does not guarantee find-or-create.
     Production idempotency relies on `file_loaded?` + module-level
     `@registered` sentinel, NOT on this method (per BLOCK-002-R2).
@@ -389,7 +390,7 @@ closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
 - `tests/test_loader.rb` (rewrite):
   - Top-level `file_loaded?` / `file_loaded` / `file_unloaded` stubs
     so the test's `instance_eval` runner sees them via the entrypoint.
-  - 1 NEW test "faithful boot °™ load entrypoint twice, one menu item,
+  - 1 NEW test "faithful boot ÔøΩÔøΩ load entrypoint twice, one menu item,
     handler reaches dialog" that:
     - Actually `load`s `extension/su_ai_plugin.rb` twice.
     - Asserts exactly ONE menu item across both loads.
@@ -441,15 +442,51 @@ closed in this pass. Full test suite: 247/247 PASS, 0 fail, 0 error.
 ### What remains
 - CodeX Round 020: BLOCK RECHECK for the 2 closed BLOCKs. Expected
   PASS.
-- Owner Verification Stage 6 (real SketchUp 2020) °™ `Review/OWNER_VERIFICATION_STAGE_6.txt`
+- Owner Verification Stage 6 (real SketchUp 2020) ÔøΩÔøΩ `Review/OWNER_VERIFICATION_STAGE_6.txt`
   steps J..N. Owner is the only one who can run this (Q002=A).
 - SU2017 minimum-host verification remains a release Gate (per R004).
-- Packaging / .rbz for SketchUp Extension Manager °™ not yet started;
+- Packaging / .rbz for SketchUp Extension Manager ÔøΩÔøΩ not yet started;
   will follow Owner Verification Stage 6 PASS.
 
-### Hard-rule compliance (per Cicada 2026-08-18 section ¡˘)
+### Hard-rule compliance (per Cicada 2026-08-18 section ÔøΩÔøΩ)
 - ? Does NOT change R001-R005 product decisions
 - ? Does NOT expand product scope (no overlay, no repair, no mutation)
 - ? Does NOT push / publish / release
 - ? Does NOT skip Owner verification
 - ? Does NOT fake SU2017 as SU2020 evidence
+
+## CODEX REVIEW 020 (2026-08-18) °™ GATE B FINAL: PASS WITH NITS
+
+**Verdict**: PASS WITH NITS. All 6 Gate B BLOCKs + the 2 Round-019
+reopens (BLOCK-002-R2, BLOCK-006-R2) are CLOSED. The two NITs are
+narrow checklist/evidence-hygiene corrections; no new review is
+required.
+
+### NIT corrections applied (CodeX Round 020)
+- NIT 1 °™ `file_unloaded` is not a documented SketchUp top-level
+  API. The real API is `file_loaded?` / `file_loaded` only. Removed
+  the Owner instructions that called `file_unloaded`. Step J.3
+  now states that idempotency is covered by the automated
+  faithful-boot test (no manual Ruby-Console visual confirmation
+  is required).
+- NIT 2 °™ `tests/_fake_instance_path.rb` and
+  `tests/test_no_overlay_lint.rb` were referenced in the checklist
+  inventory but do not exist in HEAD. Removed the inventory entries
+  and the step N.6 "load test_no_overlay_lint" instruction. N.6
+  now relies on the existing recursive fingerprint + direct
+  real-host property observation.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section ¡˘)
+- ? Does NOT change R001-R005 product decisions
+- ? Does NOT expand product scope
+- ? Does NOT push / publish / release
+- ? Does NOT skip Owner verification
+- ? Does NOT fake SU2017 as SU2020 evidence
+
+### Next action
+**Dispatch Owner Verification Stage 6** °™ `Review/OWNER_VERIFICATION_STAGE_6.txt`
+J..N on real SketchUp 2020. Owner is the only one who can run
+this (Q002=A). Once Owner reports PASS, the next gate is the
+SU2017 minimum-host verification (release Gate, per R004; not a
+Stage 6 blocker). After that, packaging / .rbz for the SketchUp
+Extension Manager.
