@@ -186,7 +186,8 @@ module SUAnalysis
                                   persistent_id_path: nil,
                                   instance_path: nil,
                                   structural_depth: nil,
-                                  pid_path_complete: nil)
+                                  pid_path_complete: nil,
+                                  layer_name: nil)
         pid = safe_persistent_id(entity)
         label = nil
         if entity.respond_to?(:definition) && entity.definition && entity.definition.respond_to?(:name)
@@ -206,7 +207,8 @@ module SUAnalysis
           instance_path:      instance_path,
           persistent_id_path: persistent_id_path,
           structural_depth:    structural_depth.nil? ? 0 : structural_depth.to_i,
-          pid_path_complete:   pid_path_complete.nil? ? false : (pid_path_complete ? true : false)
+          pid_path_complete:   pid_path_complete.nil? ? false : (pid_path_complete ? true : false),
+          layer_name:         layer_name
         )
       end
 
@@ -348,6 +350,30 @@ module SUAnalysis
       def serialize_pid_path(pid_path)
         return '' if pid_path.nil? || pid_path.empty?
         Array(pid_path).map { |x| Integer(x).to_s }.join('.')
+      end
+
+      # ---- Layer visibility (Stage 6 V1.1 layer semantic mapping) ---
+
+      # Per V1.1 plan §4.7 / R011:
+      # Returns one of:
+      #   :visible  — host confirms the layer is visible
+      #   :hidden   — host confirms the layer is hidden (visible? == false)
+      #   :unknown  — host capability missing OR entity lacks #layer
+      #                OR the probe raised; caller maps :unknown ->
+      #                { visible: true, visibility_unknown: true }
+      #                (operational fallback is visible, but the
+      #                uncertainty is preserved in the data model).
+      # We do NOT fake :hidden ("confirmed hidden") when the answer
+      # is actually "I don't know".
+      def layer_visibility(entity)
+        return :unknown unless entity.respond_to?(:layer) && entity.layer
+        layer = entity.layer
+        return :unknown unless layer.respond_to?(:visible?)
+        v = layer.visible?
+        return :unknown if v.nil?     # defensive: some hosts return nil
+        v ? :visible : :hidden
+      rescue StandardError
+        :unknown
       end
     end
   end

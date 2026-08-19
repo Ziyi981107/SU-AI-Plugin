@@ -98,6 +98,11 @@ module SUAnalysis
         # adapter's identity.
         seed_t = active_facts[:transform].nil? ? identity_transform : active_facts[:transform]
 
+        # V1.1 (per plan §4.6): per-layer aggregates. Local to this
+        # build_snapshot call so test state does not leak across
+        # calls (a module-level @hash would persist).
+        layer_aggregates = {}
+
         walk_selection_world(
           selection,
           seed_t:               seed_t,
@@ -113,34 +118,88 @@ module SUAnalysis
             leaf_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
             leaf_complete = !leaf_pid.nil?
             full_complete = path_complete && leaf_complete
+            layer_name = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
+            layer_name = 'Layer0' if layer_name.nil? || layer_name.empty?
             src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
               entity,
               kind:               'edge',
               persistent_id_path: pid_path,
               instance_path:      label_path,
               structural_depth:   struct_depth,
-              pid_path_complete:  full_complete
+              pid_path_complete:  full_complete,
+              layer_name:         layer_name
             )
-            layer = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
-            layer = 'Layer0' if layer.nil? || layer.empty?
             edges << SUAnalysis::Core::EdgeRecord.new(
               id:          edges.size,
               source:      src,
               start_point: world_points[0],
               end_point:   world_points[1],
-              layer:       layer
+              layer:       layer_name
             )
+            # V1.1 (per plan §4.6): accumulate per-layer aggregate.
+            # Track the first layer object reference (entity.layer)
+            # so the post-walk layer_visibility probe has a target.
+            # The layer object may be nil (if the entity lacks .layer)
+            # — handled gracefully in build_layer_records.
+            layer_aggregates[layer_name] ||= {
+              name:        layer_name,
+              edge_count:  0,
+              layer_obj:   entity.respond_to?(:layer) ? entity.layer : nil
+            }
+            layer_aggregates[layer_name][:edge_count] += 1
           rescue StandardError => e
             # PI_TASK_001 §18: skip safely, continue. We do NOT raise.
             warn "[SU-AI-Plugin] skipped invalid edge: #{e.class}: #{e.message}"
           end
         end
 
+        # V1.1 (per plan §4.6): build the per-layer LayerRecord list
+        # after the walk. For each aggregate, probe visibility via
+        # SUCapability.layer_visibility (R011) and classify role via
+        # LayerRoleConfig.classify (R010 top-down-by-priority).
+        layer_records = build_layer_records(layer_aggregates)
+
         SUAnalysis::Core::GeometrySnapshot.new(
           edges:     edges,
-          layers:    [],
+          layers:    layer_records,
           preflight: preflight
         )
+      end
+
+      # Build Array<LayerRecord> from the post-walk per-layer
+      # aggregates. Probes visibility once per layer; classifies
+      # role by name (R010 top-down-by-priority).
+      def build_layer_records(aggregates)
+        records = []
+        aggregates.each do |name, agg|
+          layer_obj = agg[:layer_obj]
+          vis_status = if layer_obj.nil?
+                         # No layer object captured -> capability
+                         # missing or entity lacked .layer. R011:
+                         # operational fallback is visible, with
+                         # visibility_unknown: true.
+                         :unknown
+                       else
+                         SUAnalysis::Compatibility::SUCapability.layer_visibility(layer_obj)
+                       end
+          visible, vis_unknown = case vis_status
+                                  when :visible  then [true,  false]
+                                  when :hidden   then [false, false]
+                                  when :unknown  then [true,  true]
+                                  else                [true,  false]
+                                  end
+          role, rule_id = SUAnalysis::Core::LayerRoleConfig.classify(name)
+          records << SUAnalysis::Core::LayerRecord.new(
+            name:               name,
+            edge_count:         agg[:edge_count],
+            role:               role,
+            role_rule:          rule_id,
+            visible:            visible,
+            visibility_unknown: vis_unknown
+          )
+        end
+        # Sort by name for determinism (mapper re-sorts by role bucket).
+        records.sort_by { |r| r.name }
       end
 
       # -----------------------------------------------------------------

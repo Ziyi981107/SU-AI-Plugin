@@ -23,7 +23,7 @@ module SUAnalysis
     # 留 Normalize 阶段处理 (PI_TASK_001 §8).
     #
     class GeometrySnapshot
-      attr_reader :edges, :config, :preflight
+      attr_reader :edges, :layers, :config, :preflight
 
       def initialize(edges:, layers: [], preflight: {}, config: AnalysisConfig.new, vertex_index: nil)
         @edges    = edges.freeze
