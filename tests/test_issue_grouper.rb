@@ -7,8 +7,8 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_registry'
-require_relative '../core/issue_grouper'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/issue_grouper'
 
 include SUAnalysis::Core
 

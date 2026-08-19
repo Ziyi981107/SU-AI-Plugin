@@ -6,7 +6,7 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
 
 include SUAnalysis::Core
 

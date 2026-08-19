@@ -14,12 +14,12 @@
 #
 
 require_relative 'runner'
-require_relative '../core/tolerance'
-require_relative '../core/source_reference'
-require_relative '../core/edge_record'
-require_relative '../core/geometry_snapshot'
-require_relative '../core/preflight'
-require_relative '../compatibility/su_capability'
+require_relative '../extension/su_ai_plugin/core/tolerance'
+require_relative '../extension/su_ai_plugin/core/source_reference'
+require_relative '../extension/su_ai_plugin/core/edge_record'
+require_relative '../extension/su_ai_plugin/core/geometry_snapshot'
+require_relative '../extension/su_ai_plugin/core/preflight'
+require_relative '../extension/su_ai_plugin/compatibility/su_capability'
 
 include SUAnalysis::Core
 

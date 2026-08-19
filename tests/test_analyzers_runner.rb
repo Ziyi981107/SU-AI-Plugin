@@ -15,17 +15,17 @@
 
 require_relative 'runner'
 require_relative '_fake_su'
-require_relative '../core/edge_record'
-require_relative '../core/geometry_snapshot'
-require_relative '../core/preflight'
-require_relative '../core/issue_registry'
-require_relative '../core/issue_normalizer'
-require_relative '../core/issue_enricher'
-require_relative '../core/analysis_result'
-require_relative '../compatibility/su_capability'
-require_relative '../extension/preflight_runner'
-require_relative '../extension/display_unit_formatter'
-require_relative '../extension/analyzers_runner'
+require_relative '../extension/su_ai_plugin/core/edge_record'
+require_relative '../extension/su_ai_plugin/core/geometry_snapshot'
+require_relative '../extension/su_ai_plugin/core/preflight'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/issue_normalizer'
+require_relative '../extension/su_ai_plugin/core/issue_enricher'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/compatibility/su_capability'
+require_relative '../extension/su_ai_plugin/preflight_runner'
+require_relative '../extension/su_ai_plugin/display_unit_formatter'
+require_relative '../extension/su_ai_plugin/analyzers_runner'
 
 include SUAnalysis::Core
 include SUAnalysis::Compatibility

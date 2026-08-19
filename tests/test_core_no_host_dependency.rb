@@ -11,7 +11,7 @@
 
 require_relative 'runner'
 
-CORE_DIR = File.expand_path('../core', __dir__)
+CORE_DIR = File.expand_path('../extension/su_ai_plugin/core', __dir__)
 FORBIDDEN_TOKENS = [
   'Sketchup',
   'UI',

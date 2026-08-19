@@ -7,7 +7,7 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_normalizer'
+require_relative '../extension/su_ai_plugin/core/issue_normalizer'
 
 include SUAnalysis::Core::IssueNormalizer
 

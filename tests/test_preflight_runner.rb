@@ -24,12 +24,12 @@ require_relative 'runner'
 require_relative 'test_geometry_core' if false # no-op; just for IDE
 
 require_relative '_fake_su'
-require_relative '../core/source_reference'
-require_relative '../core/edge_record'
-require_relative '../core/geometry_snapshot'
-require_relative '../core/preflight'
-require_relative '../compatibility/su_capability'
-require_relative '../extension/preflight_runner'
+require_relative '../extension/su_ai_plugin/core/source_reference'
+require_relative '../extension/su_ai_plugin/core/edge_record'
+require_relative '../extension/su_ai_plugin/core/geometry_snapshot'
+require_relative '../extension/su_ai_plugin/core/preflight'
+require_relative '../extension/su_ai_plugin/compatibility/su_capability'
+require_relative '../extension/su_ai_plugin/preflight_runner'
 
 include SUAnalysis::Core
 include SUAnalysis::Compatibility
@@ -196,7 +196,7 @@ end
 # --------------------------------------------------------------------------
 
 test 'S2-BLOCK-003: extension/preflight_runner.rb source contains no post-Ruby-2.2 syntax' do
-  path = File.expand_path('../extension/preflight_runner.rb', __dir__)
+  path = File.expand_path('../extension/su_ai_plugin/preflight_runner.rb', __dir__)
   # Strip comment lines before checking (file contains commentary on why
   # &. is banned — the test must only flag actual code).
   code_only = File.readlines(path, encoding: 'utf-8').reject { |l| l.lstrip.start_with?('#') }.join

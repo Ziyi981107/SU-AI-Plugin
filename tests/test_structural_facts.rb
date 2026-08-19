@@ -10,7 +10,7 @@
 #
 
 require_relative 'runner'
-require_relative '../core/structural_facts'
+require_relative '../extension/su_ai_plugin/core/structural_facts'
 
 include SUAnalysis::Core
 

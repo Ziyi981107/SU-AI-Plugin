@@ -10,12 +10,12 @@
 #
 
 require_relative 'runner'
-require_relative '../core/source_reference'
-require_relative '../core/edge_record'
-require_relative '../core/synthetic_factory'
-require_relative '../core/issue_normalizer'
-require_relative '../core/issue_enricher'
-require_relative '../core/issue_id_assigner'
+require_relative '../extension/su_ai_plugin/core/source_reference'
+require_relative '../extension/su_ai_plugin/core/edge_record'
+require_relative '../extension/su_ai_plugin/core/synthetic_factory'
+require_relative '../extension/su_ai_plugin/core/issue_normalizer'
+require_relative '../extension/su_ai_plugin/core/issue_enricher'
+require_relative '../extension/su_ai_plugin/core/issue_id_assigner'
 
 include SUAnalysis::Core
 include SUAnalysis::Core::IssueNormalizer

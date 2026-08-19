@@ -10,7 +10,7 @@
 #
 
 require_relative 'runner'
-require_relative '../compatibility/su_capability'
+require_relative '../extension/su_ai_plugin/compatibility/su_capability'
 
 include SUAnalysis::Compatibility
 

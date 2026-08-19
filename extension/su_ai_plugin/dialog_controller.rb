@@ -7,7 +7,7 @@
 #   - The model is REQUIRED for the Locate action to resolve.
 #
 
-require_relative '../core/analysis_result'
+require_relative 'core/analysis_result'
 
 module SUAnalysis
   module Extension

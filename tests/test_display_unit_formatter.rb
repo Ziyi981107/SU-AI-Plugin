@@ -6,7 +6,7 @@
 #
 
 require_relative 'runner'
-require_relative '../extension/display_unit_formatter'
+require_relative '../extension/su_ai_plugin/display_unit_formatter'
 
 include SUAnalysis::Extension
 

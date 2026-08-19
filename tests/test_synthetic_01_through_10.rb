@@ -10,13 +10,13 @@
 #
 
 require_relative 'runner'
-require_relative '../core/tolerance'
-require_relative '../core/analysis_config'
-require_relative '../core/synthetic_factory'
-require_relative '../core/analyzers/duplicate_detector'
-require_relative '../core/analyzers/short_edge_detector'
-require_relative '../core/analyzers/open_endpoint_detector'
-require_relative '../core/analyzers/gap_candidate_detector'
+require_relative '../extension/su_ai_plugin/core/tolerance'
+require_relative '../extension/su_ai_plugin/core/analysis_config'
+require_relative '../extension/su_ai_plugin/core/synthetic_factory'
+require_relative '../extension/su_ai_plugin/core/analyzers/duplicate_detector'
+require_relative '../extension/su_ai_plugin/core/analyzers/short_edge_detector'
+require_relative '../extension/su_ai_plugin/core/analyzers/open_endpoint_detector'
+require_relative '../extension/su_ai_plugin/core/analyzers/gap_candidate_detector'
 
 include SUAnalysis::Core
 include SUAnalysis::Core::Analyzers

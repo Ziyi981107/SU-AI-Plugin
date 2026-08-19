@@ -11,9 +11,9 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_registry'
-require_relative '../core/analysis_result'
-require_relative '../extension/ui_bridge'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/ui_bridge'
 
 include SUAnalysis::Core
 include SUAnalysis::Extension
@@ -53,10 +53,10 @@ end
 # Resolve paths RELATIVE TO THE TESTS DIRECTORY (one level up to project
 # root, then into extension/). The previous version used `../../` which
 # resolved to D:/Projects/... and produced ENOENT errors.
-HR_HTML_INDEX = File.expand_path('../extension/html/index.html', __dir__).freeze
-HR_HTML_APPJS = File.expand_path('../extension/html/app.js', __dir__).freeze
-HR_HTML_CSS   = File.expand_path('../extension/html/style.css', __dir__).freeze
-HR_RUNNER_RB  = File.expand_path('../extension/dialog_runner.rb', __dir__).freeze
+HR_HTML_INDEX = File.expand_path('../extension/su_ai_plugin/html/index.html', __dir__).freeze
+HR_HTML_APPJS = File.expand_path('../extension/su_ai_plugin/html/app.js', __dir__).freeze
+HR_HTML_CSS   = File.expand_path('../extension/su_ai_plugin/html/style.css', __dir__).freeze
+HR_RUNNER_RB  = File.expand_path('../extension/su_ai_plugin/dialog_runner.rb', __dir__).freeze
 
 # --- tests ----------------------------------------------------------
 

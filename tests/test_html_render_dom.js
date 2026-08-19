@@ -117,7 +117,7 @@ vm.createContext(context);
 
 // --- load app.js -------------------------------------------------------
 
-var appJsPath = path.resolve(__dirname, '..', 'extension', 'html', 'app.js');
+var appJsPath = path.resolve(__dirname, '..', 'extension', 'su_ai_plugin', 'html', 'app.js');
 var appJsSrc = fs.readFileSync(appJsPath, 'utf-8');
 vm.runInContext(appJsSrc, context, { filename: 'app.js' });
 

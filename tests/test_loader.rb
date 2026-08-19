@@ -22,10 +22,10 @@
 
 require_relative 'runner'
 require_relative '_fake_ui'
-require_relative '../core/issue_registry'
-require_relative '../core/analysis_result'
-require_relative '../extension/loader'
-require_relative '../extension/dialog_runner'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/loader'
+require_relative '../extension/su_ai_plugin/dialog_runner'
 
 include SUAnalysis::Extension
 include FakeUI
@@ -142,24 +142,53 @@ ensure
   FakeUI.uninstall!
 end
 
-test 'test_loader: boot entrypoint exists and uses file_loaded? guard' do
+test 'test_loader: root registration loader uses file_loaded? guard (no operational code)' do
+  # Per CodeX Review 022 BLOCK-022-001: extension/su_ai_plugin.rb
+  # is the root registration loader. Its ONLY job is to define a
+  # SketchupExtension and register it. No operational plugin code
+  # lives here. The boot (Boot.boot!) moved to extension/main.rb.
   entrypoint_path = File.expand_path('../extension/su_ai_plugin.rb', __dir__)
   assert File.exist?(entrypoint_path)
-  src = File.read(entrypoint_path)
-  assert src.include?('file_loaded?')
-  assert src.include?('file_loaded')
-  assert src.include?('SUAnalysis::Boot.boot!')
-  # The file_loaded mark must be inside the success branch (after
-  # boot), not before boot. Per CodeX Round 019 BLOCK-002-R2: a
-  # transient boot failure should leave the loaded state unset.
-  boot_idx = src.index('Boot.boot!')
-  loaded_idx = src.index('file_loaded(')
-  refute_nil boot_idx, 'Boot.boot! must be present in the entrypoint'
-  refute_nil loaded_idx, 'file_loaded( must be present in the entrypoint'
-  # Per the production logic, the literal call to `file_loaded` is
-  # inside the `begin` block, AFTER the literal `Boot.boot!` call.
-  assert loaded_idx > boot_idx,
-         'file_loaded must be called AFTER Boot.boot! (per CodeX Round 019 BLOCK-002-R2)'
+  # Strip comment lines so commentary on what the file does NOT
+  # contain does not false-positive the regex check.
+  code_only = File.readlines(entrypoint_path, encoding: 'utf-8')
+    .reject { |l| l.lstrip.start_with?('#') }
+    .join
+  # Must use the documented file_loaded? / file_loaded guard to
+  # prevent double-registration on REPL re-evaluation.
+  assert code_only.include?('file_loaded?'),
+         'registration loader must guard against double-load with file_loaded?'
+  assert code_only.include?('file_loaded'),
+         'registration loader must call file_loaded after successful registration'
+  # Must NOT contain any operational plugin boot code.
+  assert !code_only.include?('SUAnalysis::Boot.boot!'),
+         'registration loader must NOT call Boot.boot! (boot lives in extension/main.rb)'
+  assert !code_only.include?('Loader.register!'),
+         'registration loader must NOT call Loader.register! (boot lives in extension/main.rb)'
+  # Must reference the SketchupExtension contract.
+  assert code_only.include?('SketchupExtension.new'),
+         'registration loader must define a SketchupExtension object'
+  assert code_only.include?('register_extension'),
+         'registration loader must call Sketchup.register_extension'
+end
+
+test 'test_loader: boot main.rb uses file_loaded? guard + executes Boot.boot!' do
+  # Per CodeX Review 022 BLOCK-022-001: the actual boot lives in
+  # extension/su_ai_plugin/main.rb (the support-folder entry-point).
+  # The boot still uses the file_loaded? guard pattern (defensive — the
+  # Loader.@registered sentinel is the primary guard against
+  # double-boot).
+  main_path = File.expand_path('../extension/su_ai_plugin/main.rb', __dir__)
+  assert File.exist?(main_path), "boot main.rb must exist at #{main_path}"
+  src = File.read(main_path)
+  assert src.include?('Boot.boot!'),
+         'extension/main.rb must call SUAnalysis::Boot.boot!'
+  assert src.include?('Loader.register!') || src.include?('SUAnalysis::Extension::Loader.register!'),
+         'Boot.boot! must ultimately call Loader.register!'
+  # The boot is wrapped in begin/rescue so a transient failure does
+  # not leave the plugin half-loaded.
+  assert src.include?('rescue StandardError'),
+         'main.rb boot must wrap the boot in begin/rescue'
 end
 
 test 'test_loader: menu command handler is wired AND clicking it reaches the dialog' do
@@ -198,6 +227,7 @@ end
 # --------------------------------------------------------------------------
 
 ENTRYPOINT_PATH = File.expand_path('../extension/su_ai_plugin.rb', __dir__).freeze
+MAIN_PATH       = File.expand_path('../extension/su_ai_plugin/main.rb', __dir__).freeze
 ENTRY_NAME      = 'SU-AI-Plugin/extension/su_ai_plugin'.freeze
 
 test 'test_loader: faithful boot — load entrypoint twice, one menu item, handler reaches dialog' do
@@ -206,8 +236,15 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
   $__file_loaded_set.clear
   stub_sketchup_with_selection
   begin
-    # First load — registers the menu + command.
+    # First load — registration loader + boot.
+    # Per CodeX Review 022: the registration loader (su_ai_plugin.rb)
+    # does NOT load the boot file itself; in real SketchUp, the
+    # registered SketchupExtension's load callback fires main.rb.
+    # In the test env (FakeUI stubs Sketchup without the extension
+    # load callback), we have to `load main.rb` explicitly to
+    # exercise the same boot path.
     load ENTRYPOINT_PATH
+    load MAIN_PATH
     plugins = UI.menu('Plugins')
     submenus = plugins.submenus.select { |s| s.name == 'SU-AI-Plugin' }
     assert_equal 1, submenus.length, "expected one submenu, got #{submenus.length}"
@@ -225,6 +262,7 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
     # Second load — entrypoint should see file_loaded? == true and
     # short-circuit. No NEW menu entry, no NEW dialog.
     load ENTRYPOINT_PATH
+    load MAIN_PATH
     plugins = UI.menu('Plugins')
     submenus = plugins.submenus.select { |s| s.name == 'SU-AI-Plugin' }
     assert_equal 1, submenus.length, 'second load must not duplicate the submenu'
@@ -243,6 +281,7 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
     file_unloaded ENTRY_NAME
     SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
     load ENTRYPOINT_PATH
+    load MAIN_PATH
     plugins = UI.menu('Plugins')
     submenus = plugins.submenus.select { |s| s.name == 'SU-AI-Plugin' }
     assert_equal 2, submenus.length,

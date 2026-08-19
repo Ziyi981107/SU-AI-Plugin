@@ -6,7 +6,7 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_locator_policy'
+require_relative '../extension/su_ai_plugin/core/issue_locator_policy'
 
 include SUAnalysis::Core
 
@@ -133,8 +133,8 @@ end
 # --- CodeX Round 014 integration: StructuralFacts -> SourceReference
 #     -> IssueEnricher -> IssueLocatorPolicy ---
 
-require_relative '../core/structural_facts'
-require_relative '../core/issue_enricher'
+require_relative '../extension/su_ai_plugin/core/structural_facts'
+require_relative '../extension/su_ai_plugin/core/issue_enricher'
 
 def integrate_structural_to_locator(ancestry_pids_with_nil:, leaf_pid:,
                                     entity_id:, active_path_count: 0)

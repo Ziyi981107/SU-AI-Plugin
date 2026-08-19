@@ -7,11 +7,11 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_registry'
-require_relative '../core/issue_normalizer'
-require_relative '../core/issue_enricher'
-require_relative '../core/analysis_result'
-require_relative '../extension/ui_bridge'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/issue_normalizer'
+require_relative '../extension/su_ai_plugin/core/issue_enricher'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/ui_bridge'
 
 include SUAnalysis::Core
 include SUAnalysis::Extension

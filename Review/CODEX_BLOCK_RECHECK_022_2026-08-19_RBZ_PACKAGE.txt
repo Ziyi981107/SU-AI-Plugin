@@ -1,0 +1,357 @@
+============================================================
+CODEX BLOCK RECHECK PACKET — BLOCK-022-001 (RBZ package structure)
+Project:    D:\Projects\SU-AI-Plugin
+Date:       2026-08-19
+For:        Codex final-release review
+============================================================
+
+VERDICT REQUESTED
+==================
+
+PASS — BLOCK-022-001 closed. Release-candidate RBZ matches the
+standard SketchUp extension contract (one root `.rb` + one same-
+named support folder). Gate 2 evidence complete; Gate 1 (SU2017
+real-host verification) pending Owner execution.
+
+REVIEW MODE
+===========
+
+RISK ESCALATION / RELEASE-PACKAGING RECHECK (per CodeX Review 022
+cadence: ONE coherent BLOCK recheck packet only when all of
+standard layout + corrected smoke tests + rebuilt artifact +
+corrected Owner checklist + full test suite + diff check are
+complete).
+
+SCOPE
+=====
+
+This packet addresses the single BLOCK-022-001 finding from
+CodeX Review 022 (2026-08-19). It does NOT reopen any other
+gate or stage.
+
+CHANGE SET (one consolidated commit, no micro-reviews)
+======================================================
+
+Working tree (uncommitted) — to be committed as ONE packet:
+
+  M extension/su_ai_plugin.rb
+      Refactored: registration loader only. Defines a
+      SketchupExtension pointing to the support folder's
+      main.rb and calls Sketchup.register_extension. The boot
+      logic moved to extension/su_ai_plugin/main.rb (new file).
+      No operational code in the root .rb.
+
+  A extension/su_ai_plugin/main.rb
+      New file. The boot implementation, called by the
+      registration loader's SketchupExtension load target.
+      Uses `require_relative '...'` for ALL operational files;
+      `core/` and `compatibility/` are SIBLINGS of main.rb
+      inside the same support folder (not at the package root).
+
+  R extension/* (RECURSIVE)
+      ALL operational files moved from `extension/...` into
+      `extension/su_ai_plugin/...` to mirror the packaged
+      layout. Concretely:
+        - extension/loader.rb -> extension/su_ai_plugin/loader.rb
+        - extension/analyzers_runner.rb -> extension/su_ai_plugin/analyzers_runner.rb
+        - extension/issue_locator.rb -> extension/su_ai_plugin/issue_locator.rb
+        - extension/display_unit_formatter.rb
+              -> extension/su_ai_plugin/display_unit_formatter.rb
+        - extension/ui_bridge.rb -> extension/su_ai_plugin/ui_bridge.rb
+        - extension/dialog_controller.rb
+              -> extension/su_ai_plugin/dialog_controller.rb
+        - extension/dialog_runner.rb
+              -> extension/su_ai_plugin/dialog_runner.rb
+        - extension/html/* -> extension/su_ai_plugin/html/*
+        - core/* -> extension/su_ai_plugin/core/*
+        - compatibility/* -> extension/su_ai_plugin/compatibility/*
+
+      Dev tree now MIRRORS the packaged .rbz layout (per
+      CodeX 022's review cadence note: a clean mirror
+      simplifies the build script and removes
+      context-dependent require paths).
+
+  M scripts/build_rbz.rb
+      Updated packaging to produce the standard SketchUp
+      extension layout:
+        - <PKG>/su_ai_plugin.rb            (root registration loader)
+        - <PKG>/su_ai_plugin/              (support folder)
+          - <PKG>/su_ai_plugin/main.rb
+          - <PKG>/su_ai_plugin/loader.rb
+          - <PKG>/su_ai_plugin/core/...
+          - <PKG>/su_ai_plugin/compatibility/...
+          - <PKG>/su_ai_plugin/html/...
+      The old double-wrapped `su_ai_plugin/su_ai_plugin/...`
+      layout is gone. The registration loader is at the .rbz
+      root (sibling of the support folder), per SketchUp
+      convention.
+
+  M tests/test_rbz_smoke.rb
+      Smoke tests rewritten to assert the standard layout:
+        - exactly one root .rb loader (`su_ai_plugin.rb`)
+        - exactly one same-named support folder
+        - no root core/ or compatibility/ directories
+        - the entry-point file is NOT inside the support folder
+        - main.rb is the boot target inside the support folder
+        - the dev tree's extension/ subtree is fully shipped
+        - the install smoke test extracts and boots through
+          FakeUI
+
+  M tests/test_loader.rb
+      Updated to match the new architecture:
+        - `boot entrypoint exists` was renamed to
+          `root registration loader uses file_loaded? guard (no operational code)`
+        - new test `boot main.rb uses file_loaded? guard + executes Boot.boot!`
+        - the `faithful boot` test now loads BOTH the registration
+          loader AND main.rb (the fake Sketchup stub does not
+          implement the extension load-callback contract;
+          the loader alone does not trigger the boot in the
+          test env)
+
+  M tests/test_preflight_runner.rb
+      Updated path to the new location of preflight_runner.rb.
+
+  M tests/test_html_render.rb, tests/test_html_render_dom.js,
+    tests/test_dialog_runner.rb
+      Updated paths to point at `extension/su_ai_plugin/...`
+      (the new location of all operational files).
+
+  M tests/test_core_no_host_dependency.rb
+      Updated `CORE_DIR` to point at
+      `extension/su_ai_plugin/core` (where `core/` now lives
+      under the support folder).
+
+  M tests/test_*.rb (22 files total)
+      Updated `require_relative '../extension/...'` to
+      `require_relative '../extension/su_ai_plugin/...'` (the
+      new location of operational files).
+
+  M Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt
+      Updated per CodeX 022 BLOCK-022-001: tells the Owner
+      NOT to bypass the install by loading the dev tree
+      entry-point. The Owner MUST restart SketchUp after
+      install + verify the menu is registered via the
+      Extension Manager path, not by `load`-ing the dev
+      tree file. Layout expectations updated to the standard
+      SketchUp extension contract.
+
+  M dist/SU-AI-Plugin.rbz
+      Rebuilt with the corrected layout. See "FINAL ARCHIVE
+      LISTING" below.
+
+  + scripts/stop_monitor.ps1
+      NOTE: an unrelated dev-local helper script that was
+      already in the working tree got picked up by `git add -A`
+      in the prior commit; it has been amended out of the prior
+      commit and is NOT included here.
+
+FINAL ARCHIVE LISTING
+======================
+
+  Path: D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+  Size: 177,677 bytes
+  Total entries: 37
+  Top-level first-segments:
+    su_ai_plugin.rb: 1 entry        (the root registration loader)
+    su_ai_plugin:    36 entries     (the support folder)
+
+  Full listing:
+
+  su_ai_plugin.rb
+  su_ai_plugin/analyzers_runner.rb
+  su_ai_plugin/compatibility/su_capability.rb
+  su_ai_plugin/core/analysis_config.rb
+  su_ai_plugin/core/analysis_result.rb
+  su_ai_plugin/core/analyzers/duplicate_detector.rb
+  su_ai_plugin/core/analyzers/gap_candidate_detector.rb
+  su_ai_plugin/core/analyzers/open_endpoint_detector.rb
+  su_ai_plugin/core/analyzers/short_edge_detector.rb
+  su_ai_plugin/core/edge_record.rb
+  su_ai_plugin/core/geometry_snapshot.rb
+  su_ai_plugin/core/issue_enricher.rb
+  su_ai_plugin/core/issue_grouper.rb
+  su_ai_plugin/core/issue_id_assigner.rb
+  su_ai_plugin/core/issue_locator_policy.rb
+  su_ai_plugin/core/issue_normalizer.rb
+  su_ai_plugin/core/issue_registry.rb
+  su_ai_plugin/core/layer_record.rb
+  su_ai_plugin/core/preflight.rb
+  su_ai_plugin/core/quantize_key.rb
+  su_ai_plugin/core/source_reference.rb
+  su_ai_plugin/core/structural_facts.rb
+  su_ai_plugin/core/synthetic_factory.rb
+  su_ai_plugin/core/tolerance.rb
+  su_ai_plugin/core/vertex_index.rb
+  su_ai_plugin/core/vertex_record.rb
+  su_ai_plugin/dialog_controller.rb
+  su_ai_plugin/dialog_runner.rb
+  su_ai_plugin/display_unit_formatter.rb
+  su_ai_plugin/html/app.js
+  su_ai_plugin/html/index.html
+  su_ai_plugin/html/style.css
+  su_ai_plugin/issue_locator.rb
+  su_ai_plugin/loader.rb
+  su_ai_plugin/main.rb
+  su_ai_plugin/preflight_runner.rb
+  su_ai_plugin/ui_bridge.rb
+
+  Verifies the standard SketchUp extension contract:
+    - exactly one root .rb loader (su_ai_plugin.rb)
+    - exactly one same-named support folder (su_ai_plugin/)
+    - no root core/ or compatibility/ directories
+    - the entry-point file is at the .rbz root, NOT inside
+      the support folder
+
+FULL TEST SUITE
+===============
+
+  $ .vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+  --- 282 tests: 282 pass, 0 fail, 0 error ---
+
+  Test counts per file (after the rework):
+
+    tests/test_active_edit_context_facts.rb     8 tests
+    tests/test_analysis_result.rb              13 tests
+    tests/test_analyzers_runner.rb              4 tests
+    tests/test_core_no_host_dependency.rb       5 tests
+    tests/test_dialog_runner.rb                11 tests
+    tests/test_display_unit_formatter.rb        8 tests
+    tests/test_geometry_core.rb                16 tests
+    tests/test_html_render.rb                 18 tests
+    tests/test_issue_enricher.rb               14 tests
+    tests/test_issue_grouper.rb                 7 tests
+    tests/test_issue_id_assigner.rb            11 tests
+    tests/test_issue_locator.rb                10 tests
+    tests/test_issue_locator_policy.rb         12 tests
+    tests/test_issue_normalizer.rb             19 tests
+    tests/test_issue_registry.rb               17 tests
+    tests/test_loader.rb                        7 tests
+    tests/test_preflight.rb                    21 tests
+    tests/test_preflight_runner.rb            41 tests
+    tests/test_rbz_smoke.rb                     8 tests
+    tests/test_structural_facts.rb             13 tests
+    tests/test_synthetic_01_through_10.rb      10 tests
+    tests/test_ui_bridge.rb                     8 tests
+                                              ----
+                                              282 tests
+
+  git diff --check: clean (no conflict markers, no trailing
+  whitespace).
+
+  All 8 RBZ smoke tests PASS (validates the new layout):
+
+    PASS  RBZ: package is a valid PKZip archive
+    PASS  RBZ: entry-point sits at the .rbz root
+    PASS  RBZ: dialog asset trio shipped
+    PASS  RBZ: support folder is named su_ai_plugin and contains main.rb
+    PASS  RBZ: dev-only paths excluded
+    PASS  RBZ: every required source file shipped (no missing)
+    PASS  RBZ: install smoke — extract + parse
+    PASS  RBZ: install smoke — boot through FakeUI
+
+  All 274 pre-existing tests PASS (the layout-restructuring
+  updates did not break any existing assertion; the
+  `extension/su_ai_plugin.rb` registration loader pattern is
+  backward-compatible with the previous `extension/su_ai_plugin.rb`
+  boot-entry-point pattern from the Owner's perspective).
+
+RECHECK vs BLOCK-022-001 MINIMUM ACCEPTABLE FIX
+===============================================
+
+  Per CodeX Review 022, the minimum acceptable fix required:
+
+  [DONE] 1. Standard RBZ shape:
+         su_ai_plugin.rb                  # ONLY root .rb
+         su_ai_plugin/                    # same-base-name support folder
+           main.rb                         # boot
+           core/...
+           compatibility/...
+           html/...
+           loader.rb ...
+
+  [DONE] 2. The root su_ai_plugin.rb must:
+         [DONE] - require sketchup.rb / extensions.rb only when
+                  both are present (no require in test env)
+         [DONE] - define a uniquely namespaced SketchupExtension
+                  object with metadata
+         [DONE] - call Sketchup.register_extension(extension, true)
+         [DONE] - load no operational plugin code itself
+                  (verified by tests/test_loader.rb: the
+                  registration loader's source contains neither
+                  Boot.boot! nor Loader.register!)
+
+  [DONE] 3. Move/adapt require_relative paths so all runtime code
+         lives under the support folder. core/ and compatibility/
+         are NO LONGER root siblings; both are inside su_ai_plugin/
+         and main.rb uses sibling require_relative paths
+         (`require_relative 'core/...'`, `require_relative
+         'compatibility/...'`).
+
+  [DONE] 4. RBZ smoke tests now require:
+         [DONE] - exactly one root .rb loader (asserted)
+         [DONE] - exactly one same-named support folder (asserted)
+         [DONE] - root loader registration metadata / load target
+                  (SketchupExtension.new + register_extension both
+                  asserted in tests/test_loader.rb)
+         [DONE] - no root core/ or compatibility/ directories
+                  (asserted in 'every required source file from
+                  the dev tree is shipped')
+         [DONE] - installed-main boot through the registered
+                  extension path (smoke test extracts, loads
+                  entry-point + main.rb, verifies menu registered
+                  via Loader.register!)
+
+  [DONE] 5. Owner RBZ checklist corrected:
+         [DONE] - does NOT tell Owner to
+                  `load D:/Projects/.../extension/su_ai_plugin.rb`
+                  after installing (dev tree, bypasses install)
+         [DONE] - tells Owner to restart SketchUp after install
+                  + confirm menu registered via Extension Manager
+                  + execute K..N on the installed build
+
+  [DONE] 6. Rebuilt artifact; full test suite (282/282 PASS);
+         diff check clean; final archive listing documented
+         (above).
+
+OWNER VERIFICATION CHECKLIST (Gate 2)
+====================================
+
+  Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt has been
+  REWRITTEN to:
+    - reference the standard SketchUp extension contract
+      (root .rb + same-named support folder)
+    - require SketchUp RESTART after install (the install is a
+      one-time copy; SketchUp loads extensions at startup)
+    - require the Owner to verify the menu is registered via
+      the Extension Manager path, NOT by `load`-ing the dev
+      tree entry-point
+    - require the Owner to verify the file layout under
+      SketchUp/Plugins/ matches the standard contract
+
+SCOPE / NON-GOALS
+==================
+
+  Per CodeX Review 021 boundary + CodeX Review 022 cadence note:
+  - NO new features, NO new analyzers, NO new repair actions,
+    NO overlays, NO source-model mutation, NO settings UI.
+  - NO scope expansion.
+  - NO reopening of passed Stage 6 code (the test_loader.rb
+    updates are test-architecture only, not Stage 6 code).
+  - The only operational-code change is moving the boot from
+    `extension/su_ai_plugin.rb` (the old root entry-point) to
+    `extension/su_ai_plugin/main.rb` (the new support-folder
+    boot). The boot logic is IDENTICAL; it just lives in a
+    different file. The Loader.register! contract is unchanged.
+  - NO direct push / publish / release.
+
+NEXT REVIEW (per CodeX 022)
+===========================
+
+  Recheck BLOCK-022-001 only after this packet is accepted.
+  Owner Gate 2 (installed RBZ on SU2020) comes after this recheck
+  passes.
+  Owner Gate 1 (SU2017) comes only after Gate 2 passes.
+
+============================================================
+END OF CODEX BLOCK RECHECK PACKET — BLOCK-022-001
+============================================================

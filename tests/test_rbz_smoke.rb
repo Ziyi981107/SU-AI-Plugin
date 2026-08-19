@@ -88,13 +88,14 @@ def rbz_extract(zip_path, arcname)
 end
 
 # Extract every entry of the .rbz into a destination directory.
-# Returns the path to the install root (the directory the .rbz
-# extracts INTO, i.e. dest_dir). The package layout is NOT a
-# single top-level folder; the entry-point lives at
-# `<install_root>/<pkg_name>/<entry>.rb` and `core/`,
-# `compatibility/` are siblings of `<pkg_name>/`. The caller can
-# locate the entry-point by looking for `<pkg_name>/<entry>.rb`
-# under the install root.
+# Per CodeX Review 022 (2026-08-19) BLOCK-022-001: the .rbz has
+# exactly TWO top-level items — a root registration loader
+# `su_ai_plugin.rb` AND a same-named support folder `su_ai_plugin/`.
+# Both land at the install root (i.e. `<dest_dir>/su_ai_plugin.rb`
+# and `<dest_dir>/su_ai_plugin/...`). Returns [install_root,
+# pkg_root_name]. The install_root is where the package was
+# extracted; pkg_root_name is the name of the support folder
+# (`su_ai_plugin`).
 def rbz_extract_all(zip_path, dest_dir)
   FileUtils.mkdir_p(dest_dir)
   data = File.binread(zip_path)
@@ -112,18 +113,15 @@ def rbz_extract_all(zip_path, dest_dir)
     File.binwrite(out_path, payload)
     i = payload_offset + _csize
   end
-  # Convention: the package folder name matches the entry-point
-  # file name without .rb. Locate the entry-point to determine the
-  # package folder rather than guessing from the first archive entry
-  # (which may be a sibling like core/ or compatibility/).
-  pkg_root = nil
-  Dir.glob(File.join(dest_dir, '**', 'su_ai_plugin.rb'), File::FNM_DOTMATCH).each do |f|
-    # Pick the one that is at the top of the package (i.e. its
-    # parent dir contains other extension/ siblings like loader.rb).
-    if File.file?(File.join(File.dirname(f), 'loader.rb'))
-      pkg_root = File.dirname(f).sub(/\A#{Regexp.escape(dest_dir)}[\\\/]?/, '')
-      break
-    end
+  # Per the standard layout: the support folder is named the
+  # same as the root .rb. We derive it from the extracted layout
+  # (looking for the support folder that contains main.rb).
+  pkg_root = 'su_ai_plugin' # standard name per CodeX 022
+  unless File.file?(File.join(dest_dir, "#{pkg_root}.rb"))
+    raise "extracted install is missing root loader #{pkg_root}.rb"
+  end
+  unless File.file?(File.join(dest_dir, pkg_root, 'main.rb'))
+    raise "extracted install is missing support folder #{pkg_root}/main.rb"
   end
   [dest_dir, pkg_root]
 end
@@ -158,24 +156,29 @@ else
   test 'RBZ: package is a valid PKZip archive (local-file-headers parse)' do
     entries = rbz_list_entries(RBZ_PATH)
     assert entries.length > 0, 'rbz must contain at least one entry'
-    # Every entry must start with one of the valid top-level
-    # segments. Per the locked packaging layout, the .rbz has
-    # three valid top-level folders: the package folder
-    # (su_ai_plugin/) and its siblings (core/, compatibility/)
-    # that the entry-point's require_relative paths reference.
-    valid_top_levels = %w[su_ai_plugin core compatibility]
+    # Per CodeX Review 022 (2026-08-19) BLOCK-022-001: the .rbz has
+    # exactly TWO top-level items: a root registration loader
+    # `su_ai_plugin.rb` AND a same-named support folder `su_ai_plugin/`.
+    # There must NOT be root-level `core/` or `compatibility/`
+    # directories.
+    root_files = entries.select { |e| !e.include?('/') }
+    assert_equal ['su_ai_plugin.rb'], root_files,
+                 "the .rbz root must contain EXACTLY one .rb loader (su_ai_plugin.rb), got: #{root_files.inspect}"
+    # Every other entry must be inside the support folder.
     entries.each do |name|
-      top = name.split('/').first
-      assert valid_top_levels.include?(top),
-             "entry #{name.inspect} must live under one of #{valid_top_levels.inspect}, got top=#{top.inspect}"
+      next if name == 'su_ai_plugin.rb'
+      assert name.start_with?('su_ai_plugin/'),
+             "entry #{name.inspect} must live inside the support folder su_ai_plugin/"
     end
   end
 
-  test 'RBZ: entry-point sits at the package root (SketchUp Extension Manager convention)' do
+  test 'RBZ: entry-point sits at the .rbz root (SketchUp Extension Manager convention)' do
     entries = rbz_list_entries(RBZ_PATH)
-    ep = 'su_ai_plugin/su_ai_plugin.rb'
-    assert_includes entries, ep,
-                    "package must contain the entry-point #{ep} at the package root"
+    assert_includes entries, 'su_ai_plugin.rb',
+                    "package must contain the entry-point su_ai_plugin.rb at the .rbz root"
+    # The entry-point must NOT be inside the support folder.
+    assert !entries.include?('su_ai_plugin/su_ai_plugin.rb'),
+                    "entry-point must NOT be inside the support folder (SketchUp convention)"
   end
 
   test 'RBZ: dialog asset trio (index.html, app.js, style.css) is shipped' do
@@ -186,23 +189,15 @@ else
     end
   end
 
-  test 'RBZ: core/ and compatibility/ are SIBLINGS of the package folder (require_relative contract)' do
-    # The entry-point uses `require_relative '../core/...'` and
-    # `require_relative '../compatibility/...'`. Those paths
-    # resolve to the entry-point's PARENT directory. So
-    # `core/` and `compatibility/` must be siblings of the
-    # entry-point file at the SketchUp install root (one level
-    # up from the package folder).
+  test 'RBZ: support folder is named su_ai_plugin and contains main.rb' do
+    # Per CodeX Review 022: the support folder MUST have the same
+    # base name as the root registration loader. main.rb is the
+    # boot target referenced by the loader's SketchupExtension.
     entries = rbz_list_entries(RBZ_PATH)
-    core_ex    = entries.any? { |e| e.start_with?('core/') }
-    compat_ex  = entries.any? { |e| e.start_with?('compatibility/') }
-    assert core_ex,   'package must include core/* files at the top level'
-    assert compat_ex, 'package must include compatibility/* files at the top level'
-    # And NO files under su_ai_plugin/extension/ (the dev-tree
-    # extension/ directory must be flattened into the package folder).
-    nested_ext = entries.any? { |e| e.start_with?('su_ai_plugin/extension/') }
-    assert !nested_ext,
-           'package must NOT have a nested extension/ folder (extension/ is flattened to su_ai_plugin/)'
+    assert_includes entries, 'su_ai_plugin/main.rb',
+                    'support folder must contain main.rb (boot target)'
+    assert_includes entries, 'su_ai_plugin/loader.rb',
+                    'support folder must contain loader.rb'
   end
 
   test 'RBZ: dev-only paths (tests/, scripts/, Review/, etc.) are excluded' do
@@ -218,30 +213,25 @@ else
 
   test 'RBZ: every required source file from the dev tree is shipped (no missing files)' do
     # Compare the dev-tree source set against the packaged set.
-    # The packaging rules are:
-    #   - core/ preserved at the .rbz top level (sibling of su_ai_plugin/)
-    #   - compatibility/ preserved at the .rbz top level
-    #   - extension/ flattened (siblings of entry-point go to su_ai_plugin/)
-    # Dev-tree paths therefore map to:
-    #   - core/<rest>            -> core/<rest>
-    #   - compatibility/<rest>   -> compatibility/<rest>
-    #   - extension/<rest>       -> su_ai_plugin/<rest>
+    # The packaging rules are (per CodeX Review 022):
+    #   - extension/su_ai_plugin.rb           -> su_ai_plugin.rb
+    #     (the root registration loader, at the .rbz root)
+    #   - extension/su_ai_plugin/...          -> su_ai_plugin/...
+    #     (the support folder's contents, including core/, compatibility/,
+    #      html/, and the .rb siblings like main.rb / loader.rb)
+    # The .rbz must contain EVERY .rb / .js / .css / .html file from
+    # the dev tree's extension/ subtree.
     dev_files = []
-    {
-      'core'          => :sibling_at_root,  # shipped as core/<rest>
-      'compatibility' => :sibling_at_root,  # shipped as compatibility/<rest>
-      'extension'     => :flatten_root      # shipped as su_ai_plugin/<rest>
-    }.each do |dir, policy|
-      abs = File.expand_path("../#{dir}", __dir__)
-      Dir.glob(File.join(abs, '**', '*'), File::FNM_DOTMATCH).each do |f|
-        next if File.directory?(f)
-        rel = f.sub(/\A#{Regexp.escape(abs)}\/?/, '').gsub(/\\/, '/')
-        arc = case policy
-              when :flatten_root    then File.join('su_ai_plugin', rel)
-              when :sibling_at_root then File.join(dir, rel)
-              end
-        dev_files << arc
-      end
+    abs = File.expand_path('../extension', __dir__)
+    Dir.glob(File.join(abs, '**', '*'), File::FNM_DOTMATCH).each do |f|
+      next if File.directory?(f)
+      rel = f.sub(/\A#{Regexp.escape(abs)}\/?/, '').gsub(/\\/, '/')
+      arc = if rel == 'su_ai_plugin.rb'
+              'su_ai_plugin.rb'  # at the .rbz root
+            else
+              rel  # inside the support folder
+            end
+      dev_files << arc
     end
     dev_files.sort!
     packaged = rbz_list_entries(RBZ_PATH).sort
@@ -255,15 +245,17 @@ else
 
   test 'RBZ: install smoke — extract to temp dir, verify entry-point + assets + all .rb files parse' do
     Dir.mktmpdir('rbz_smoke_') do |tmp|
-      _install_root, pkg_name = rbz_extract_all(RBZ_PATH, tmp)
-      # Entry-point must exist inside the package folder.
-      ep = File.join(tmp, pkg_name, 'su_ai_plugin.rb')
+      install_root, _pkg_name = rbz_extract_all(RBZ_PATH, tmp)
+      # Entry-point must exist at the install root (NOT inside a
+      # subdirectory of the install root; the support folder is
+      # a sibling).
+      ep = File.join(install_root, 'su_ai_plugin.rb')
       assert File.file?(ep), "entry-point must exist at #{ep} after install"
-      # Dialog assets must exist (and be readable text).
-      %w[html/index.html html/app.js html/style.css].each do |rel|
-        text = rbz_read_text(File.join(tmp, pkg_name), rel)
-        assert !text.nil?, "installed dialog asset #{rel} is missing"
-        assert text.length > 0, "installed dialog asset #{rel} is empty"
+      # Dialog assets must exist inside the support folder.
+      %w[su_ai_plugin/html/index.html su_ai_plugin/html/app.js su_ai_plugin/html/style.css].each do |arc|
+        text = rbz_read_text(install_root, arc)
+        assert !text.nil?, "installed dialog asset #{arc} is missing"
+        assert text.length > 0, "installed dialog asset #{arc} is empty"
       end
       # Every shipped .rb file must be parseable Ruby.
       rbz_list_entries(RBZ_PATH).each do |arc|
@@ -289,13 +281,22 @@ else
     # which causes Ruby constant re-loading warnings and Loader
     # state leakage between iterations. Combining them avoids that.
     Dir.mktmpdir('rbz_smoke_') do |tmp|
-      _install_root, pkg_name = rbz_extract_all(RBZ_PATH, tmp)
-      ep = File.join(tmp, pkg_name, 'su_ai_plugin.rb')
+      install_root, _pkg_name = rbz_extract_all(RBZ_PATH, tmp)
+      # The entry-point sits at the install root (NOT inside a
+      # subdirectory). In the fake-host test env, the loader does
+      # not call Sketchup.register_extension (no SketchupExtension
+      # class is defined); we must also load main.rb explicitly to
+      # complete the boot, since the fake Sketchup stub does not
+      # implement the extension-load callback contract.
+      ep = File.join(install_root, 'su_ai_plugin.rb')
+      main_rb = File.join(install_root, 'su_ai_plugin', 'main.rb')
 
       FakeUI.install!
       begin
         # Loader may not be loaded yet on a fresh process; require it.
-        require_relative '../extension/loader' unless defined?(SUAnalysis::Extension::Loader)
+        # The loader is shipped inside the support folder, so after
+        # extract it lives at <install_root>/su_ai_plugin/loader.rb.
+        load File.join(install_root, 'su_ai_plugin', 'loader.rb')
         # Reset Loader's module-level @registered sentinel so a
         # previous test run does not skip the boot.
         SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
@@ -306,6 +307,7 @@ else
         # so the Loader.register! call inside the entry-point
         # exercises the full registration path.
         load ep
+        load main_rb
 
         # Verify the menu item appeared.
         plugin_menu = FakeUI.state.menu('Plugins')

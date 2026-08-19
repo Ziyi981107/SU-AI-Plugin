@@ -11,7 +11,7 @@
 #
 
 require 'json'
-require_relative '../core/issue_registry'
+require_relative 'core/issue_registry'
 
 module SUAnalysis
   module Extension

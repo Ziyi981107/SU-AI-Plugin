@@ -17,7 +17,7 @@
 #   - nested=true  + complete=false -> skip (entityID fallback forbidden)
 #
 
-require_relative '../core/issue_locator_policy'
+require_relative 'core/issue_locator_policy'
 
 module SUAnalysis
   module Extension

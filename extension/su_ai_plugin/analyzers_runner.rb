@@ -18,15 +18,15 @@
 
 require_relative 'preflight_runner'
 require_relative 'display_unit_formatter'
-require_relative '../core/preflight'
-require_relative '../core/analyzers/duplicate_detector'
-require_relative '../core/analyzers/short_edge_detector'
-require_relative '../core/analyzers/open_endpoint_detector'
-require_relative '../core/analyzers/gap_candidate_detector'
-require_relative '../core/issue_registry'
-require_relative '../core/issue_normalizer'
-require_relative '../core/issue_enricher'
-require_relative '../core/analysis_result'
+require_relative 'core/preflight'
+require_relative 'core/analyzers/duplicate_detector'
+require_relative 'core/analyzers/short_edge_detector'
+require_relative 'core/analyzers/open_endpoint_detector'
+require_relative 'core/analyzers/gap_candidate_detector'
+require_relative 'core/issue_registry'
+require_relative 'core/issue_normalizer'
+require_relative 'core/issue_enricher'
+require_relative 'core/analysis_result'
 
 module SUAnalysis
   module Extension

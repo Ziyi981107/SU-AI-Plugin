@@ -32,11 +32,11 @@
 # FakeEntity / FakeModel in tests/test_preflight_runner.rb.
 #
 
-require_relative '../core/edge_record'
-require_relative '../core/geometry_snapshot'
-require_relative '../core/preflight'
-require_relative '../core/source_reference'
-require_relative '../compatibility/su_capability'
+require_relative 'core/edge_record'
+require_relative 'core/geometry_snapshot'
+require_relative 'core/preflight'
+require_relative 'core/source_reference'
+require_relative 'compatibility/su_capability'
 
 module SUAnalysis
   module Extension

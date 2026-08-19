@@ -16,10 +16,10 @@
 
 require_relative 'runner'
 require_relative '_fake_ui'
-require_relative '../core/issue_registry'
-require_relative '../core/analysis_result'
-require_relative '../extension/loader'
-require_relative '../extension/dialog_runner'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/loader'
+require_relative '../extension/su_ai_plugin/dialog_runner'
 
 include SUAnalysis::Core
 include SUAnalysis::Extension
@@ -80,8 +80,8 @@ test 'dialog_runner: set_file uses absolute path' do
   dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
   refute_nil dialog.set_files
   assert_equal 1, dialog.set_files.length
-  # Absolute path under extension/html/index.html.
-  assert_match(/extension\/html\/index\.html$/, dialog.set_files.first)
+  # Absolute path under extension/su_ai_plugin/html/index.html.
+  assert_match(/extension\/su_ai_plugin\/html\/index\.html$/, dialog.set_files.first)
 ensure
   FakeUI.uninstall!
 end

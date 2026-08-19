@@ -1,102 +1,93 @@
 #
-# extension/su_ai_plugin.rb — Real SketchUp boot entrypoint.
+# extension/su_ai_plugin.rb — Root registration loader for the
+# SU-AI-Plugin SketchUp extension.
 #
-# Per CodeX Round 018 BLOCK-002 (rework per Round 019 BLOCK-002-R2):
-#   - This is the file SketchUp loads when the .rbz is registered.
-#   - Uses `file_loaded?` / `file_loaded` (the official SketchUp Ruby
-#     API for guarding duplicate loads; submenus/items introspection
-#     is not reliable on the real host).
-#   - Requires all Gate B dependencies in safe order.
-#   - Calls Loader.register! exactly once.
-#   - Is idempotent across reloads / multiple file_loaded? calls.
-#   - **file_loaded is marked ONLY after a successful boot.** A
-#     transient failure (e.g. a single require error) leaves the
-#     "loaded" state unset so the next load can retry. This is the
-#     safe-retry contract per CodeX Round 019 BLOCK-002-R2.
+# Per CodeX Review 022 (2026-08-19) BLOCK-022-001: the .rbz has
+# exactly one root .rb (this file) and a same-named support folder
+# `su_ai_plugin/`. This loader's ONLY job is to define a
+# SketchupExtension and register it with `Sketchup.register_extension`.
+# No operational plugin code lives here.
 #
-# SketchUp registers this file in the .rbz manifest. The Owner
-# loads the plugin via Extension Manager; this file is the entrypoint.
-# In the dev tree the Owner loads the same file via
-# `load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'`.
+# The standard SketchUp extension contract requires:
+#   - One root `.rb` loader (this file).
+#   - One same-named support folder (`su_ai_plugin/`) containing
+#     `main.rb` (the boot implementation).
+#
+# Layout inside the installed .rbz (after SketchUp extracts it):
+#
+#   <Plugins>/
+#     su_ai_plugin.rb               # this file (registration only)
+#     su_ai_plugin/                 # support folder (same base name)
+#       main.rb                     # boot implementation
+#       loader.rb
+#       core/...
+#       compatibility/...
+#       html/...
+#
+# SketchUp loads this file at startup (when the .rbz is installed).
+# After registration, SketchUp immediately loads `main.rb` via
+# the registered load target.
 #
 
-# Guard: file_loaded? is a SketchUp top-level API; if not available
-# (test environment), fall through to a no-op out path that still
-# allows the boot to attempt.
-$__su_ai_plugin_entry_name = 'SU-AI-Plugin/extension/su_ai_plugin' unless defined?($__su_ai_plugin_entry_name)
+# Per the SketchUp extension contract, this file is loaded by
+# SketchUp's Extension Manager at startup. Inside real SketchUp,
+# the Sketchup module + SketchupExtension class are already loaded
+# into the Ruby process BEFORE the extension's root .rb runs.
+# Therefore we do NOT need to `require 'sketchup.rb'` /
+# `require 'extensions.rb'` — those requires are for standalone
+# scripts that initialize the SU environment, NOT for extensions.
+#
+# We do still guard against the registration block: in real SU,
+# `SketchupExtension` is defined (the class is loaded by SU startup).
+# In the test environment (FakeUI), we may stub `Sketchup` without
+# defining `SketchupExtension`; in that case the registration block
+# is skipped (test environment exercises the BOOT path through
+# extension/main.rb + Loader.register!, not the EM registration path).
 
-# Step 1: cheap no-op if SketchUp already marked this file as loaded.
-# (This is the normal case: SU loads the file once at startup.)
-if defined?(file_loaded?) && file_loaded?($__su_ai_plugin_entry_name)
-  # Already loaded successfully on a previous run; do nothing.
-  return if false  # unreachable; keeps the if branch explicit
-end
+# Compute the main.rb path. __dir__ is the directory containing
+# THIS file (e.g. SketchUp/Plugins/ in production, or the build's
+# staging area in dev). The support folder is a sibling named
+# `su_ai_plugin/`. The main entry-point is `<__dir__>/su_ai_plugin/main.rb`.
+main_path = File.join(__dir__, 'su_ai_plugin', 'main.rb')
 
-# Step 2: define the boot path. Failures are isolated to the rescue
-# below so a single bad require cannot leave the plugin half-loaded.
-module SUAnalysis
-  unless defined?(SUAnalysis::Boot)
-    module Boot
-      module_function
-
-      def boot!
-        require_relative '../compatibility/su_capability'
-        require_relative '../core/tolerance'
-        require_relative '../core/analysis_config'
-        require_relative '../core/preflight'
-        require_relative '../core/analyzers/duplicate_detector'
-        require_relative '../core/analyzers/short_edge_detector'
-        require_relative '../core/analyzers/open_endpoint_detector'
-        require_relative '../core/analyzers/gap_candidate_detector'
-        require_relative '../core/issue_registry'
-        require_relative '../core/issue_id_assigner'
-        require_relative '../core/issue_normalizer'
-        require_relative '../core/issue_enricher'
-        require_relative '../core/issue_grouper'
-        require_relative '../core/issue_locator_policy'
-        require_relative '../core/analysis_result'
-        require_relative 'analyzers_runner'
-        require_relative 'issue_locator'
-        require_relative 'display_unit_formatter'
-        require_relative 'ui_bridge'
-        require_relative 'dialog_controller'
-        require_relative 'dialog_runner'
-        require_relative 'loader'
-        SUAnalysis::Extension::Loader.register!
+# SketchUp APIs (SketchupExtension + register_extension) are ONLY
+# available inside real SketchUp. In real SketchUp BOTH `Sketchup`
+# and `SketchupExtension` are defined by SU startup. The test
+# environment (FakeUI) stubs `Sketchup` but does NOT define
+# `SketchupExtension`, so the registration block is skipped in
+# tests. The test environment exercises the BOOT path
+# (extension/main.rb + Loader.register!) via FakeUI; it does NOT
+# exercise the Extension Manager registration path.
+if defined?(SketchupExtension) && defined?(Sketchup)
+  # Guard: define the SketchupExtension exactly once per process.
+  # We do not want double-registration on REPL re-evaluation.
+  unless defined?(SUAnalysis::SUAIPlugin::EXTENSION) &&
+         SUAnalysis::SUAIPlugin::EXTENSION.is_a?(SketchupExtension)
+    module SUAnalysis
+      module SUAIPlugin
+        # SketchupExtension object. The `name` is shown in the
+        # Extension Manager (matches the .rb / folder base name).
+        # The second arg is the path to the main boot file,
+        # relative to the .rb loader's directory.
+        EXTENSION = SketchupExtension.new(
+          'SU-AI-Plugin',
+          [main_path]
+        )
       end
     end
   end
+
+  # Register the extension. The second arg `true` means "load now":
+  # SketchUp immediately loads the extension's files when registered.
+  # (The load target is su_ai_plugin/main.rb which boots the plugin.)
+  Sketchup.register_extension(SUAnalysis::SUAIPlugin::EXTENSION, true)
 end
 
-# Step 3: attempt the boot. Only mark file_loaded on FULL success.
-# On failure, the next load retries from scratch — file_loaded? will
-# still return false because we did not call file_loaded.
-if defined?(file_loaded?) && file_loaded?($__su_ai_plugin_entry_name)
-  # defensive re-check after module definition (covers test
-  # environments that re-define file_loaded? mid-flight).
-elsif defined?(file_loaded?)
-  begin
-    SUAnalysis::Boot.boot!
-    # Success: mark loaded. Subsequent loads of this file are a no-op.
-    file_loaded($__su_ai_plugin_entry_name)
-  rescue StandardError => e
-    # Boot failed. Do NOT mark loaded; the next load retries.
-    # Print to STDERR (visible in Ruby Console) and to $stdout
-    # (visible in test output) so the failure is observable.
-    msg = "[SU-AI-Plugin] boot failed: #{e.class}: #{e.message}"
-    if defined?(STDERR)
-      STDERR.puts(msg)
-    elsif $stdout.respond_to?(:puts)
-      $stdout.puts(msg)
-    end
-  end
-else
-  # No file_loaded? API (test env). Best-effort boot.
-  begin
-    SUAnalysis::Boot.boot!
-  rescue StandardError => e
-    if defined?(STDERR)
-      STDERR.puts("[SU-AI-Plugin] boot failed: #{e.class}: #{e.message}")
-    end
-  end
+# Mark this file as loaded to prevent double-registration on REPL
+# re-evaluation. file_loaded? / file_loaded is the documented
+# SketchUp Ruby API for guarding duplicate loads (Round 018 BLOCK-002).
+# We mark as loaded regardless of whether registration actually
+# ran (test env vs real SU) so the guard works uniformly.
+if defined?(file_loaded?)
+  file_loaded('SU-AI-Plugin/extension/su_ai_plugin')
 end

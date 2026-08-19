@@ -62,56 +62,48 @@ module SUAnalysis
       # Source directories whose contents are SHIPPED (relative to
       # PROJECT_ROOT).
       #
-      # The .rbz layout MUST preserve the entry-point's locked
-      # `require_relative` paths (e.g. `require_relative
-      # '../compatibility/...'`). Those paths are relative to the
-      # entry-point's PARENT directory (Plugins/su_ai_plugin/),
-      # so `../compatibility/` resolves to Plugins/compatibility/.
-      # Therefore the package MUST place `core/` and
-      # `compatibility/` as SIBLINGS of the `su_ai_plugin/`
-      # package folder, not as children of it.
+      # The .rbz layout MUST follow SketchUp's official extension
+      # contract: ONE root `.rb` (registration loader) PLUS a
+      # same-named support folder containing all operational code.
+      # Per CodeX Review 022 (2026-08-19) BLOCK-022-001: the .rbz
+      # root has exactly one `su_ai_plugin.rb` AND one `su_ai_plugin/`
+      # support folder containing main.rb + everything operational.
+      # There must NOT be root-level `core/` or `compatibility/`
+      # directories.
       #
-      # Final layout inside the .rbz:
-      #   su_ai_plugin/
-      #     su_ai_plugin.rb       (entry-point, at root)
-      #     loader.rb             (sibling of entry)
-      #     preflight_runner.rb
-      #     analyzers_runner.rb
-      #     ...
-      #     html/
-      #       index.html
-      #       app.js
-      #       style.css
-      #   core/                   ( sibling of su_ai_plugin/ )
-      #     tolerance.rb
-      #     ...
-      #     analyzers/
-      #       ...
-      #   compatibility/          ( sibling of su_ai_plugin/ )
-      #     su_capability.rb
+      # Dev tree (mirrors packaged layout):
+      #   extension/
+      #     su_ai_plugin.rb              # root registration loader
+      #     su_ai_plugin/                # support folder
+      #       main.rb                    # boot
+      #       loader.rb
+      #       core/...
+      #       compatibility/...
+      #       html/...
       #
-      # After SketchUp extracts into Plugins/:
-      #   Plugins/su_ai_plugin/su_ai_plugin.rb  -> require_relative
-      #     '../core/...' resolves to Plugins/core/... ✓
-      #     '../compatibility/...' resolves to Plugins/compatibility/... ✓
+      # Packaged .rbz (after this build):
+      #   su_ai_plugin.rb                # ROOT registration loader
+      #   su_ai_plugin/                  # support folder
+      #     main.rb
+      #     loader.rb
+      #     core/...
+      #     compatibility/...
+      #     html/...
       #
       # Shipping policy:
-      #   - extension/  is FLATTENED: only its direct .rb siblings of
-      #     the entry-point land at the package root. extension/html/*
-      #     lands at su_ai_plugin/html/*.
-      #   - core/ and compatibility/  are PRESERVED at the package
-      #     ROOT (NOT inside su_ai_plugin/) — they are siblings of
-      #     the package folder so the entry-point's ../-style
-      #     require_relative paths resolve correctly.
+      #   - extension/su_ai_plugin.rb -> <PKG>/su_ai_plugin.rb
+      #     (root registration loader, NOT inside the support folder)
+      #   - extension/su_ai_plugin/...  -> <PKG>/su_ai_plugin/...
+      #     (the support folder's contents are SHIPPED AS-IS; do not
+      #     add an extra su_ai_plugin/ wrapper.)
       SHIPPED_DIRS = {
-        'extension'     => :flatten_root,    # entry siblings -> pkg root
-        'core'          => :sibling_at_root, # core/ -> pkg root (sibling)
-        'compatibility' => :sibling_at_root  # compatibility/ -> pkg root (sibling)
+        'extension' => :root_plus_support_folder
       }.freeze
 
       # Single files at the extension/ root that must ship alongside
-      # the entry-point. (extension/su_ai_plugin.rb is the entry-point;
-      # SHIPPED_DIRS above handles all other extension/ siblings.)
+      # the entry-point. (extension/su_ai_plugin.rb is the
+      # registration loader; SHIPPED_DIRS above handles all other
+      # extension/ contents.)
       SHIPPED_FILES = %w[extension/su_ai_plugin.rb].freeze
 
       # Top-level entries that are NEVER shipped (dev-only).
@@ -151,15 +143,24 @@ module SUAnalysis
           end
           walk_dir(abs_dir, dir, policy, files)
         end
-        # 2) Stand-alone shipped files (none currently; reserved for
-        #    future use).
+        # 2) Stand-alone shipped files. The registration loader
+        #    (extension/su_ai_plugin.rb) lands at the .rbz ROOT as
+        #    `su_ai_plugin.rb` (SketchUp convention: registration
+        #    loader is at the SAME NAME as the support folder but
+        #    is a sibling, not inside it). We do NOT prefix it with
+        #    PKG_NAME here; only the support-folder contents are
+        #    wrapped in PKG_NAME.
         SHIPPED_FILES.each do |rel|
           abs = File.join(PROJECT_ROOT, rel)
           unless File.file?(abs)
             abort_with "missing shipped file: #{rel}"
           end
-          arc = strip_dev_prefix(rel)
-          files << [File.join(PKG_NAME, arc), abs]
+          # For the registration loader (extension/su_ai_plugin.rb),
+          # the arc is `su_ai_plugin.rb` (at the .rbz root). For
+          # any future stand-alone file, it would land at the root
+          # too. We do NOT add a PKG_NAME prefix here.
+          arc = File.basename(rel) # strips any directory prefix
+          files << [arc, abs]
         end
         # Dedupe (the entry-point could appear via both paths).
         files = files.uniq { |arc, _abs| arc }
@@ -174,21 +175,32 @@ module SUAnalysis
           next if File.directory?(abs) # only files
           base = File.basename(abs)
           next if base == '.' || base == '..'
+          # Skip the registration loader; it is added explicitly by
+          # SHIPPED_FILES (with a custom arc, see collect_files).
+          # We identify it by exact-match on the dev-tree path.
+          next if abs == File.join(PROJECT_ROOT, 'extension', 'su_ai_plugin.rb')
           # rel within the source dir (just the tail after abs_root).
           rel = abs.sub(/\A#{Regexp.escape(abs_root)}/, '').gsub(%r{\A[\\/]}, '')
           arc = case policy
-                when :flatten_root
-                  # `extension` is FLATTENED at the package ROOT:
-                  # extension/foo.rb      -> su_ai_plugin/foo.rb
-                  # extension/html/x.html -> su_ai_plugin/html/x.html
-                  # (we ALWAYS drop the `extension/` prefix; the rest
-                  # of the path is preserved.)
-                  File.join(PKG_NAME, rel)
-                when :sibling_at_root
-                  # `core` and `compatibility` are SIBLINGS of the
-                  # package folder, not children of it:
-                  # core/foo.rb -> core/foo.rb
-                  File.join(rel_root, rel)
+                when :root_plus_support_folder
+                  # Dev: extension/ contains the registration loader
+                  # (extension/su_ai_plugin.rb) AND the support folder
+                  # (extension/su_ai_plugin/...).
+                  # Packaged:
+                  #   - extension/su_ai_plugin.rb -> <PKG>/su_ai_plugin.rb
+                  #   - extension/su_ai_plugin/...  -> <PKG>/su_ai_plugin/...
+                  # The registration loader lands at the .rbz ROOT
+                  # (it is the SAME name as the support folder, by
+                  # SketchUp convention). The support folder's
+                  # contents land INSIDE the support folder.
+                  #
+                  # The rel is the path relative to `extension/`
+                  # (the source root). For `extension/su_ai_plugin/main.rb`
+                  # the rel is `su_ai_plugin/main.rb`. We want the
+                  # final arc to be exactly that (no extra prefix).
+                  # The package root IS the `su_ai_plugin/` segment
+                  # at the start of rel.
+                  rel
                 else
                   abort_with "unknown policy #{policy.inspect} for #{rel_root}"
                 end
@@ -285,13 +297,16 @@ module SUAnalysis
         $stdout.puts("OK: wrote #{path}")
         $stdout.puts("    size: #{size} bytes")
         $stdout.puts("    entries: #{entry_count}")
-        # Spot-check the entry-point layout (must be at PKG root).
-        ep_arc = File.join(PKG_NAME, 'su_ai_plugin.rb')
+        # Spot-check the entry-point layout: must be at the .rbz
+        # ROOT as `su_ai_plugin.rb` (NOT inside the support folder
+        # of the same name). The support folder is a SIBLING of the
+        # entry-point file.
+        ep_arc = 'su_ai_plugin.rb'
         unless files.any? { |arc, _| arc == ep_arc }
-          abort_with "missing entry-point at #{ep_arc}"
+          abort_with "missing entry-point at #{ep_arc} (must be at the .rbz root, not inside su_ai_plugin/)"
         end
-        $stdout.puts("    entry-point: #{ep_arc} (OK)")
-        $stdout.puts("    top-level folder: #{PKG_NAME}/ (OK)")
+        $stdout.puts("    entry-point: #{ep_arc} (OK, at the .rbz root)")
+        $stdout.puts("    support folder: #{PKG_NAME}/ (OK, sibling of the entry-point)")
       end
 
       def abort_with(msg)

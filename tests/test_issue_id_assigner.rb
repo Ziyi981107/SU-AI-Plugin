@@ -7,7 +7,7 @@
 #
 
 require_relative 'runner'
-require_relative '../core/issue_id_assigner'
+require_relative '../extension/su_ai_plugin/core/issue_id_assigner'
 
 include SUAnalysis::Core
 

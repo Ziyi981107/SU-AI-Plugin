@@ -1,9 +1,9 @@
 ============================================================
 OWNER VERIFICATION CHECKLIST — RBZ Install Smoke (release gate 2)
 Project:    D:\Projects\SU-AI-Plugin
-Date:       2026-08-19
+Date:       2026-08-19 (revised v2 per CodeX Review 022 BLOCK-022-001)
 For:        Product Owner (real-SU install verification, per Q002=A)
-Depends on: CodeX Review 021 Stage 7 implementation report
+Depends on: CodeX Review 022 release-package contract
 ============================================================
 
 PURPOSE
@@ -24,17 +24,26 @@ fake-host evidence (tests/test_rbz_smoke.rb, 8/8 PASS) is documented
 in Review/RBZ_RELEASE_CANDIDATE_2026-08-19.txt and committed
 alongside this file.
 
+Per CodeX Review 022 (2026-08-19) BLOCK-022-001: the .rbz has a
+STANDARD SketchUp extension layout (one root `.rb` + one same-named
+support folder). The Owner MUST verify this layout on the installed
+build before running the analyze flow.
+
 RBZ ARTIFACT
 ============
 
   Path:     D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
-  Size:     ~175 KB (varies slightly as production code changes)
+  Size:     ~178 KB (varies slightly as production code changes)
   Format:   Standard PKZip (uncompressed / STORE method); readable
             by 7-Zip / Windows Explorer / SketchUp Extension Manager.
-  Layout:   Single top-level folder su_ai_plugin/ containing the
-            entry-point + sibling Ruby files + html/ subfolder.
-            Two siblings at the .rbz root: core/ and compatibility/.
-            SketchUp extracts this into SketchUp's Plugins/ dir.
+  Layout:   Standard SketchUp extension contract:
+              su_ai_plugin.rb                 # ROOT registration loader
+              su_ai_plugin/                   # same-named support folder
+                main.rb                       # boot target
+                loader.rb
+                core/...
+                compatibility/...
+                html/...
 
 REQUIREMENTS
 ============
@@ -57,8 +66,8 @@ is intact:
   cd D:\Projects\SU-AI-Plugin
   .vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests\run_all.rb
 
-Expected: 281 tests: 281 pass, 0 fail, 0 error (8 RBZ smoke
-tests + 273 prior tests).
+Expected: 282 tests: 282 pass, 0 fail, 0 error (8 RBZ smoke
+tests + 274 prior tests).
 
 If the suite reports any failure, STOP — the .rbz is stale.
 Rebuild with:
@@ -85,51 +94,54 @@ INSTALL PROCEDURE
      posture for V1.0 — no .rbz signing infrastructure yet).
 
   5. After install, SketchUp reports the extension is enabled.
-     The Plugins menu now contains:
+     **CRITICAL**: confirm the menu item appears at the
+     EXPECTED LOCATION per the standard SketchUp extension
+     contract:
         Plugins > SU-AI-Plugin > Analyze selection
 
-  6. Confirm the file layout under SketchUp's Plugins/ directory:
-        SketchUp/Plugins/su_ai_plugin/su_ai_plugin.rb    (entry)
-        ~/su_ai_plugin/loader.rb
-        ~/su_ai_plugin/preflight_runner.rb
-        ~/su_ai_plugin/analyzers_runner.rb
-        ~/su_ai_plugin/issue_locator.rb
-        ~/su_ai_plugin/display_unit_formatter.rb
-        ~/su_ai_plugin/ui_bridge.rb
-        ~/su_ai_plugin/dialog_controller.rb
-        ~/su_ai_plugin/dialog_runner.rb
-        ~/su_ai_plugin/html/index.html
-        ~/su_ai_plugin/html/app.js
-        ~/su_ai_plugin/html/style.css
-        SketchUp/Plugins/core/...
-        SketchUp/Plugins/compatibility/su_capability.rb
+     If the menu does NOT appear, the .rbz packaging is broken.
+     STOP and report. Do NOT bypass the install by loading
+     `extension/su_ai_plugin.rb` from the dev tree — that tests
+     the dev tree and DOES NOT verify the install.
 
-     The entry-point and its siblings are inside su_ai_plugin/;
-     core/ and compatibility/ are siblings of that folder. This
-     is the locked layout per CodeX Review 021 boundary.
+  6. Confirm the file layout under SketchUp's Plugins/ directory.
+     The .rbz extracts into:
+        SketchUp/Plugins/su_ai_plugin.rb          (root registration loader)
+        SketchUp/Plugins/su_ai_plugin/            (same-named support folder)
+          SketchUp/Plugins/su_ai_plugin/main.rb   (boot target)
+          SketchUp/Plugins/su_ai_plugin/loader.rb
+          SketchUp/Plugins/su_ai_plugin/core/...
+          SketchUp/Plugins/su_ai_plugin/compatibility/...
+          SketchUp/Plugins/su_ai_plugin/html/index.html
+          SketchUp/Plugins/su_ai_plugin/html/app.js
+          SketchUp/Plugins/su_ai_plugin/html/style.css
+
+     The entry-point (`su_ai_plugin.rb`) is a SIBLING of the
+     support folder (`su_ai_plugin/`), NOT a child. The support
+     folder contains all operational code (main.rb, loader.rb,
+     core/, compatibility/, html/).
 
 POST-INSTALL BOOT SMOKE
 =========================
 
-  1. Open the Ruby Console (Window > Ruby Console).
+  1. CLOSE SketchUp and RE-OPEN it. SketchUp loads extensions
+     at startup; the install was a one-time copy. To verify
+     the extension is registered, restart SketchUp.
 
-  2. Confirm the entry-point loaded without error. Look for any
+  2. Open the Ruby Console (Window > Ruby Console).
+
+  3. Confirm the entry-point loaded without error. Look for any
      [SU-AI-Plugin] boot failed: ... lines. Expected: none.
 
-  3. Confirm menu idempotency. In the Ruby Console:
+  4. Confirm the menu item appears at:
+        Plugins > SU-AI-Plugin > Analyze selection
 
-        load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+     If the menu is registered, the install is functioning.
 
-     Expected: NO error, NO second menu item. The Plugins menu
-     still has exactly ONE 'Analyze selection' item under
-     'SU-AI-Plugin'. (file_loaded? guard prevents double-load.)
-
-  4. (Optional, advanced) Confirm the constant surface from the
-     Ruby Console:
-
+  5. (Optional, advanced) Confirm the constants surface from
+     the Ruby Console:
         SUAnalysis::Extension::Loader.registered?
         SUAnalysis::Core::PreflightReport.instance_methods(false)
-
      Expected: no NameError on the constants above; the Loader
      is loaded; PreflightReport exposes pure-Ruby metrics only.
 
@@ -156,12 +168,13 @@ and report the failing step with the Ruby Console log.
 EXPECTED LOADER BEHAVIOR (post-install)
 =========================================
 
-  - First `load 'extension/su_ai_plugin.rb'` registers the menu
-    (one Plugins > SU-AI-Plugin > Analyze selection).
-  - Subsequent loads are no-ops (file_loaded? guard).
-  - The dialog opens on the menu click (no exceptions).
+  - After SketchUp restart, the Plugins > SU-AI-Plugin >
+    Analyze selection menu is registered (one entry).
+  - Clicking the menu opens the HtmlDialog.
   - The fingerprint helper from Stage 6 K..N matches before and
     after (no source-model mutation).
+  - The dialog uses textContent only (no innerHTML for user
+    strings), as enforced by tests/test_html_render.rb.
 
 UNINSTALL (CLEANUP)
 ====================
@@ -169,10 +182,11 @@ UNINSTALL (CLEANUP)
 After verification, uninstall to leave a clean state:
 
   1. SketchUp > Extension Manager > SU-AI-Plugin > Uninstall.
-  2. Verify SketchUp/Plugins/su_ai_plugin/ and SketchUp/Plugins/core/
-     and SketchUp/Plugins/compatibility/ are gone (SketchUp does
-     NOT auto-delete the plugin's folders on uninstall in some
-     versions; manually remove if they remain).
+  2. Verify SketchUp/Plugins/su_ai_plugin.rb and
+     SketchUp/Plugins/su_ai_plugin/ are both gone (SketchUp
+     does NOT auto-delete the plugin's root .rb + folder on
+     uninstall in some versions; manually remove if they
+     remain).
   3. Re-open the Plugins menu; 'SU-AI-Plugin' submenu is gone.
 
 REPORTING BACK
@@ -182,7 +196,7 @@ After completing this checklist on real SketchUp, report one of:
 
   PASS ON SKETCHUP <version>
   - Install succeeded (no error from Extension Manager).
-  - Menu registered exactly once.
+  - Menu registered exactly once after restart.
   - K1..N on the installed .rbz match Stage 6 K..N.
   - No Ruby Console errors during boot or analyze.
   - Uninstall is clean.
@@ -195,6 +209,9 @@ After completing this checklist on real SketchUp, report one of:
   BLOCKED
   - If the .rbz does not install at all, copy the SketchUp
     error verbatim and the .rbz path you tried.
+  - If the menu does NOT appear after install, the .rbz
+    packaging is broken. Do NOT bypass the install by
+    loading the dev tree entry-point.
 
 NEXT ACTION (AFTER GATE 2)
 ==========================
@@ -204,8 +221,8 @@ NEXT ACTION (AFTER GATE 2)
 - If Gate 1 PASS on SU-2017: TASK 001 is fully shipped (V1.0).
 - If either gate fails on the real host, the Agent cannot proceed
   past the BLOCK until the failure is investigated (CodeX Round
-  022 final release review cannot be requested).
+  023 final release review cannot be requested).
 
 ============================================================
-END OF OWNER VERIFICATION CHECKLIST — RBZ INSTALL
+END OF OWNER VERIFICATION CHECKLIST — RBZ INSTALL (v2)
 ============================================================

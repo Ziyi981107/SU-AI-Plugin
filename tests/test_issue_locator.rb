@@ -6,9 +6,9 @@
 
 require_relative 'runner'
 require_relative '_fake_su'
-require_relative '../core/issue_registry'
-require_relative '../core/issue_locator_policy'
-require_relative '../extension/issue_locator'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/issue_locator_policy'
+require_relative '../extension/su_ai_plugin/issue_locator'
 
 include SUAnalysis::Core
 include SUAnalysis::Extension
