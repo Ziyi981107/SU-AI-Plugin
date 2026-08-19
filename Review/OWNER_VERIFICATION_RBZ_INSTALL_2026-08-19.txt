@@ -77,7 +77,12 @@ Rebuild with:
 INSTALL PROCEDURE
 ==================
 
-  1. Open SketchUp 2020 (or 2017 if verifying Gate 1).
+  1. Open SketchUp 2020 (or 2017 if verifying Gate 1). The
+     Extension Manager install is performed in a RUNNING SketchUp;
+     the install is a one-time copy of the .rbz contents into
+     SketchUp's Plugins/ directory. SketchUp does NOT load
+     extensions at install time — it loads them at the NEXT
+     SketchUp startup.
 
   2. Window > Extension Manager (SketchUp 2017+) OR
      Window > Preferences > Extensions (older builds).
@@ -94,17 +99,21 @@ INSTALL PROCEDURE
      posture for V1.0 — no .rbz signing infrastructure yet).
 
   5. After install, SketchUp reports the extension is enabled.
-     **CRITICAL**: confirm the menu item appears at the
-     EXPECTED LOCATION per the standard SketchUp extension
-     contract:
+     **CRITICAL**: SketchUp does NOT load the extension at install
+     time. You MUST CLOSE and RE-OPEN SketchUp for the extension
+     to load. After SketchUp restart, confirm the menu item
+     appears at the EXPECTED LOCATION per the standard SketchUp
+     extension contract:
         Plugins > SU-AI-Plugin > Analyze selection
 
-     If the menu does NOT appear, the .rbz packaging is broken.
-     STOP and report. Do NOT bypass the install by loading
-     `extension/su_ai_plugin.rb` from the dev tree — that tests
-     the dev tree and DOES NOT verify the install.
+     If the menu does NOT appear after the RESTART, the .rbz
+     packaging is broken. STOP and report. Do NOT bypass the
+     install by loading `extension/su_ai_plugin.rb` from the dev
+     tree — that tests the dev tree and DOES NOT verify the
+     install.
 
-  6. Confirm the file layout under SketchUp's Plugins/ directory.
+  6. After install, confirm the file layout under SketchUp's
+     Plugins/ directory.
      The .rbz extracts into:
         SketchUp/Plugins/su_ai_plugin.rb          (root registration loader)
         SketchUp/Plugins/su_ai_plugin/            (same-named support folder)

@@ -13,6 +13,15 @@
 # extension will not load tests/runner.rb by accident).
 #
 
+# Per CodeX Review 023: the root registration loader does
+# `require 'sketchup.rb'; require 'extensions.rb'`. In real SU
+# these files are part of the SU install. In the test env we
+# provide minimal stubs (tests/stubs/sketchup.rb, tests/stubs/
+# extensions.rb) that type-validate the SU API contract (per
+# CodeX 023 BLOCK-023-001). Put tests/stubs on $LOAD_PATH so
+# the requires resolve to the stubs.
+$LOAD_PATH.unshift(File.expand_path('stubs', __dir__))
+
 module Tests
   class AssertionError < StandardError; end
 

@@ -65,12 +65,34 @@ end
 
 # Stub Sketchup.active_model with a non-empty selection so
 # Loader.on_analyze_selection drives through to DialogRunner.show.
+# Per CodeX Review 023: the stubbed Sketchup module must also
+# provide `register_extension` (delegating to the real stub from
+# tests/stubs/extensions.rb) so the registration loader can
+# call `Sketchup.register_extension(...)` without raising.
 def stub_sketchup_with_selection
   @__prev_sketchup = Object.const_defined?(:Sketchup) ? Object.const_get(:Sketchup) : :__undefined__
   fake_model = FakeUI::FakeModel.new
   fake_model.selection.add(Object.new)
   sk = Module.new
   sk.define_singleton_method(:active_model) { fake_model }
+  # Delegate Sketchup.register_extension to the type-validating
+  # stub from tests/stubs/extensions.rb. Tests assert the exact
+  # (name, target) contract. The stub from tests/stubs/extensions.rb
+  # may have been loaded into a DIFFERENT Sketchup module earlier
+  # (the previous stub), so we cannot rely on require to re-apply
+  # the method to this fresh `sk`. We define it directly.
+  sk.define_singleton_method(:register_extension) do |ext, load_now|
+    # Forward to the canonical stub: it validates the type, records
+    # the call, and returns true on success.
+    $__fake_sketchup_register_extension_calls ||= []
+    unless ext.is_a?(SketchupExtension)
+      raise TypeError, "register_extension: ext must be a SketchupExtension"
+    end
+    $__fake_sketchup_register_extension_calls << {
+      extension: ext, load_now: load_now
+    }
+    true
+  end
   Object.send(:remove_const, :Sketchup) if Object.const_defined?(:Sketchup)
   Object.const_set(:Sketchup, sk)
 end
@@ -191,6 +213,125 @@ test 'test_loader: boot main.rb uses file_loaded? guard + executes Boot.boot!' d
          'main.rb boot must wrap the boot in begin/rescue'
 end
 
+# --------------------------------------------------------------------------
+# CodeX Review 023 BLOCK-023-001 / BLOCK-023-002: registration
+# contract. The root registration loader MUST:
+#   1. Pass a STRING (not Array) as the SketchupExtension load
+#      target. The target MUST be the relative no-extension path
+#      `su_ai_plugin/main` (NOT a dev-tree absolute path).
+#   2. Guard registration with `unless file_loaded?(__FILE__)` so
+#      repeated re-evaluation registers exactly ONCE.
+#   3. NOT execute Boot.boot! — the registration loader is
+#      registration-only; the boot lives in extension/main.rb.
+# --------------------------------------------------------------------------
+
+def rbz_reset_register_stubs
+  $__fake_sketchup_extension_constructs = []
+  $__fake_sketchup_register_extension_calls = []
+end
+
+test 'test_loader (BLOCK-023-001): registration loader passes String target, not Array' do
+  rbz_reset_register_stubs
+  FakeUI.install!
+  reset_loader
+  $__file_loaded_set.clear
+  # The tests/stubs/extensions.rb provides a type-validating
+  # SketchupExtension. The $__fake_sketchup_extension_constructs
+  # global records every construct.
+  stub_sketchup_with_selection
+  begin
+    load ENTRYPOINT_PATH
+    # Exactly one SketchupExtension constructed on first load.
+    assert_equal 1, $__fake_sketchup_extension_constructs.length,
+                 'exactly one SketchupExtension must be constructed on first load'
+    construct = $__fake_sketchup_extension_constructs.first
+    assert_equal 'SU-AI-Plugin', construct[:name],
+                 'SketchupExtension name must match the package base name'
+    # The load target MUST be a String, NOT an Array.
+    # Per CodeX 023 BLOCK-023-001: passing an Array is a SU API
+    # contract violation.
+    assert_kind_of String, construct[:path],
+                 "SketchupExtension load target must be a String (NOT an Array), got #{construct[:path].class}"
+    # And the target MUST be exactly the relative no-extension
+    # path `su_ai_plugin/main` (NOT a dev-tree absolute path).
+    assert_equal 'su_ai_plugin/main', construct[:path],
+                 "SketchupExtension load target must be 'su_ai_plugin/main', got #{construct[:path].inspect}"
+  ensure
+    unstub_sketchup
+    FakeUI.uninstall!
+  end
+end
+
+test 'test_loader (BLOCK-023-002): repeated root-loader evaluation registers exactly once' do
+  rbz_reset_register_stubs
+  FakeUI.install!
+  reset_loader
+  $__file_loaded_set.clear
+  stub_sketchup_with_selection
+  begin
+    # First load — registers.
+    load ENTRYPOINT_PATH
+    first_construct_count = $__fake_sketchup_extension_constructs.length
+    first_register_count   = $__fake_sketchup_register_extension_calls.length
+    # Second load — file_loaded? returns true, registration skipped.
+    load ENTRYPOINT_PATH
+    assert_equal first_construct_count,
+                 $__fake_sketchup_extension_constructs.length,
+                 'repeated load must NOT construct a new SketchupExtension'
+    assert_equal first_register_count,
+                 $__fake_sketchup_register_extension_calls.length,
+                 'repeated load must NOT call register_extension again'
+    # Third load after file_unloaded — must register again.
+    file_unloaded File.expand_path(ENTRYPOINT_PATH)
+    load ENTRYPOINT_PATH
+    assert_equal first_construct_count + 1,
+                 $__fake_sketchup_extension_constructs.length,
+                 'load after file_unloaded MUST register again'
+    assert_equal first_register_count + 1,
+                 $__fake_sketchup_register_extension_calls.length,
+                 'load after file_unloaded MUST call register_extension again'
+  ensure
+    unstub_sketchup
+    FakeUI.uninstall!
+  end
+end
+
+test 'test_loader (BLOCK-023-002): registration loader itself does not execute Boot.boot!' do
+  # The registration loader is REGISTRATION ONLY. The boot
+  # (Boot.boot!) lives in extension/main.rb. If the registration
+  # loader accidentally called Boot.boot!, the menu would be
+  # registered TWICE on first install (once via the registration
+  # path, once via the loader's own boot call). Per CodeX 023
+  # BLOCK-023-002: the registration loader must NOT execute
+  # Boot.boot!.
+  rbz_reset_register_stubs
+  FakeUI.install!
+  reset_loader
+  $__file_loaded_set.clear
+  stub_sketchup_with_selection
+  begin
+    # Note: we do NOT `load MAIN_PATH` here. We only load the
+    # registration loader. If the registration loader accidentally
+    # executed Boot.boot!, the menu would be registered.
+    load ENTRYPOINT_PATH
+
+    # Verify: registration happened (one register_extension call).
+    assert_equal 1, $__fake_sketchup_register_extension_calls.length,
+                 'registration loader must call register_extension exactly once'
+
+    # Verify: NO menu registered yet (the registration loader does
+    # NOT call Loader.register! itself). The menu is registered
+    # ONLY when extension/main.rb is loaded.
+    plugin_menu = FakeUI.state.menu('Plugins')
+    submenus = plugin_menu.submenus.select { |s| s.name == 'SU-AI-Plugin' }
+    assert_equal 0, submenus.length,
+                 'registration loader alone must NOT register a menu (no Boot.boot!)'
+  ensure
+    unstub_sketchup
+    FakeUI.uninstall!
+  end
+end
+
 test 'test_loader: menu command handler is wired AND clicking it reaches the dialog' do
   # Round 019 BLOCK-002-R2: the previous version only checked the
   # command NAME; this test actually invokes the handler and asserts
@@ -228,7 +369,6 @@ end
 
 ENTRYPOINT_PATH = File.expand_path('../extension/su_ai_plugin.rb', __dir__).freeze
 MAIN_PATH       = File.expand_path('../extension/su_ai_plugin/main.rb', __dir__).freeze
-ENTRY_NAME      = 'SU-AI-Plugin/extension/su_ai_plugin'.freeze
 
 test 'test_loader: faithful boot — load entrypoint twice, one menu item, handler reaches dialog' do
   FakeUI.install!
@@ -250,7 +390,7 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
     assert_equal 1, submenus.length, "expected one submenu, got #{submenus.length}"
     assert_equal 1, submenus.first.items.length
     assert_equal true, SUAnalysis::Extension::Loader.instance_variable_get(:@registered)
-    assert $__file_loaded_set[ENTRY_NAME],
+    assert $__file_loaded_set[File.expand_path(ENTRYPOINT_PATH)],
            'file_loaded should be set after successful boot'
 
     # Invoke the command handler — must reach the dialog boundary.
@@ -278,7 +418,7 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
     # the third load adds a second submenu — proving production
     # idempotency relies on file_loaded? + sentinel, NOT on
     # FakeMenu.find_or_create.
-    file_unloaded ENTRY_NAME
+    file_unloaded File.expand_path(ENTRYPOINT_PATH)
     SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
     load ENTRYPOINT_PATH
     load MAIN_PATH

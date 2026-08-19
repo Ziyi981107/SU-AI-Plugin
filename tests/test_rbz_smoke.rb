@@ -293,6 +293,61 @@ else
 
       FakeUI.install!
       begin
+        # Per CodeX Review 023: the registration loader does
+        # `require 'sketchup.rb'; require 'extensions.rb'`. In real
+        # SU these files are part of the SU install. In the test
+        # env (which extracts the .rbz into a tempdir), we need
+        # to provide Fake versions of these files. The test
+        # runner already puts tests/stubs on $LOAD_PATH, so the
+        # requires from the extracted entry-point resolve to the
+        # type-validating stubs (which raise on contract violations
+        # like passing an Array as the load target).
+        #
+        # IMPORTANT: `require` is idempotent. If tests/stubs/
+        # sketchup.rb or extensions.rb was loaded earlier in this
+        # process (by the BLOCK-023 tests), the requires inside
+        # the extracted entry-point are NO-OPS. The first time the
+        # stubs were loaded, the `module Sketchup; def self.register_extension; end; end`
+        # block added `register_extension` to the Sketchup module
+        # that existed at that time. After BLOCK-023 tests'
+        # `unstub_sketchup` calls removed the global `Sketchup`
+        # constant, the new (empty) `Sketchup` module created by a
+        # later `require 'sketchup.rb'` does NOT have
+        # `register_extension`. We must therefore MANUALLY add
+        # `register_extension` to the current `Sketchup` after the
+        # require statements so the API surface is consistent.
+        unless defined?(Sketchup)
+          require 'sketchup.rb'  # defines module Sketchup (the empty one)
+        end
+        unless defined?(SketchupExtension)
+          require 'extensions.rb'  # defines class SketchupExtension
+                                    # AND adds Sketchup.register_extension
+        end
+
+        # If the current Sketchup does not have register_extension,
+        # add it manually. This happens when the BLOCK-023 tests
+        # created a new `sk` module (which had register_extension
+        # defined directly via `define_singleton_method`) and the
+        # `unstub_sketchup` calls later replaced the global
+        # Sketchup with a fresh empty module.
+        if defined?(Sketchup) && !Sketchup.respond_to?(:register_extension)
+          Sketchup.define_singleton_method(:register_extension) do |ext, load_now|
+            unless ext.is_a?(SketchupExtension)
+              raise TypeError, "register_extension: ext must be a SketchupExtension"
+            end
+            $__fake_sketchup_register_extension_calls ||= []
+            $__fake_sketchup_register_extension_calls << {
+              extension: ext, load_now: load_now
+            }
+            true
+          end
+        end
+
+        # Reset the registration-call recorders so we can assert
+        # the call later.
+        $__fake_sketchup_extension_constructs = []
+        $__fake_sketchup_register_extension_calls = []
+
         # Loader may not be loaded yet on a fresh process; require it.
         # The loader is shipped inside the support folder, so after
         # extract it lives at <install_root>/su_ai_plugin/loader.rb.
@@ -306,6 +361,14 @@ else
         # environment installs UI.menu / UI::Command / UI::HtmlDialog
         # so the Loader.register! call inside the entry-point
         # exercises the full registration path.
+        # The entry-point's requires (`sketchup.rb`, `extensions.rb`)
+        # resolve via $LOAD_PATH, which the test runner set up.
+        # We verify the API surface is present BEFORE the load to
+        # catch any setup regression with a clear message.
+        unless defined?(Sketchup) && defined?(SketchupExtension) &&
+               Sketchup.respond_to?(:register_extension)
+          raise 'test setup error: Sketchup + SketchupExtension + register_extension must be present in the test env before loading the extracted entry-point'
+        end
         load ep
         load main_rb
 
@@ -324,6 +387,21 @@ else
         # on_analyze_selection returns nil outside SU; that is the
         # documented fallback per extension/loader.rb.
         assert_nil result, 'on_analyze_selection must return nil outside SU (no-op fallback)'
+
+        # BLOCK-023-001 / BLOCK-023-002: registration contract on
+        # the EXTRACTED package. The root registration loader must
+        # have called SketchupExtension.new with a STRING target
+        # (NOT an Array) of exactly 'su_ai_plugin/main'.
+        assert $__fake_sketchup_extension_constructs.length >= 1,
+               'extracted entry-point must call SketchupExtension.new at least once on first load'
+        construct = $__fake_sketchup_extension_constructs.first
+        assert_kind_of String, construct[:path],
+               "SketchupExtension load target MUST be a String (not an Array), got #{construct[:path].class}"
+        assert_equal 'su_ai_plugin/main', construct[:path],
+               "SketchupExtension load target MUST be 'su_ai_plugin/main', got #{construct[:path].inspect}"
+        # And the loader must have called register_extension.
+        assert $__fake_sketchup_register_extension_calls.length >= 1,
+               'extracted entry-point must call Sketchup.register_extension at least once on first load'
       ensure
         FakeUI.uninstall!
         if defined?(SUAnalysis::Extension::Loader)
