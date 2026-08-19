@@ -39,14 +39,17 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   the dialog.
 - **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md`
   (DRAFT, 563 lines). Status = awaiting ChatGPT scope review.
-- **Reviewer routing** (per Cicada 2026-08-19 routing rule):
-  1. **ChatGPT** answers the 7 §11 scope/UX questions (section
-     position, hidden-layer ordering, role badge text, per-layer
-     counts, default-open policy, UNKNOWN role, color hints).
-  2. **CodeX** reviews the resulting plan (§12 technical
-     questions: rule ordering, fail-closed direction, edge→layer
-     attribution, sort stability).
-  3. **Agent** implements only after both reviews PASS.
+- **Reviewer routing** (per Cicada 2026-08-19 routing rule:
+  "理论上只要chatgpt能做的就不给codex做"):
+  1. **ChatGPT** answers §11 — all 10 plan-level policy / UX /
+     fail-closed / sort-order questions (no source/diff needed).
+  2. **Agent self** decides §12 — 2 contained code-architecture
+     questions with documented defaults (SourceReference
+     extension, first-seen-wins dedup).
+  3. **Agent** implements per the answers + defaults.
+  4. **CodeX** end-of-stage review of the full V1.1
+     implementation diff (§13), after tests + Gate 2 V1.1
+     Owner evidence.
 - **Baseline assumption** (will be confirmed by ChatGPT): the
   data shape is already 90% there — `EdgeRecord#layer`,
   `PreflightReport#layer_distribution`, and `LayerRecord` exist
@@ -89,8 +92,10 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   MUST be repeated on whatever RBZ is shipped. Do not block
   next-stage development on this; do not fake SU2020 evidence
   as SU2017 evidence.
-- **V1.1 plan review** (current next action): ChatGPT §11 →
-  CodeX §12. After both, Agent implements the plan.
+- **V1.1 plan review** (current next action): ChatGPT §11
+  (10 policy questions) → Agent self §12 (2 contained code
+  decisions with documented defaults) → Agent implements →
+  CodeX end-of-stage review of the full diff.
 - **CodeX review cadence**: Pi's handoff is explicit — do NOT
   submit tiny edit packets, partial packets, or progress pings.
   Codex is reserved for: complete coherent stage, high-risk
