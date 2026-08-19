@@ -239,3 +239,76 @@ test 'html_render: app.js exports ISSUE_TYPE_LABELS for the locked render order 
                  "ISSUE_TYPE_LABELS must include '#{t}' in canonical order")
   end
 end
+
+# --------------------------------------------------------------------------
+# CodeX Round 020 REAL-HOST BLOCK (recheck) L3: per-issue click handler
+# dispatch. The previous app.js#renderIssue unconditionally added a
+# click listener for every issue that called window.sketchup.locate(id).
+# For non-locatable rows (preflight warnings like deep_nesting and
+# abnormal_large_coord), the locator returns :unresolved and the JS
+# previously raised a misleading "source no longer available" toast.
+# These rows are intentionally non-locatable (no source token to
+# resolve), NOT stale.
+#
+# Fix: only register the click handler when issue.locatable === true.
+# For locatable === false, the row is non-actionable: no click handler,
+# no path to window.sketchup.locate, no path to the toast.
+# --------------------------------------------------------------------------
+
+test 'html_render (L3): renderIssue branches on issue.locatable before adding click listener' do
+  src = File.read(HR_HTML_APPJS)
+  # The fix: the addEventListener('click', ...) call MUST be inside
+  # a branch gated by issue.locatable (or equivalent). A bare,
+  # unconditional addEventListener would re-introduce the L3 bug.
+  #
+  # Look for the conditional structure: an `if (locatable)` /
+  # `if (...locatable...)` guard before the addEventListener('click').
+  assert_match(/if\s*\(\s*locatable\s*\)\s*\{/, src,
+               'renderIssue must gate the click handler on locatable === true')
+  # And the addEventListener('click', ...) call must appear INSIDE
+  # that if-block (not before it). The simplest check: count the
+  # addEventListener('click', ...) occurrences and ensure they're
+  # inside the if.
+  click_listeners = src.scan(/addEventListener\(['"]click['"]/).length
+  assert_equal 1, click_listeners,
+               'there must be exactly ONE addEventListener("click", ...) call (the locatable one)'
+
+  # The CSS `no-action` class must be defined for the visual
+  # non-action state (default cursor, no hover affordance).
+  css_src = File.read(HR_HTML_CSS)
+  assert_match(/\.issue\.no-action/, css_src,
+               'style.css must define .issue.no-action for non-action visual state')
+  # Cursor and hover overrides must be present.
+  assert_match(/\.issue\.no-action\s*\{[^}]*cursor:\s*default/m, css_src,
+               '.issue.no-action must set cursor: default (no pointer)')
+  assert_match(/\.issue\.no-action:hover/, css_src,
+               '.issue.no-action:hover must override the hover affordance')
+end
+
+test 'html_render (L3): executable DOM test asserts the L3 contract' do
+  # The Node.js DOM test (tests/test_html_render_dom.js) exercises the
+  # full click path. It MUST contain L3 assertions for both the
+  # locatable and non-locatable branches.
+  js_src = File.read(HR_RENDER_DOM_JS)
+  # L3.1 — locatable issue calls locate exactly once.
+  assert_match(/L3\.1:.*locatable.*locate.*ONCE/m, js_src,
+               'test_html_render_dom.js must assert locatable rows invoke locate once')
+  # L3.2 — non-locatable issue has no click handler and no locate call.
+  assert_match(/L3\.2:.*non-locatable.*NO click/m, js_src,
+               'test_html_render_dom.js must assert non-locatable rows have no click listener')
+  assert_match(/L3\.2:.*non-locatable.*NOT invoke/m, js_src,
+               'test_html_render_dom.js must assert non-locatable rows do NOT invoke locate')
+end
+
+test 'html_render (L3): executable render test runs the new assertions and passes' do
+  # Run the Node.js DOM test and ensure it PASSES. The new L3
+  # assertions MUST appear in the output.
+  out, exit_code = hr_run_node_render_test
+  assert_equal 0, exit_code, "node test exited #{exit_code}; output:\n#{out}"
+  assert_match(/^PASS\s*$/, out, "node test did not PASS:\n#{out}")
+  # Spot-check the L3 assertions by name.
+  assert_match(/ASSERT L3\.1:.*locatable row has click listener registered PASS/, out)
+  assert_match(/ASSERT L3\.2:.*non-locatable row has NO click listener PASS/, out)
+  assert_match(/ASSERT L3\.1:.*locatable row invokes window\.sketchup\.locate ONCE PASS/, out)
+  assert_match(/ASSERT L3\.2:.*non-locatable row does NOT invoke window\.sketchup\.locate PASS/, out)
+end

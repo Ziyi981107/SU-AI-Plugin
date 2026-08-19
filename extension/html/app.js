@@ -97,8 +97,24 @@
 
   function renderIssue(issue) {
     var div = document.createElement('div');
-    div.className = 'issue';
     div.setAttribute('data-issue-id', issue.issue_id || '');
+    // Per CodeX Round 020 REAL-HOST BLOCK (recheck) L3: ONLY register
+    // the locate click handler when the issue is locatable. For
+    // non-locatable rows (preflight warnings like deep_nesting and
+    // abnormal_large_coord), the locator returns :unresolved and the
+    // JS previously raised a misleading "source no longer available"
+    // toast — these rows are intentionally non-locatable (no source
+    // token to resolve), NOT stale. Registering no click handler
+    // means there is no path to window.sketchup.locate and therefore
+    // no path to the toast.
+    //
+    // Visual non-action state: a `no-action` class so CSS can apply
+    // default cursor + remove the hover affordance. This keeps the
+    // locked contract that all user text is rendered via textContent
+    // (no innerHTML for user-supplied strings).
+    var locatable = (issue.locatable === true);
+    div.className = 'issue' + (locatable ? '' : ' no-action');
+    div.setAttribute('data-locatable', locatable ? 'true' : 'false');
 
     var sev = (issue.severity || 'low').toLowerCase();
     var badge = document.createElement('span');
@@ -120,12 +136,18 @@
     div.appendChild(top);
     div.appendChild(msg);
 
-    div.addEventListener('click', function () {
-      var id = issue.issue_id || '';
-      if (window.sketchup && window.sketchup.locate) {
-        window.sketchup.locate(id);
-      }
-    });
+    // ONLY register the click handler when the issue is locatable.
+    // For locatable === false, the row is intentionally non-actionable;
+    // there is no click handler and therefore no path to the stale-
+    // source toast (Round 020 REAL-HOST BLOCK L3 fix).
+    if (locatable) {
+      div.addEventListener('click', function () {
+        var id = issue.issue_id || '';
+        if (window.sketchup && window.sketchup.locate) {
+          window.sketchup.locate(id);
+        }
+      });
+    }
 
     return div;
   }

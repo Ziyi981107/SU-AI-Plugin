@@ -79,6 +79,15 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   cursor: pointer;
 }
 .issue:hover { background: #f5f5f5; }
+.issue.no-action {
+  /* Per CodeX Round 020 REAL-HOST BLOCK (recheck) L3: non-locatable
+     warnings (preflight hazards like deep_nesting and
+     abnormal_large_coord) render with default cursor and no hover
+     affordance, signalling "intentionally not clickable" without
+     hiding the row. */
+  cursor: default;
+}
+.issue.no-action:hover { background: transparent; }
 .issue .id { font-family: monospace; font-size: 11px; color: var(--muted); }
 .issue .msg { font-size: 13px; margin-top: 2px; }
 

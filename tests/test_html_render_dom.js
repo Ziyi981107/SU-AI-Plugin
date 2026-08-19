@@ -31,9 +31,15 @@ function MockElement(tag) {
   this.textContent = '';
   this.attrs = {};
   this.classes = [];
+  this.className = '';
+  this._classList = [];
   this.style = {};
+  // Track event listeners registered on this element so the L3
+  // regression tests can assert WHICH events fire on which rows.
+  // Map: eventName -> Array<listenerFunction>.
   this._events = {};
   this.hidden = true;
+  this.clickCount = 0;
 }
 MockElement.prototype.setAttribute = function (name, value) {
   this.attrs[name] = value;
@@ -45,7 +51,41 @@ MockElement.prototype.appendChild = function (child) {
   this.children.push(child);
   return child;
 };
-MockElement.prototype.addEventListener = function () { /* no-op */ };
+MockElement.prototype.addEventListener = function (eventName, listener) {
+  if (!this._events[eventName]) this._events[eventName] = [];
+  this._events[eventName].push(listener);
+};
+MockElement.prototype.fireEvent = function (eventName, ev) {
+  var listeners = this._events[eventName] || [];
+  this.clickCount++;
+  for (var i = 0; i < listeners.length; i++) {
+    listeners[i].call(this, ev || {});
+  }
+};
+MockElement.prototype.hasListener = function (eventName) {
+  return !!(this._events[eventName] && this._events[eventName].length > 0);
+};
+MockElement.prototype.setAttribute = function (name, value) {
+  this.attrs[name] = value;
+};
+MockElement.prototype.getAttribute = function (name) {
+  return this.attrs[name];
+};
+MockElement.prototype.appendChild = function (child) {
+  this.children.push(child);
+  return child;
+};
+// Mimic the DOM `className` setter: storing the raw string AND
+// exposing it via `classes` (split on whitespace) so tests can
+// assert class membership the same way they would with real DOM.
+Object.defineProperty(MockElement.prototype, 'className', {
+  get: function () { return this._className || ''; },
+  set: function (v) {
+    this._className = v;
+    this.classes = (v || '').split(/\s+/).filter(function (s) { return s.length > 0; });
+  },
+  configurable: true
+});
 
 var mockElements = {
   'selection-info': new MockElement('div'),
@@ -212,6 +252,131 @@ assert('summary: 7 data-issue-type attrs present (one per canonical type)',
        typeAttrs.length === 7);
 assert('summary: data-issue-type attrs in canonical order',
        typeAttrs.map(function (a) { return a.value; }).join(',') === expectedTypes.join(','));
+
+// --------------------------------------------------------------------------
+// CodeX Round 020 REAL-HOST BLOCK (recheck) L3: per-issue click handler
+// dispatch. The previous app.js#renderIssue unconditionally added a
+// click listener for every issue that called window.sketchup.locate(id).
+// For non-locatable rows (preflight warnings like deep_nesting and
+// abnormal_large_coord), the locator returns :unresolved and the JS
+// previously raised a misleading "source no longer available" toast.
+// These rows are intentionally non-locatable (no source token to
+// resolve), NOT stale.
+//
+// Fix: only register the click handler when issue.locatable === true.
+// For locatable === false, the row is non-actionable: no click handler,
+// no path to window.sketchup.locate, no path to the toast.
+// --------------------------------------------------------------------------
+
+// Track locate() invocations on the mock window.sketchup.
+var locateCalls = [];
+mockWindow.sketchup.locate = function (id) { locateCalls.push(id); };
+
+// Helper: render a fresh payload and reset state.
+function renderIssuePayload(payload) {
+  locateCalls = [];
+  mockElements['groups'].textContent = '';
+  mockElements['groups'].children = [];
+  context.window.SUAIP.render(payload);
+}
+
+// L3.1 — locatable issue calls locate exactly once.
+var payloadLocatable = {
+  selectionLabel: 'outer_g',
+  selectionType:  'Group',
+  summary: {
+    edges: 2, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+    issues: { open_endpoint: 1, deep_nesting: 1 }
+  },
+  groups: [
+    {
+      type: 'open_endpoint', count: 1, defaultOpen: true,
+      issues: [{
+        issue_id:   'open_endpoint|1|1',
+        issue_type: 'open_endpoint',
+        severity:   'medium',
+        message:    'open endpoint',
+        locatable:  true
+      }]
+    },
+    {
+      type: 'deep_nesting', count: 1, defaultOpen: false,
+      issues: [{
+        issue_id:   'deep_nesting|1|1',
+        issue_type: 'deep_nesting',
+        severity:   'low',
+        message:    'selection contains 3 levels of nested groups/components',
+        locatable:  false
+      }]
+    }
+  ]
+};
+renderIssuePayload(payloadLocatable);
+
+// Find each issue element by data-issue-id.
+function findIssueEl(id) {
+  function search(el) {
+    if (el.attrs && el.attrs['data-issue-id'] === id) return el;
+    for (var i = 0; i < el.children.length; i++) {
+      var found = search(el.children[i]);
+      if (found) return found;
+    }
+    return null;
+  }
+  return search(mockElements['groups']);
+}
+
+var openEndpointEl = findIssueEl('open_endpoint|1|1');
+var deepNestingEl  = findIssueEl('deep_nesting|1|1');
+
+assert('L3: locatable issue element exists in DOM',
+       openEndpointEl !== null);
+assert('L3: non-locatable issue element exists in DOM',
+       deepNestingEl !== null);
+
+// L3.1 — locatable row has a click listener.
+assert('L3.1: locatable row has click listener registered',
+       openEndpointEl !== null && openEndpointEl.hasListener('click') === true);
+assert('L3.1: locatable row data-locatable attr is "true"',
+       openEndpointEl !== null && openEndpointEl.attrs['data-locatable'] === 'true');
+assert('L3.1: locatable row does NOT carry no-action class',
+       openEndpointEl !== null && openEndpointEl.classes.indexOf('no-action') === -1);
+
+// L3.2 — non-locatable row has NO click listener.
+assert('L3.2: non-locatable row has NO click listener',
+       deepNestingEl !== null && deepNestingEl.hasListener('click') === false);
+assert('L3.2: non-locatable row data-locatable attr is "false"',
+       deepNestingEl !== null && deepNestingEl.attrs['data-locatable'] === 'false');
+assert('L3.2: non-locatable row carries no-action class',
+       deepNestingEl !== null && deepNestingEl.classes.indexOf('no-action') !== -1);
+
+// L3.1 — clicking the locatable row invokes locate exactly once.
+openEndpointEl.fireEvent('click');
+assert('L3.1: clicking locatable row invokes window.sketchup.locate ONCE',
+       locateCalls.length === 1);
+assert('L3.1: locate receives the issue_id',
+       locateCalls.length === 1 && locateCalls[0] === 'open_endpoint|1|1');
+
+// L3.2 — clicking the non-locatable row does NOT invoke locate
+// (and cannot, because no listener is registered).
+deepNestingEl.fireEvent('click');
+assert('L3.2: clicking non-locatable row does NOT invoke window.sketchup.locate',
+       locateCalls.length === 1); // unchanged from prior call
+
+// L3.2 (extended) — fireEvent on a row with no listener is a no-op
+// (no exception), proving the row is fully inert (no locate path,
+// no toast path).
+var beforeCalls = locateCalls.length;
+try {
+  deepNestingEl.fireEvent('click');
+  deepNestingEl.fireEvent('click');
+  deepNestingEl.fireEvent('click');
+} catch (e) {
+  assert('L3.2: clicking non-locatable row N times does NOT raise',
+         false);
+}
+assert('L3.2: clicking non-locatable row N times still does NOT invoke locate',
+       locateCalls.length === beforeCalls);
 
 // --- final verdict -----------------------------------------------------
 
