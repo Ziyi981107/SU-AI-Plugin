@@ -1,20 +1,16 @@
 # CURRENT STATE
 
-Last updated: 2026-08-19 (Coding Agent handoff from Pi → Mavis.
-                          V1.0 candidate baseline stabilized:
-                          Stage 6 Owner PASS, Gate 2 install PASS,
-                          RBZ structure PASS (CodeX 024), package-
-                          structure migration tail committed.
-                          Full suite 286/286 PASS, 0 fail, 0 error;
-                          git status shows only untracked Prompt/
-                          and Review/ files (intentionally untouched).
-                          SU2017 minimum-host verification remains
-                          the final release gate per R004, PENDING
-                          Owner host availability. Awaiting Owner
-                          next-stage direction; see
-                          Review/NEXT_STAGE_OPTIONS_2026-08-19.md.)
+Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
+                          `v1.1-layer-semantic-mapping` branch.
+                          V1.0 candidate frozen at
+                          `v1.0-candidate-2026-08-19` tag.
+                          Full suite 286/286 PASS, 0 fail, 0 error.
+                          Awaiting ChatGPT scope review on
+                          §11 questions, then CodeX plan review
+                          on §12 questions, before any V1.1
+                          implementation begins.)
 
-## Active baseline (this commit, head = 8814455 + b0c16c8)
+## Active baseline (V1.0, head of `main` = 56ea611)
 
 - V1.0 candidate is **frozen** for release decisions. Do not mix
   V1.1 / next-stage work into this baseline without re-running
@@ -33,6 +29,43 @@ Last updated: 2026-08-19 (Coding Agent handoff from Pi → Mavis.
   warning (renderIssue click-handler gate). All 286 tests PASS,
   all evidence in the lower sections of this file.
 
+## V1.1 stage (in progress, branch = `v1.1-layer-semantic-mapping`)
+
+- **Decision (Cicada 2026-08-19)**: V1.1 first stage is
+  **Layer Semantic Mapping** — read-only classification of each
+  layer into a role (:construction / :dimension / :annotation /
+  :guide / :construction_offscreen / :unknown), based on name
+  pattern + visibility, surfaced in a new "Layers" section of
+  the dialog.
+- **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md`
+  (DRAFT, 563 lines). Status = awaiting ChatGPT scope review.
+- **Reviewer routing** (per Cicada 2026-08-19 routing rule):
+  1. **ChatGPT** answers the 7 §11 scope/UX questions (section
+     position, hidden-layer ordering, role badge text, per-layer
+     counts, default-open policy, UNKNOWN role, color hints).
+  2. **CodeX** reviews the resulting plan (§12 technical
+     questions: rule ordering, fail-closed direction, edge→layer
+     attribution, sort stability).
+  3. **Agent** implements only after both reviews PASS.
+- **Baseline assumption** (will be confirmed by ChatGPT): the
+  data shape is already 90% there — `EdgeRecord#layer`,
+  `PreflightReport#layer_distribution`, and `LayerRecord` exist
+  in V1.0 but are unused. V1.1 fills the per-layer role in
+  + adds a "Layers" UI section. No new SU API beyond
+  `Layer#visible?`.
+- **Branch state**: `v1.1-layer-semantic-mapping` cut from
+  `v1.0-candidate-2026-08-19` at commit `56ea611`. No commits
+  on the branch yet (only the plan doc, kept in `Review/` per
+  the message-bus convention, untracked).
+- **Hard scope** (inherited from V1.0 + R006 = Gate 1 deferred):
+  - Read-only analysis, no model mutation, no new SU API beyond
+    `Layer#visible?`.
+  - V1.0 tests (286) MUST still pass unchanged.
+  - Gate 1 (SU2017) remains PENDING per R006; not a V1.1 blocker.
+  - Gate 2 V1.1: Owner re-runs the V1.0 checklist PLUS V1.1
+    Layers-specific checks on real SU2020 before V1.1 is
+    considered ready.
+
 ## Migration tail (commits 8814455, b0c16c8)
 
 - `8814455 chore(structure): finalize V1.0-candidate package-structure
@@ -50,20 +83,19 @@ Last updated: 2026-08-19 (Coding Agent handoff from Pi → Mavis.
 
 ## Open / pending (NOT in scope to act on now)
 
-- **Gate 1 (SU2017 minimum-host verification)**: PENDING. Owner
-  does not currently have a SU2017 host. Per R004 posture B, this
-  is a final release gate and MUST be repeated on whatever RBZ
-  is shipped. Do not block next-stage development on this; do
-  not fake SU2020 evidence as SU2017 evidence.
+- **Gate 1 (SU2017 minimum-host verification)**: PENDING. Cicada
+  (2026-08-19) has chosen to defer this until formal release.
+  Per R004 + R006 posture, this is a final release gate and
+  MUST be repeated on whatever RBZ is shipped. Do not block
+  next-stage development on this; do not fake SU2020 evidence
+  as SU2017 evidence.
+- **V1.1 plan review** (current next action): ChatGPT §11 →
+  CodeX §12. After both, Agent implements the plan.
 - **CodeX review cadence**: Pi's handoff is explicit — do NOT
   submit tiny edit packets, partial packets, or progress pings.
   Codex is reserved for: complete coherent stage, high-risk
   blocker, BLOCK recheck, final release review. Routine coding
   decisions stay with the agent.
-- **Next-stage feature direction**: NOT YET DEFINED in project
-  materials. Do not fabricate. See
-  `Review/NEXT_STAGE_OPTIONS_2026-08-19.md` for the candidate
-  menu awaiting Owner choice.
 
 ## 决策落地 (PI_TASK_001)
 
