@@ -235,3 +235,68 @@ NEXT ACTION (AFTER GATE 2)
 ============================================================
 END OF OWNER VERIFICATION CHECKLIST — RBZ INSTALL (v2)
 ============================================================
+
+============================================================
+GATE 2 RESULT — SU2020 INSTALLED RBZ (verbally confirmed PASS)
+============================================================
+
+Status:                  PASS ON SKETCHUP 2020
+Date (UTC):             2026-08-19
+Reported by:            Owner (verbal confirmation, not via
+                         this checklist; evidence retained by
+                         Owner per the standalone Owner record).
+
+Reported checklist items (per Checklist PASS criteria, line by
+line):
+
+  - Install succeeded (no error from Extension Manager):         PASS
+  - Menu registered exactly once after restart:                 PASS
+  - K1..N on the installed .rbz match Stage 6 K..N:           PASS
+  - No Ruby Console errors during boot or analyze:              PASS
+  - Uninstall is clean:                                         PASS
+
+Specifically reported (per Owner):
+
+  - After SketchUp restart, the Plugins menu contains
+    `SU-AI-Plugin > Analyze selection` (one entry).
+  - 4-edge closed Group smoke case produced:
+        Edges: 4
+        Vertices: 4
+        Warnings: 0
+  - K2 (two coincident Component instances): Edges: 2,
+    Duplicate Candidates: 1, Warnings: 0.
+  - K3 (nested Group/Component/Group, L-shape): Open Endpoints: 2,
+    Deep Nesting: 1.
+  - K4 (dangling edge Group): Open Endpoints: 2.
+  - L (Locate): duplicate and nested Locate target the correct
+    root occurrences; active_path unchanged; Deep Nesting is
+    visibly non-actionable (no Locate, no toast).
+  - M (stale source): in-dialog message + Ruby Console line; no
+    crash or model change from the Locate click.
+  - N (N MODEL UNCHANGED): MATCH = true on the closed Group.
+  - Deep Nesting warning row: no `toast`, no `register_extension`
+    call, no source mutation.
+
+Reference: CodeX Review 024 (2026-08-19) PASS WITH NITS.
+Two non-blocking nits from CodeX 024 (NOT reworked in this
+release, deferred to post-release housekeeping per CodeX 024
+explicit instruction):
+  1. version/creator/description are module methods, not
+     `SketchupExtension` object metadata setters.
+  2. Constant-redefinition warnings in the test process from
+     loading dev-tree + extracted-package copies together.
+
+NEXT (per CodeX 024 explicit instruction):
+  - Do NOT submit a new CodeX review packet between Gate 2 and
+    Gate 1 unless a real runtime failure, data-safety issue, or
+    unresolved high-risk ambiguity occurs.
+  - Run the already-defined SU2017 real-host Gate 1 checklist
+    (Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt
+    sections, repeated on a SU2017 host).
+  - After BOTH gates PASS, the Agent assembles one consolidated
+    final-release evidence packet for Final Release Review. NO
+    partial packets or incremental review requests.
+
+============================================================
+END OF GATE 2 RESULT
+============================================================
