@@ -38,14 +38,12 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   the dialog. Visibility is a SEPARATE field, NOT a role
   (R007 / ChatGPT §11.3).
 - **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md`
-  (DRAFT, 614+ lines). Status = 7 of 10 ChatGPT scope/policy
-  questions answered; 3 still pending (Q8 rule ordering, Q9
-  fail-closed direction, Q10 sort order).
+  (DRAFT, 750+ lines). Status = **all 10 ChatGPT scope/policy
+  questions answered** (Q1..Q10); awaiting implementation.
 - **Reviewer routing** (per Cicada 2026-08-19 routing rule:
   "理论上只要chatgpt能做的就不给codex做"):
   1. **ChatGPT** answers §11 — 10 plan-level policy / UX /
-     fail-closed / sort-order questions.
-     **Q1..Q7 answered 2026-08-19; Q8..Q10 pending.**
+     fail-closed / sort-order questions. **ALL ANSWERED.**
   2. **Agent self** decides §12 — 2 contained code-architecture
      questions with documented defaults (SourceReference
      extension, first-seen-wins dedup).
@@ -53,7 +51,7 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   4. **CodeX** end-of-stage review of the full V1.1
      implementation diff (§13), after tests + Gate 2 V1.1
      Owner evidence.
-- **Locked V1.1 decisions** (incorporated into the plan):
+- **Locked V1.1 decisions** (all incorporated into the plan):
   - **R007** (ChatGPT §11.3): role and visibility are SEPARATE
     fields. The `OFFSCREEN` role Symbol is REMOVED. 5 name-based
     roles only.
@@ -63,6 +61,23 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   - **R009** (ChatGPT §11.2): layer display order = role
     order, hidden layers LAST within each role bucket (with
     `opacity: 0.6` muted style).
+  - **R010** (ChatGPT §11.8): rule ordering is top-down-by-
+    priority. NOT auto-promoted by specificity. Specificity
+    may be a future tie-break / lint hint, not the main rule.
+    Test pin: a layer matching two rules gets the FIRST rule's
+    role.
+  - **R011** (ChatGPT §11.9): `layer_visibility` returns
+    `:visible | :hidden | :unknown` Symbol. The caller maps
+    `:unknown` to `LayerRecord(visible: true, visibility_unknown:
+    true)` — operational fallback is visible, but the data
+    model preserves the uncertainty. UI surfaces a third
+    badge "Visibility: unknown". We do NOT fake `false`
+    ("confirmed hidden") when the answer is "I don't know".
+  - **R012** (ChatGPT §11.10): layer role order is INDEPENDENT
+    from `IssueRegistry::DEFAULT_GROUP_ORDER`. Locked as
+    `[dimension, annotation, guide, construction, unknown]`.
+    Issue type and semantic role are two different information
+    systems.
   - Layers section BELOW per-issue-type groups (ChatGPT §11.1).
   - Layers `<details>` default-closed, summary shows
     `"Layers — N total (M with issues)"` (ChatGPT §11.5).
@@ -83,6 +98,8 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   - Gate 2 V1.1: Owner re-runs the V1.0 checklist PLUS V1.1
     Layers-specific checks on real SU2020 before V1.1 is
     considered ready.
+- **Next action**: Agent self implements per the plan + §12
+  defaults, then CodeX end-of-stage review.
 
 ## Migration tail (commits 8814455, b0c16c8)
 
