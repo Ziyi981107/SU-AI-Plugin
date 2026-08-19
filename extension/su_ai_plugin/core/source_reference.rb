@@ -51,11 +51,13 @@ module SUAnalysis
     class SourceReference
       attr_reader :entity_id, :persistent_id, :kind, :label,
                   :persistent_id_path, :instance_path,
-                  :structural_depth, :pid_path_complete
+                  :structural_depth, :pid_path_complete,
+                  :layer_name
 
       def initialize(entity_id: nil, persistent_id: nil, kind: 'edge', label: nil,
                      instance_path: nil, persistent_id_path: nil,
-                     structural_depth: 0, pid_path_complete: false)
+                     structural_depth: 0, pid_path_complete: false,
+                     layer_name: nil)
         # entity_id is optional (nil allowed for fully-missing SourceReferences
         # in test fixtures). In production, callers should always supply it.
         @entity_id     = entity_id.nil? ? nil : Integer(entity_id)
@@ -74,6 +76,13 @@ module SUAnalysis
                          end
         @structural_depth    = structural_depth.to_i
         @pid_path_complete   = pid_path_complete ? true : false
+        # V1.1 (per plan §12 default + R007): layer_name is captured
+        # at snapshot time. The LayerIssueGrouper reads this directly
+        # from the SourceReference it wraps, without re-looking-up
+        # the layer from the entity. V1.0 callers do not supply
+        # this; default is nil, which the grouper maps to "Layer0"
+        # via the V1.0 fallback.
+        @layer_name = layer_name.nil? ? nil : layer_name.to_s
       end
 
       def stable?
@@ -101,7 +110,8 @@ module SUAnalysis
           instance_path:      @instance_path,
           persistent_id_path: @persistent_id_path,
           structural_depth:    @structural_depth,
-          pid_path_complete:   @pid_path_complete
+          pid_path_complete:   @pid_path_complete,
+          layer_name:         @layer_name
         }
       end
     end
