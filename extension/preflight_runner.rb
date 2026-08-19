@@ -70,10 +70,18 @@ module SUAnalysis
       # instead of identity. The active path's PIDs are prepended to
       # each yielded entity's pid_path.
       def build_snapshot(selection, model: nil)
-        # Per CodeX Round 020 REAL-HOST BLOCK: the real SketchUp::Selection
-        # object is not always safe to iterate more than once. Some SU
-        # versions (and some Selection-like mocks) consume the iteration
-        # state on the first .each, so a subsequent .each yields 0 items.
+        # Per CodeX Round 020 REAL-HOST BLOCK (recheck):
+        #   (1) The real SketchUp::Selection object is not always safe
+        #       to iterate more than once. Some SU versions (and some
+        #       Selection-like mocks) consume iteration state on the
+        #       first .each, so a subsequent .each yields 0 items.
+        #   (2) On SU2020, `Sketchup::Selection#to_ary` (Ruby's strict
+        #       array-coercion protocol) returns an empty Array even
+        #       when the selection contains entities. Treating `to_ary`
+        #       as an authoritative conversion path silently empties
+        #       the normalized selection. We must NOT use `to_ary`; we
+        #       use `to_a` (documented public API) with `each` as the
+        #       universal fallback.
         # We normalize the input to a stable Array at the boundary so
         # preflight + walk + label extraction all see the same set.
         selection = normalize_selection(selection)
@@ -136,40 +144,61 @@ module SUAnalysis
       end
 
       # -----------------------------------------------------------------
-      # CodeX Round 020 REAL-HOST BLOCK: normalize selection at the
-      # boundary so both preflight + walk see the same stable entity
-      # array. The real SketchUp::Selection (and any one-shot
+      # CodeX Round 020 REAL-HOST BLOCK (recheck): normalize selection
+      # at the boundary so both preflight + walk see the same stable
+      # entity array. The real SketchUp::Selection (and any one-shot
       # Selection-like enumerable) is not always safe to iterate
-      # more than once.
+      # more than once, AND on SU2020 the host's Selection#to_ary
+      # returns an empty Array even when the selection contains
+      # entities (Ruby's strict array-coercion protocol is honored
+      # to mean "[]", NOT to mean "the selected entities"). We must
+      # NOT trust `to_ary`; use `to_a` (documented public API) as
+      # the one-pass capture, with `each` as the universal fallback.
       # -----------------------------------------------------------------
 
       # Public: convert any selection-like input to a stable Array.
       # Returns [] for nil. For Array inputs, returns a copy (so
       # downstream mutation of the result does not leak back).
       # For Selection-like objects:
-      #   1. try to_ary (official Ruby coercion) and rescue on failure
+      #   1. try to_a (documented Sketchup::Selection public API) and
+      #      rescue on failure. This is the authoritative one-pass
+      #      capture path. NEVER use `to_ary`: SU2020's
+      #      Sketchup::Selection#to_ary returns [] even when the
+      #      selection has entities, which silently empties the
+      #      normalized selection and breaks the whole analysis.
       #   2. fallback to manual each (rescue on iteration failure)
-      #   3. last resort: empty array
+      #      if to_a is not available OR returns a non-Array.
+      #   3. last resort: empty array.
       def normalize_selection(input)
         return [] if input.nil?
         return input.dup if input.is_a?(Array)
-        if input.respond_to?(:to_ary)
+
+        # 1. Prefer `to_a` (documented Sketchup::Selection public API).
+        #    On SU2020 this returns the actual selected entities as a
+        #    fresh Array; subsequent calls return fresh copies, so the
+        #    capture is safe and stable.
+        if input.respond_to?(:to_a)
           begin
-            arr = input.to_ary
-            return arr if arr.is_a?(Array)
+            arr = input.to_a
+            return arr.dup if arr.is_a?(Array)
+            # to_a returned a non-Array; fall through to manual each.
           rescue StandardError
-            # to_ary raised; fall through to manual each
+            # to_a raised; fall through to manual each.
           end
         end
+
+        # 2. Fall back to manual `each` iteration. Handles objects
+        #    that don't implement `to_a` but DO iterate.
         if input.respond_to?(:each)
           arr = []
           begin
             input.each { |e| arr << e }
           rescue StandardError
-            # iteration raised; return whatever we collected so far
+            # iteration raised; return whatever we collected so far.
           end
           return arr
         end
+
         []
       end
 

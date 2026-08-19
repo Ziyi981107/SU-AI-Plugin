@@ -47,10 +47,15 @@ module SUAnalysis
         # same stable entity array. Per CodeX Round 020 REAL-HOST
         # BLOCK: the real SketchUp::Selection is not always safe to
         # iterate more than once.
-        normalized = SUAnalysis::Extension::PreflightRunner.normalize_selection(selection)
+        # NOTE: keep this variable named `normalized_selection` (NOT
+        # `normalized`); see step 4 below for why. The variable name
+        # collision masked a critical bug where the issue-normalization
+        # array shadowed the selection array, leaving selection_type
+        # empty when the closed-rectangle case produced zero issues.
+        normalized_selection = SUAnalysis::Extension::PreflightRunner.normalize_selection(selection)
 
         # 1. Build snapshot + preflight.
-        snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(normalized, model: model)
+        snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(normalized_selection, model: model)
         # Run the pure-Ruby PreflightAnalyzer on the snapshot so the
         # preflight is a real PreflightReport (responds to :edge_count,
         # :vertex_count, etc.). Per CodeX Round 020 REAL-HOST BLOCK:
@@ -78,15 +83,23 @@ module SUAnalysis
         snapshot_lookup = build_snapshot_lookup(snapshot)
 
         # 4. Normalize raw issues + preflight warnings.
-        normalized = []
+        # NOTE: the variable is named `normalized_issues` (NOT
+        # `normalized`) to avoid shadowing `normalized_selection`
+        # above. Round 020 REAL-HOST BLOCK recheck fix: the prior
+        # name `normalized` caused `selection_label_for(normalized)`
+        # and `classification_label(normalized)` at the bottom of
+        # run() to be called on the issues array (often empty for
+        # a closed rectangle), not on the selection array — which
+        # surfaced to the Owner as `result.selection_type == 'empty'`.
+        normalized_issues = []
         raw_issues.each do |raw|
           out = SUAnalysis::Core::IssueNormalizer.normalize_analyzer_issue(raw)
-          normalized << out if out
+          normalized_issues << out if out
         end
         SUAnalysis::Core::IssueNormalizer.normalize_preflight_warnings(
           preflight.respond_to?(:warnings) ? preflight.warnings : []
         ).each do |pf|
-          normalized << pf
+          normalized_issues << pf
         end
 
         # 5. Enrich (deterministic ids + locatable).
@@ -97,7 +110,7 @@ module SUAnalysis
         # appends to whatever array we pass in; the SAME array is
         # what AnalysisResult.diagnostics reads.
         enriched = SUAnalysis::Core::IssueEnricher.enrich_all(
-          normalized, snapshot_lookup: snapshot_lookup
+          normalized_issues, snapshot_lookup: snapshot_lookup
         )
 
         # 6. Build IssueRegistry (drops malformed issues with diagnostics).
@@ -106,8 +119,13 @@ module SUAnalysis
         # 7. Display unit formatting (lengths only).
         display_data = SUAnalysis::Extension::DisplayUnitFormatter.format_all(registry.issues)
 
-        # 8. Selection label.
-        selection_label = selection_label_for(normalized)
+        # 8. Selection label and classification. These MUST use
+        # `normalized_selection` (the selection array), NOT
+        # `normalized_issues`. Per Round 020 REAL-HOST BLOCK recheck:
+        # when these were called on the (possibly empty) issues array,
+        # the Owner saw `result.selection_type == 'empty'` even though
+        # the selection contained a 4-edge Group.
+        selection_label = selection_label_for(normalized_selection)
 
         # 9. Frozen immutable result.
         SUAnalysis::Core::AnalysisResult.new(
@@ -116,7 +134,7 @@ module SUAnalysis
           snapshot_lookup:  snapshot_lookup,
           display_data:     display_data,
           diagnostics:      diagnostics,
-          selection_type:   classification_label(normalized),
+          selection_type:   classification_label(normalized_selection),
           selection_label:  selection_label
         )
       end

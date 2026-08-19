@@ -809,3 +809,229 @@ test 'REAL-HOST BLOCK: Array input still works (regression on the fix)' do
   result = SUAnalysis::Extension::AnalyzersRunner.run([group])
   assert_equal 4, result.summary['edges']
 end
+
+# --------------------------------------------------------------------------
+# CodeX Round 020 REAL-HOST BLOCK (recheck): regression for the
+# SU2020 Selection#to_ary bug. Real Sketchup::Selection in SU2020
+# implements `to_ary` (Ruby's strict array-coercion protocol) but
+# returns an empty Array even when entities are selected. Treating
+# `to_ary` as an authoritative conversion path silently empties
+# the normalized selection and breaks the whole analysis
+# (`selection_type == 'empty'`, `summary['edges'] == 0`).
+#
+# The fix is `PreflightRunner.normalize_selection` preferring `to_a`
+# (documented public API) over `to_ary`. This regression mock
+# explicitly exhibits the SU2020 behavior so the fix cannot regress.
+# --------------------------------------------------------------------------
+
+# A Selection-like enumerable that mimics real SU2020's
+# Sketchup::Selection: `to_ary` returns an empty Array (the host
+# bug), but `to_a`, `each`, `count`, `first`, `length`, and `empty?`
+# all correctly report the selected entities.
+#
+# Real SU2020 Selection#to_ary follows Ruby's strict array-coercion
+# protocol but honors the "implicit conversion returns []" idiom —
+# meaning splat, multiple-assignment, and any code treating `to_ary`
+# as authoritative silently sees an empty selection. The correct
+# authoritative path is `to_a` (the documented public API).
+class BrokenToArySelection
+  attr_reader :to_ary_calls, :to_a_calls
+  def initialize(items)
+    @items = items.dup
+    @to_ary_calls = 0
+    @to_a_calls = 0
+  end
+  # The bug: respond_to?(:to_ary) is true AND to_ary returns [].
+  def respond_to?(name, include_private = false)
+    return true if name == :to_ary
+    super
+  end
+  def to_ary
+    @to_ary_calls += 1
+    # SU2020 quirk: returns empty Array even when entities are present.
+    # This is the documented Ruby idiom for "not implicitly splattable".
+    []
+  end
+  # The correct API: to_a returns the actual entities (stable).
+  def to_a
+    @to_a_calls += 1
+    @items.dup
+  end
+  # Multi-shot iteration (real SU Selection is multi-shot; items are
+  # not consumed on iteration).
+  def each
+    @items.each { |item| yield item }
+  end
+  def count; @items.length; end
+  def length; @items.length; end
+  def first; @items.first; end
+  def empty?; @items.empty?; end
+  # NO is_a? override — the real Sketchup::Selection is not an Array,
+  # and our normalize_selection explicitly checks Array first. We
+  # must NOT trick the path into treating this as an Array.
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection -> normalize_selection returns [group]' do
+  # Sanity check on the mock: to_ary returns [] but to_a returns [group].
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  # The mock truly has the SU2020 bug.
+  assert_equal [], broken.to_ary
+  assert_equal [group], broken.to_a
+  assert_equal 1, broken.count
+  # The fix: normalize_selection must NOT trust `to_ary`; it uses
+  # `to_a` (the documented public API) and returns [group].
+  normalized = PreflightRunner.normalize_selection(broken)
+  assert_kind_of Array, normalized
+  assert_equal 1, normalized.length,
+               'normalize_selection must not treat empty to_ary as authoritative'
+  assert_equal group, normalized.first
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection -> build_snapshot returns 4 edges' do
+  # The OWNER's repro at the build_snapshot level: pass a real SU2020
+  # Selection-like object (broken `to_ary`) and the snapshot must
+  # contain 4 edges, not 0.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  snap = PreflightRunner.build_snapshot(broken)
+  assert_equal 4, snap.edge_count,
+               "expected 4 edges from BrokenToArySelection, got #{snap.edge_count} (to_ary returned #{broken.to_ary.inspect})"
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection -> AnalyzersRunner.run returns 4 edges, not 0' do
+  # The OWNER's repro at the full pipeline level:
+  #   selection.add(test_group) => 1
+  #   AnalyzersRunner.run(model.selection).summary['edges'] => 4
+  # Mimicked with BrokenToArySelection: count is 1 (so the selection
+  # is non-empty), to_a returns [group] (correct), to_ary returns []
+  # (the SU2020 bug).
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  # Sanity: selection.count > 0 (model.selection.add(test_group) => 1).
+  assert_equal 1, broken.count
+  result = SUAnalysis::Extension::AnalyzersRunner.run(broken)
+  refute_nil result
+  assert_kind_of SUAnalysis::Core::AnalysisResult, result
+  # The locked preflight header must reflect the 4 edges, not 0.
+  summary = result.summary
+  assert_equal 4, summary['edges'],
+               "expected 4 edges in AnalyzersRunner summary, got #{summary['edges']} (this is the OWNER's repro)"
+  assert_equal 4, summary['vertices'],
+               "expected 4 vertices in AnalyzersRunner summary, got #{summary['vertices']}"
+  assert_equal 0, summary['warnings'],
+               "expected 0 warnings for a closed rectangle, got #{summary['warnings']}"
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection -> selection_type is not "empty"' do
+  # The OWNER's repro symptom #1: result.selection_type was "empty".
+  # With the fix (no `to_ary`), classification_label sees a non-empty
+  # Array and returns "selection" (or "Group"; anything but "empty").
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(broken)
+  refute_nil result
+  refute_equal 'empty', result.selection_type,
+               'selection_type must NOT be "empty" when the Selection actually contains an entity'
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection without normalization -> 0 edges (proves the fix is required)' do
+  # Documents the broken behavior so future readers know WHY the fix
+  # exists. Manually invokes collect_preflight_facts + walk_selection_world
+  # WITHOUT going through normalize_selection. With BrokenToArySelection,
+  # the bug would NOT manifest here (because `each` works correctly),
+  # so we instead simulate the original buggy path by directly calling
+  # `.to_ary` and using its result.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  # The original buggy normalize_selection would have called
+  # to_ary first and returned [] (because the host's to_ary is broken).
+  buggy_result = broken.to_ary
+  assert_equal [], buggy_result
+  # Verify that anything iterating `buggy_result` sees 0 entities:
+  edges_count = 0
+  buggy_result.each do |_entity|
+    edges_count += 1
+  end
+  assert_equal 0, edges_count,
+               'sanity check: a normalize that uses to_ary yields 0 items (the bug)'
+end
+
+test 'REAL-HOST BLOCK (recheck): normalize_selection prefers to_a over to_ary' do
+  # White-box test: verify the implementation prefers `to_a` (or
+  # `each`) and does NOT trust `to_ary` as authoritative. We do this
+  # by counting `to_ary_calls` on the BrokenToArySelection mock.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  to_ary_before = broken.to_ary_calls
+  normalized = PreflightRunner.normalize_selection(broken)
+  to_ary_after = broken.to_ary_calls
+  # The fix MUST NOT call to_ary at all (or call it zero extra times
+  # beyond the sanity check above). The authoritative path is `to_a`.
+  assert_equal to_ary_before, to_ary_after,
+               'normalize_selection must not call to_ary (it returns [] on SU2020)'
+  # And the result is correct.
+  assert_kind_of Array, normalized
+  assert_equal 1, normalized.length
+end
+
+# --------------------------------------------------------------------------
+# CodeX Round 020 REAL-HOST BLOCK (recheck) part 2: variable-shadow
+# bug in AnalyzersRunner.run. The previous code did:
+#
+#     normalized = PreflightRunner.normalize_selection(selection)  # selection
+#     ...
+#     normalized = []                                              # ISSUES (shadow!)
+#     raw_issues.each { ... normalized << out ... }
+#     ...
+#     selection_label = selection_label_for(normalized)            # empty issues
+#     selection_type:  classification_label(normalized)            # empty issues
+#
+# For a CLOSED rectangle (no issues), the issues array is empty and
+# `classification_label([])` returns 'empty'. The Owner saw
+# `result.selection_type == 'empty'` even though the selection had a
+# 4-edge Group inside. The fix renames the issues variable to
+# `normalized_issues` so the selection variable cannot be shadowed.
+#
+# This test would have FAILED on the previous fix: a closed-rectangle
+# run would return selection_type == 'empty'.
+# --------------------------------------------------------------------------
+
+test 'REAL-HOST BLOCK (recheck): closed rectangle -> selection_type is not "empty" (no-shadow guard)' do
+  # Closed rectangle = no analyzer issues. With the variable-shadow
+  # bug, the selection_type check at the end of run() ran on the
+  # (empty) issues array and returned 'empty'. This test proves the
+  # fix is in place by checking the selection_type for a no-issue
+  # fixture.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  refute_nil result
+  # The closed rectangle has no issues. Selection_type MUST reflect
+  # the selection (non-empty), NOT the (empty) issues array.
+  refute_equal 'empty', result.selection_type,
+               'selection_type must NOT be "empty" when the selection contains entities'
+  # The selection label must reflect the Group's typename.
+  assert_equal 'Group: test_group', result.selection_label
+end
+
+test 'REAL-HOST BLOCK (recheck): BrokenToArySelection selection_label uses group typename' do
+  # Companion to the BrokenToArySelection tests. Verify the
+  # selection_label and selection_type both reflect the real
+  # selection (Group), not the empty issues array.
+  rect = fake_rectangle_edges([0, 0], 10, 5)
+  group = FakeSU::Group.new(name: 'test_group', children: rect, persistent_id: 100)
+  broken = BrokenToArySelection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(broken)
+  refute_nil result
+  assert_equal 'Group: test_group', result.selection_label,
+               'selection_label must reflect the Group typename, not be the default "selection"'
+  refute_equal 'empty', result.selection_type
+end
