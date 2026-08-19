@@ -28,6 +28,37 @@
 module SUAnalysis
   module Core
     module IssueNormalizer
+      # Per CodeX Round 020 REAL-HOST BLOCK (recheck):
+      #
+      # The previous version used:
+      #
+      #     module_function
+      #     # ... public API defs ...
+      #     private
+      #     # ... helper defs ...
+      #
+      # That was broken: `private` overrides the `module_function`
+      # flag for subsequent methods, so the helpers became PRIVATE
+      # INSTANCE METHODS only (not module methods). They could still
+      # be called when the test file did `include
+      # SUAnalysis::Core::IssueNormalizer` (because including M puts
+      # M's private instance methods into Object's ancestor chain,
+      # which is reachable from any Module object's method dispatch).
+      # But on real production code paths (extension/analyzers_runner.rb
+      # calls `SUAnalysis::Core::IssueNormalizer.normalize_analyzer_issue(raw)`
+      # with no prior `include`), the implicit-self call inside that
+      # module method to `normalize_location(...)` raised
+      # `NoMethodError: undefined method 'normalize_location' for
+      # SUAnalysis::Core::IssueNormalizer:Module`. The first issue
+      # with a non-nil 3D location crashed the whole command.
+      #
+      # Fix: ALL helpers are now defined after `module_function` so
+      # they ARE module singleton methods (callable both from
+      # production's `M.normalize_analyzer_issue(...)` form and from
+      # inside-the-module implicit-self form). Helpers are then marked
+      # `private_class_method` to keep the "intended visibility"
+      # (callers from outside the module should not use them
+      # directly; they are internal).
       module_function
 
       # Per-R005 severity assignment keyed by analyzer `kind` or
@@ -42,6 +73,10 @@ module SUAnalysis
         'abnormal_large_coord'       => 'high',
         'deep_nesting'               => 'low'
       }.freeze
+
+      # ----- public API (module singleton methods, callable from
+      #       extension/analyzers_runner.rb's `SUAnalysis::Core::IssueNormalizer.xxx`
+      #       form) -----
 
       # Convert an analyzer-emitted Hash (Integer kind, String
       # severity, etc.) into a NORMALIZED Hash with Symbol keys and
@@ -114,7 +149,11 @@ module SUAnalysis
         SEVERITY_BY_TYPE[issue_type.to_s] || 'medium'
       end
 
-      private
+      # ----- private helpers (also module singleton methods so they
+      #       are reachable from inside public-API module methods).
+      #       Marked `private_class_method` at the bottom of this
+      #       module so callers from outside cannot use them
+      #       directly. -----
 
       def canonical_preflight_code(symbol_code)
         s = symbol_code.to_s
@@ -160,6 +199,21 @@ module SUAnalysis
         end
         out
       end
+
+      # Mark the helpers as PRIVATE module singleton methods. They
+      # remain callable from inside the module (via implicit-self
+      # from public-API methods above), but external callers like
+      # `SUAnalysis::Core::IssueNormalizer.normalize_location(...)`
+      # now raise `NoMethodError: private method 'normalize_location'`
+      # — which is the intended visibility contract. This preserves
+      # the original `private` intent (helpers should not be part of
+      # the module's public API surface) WITHOUT breaking the
+      # module-method dispatch path.
+      private_class_method :canonical_preflight_code,
+                           :severity_for_preflight,
+                           :normalize_location,
+                           :sanitize_message,
+                           :normalize_metadata
     end
   end
 end
