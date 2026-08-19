@@ -1,14 +1,14 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (REAL-HOST BLOCK (Owner-reported on
-                          SketchUp 2020) CLOSED: Selection
-                          normalization at the boundary +
-                          PreflightReport wired into
-                          AnalyzersRunner.run so .summary
-                          reads real edge counts. Full suite
-                          252/252 PASS, 0 fail, 0 error; git
-                          diff --check clean. Awaiting Owner
-                          re-run of K..N on real SU 2020.)
+Last updated: 2026-08-18 (REAL-HOST BLOCK recheck CLOSED:
+                          normalize_selection uses to_a (NOT
+                          to_ary) + AnalyzersRunner.run guards
+                          against variable shadow between
+                          normalized_selection and
+                          normalized_issues. Full suite
+                          260/260 PASS, 0 fail, 0 error;
+                          git diff --check clean. Awaiting
+                          Owner re-run of K..N on real SU 2020.)
 
 ## 决策落地 (PI_TASK_001)
 
@@ -492,7 +492,7 @@ SU2017 minimum-host verification (release Gate, per R004; not a
 Stage 6 blocker). After that, packaging / .rbz for the SketchUp
 Extension Manager.
 
-## REAL-HOST BLOCK (Owner repro 2026-08-18) �� CLOSED
+## REAL-HOST BLOCK (Owner repro 2026-08-18) �� CLOSED
 
 **Verdict**: BLOCK reported by Owner via direct message (not via
 CodeX in Prompt/). Root cause: two related gaps.
@@ -551,3 +551,94 @@ Owner re-runs the required recheck on real SU 2020:
 - Menu Analyze selection on the 4-edge Group must show
   `Edges: 4, Vertices: 4, Warnings: 0`.
 - Then rerun Owner K..N per `Review/OWNER_VERIFICATION_STAGE_6.txt`.
+
+## REAL-HOST BLOCK (Owner repro 2026-08-18, RECHECK) — CLOSED
+
+**Verdict**: BLOCK REOPEN from Owner on the same SketchUp 2020 repro.
+The previous fix's `to_ary`-first strategy was NOT valid for the real
+host: `Sketchup::Selection#to_ary` returns an empty Array on SU2020
+even when entities are selected. A second latent bug also surfaced:
+`AnalyzersRunner.run` reused the variable name `normalized` for both
+the selection array and the issues array, so `classification_label`
+saw the (empty) issues array and returned `'empty'`. Both fixed.
+
+### Code-side changes (commit `efe2242`)
+- `extension/preflight_runner.rb`:
+  - `normalize_selection` no longer trusts `to_ary`. New priority:
+    1. `to_a` (documented Sketchup::Selection public API; one-pass
+       capture returning a stable Array).
+    2. Manual `each` iteration (fallback when `to_a` is missing
+       or returns non-Array).
+    3. Empty array.
+  - On SU2020, `Sketchup::Selection#to_ary` returns [] even when
+    entities are selected (Ruby's strict array-coercion idiom),
+    so any path treating `to_ary` as authoritative silently empties
+    the normalized selection. The fix prefers `to_a` (the documented
+    API).
+  - `build_snapshot` calls `normalize_selection` at the very top.
+- `extension/analyzers_runner.rb`:
+  - The selection-boundary variable is renamed to
+    `normalized_selection`. The issue-normalization array is renamed
+    to `normalized_issues`. The two MUST NOT share a name: with the
+    previous single-name `normalized`, the variable was shadowed
+    inside the run() body (after `normalized = []` for issues),
+    causing `selection_label_for(normalized)` and
+    `classification_label(normalized)` at the end of run() to be
+    called on the issues array (often empty for a closed rectangle).
+  - For the OWNER's repro (4-edge Group): `classification_label`
+    now sees the `[group]` array, not `[]`, so
+    `result.selection_type == 'selection'` (NOT `'empty'`), and
+    `result.selection_label == 'Group: test_group'`.
+
+### Test-side changes
+- `tests/test_preflight_runner.rb`: NEW `BrokenToArySelection` mock
+  that explicitly mimics the SU2020 bug — `respond_to?(:to_ary)` is
+  true, `to_ary` returns `[]`, but `to_a` / `count` / `each` /
+  `first` / `length` / `empty?` all correctly report the entities.
+  8 new regression tests:
+  1. `normalize_selection` with BrokenToArySelection returns
+     `[group]` (not `[]`).
+  2. `build_snapshot` with BrokenToArySelection returns 4 edges.
+  3. `AnalyzersRunner.run` with BrokenToArySelection returns
+     `summary['edges'] == 4`, `vertices == 4`, `warnings == 0`.
+  4. `selection_type != 'empty'` for BrokenToArySelection.
+  5. White-box: `normalize_selection` does NOT call `to_ary`.
+  6. Closed-rectangle `selection_type != 'empty'` (variable-shadow
+     guard).
+  7. `selection_label == 'Group: test_group'` (uses the Group's
+     typename + name, not the generic default).
+  8. (Existing) OneShotEnumerable tests still pass (5 tests).
+
+### Required Owner recheck (on real SU 2020)
+Per the OWNER's required recheck criteria:
+1. `selection.add(test_group)` => 1.
+2. `AnalyzersRunner.run(model.selection).summary['edges']` => 4.
+3. `result.selection_type` must NOT be `"empty"`.
+4. Menu dialog must show Edges: 4, Vertices: 4, Warnings: 0.
+All four are now covered by automated fake-host tests. The OWNER
+should rerun J..N on real SU 2020 to close the loop.
+
+### Lessons
+- **Do NOT trust `to_ary` as an authoritative conversion path on
+  SketchUp Selection.** SU2020's `Selection#to_ary` returns `[]`
+  even when the selection contains entities. The documented public
+  API is `to_a`; the `to_ary` is a Ruby-implicit-coercion marker
+  that SketchUp honors with the empty-Array idiom.
+- **Avoid variable shadow in long methods.** `AnalyzersRunner.run`
+  is ~50 lines; reusing the name `normalized` for two semantically
+  different arrays (selection vs issues) caused a silent bug
+  (`selection_type == 'empty'`) that only surfaced on real host
+  with a no-issue selection (closed rectangle). The fix uses
+  distinct names: `normalized_selection` and `normalized_issues`.
+- **The fake-host suite is only as strong as its mocks.**
+  `FakeSU::Selection` does NOT mimic the SU2020 `to_ary` bug, so
+  the previous round's tests could not surface it. The new
+  `BrokenToArySelection` mock explicitly exhibits the broken
+  `to_ary` to prove the fix and to catch any regression.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section 6)
+- Does NOT change R001-R005 product decisions.
+- Does NOT expand product scope (no overlay, no repair, no mutation).
+- Does NOT push / publish / release.
+- Does NOT skip Owner verification.
+- Does NOT fake SU2017 as SU2020 evidence.
