@@ -1,13 +1,69 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (Stage 6 Owner verification PASS on
-                          real SketchUp 2020 K1..N. Stage 7
-                          TASK 001 IMPLEMENTATION REPORT ready
-                          for Owner acceptance. Full suite
-                          273/273 PASS, 0 fail, 0 error; git
-                          diff --check clean. SU2017 minimum-
-                          host verification remains the final
-                          release gate per R004.)
+Last updated: 2026-08-19 (Coding Agent handoff from Pi → Mavis.
+                          V1.0 candidate baseline stabilized:
+                          Stage 6 Owner PASS, Gate 2 install PASS,
+                          RBZ structure PASS (CodeX 024), package-
+                          structure migration tail committed.
+                          Full suite 286/286 PASS, 0 fail, 0 error;
+                          git status shows only untracked Prompt/
+                          and Review/ files (intentionally untouched).
+                          SU2017 minimum-host verification remains
+                          the final release gate per R004, PENDING
+                          Owner host availability. Awaiting Owner
+                          next-stage direction; see
+                          Review/NEXT_STAGE_OPTIONS_2026-08-19.md.)
+
+## Active baseline (this commit, head = 8814455 + b0c16c8)
+
+- V1.0 candidate is **frozen** for release decisions. Do not mix
+  V1.1 / next-stage work into this baseline without re-running
+  Gate 2 + Gate 1 on the resulting RBZ.
+- Stage 6 owner verification: PASS (K..N real-SU2020, including
+  closed group / duplicate component / deep nesting / dangling
+  edge).
+- Gate 2 install: PASS (dist/SU-AI-Plugin.rbz installed on
+  SU2020, Owner verbal confirm recorded in
+  Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt).
+- RBZ package + root loader structure: PASS (CodeX Review 024
+  recheck closed BLOCK-022-001 and BLOCK-023-001/002).
+- Real-host fixes closed this week: REAL-HOST BLOCK (to_a +
+  variable-shadow), K2 duplicate-component crash
+  (IssueNormalizer private/module_function), L3 non-locatable
+  warning (renderIssue click-handler gate). All 286 tests PASS,
+  all evidence in the lower sections of this file.
+
+## Migration tail (commits 8814455, b0c16c8)
+
+- `8814455 chore(structure): finalize V1.0-candidate package-structure
+  migration` — removes the 24 legacy root-level `core/*` and
+  `compatibility/*` files that were duplicated at
+  `extension/su_ai_plugin/{core,compatibility}/` since 7b722b9
+  (RBZ standard contract commit).
+- `b0c16c8 chore(scripts): add stop_monitor.ps1 helper` — adds
+  the missing workflow companion to the already-tracked
+  `prompt_monitor.ps1` / `restart_monitor.ps1` /
+  `check_monitor.ps1` / `prompt_monitor_one_shot.ps1`.
+- These are pure cleanup, no product-scope, no compatibility,
+  no release-promise changes. No Codex review was triggered;
+  ordinary implementation decision per the handoff protocol.
+
+## Open / pending (NOT in scope to act on now)
+
+- **Gate 1 (SU2017 minimum-host verification)**: PENDING. Owner
+  does not currently have a SU2017 host. Per R004 posture B, this
+  is a final release gate and MUST be repeated on whatever RBZ
+  is shipped. Do not block next-stage development on this; do
+  not fake SU2020 evidence as SU2017 evidence.
+- **CodeX review cadence**: Pi's handoff is explicit — do NOT
+  submit tiny edit packets, partial packets, or progress pings.
+  Codex is reserved for: complete coherent stage, high-risk
+  blocker, BLOCK recheck, final release review. Routine coding
+  decisions stay with the agent.
+- **Next-stage feature direction**: NOT YET DEFINED in project
+  materials. Do not fabricate. See
+  `Review/NEXT_STAGE_OPTIONS_2026-08-19.md` for the candidate
+  menu awaiting Owner choice.
 
 ## 决策落地 (PI_TASK_001)
 
