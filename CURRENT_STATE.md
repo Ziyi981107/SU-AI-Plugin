@@ -1,17 +1,13 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (L3 non-locatable warning CLOSED:
-                          renderIssue now gates the click
-                          handler on issue.locatable === true.
-                          Non-locatable rows (preflight hazards
-                          like deep_nesting) carry a `no-action`
-                          CSS class and have NO click listener,
-                          so window.sketchup.locate is NEVER
-                          invoked for them — no stale-source
-                          toast. Full suite 273/273 PASS, 0 fail,
-                          0 error; git diff --check clean.
-                          Awaiting Owner re-run of K..N on real
-                          SU 2020.)
+Last updated: 2026-08-18 (Stage 6 Owner verification PASS on
+                          real SketchUp 2020 K1..N. Stage 7
+                          TASK 001 IMPLEMENTATION REPORT ready
+                          for Owner acceptance. Full suite
+                          273/273 PASS, 0 fail, 0 error; git
+                          diff --check clean. SU2017 minimum-
+                          host verification remains the final
+                          release gate per R004.)
 
 ## 决策落地 (PI_TASK_001)
 
