@@ -34,15 +34,18 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
 - **Decision (Cicada 2026-08-19)**: V1.1 first stage is
   **Layer Semantic Mapping** — read-only classification of each
   layer into a role (:construction / :dimension / :annotation /
-  :guide / :construction_offscreen / :unknown), based on name
-  pattern + visibility, surfaced in a new "Layers" section of
-  the dialog.
+  :guide / :unknown), surfaced in a new "Layers" section of
+  the dialog. Visibility is a SEPARATE field, NOT a role
+  (R007 / ChatGPT §11.3).
 - **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md`
-  (DRAFT, 563 lines). Status = awaiting ChatGPT scope review.
+  (DRAFT, 614+ lines). Status = 7 of 10 ChatGPT scope/policy
+  questions answered; 3 still pending (Q8 rule ordering, Q9
+  fail-closed direction, Q10 sort order).
 - **Reviewer routing** (per Cicada 2026-08-19 routing rule:
   "理论上只要chatgpt能做的就不给codex做"):
-  1. **ChatGPT** answers §11 — all 10 plan-level policy / UX /
-     fail-closed / sort-order questions (no source/diff needed).
+  1. **ChatGPT** answers §11 — 10 plan-level policy / UX /
+     fail-closed / sort-order questions.
+     **Q1..Q7 answered 2026-08-19; Q8..Q10 pending.**
   2. **Agent self** decides §12 — 2 contained code-architecture
      questions with documented defaults (SourceReference
      extension, first-seen-wins dedup).
@@ -50,16 +53,28 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   4. **CodeX** end-of-stage review of the full V1.1
      implementation diff (§13), after tests + Gate 2 V1.1
      Owner evidence.
-- **Baseline assumption** (will be confirmed by ChatGPT): the
-  data shape is already 90% there — `EdgeRecord#layer`,
-  `PreflightReport#layer_distribution`, and `LayerRecord` exist
-  in V1.0 but are unused. V1.1 fills the per-layer role in
-  + adds a "Layers" UI section. No new SU API beyond
-  `Layer#visible?`.
+- **Locked V1.1 decisions** (incorporated into the plan):
+  - **R007** (ChatGPT §11.3): role and visibility are SEPARATE
+    fields. The `OFFSCREEN` role Symbol is REMOVED. 5 name-based
+    roles only.
+  - **R008** (ChatGPT §11.7): no role color hints in V1.1.
+    Roles use text + neutral badge. V1.0 issue severity palette
+    is NOT reused for roles.
+  - **R009** (ChatGPT §11.2): layer display order = role
+    order, hidden layers LAST within each role bucket (with
+    `opacity: 0.6` muted style).
+  - Layers section BELOW per-issue-type groups (ChatGPT §11.1).
+  - Layers `<details>` default-closed, summary shows
+    `"Layers — N total (M with issues)"` (ChatGPT §11.5).
+  - `:unknown` role retained, surfaced as "Unknown / ?"
+    (ChatGPT §11.6).
+  - Per-layer `edge_count` + `issue_count` both shown,
+    `issue_count` visually emphasized when > 0 (ChatGPT §11.4).
 - **Branch state**: `v1.1-layer-semantic-mapping` cut from
-  `v1.0-candidate-2026-08-19` at commit `56ea611`. No commits
-  on the branch yet (only the plan doc, kept in `Review/` per
-  the message-bus convention, untracked).
+  `v1.0-candidate-2026-08-19` at commit `56ea611`. No code
+  commits on the branch yet (only the plan doc + state
+  updates, kept in `Review/` / `CURRENT_STATE.md` per
+  message-bus convention).
 - **Hard scope** (inherited from V1.0 + R006 = Gate 1 deferred):
   - Read-only analysis, no model mutation, no new SU API beyond
     `Layer#visible?`.
