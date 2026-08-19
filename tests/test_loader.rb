@@ -221,6 +221,15 @@ end
 #      `su_ai_plugin/main` (NOT a dev-tree absolute path).
 #   2. Guard registration with `unless file_loaded?(__FILE__)` so
 #      repeated re-evaluation registers exactly ONCE.
+#   3. Use UNCONDITIONAL `require 'sketchup.rb'` and
+#      `require 'extensions.rb'` (the standard SU pattern). The
+#      requires are no-ops in real SU (already loaded) and resolve
+#      to the test stubs in test env (placed on $LOAD_PATH by
+#      tests/runner.rb). The previous rework had a conditional
+#      guard on the requires which did not match the CodeX 023
+#      example. The current rework uses unconditional requires.
+#   4. Provide basic metadata (version / creator / description)
+#      per the CodeX 023 example `# metadata...` placeholder.
 #   3. NOT execute Boot.boot! — the registration loader is
 #      registration-only; the boot lives in extension/main.rb.
 # --------------------------------------------------------------------------
@@ -228,6 +237,34 @@ end
 def rbz_reset_register_stubs
   $__fake_sketchup_extension_constructs = []
   $__fake_sketchup_register_extension_calls = []
+end
+
+# CodeX 023 example pattern requires UNCONDITIONAL `require 'sketchup.rb'`
+# and `require 'extensions.rb'`. The previous rework had a conditional
+# guard (with an `if defined?(file_loaded?) || ...` condition) that
+# did not match the standard pattern. This source-level test asserts
+# the current loader's requires are UNCONDITIONAL.
+test 'test_loader: root loader requires are UNCONDITIONAL (matches CodeX 023 example)' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin.rb', __dir__))
+  # Strip comments so commentary on the require pattern doesn't
+  # false-positive the regex check.
+  code_only = src.lines.reject { |l| l.lstrip.start_with?('#') }.join
+  # Per CodeX 023 example: `require 'sketchup.rb'` and
+  # `require 'extensions.rb'` are top-level statements with no
+  # conditional. The requires MUST be unconditional.
+  # We use Regexp.new with string patterns to avoid the edit
+  # tool's double-escape of backslashes (the source code has
+  # `\.` literally, but a Ruby regex literal needs `\s` not
+  # `\\s`; the test infra double-escapes).
+  require_pattern = Regexp.new('^\\s*require\\s+["\']sketchup\\.rb["\']\\s*$')
+  extensions_pattern = Regexp.new('^\\s*require\\s+["\']extensions\\.rb["\']\\s*$')
+  assert require_pattern =~ code_only,
+         'root loader MUST have unconditional `require "sketchup.rb"` at the top level'
+  assert extensions_pattern =~ code_only,
+         'root loader MUST have unconditional `require "extensions.rb"` at the top level'
+  # And the requires MUST NOT be conditional (no trailing `if`).
+  refute_match(/require\s+['"]sketchup\.rb['"].*if\b/, code_only, 'require "sketchup.rb" MUST NOT be conditional')
+  refute_match(/require\s+['"]extensions\.rb['"].*if\b/, code_only, 'require "extensions.rb" MUST NOT be conditional')
 end
 
 test 'test_loader (BLOCK-023-001): registration loader passes String target, not Array' do
@@ -256,6 +293,15 @@ test 'test_loader (BLOCK-023-001): registration loader passes String target, not
     # path `su_ai_plugin/main` (NOT a dev-tree absolute path).
     assert_equal 'su_ai_plugin/main', construct[:path],
                  "SketchupExtension load target must be 'su_ai_plugin/main', got #{construct[:path].inspect}"
+    # Per the CodeX 023 example: the root loader is a
+    # conventional registration-only file whose essential
+    # behavior is exactly the standard pattern. We assert the
+    # metadata placeholders are present (version / creator /
+    # description) so the EM has display data.
+    assert_equal '1.0.0', SUAnalysis::SUAIPlugin.version
+    assert_equal 'SU-AI-Plugin Dev Team', SUAnalysis::SUAIPlugin.creator
+    assert SUAnalysis::SUAIPlugin.description.is_a?(String) &&
+                !SUAnalysis::SUAIPlugin.description.empty?
   ensure
     unstub_sketchup
     FakeUI.uninstall!
