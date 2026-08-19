@@ -1,12 +1,14 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (REAL-HOST BLOCK recheck CLOSED:
-                          normalize_selection uses to_a (NOT
-                          to_ary) + AnalyzersRunner.run guards
-                          against variable shadow between
-                          normalized_selection and
-                          normalized_issues. Full suite
-                          260/260 PASS, 0 fail, 0 error;
+Last updated: 2026-08-18 (REAL-HOST BLOCK (recheck) K2 CLOSED:
+                          IssueNormalizer helpers were not
+                          exposed as module singleton methods
+                          (the `private` keyword suppressed
+                          `module_function` for subsequent defs).
+                          Production path now resolves correctly;
+                          no `NoMethodError` on
+                          normalize_location. Full suite
+                          270/270 PASS, 0 fail, 0 error;
                           git diff --check clean. Awaiting
                           Owner re-run of K..N on real SU 2020.)
 
@@ -639,6 +641,122 @@ should rerun J..N on real SU 2020 to close the loop.
 ### Hard-rule compliance (per Cicada 2026-08-18 section 6)
 - Does NOT change R001-R005 product decisions.
 - Does NOT expand product scope (no overlay, no repair, no mutation).
+- Does NOT push / publish / release.
+- Does NOT skip Owner verification.
+- Does NOT fake SU2017 as SU2020 evidence.
+
+## REAL-HOST BLOCK (Owner K2 repro 2026-08-18) — CLOSED
+
+**Verdict**: K2 Owner-reported BLOCK on fresh SU2020: two coincident
+component instances crash Analyze selection with
+`NoMethodError: undefined method 'normalize_location' for
+SUAnalysis::Core::IssueNormalizer:Module`, called from
+`normalize_analyzer_issue` (reached via `extension/analyzers_runner.rb:96`).
+
+### Root cause
+
+`core/issue_normalizer.rb` used `module_function` at the top, then
+declared `private` before its helper methods
+(`normalize_location`, `sanitize_message`, `normalize_metadata`,
+`canonical_preflight_code`, `severity_for_preflight`). In Ruby, the
+`private` keyword overrides the `module_function` flag for
+subsequent methods — so those helpers became PRIVATE INSTANCE
+METHODS only, NOT module singleton methods.
+
+### Why tests masked it
+
+The test files (`tests/test_issue_normalizer.rb`,
+`tests/test_issue_enricher.rb`) do
+`include SUAnalysis::Core::IssueNormalizer` at the top. The
+include adds the module's private instance methods to Object's
+ancestor chain, which makes `Module.normalize_location(...)`
+succeed via the include chain. So tests passed.
+
+Production code (`extension/analyzers_runner.rb`) does NOT include
+IssueNormalizer. So on the production call path, the implicit-self
+call to `normalize_location(...)` from inside
+`normalize_analyzer_issue` raised `NoMethodError: undefined method
+'normalize_location' for SUAnalysis::Core::IssueNormalizer:Module`.
+
+The first issue with a non-nil 3D location dispatched to
+`normalize_location(loc)` and crashed the entire Analyze selection
+command. On the K2 repro (two coincident component instances), the
+duplicate issue has a non-nil `location: [200.0, 0.0, 0.0]`, which
+triggers the bug on the first call.
+
+### Code-side changes (commit `1133dcd`)
+- `core/issue_normalizer.rb`:
+  - Removed the `private` keyword (it broke `module_function` for
+    subsequent methods).
+  - Defined ALL helpers after `module_function` so they ARE
+    module singleton methods (callable from production's
+    `SUAnalysis::Core::IssueNormalizer.normalize_analyzer_issue(raw)`
+    form AND from inside-the-module implicit-self form).
+  - Marked helpers as `private_class_method` at the bottom of the
+    module. This preserves the original `private` intent (helpers
+    are internal, not part of the public API) WITHOUT breaking
+    module-method dispatch.
+  - The public API methods (`normalize_analyzer_issue`,
+    `normalize_preflight_warning`, `normalize_preflight_warnings`,
+    `canonical_severity`, `severity_for_type`) remain PUBLIC
+    module singleton methods.
+
+### Test-side changes (10 NEW in `tests/test_issue_normalizer.rb`)
+- Production-path tests (no `include` in scope), exercising the
+  exact fully-qualified call form used by `analyzers_runner.rb`:
+  1. `normalize_analyzer_issue` with non-nil 3D location (the K2
+     crash point).
+  2. Non-Float location components coerced via `Float()`.
+  3. Non-nil metadata Hash round-trips.
+  4. Control-character message sanitized.
+  5. `normalize_preflight_warnings` with all 3 codes (production
+     path for the OTHER public API).
+  6. Unknown preflight code returns `[]`.
+  7. Helpers are private module methods (visibility contract).
+  8. Public API remains public module methods (no public methods
+    accidentally marked private).
+  9. K2 full repro: duplicate with non-nil location via
+     production call form returns the correct issue Hash.
+  10. K2 batch repro: 3 mixed raw issues (some with non-nil
+      locations) all survive production-path normalization.
+
+### Required Owner recheck (real SU 2020)
+- Two coincident component instances.
+- Analyze selection must show:
+  - **Edges: 2** (each occurrence's Edge in world coords).
+  - **Duplicate Candidates: 1** (one Issue row, two SourceTokens).
+  - **Warnings: 0** (no preflight warnings).
+- No Ruby exception.
+- The full pipeline test in the fix commit exercises exactly this
+  scenario end-to-end via FakeSU; both Edge count, Duplicate count,
+  Warning count, and the "no exception" invariant are covered.
+
+### Lessons
+- **`private` after `module_function` overrides `module_function`.**
+  In Ruby, `module_function` (no args) sets a flag that affects
+  subsequent method definitions until another visibility modifier
+  is seen. `private` is such a modifier: methods defined after it
+  become PRIVATE INSTANCE METHODS only, not module singleton
+  methods. Use `private_class_method` instead to mark a module
+  singleton method as private without breaking the module
+  singleton method table.
+- **`include M` at the top level can mask module-method visibility
+  bugs.** The include pulls M's private instance methods into
+  Object's ancestor chain, which makes `Module.foo(...)` succeed
+  via the include chain — even when `foo` is NOT a module singleton
+  method. Tests that rely on `include` to call helper methods will
+  not catch this kind of regression; production-path tests that
+  use the fully-qualified call form (no include in scope) are
+  required.
+- **The fake- suite suite is only as strong as its tests.** The
+  previous test file's `include SUAnalysis::Core::IssueNormalizer`
+  made the bug invisible. The new tests use the production call
+  form (no include), exercising the exact dispatch path used by
+  `extension/analyzers_runner.rb`.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section 6)
+- Does NOT change R001-R005 product decisions.
+- Does NOT expand product scope.
 - Does NOT push / publish / release.
 - Does NOT skip Owner verification.
 - Does NOT fake SU2017 as SU2020 evidence.
