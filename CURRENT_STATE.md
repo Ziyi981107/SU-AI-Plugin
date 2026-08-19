@@ -1,16 +1,17 @@
 # CURRENT STATE
 
-Last updated: 2026-08-18 (REAL-HOST BLOCK (recheck) K2 CLOSED:
-                          IssueNormalizer helpers were not
-                          exposed as module singleton methods
-                          (the `private` keyword suppressed
-                          `module_function` for subsequent defs).
-                          Production path now resolves correctly;
-                          no `NoMethodError` on
-                          normalize_location. Full suite
-                          270/270 PASS, 0 fail, 0 error;
-                          git diff --check clean. Awaiting
-                          Owner re-run of K..N on real SU 2020.)
+Last updated: 2026-08-18 (L3 non-locatable warning CLOSED:
+                          renderIssue now gates the click
+                          handler on issue.locatable === true.
+                          Non-locatable rows (preflight hazards
+                          like deep_nesting) carry a `no-action`
+                          CSS class and have NO click listener,
+                          so window.sketchup.locate is NEVER
+                          invoked for them — no stale-source
+                          toast. Full suite 273/273 PASS, 0 fail,
+                          0 error; git diff --check clean.
+                          Awaiting Owner re-run of K..N on real
+                          SU 2020.)
 
 ## 决策落地 (PI_TASK_001)
 
@@ -753,6 +754,104 @@ triggers the bug on the first call.
   made the bug invisible. The new tests use the production call
   form (no include), exercising the exact dispatch path used by
   `extension/analyzers_runner.rb`.
+
+### Hard-rule compliance (per Cicada 2026-08-18 section 6)
+- Does NOT change R001-R005 product decisions.
+- Does NOT expand product scope.
+- Does NOT push / publish / release.
+- Does NOT skip Owner verification.
+- Does NOT fake SU2017 as SU2020 evidence.
+
+## L3 non-locatable warning (Owner repro 2026-08-18) — CLOSED
+
+**Verdict**: L3 BLOCK REOPEN from Owner: clicking the Deep Nesting
+warning in the dialog shows the toast "source no longer available
+for: deep_nesting|1" even though the warning is intentionally
+non-locatable (no source token to resolve). SEL=1 and ACTIVE_PATH=0
+are unchanged, but the toast makes the row look like a stale
+source. The warning must NOT invoke Locate at all.
+
+### Root cause
+
+`extension/html/app.js#renderIssue` unconditionally added a click
+listener that called `window.sketchup.locate(id)` for every
+issue row. For non-locatable rows (preflight warnings like
+`deep_nesting` and `abnormal_large_coord`), the locator
+policy (`core/issue_locator_policy.rb#targets_for`) returns `[]`,
+the host-side glue returns `:unresolved`, and `dialog_runner.rb`'s
+`on_locate` fires the misleading "source no longer available for:
+..." toast.
+
+### Code-side changes (commit `4940613`)
+- `extension/html/app.js`:
+  - `renderIssue` now gates the `addEventListener('click', ...)`
+    on `issue.locatable === true`. For `locatable === false`,
+    **NO** click listener is registered. There is no path to
+    `window.sketchup.locate` and therefore no path to the toast.
+  - For `locatable === false`, the row carries a `no-action` CSS
+    class and `data-locatable="false"`. The locked render contract
+    (textContent + setAttribute, no innerHTML for user strings,
+    no eval / no new Function / no document.write) is preserved.
+  - For `locatable === true`, behavior is unchanged: the row gets
+    a click listener that calls `window.sketchup.locate(id)` and
+    does NOT carry the `no-action` class.
+- `extension/html/style.css`:
+  - New `.issue.no-action` block: `cursor: default` and
+    `:hover { background: transparent }` so the row visually
+    signals "intentionally not clickable" without hiding the
+    warning. The locked severity palette (R005) is unchanged.
+
+### Test-side changes
+- `tests/test_html_render_dom.js`:
+  - MockElement.addEventListener now records listeners so the L3
+    tests can assert WHICH rows have click handlers registered.
+  - MockElement exposes `hasListener(name)` for assertion.
+  - MockElement exposes className getter/setter that maintains a
+    `classes` array (split on whitespace) so tests can assert
+    class membership the same way they would with real DOM.
+  - 12 NEW ASSERT lines cover:
+    - **L3.1** locatable row has click listener registered.
+    - **L3.1** locatable row data-locatable attr is "true".
+    - **L3.1** locatable row does NOT carry no-action class.
+    - **L3.2** non-locatable row has NO click listener.
+    - **L3.2** non-locatable row data-locatable attr is "false".
+    - **L3.2** non-locatable row carries no-action class.
+    - **L3.1** clicking locatable row invokes window.sketchup.locate ONCE.
+    - **L3.1** locate receives the issue_id.
+    - **L3.2** clicking non-locatable row does NOT invoke locate.
+    - **L3.2** clicking non-locatable row N times still does NOT invoke locate.
+- `tests/test_html_render.rb`:
+  - 3 NEW Ruby-level tests:
+    - Source-level guard: `addEventListener('click', ...)` appears
+      exactly ONCE in app.js and is gated by `if (locatable)`.
+    - Style contract: `.issue.no-action` is defined in style.css
+      with `cursor: default` AND a `:hover` override.
+    - The Node.js DOM test runs and the L3 ASSERT lines all PASS.
+
+### Owner recheck (real SU 2020)
+- Click Deep Nesting warning.
+- No selection change, no camera change, no toast, no Ruby error.
+- Warning visibly appears non-actionable (default cursor, no hover).
+- All four invariants above are now covered by automated tests.
+
+### Lessons
+- **JS click handlers should mirror the data-model policy.** The
+  locator policy already returns `[]` for non-locatable issues
+  (`core/issue_locator_policy.rb#targets_for`). The JS click
+  handler should respect the same boundary: do not register a
+  handler at all for non-locatable rows. Adding the handler and
+  having it return `:unresolved` produces a misleading toast
+  ("source no longer available") that confuses the user.
+- **Mock DOMs need to track listeners for click-handler tests.**
+  The previous MockElement.addEventListener was a no-op, which
+  made it impossible to assert which rows had handlers registered.
+  For L3 (and any future click-dispatch contract tests), the mock
+  must record listeners so tests can probe `hasListener('click')`.
+- **CSS class membership is not the same as className string
+  equality.** `className` is a space-separated string; testing
+  membership requires splitting on whitespace. Mock DOMs should
+  expose a `classes` array (and tests should use it) the same way
+  real DOM testing libraries do (e.g. `element.classList.contains`).
 
 ### Hard-rule compliance (per Cicada 2026-08-18 section 6)
 - Does NOT change R001-R005 product decisions.
