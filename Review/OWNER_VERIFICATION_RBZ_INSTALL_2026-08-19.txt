@@ -1,0 +1,211 @@
+============================================================
+OWNER VERIFICATION CHECKLIST — RBZ Install Smoke (release gate 2)
+Project:    D:\Projects\SU-AI-Plugin
+Date:       2026-08-19
+For:        Product Owner (real-SU install verification, per Q002=A)
+Depends on: CodeX Review 021 Stage 7 implementation report
+============================================================
+
+PURPOSE
+=======
+
+Per CodeX Review 021 (2026-08-19) Stage 7 implementation report, two
+release gates remain open after TASK 001 implementation:
+
+  Gate 1 — SU2017 real-host verification (per R004; Owner executes
+           on a SU2017 host; SU2020 evidence does not substitute).
+
+  Gate 2 — RBZ package + install smoke verification (this checklist;
+           Agent built the candidate .rbz + fake-host smoke; Owner
+           verifies a real SketchUp install of the same .rbz).
+
+This file is the manual checklist for Gate 2 only. The Agent's
+fake-host evidence (tests/test_rbz_smoke.rb, 8/8 PASS) is documented
+in Review/RBZ_RELEASE_CANDIDATE_2026-08-19.txt and committed
+alongside this file.
+
+RBZ ARTIFACT
+============
+
+  Path:     D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+  Size:     ~175 KB (varies slightly as production code changes)
+  Format:   Standard PKZip (uncompressed / STORE method); readable
+            by 7-Zip / Windows Explorer / SketchUp Extension Manager.
+  Layout:   Single top-level folder su_ai_plugin/ containing the
+            entry-point + sibling Ruby files + html/ subfolder.
+            Two siblings at the .rbz root: core/ and compatibility/.
+            SketchUp extracts this into SketchUp's Plugins/ dir.
+
+REQUIREMENTS
+============
+
+  - SketchUp 2017+ (locked baseline per Q003=R004). SU2020 is the
+    verified target for Stage 6 Owner PASS; SU2017 is the
+    separate release gate.
+  - SketchUp must be CLOSED before installing (the Extension
+    Manager requires it).
+  - A disposable test model (NOT a production project). The
+    checklist explicitly creates a test_group + uses a duplicate
+    Component fixture; do NOT run this on real work.
+
+PRE-INSTALL SMOKE (DO BEFORE INSTALLING)
+========================================
+
+Run the Agent-side fake-host suite to confirm the build artifact
+is intact:
+
+  cd D:\Projects\SU-AI-Plugin
+  .vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests\run_all.rb
+
+Expected: 281 tests: 281 pass, 0 fail, 0 error (8 RBZ smoke
+tests + 273 prior tests).
+
+If the suite reports any failure, STOP — the .rbz is stale.
+Rebuild with:
+
+  .vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts\build_rbz.rb
+
+INSTALL PROCEDURE
+==================
+
+  1. Open SketchUp 2020 (or 2017 if verifying Gate 1).
+
+  2. Window > Extension Manager (SketchUp 2017+) OR
+     Window > Preferences > Extensions (older builds).
+     Confirm SketchUp is NOT loaded with any prior SU-AI-Plugin
+     state. If a previous build is present, click "Uninstall"
+     on it first.
+
+  3. Click "Install Extension...". Navigate to:
+        D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+
+  4. SketchUp may show a security prompt ("You are about to
+     load an extension that is not signed..."). Click "Yes" /
+     "Load Anyway" (the .rbz is unsigned; this is the locked
+     posture for V1.0 — no .rbz signing infrastructure yet).
+
+  5. After install, SketchUp reports the extension is enabled.
+     The Plugins menu now contains:
+        Plugins > SU-AI-Plugin > Analyze selection
+
+  6. Confirm the file layout under SketchUp's Plugins/ directory:
+        SketchUp/Plugins/su_ai_plugin/su_ai_plugin.rb    (entry)
+        ~/su_ai_plugin/loader.rb
+        ~/su_ai_plugin/preflight_runner.rb
+        ~/su_ai_plugin/analyzers_runner.rb
+        ~/su_ai_plugin/issue_locator.rb
+        ~/su_ai_plugin/display_unit_formatter.rb
+        ~/su_ai_plugin/ui_bridge.rb
+        ~/su_ai_plugin/dialog_controller.rb
+        ~/su_ai_plugin/dialog_runner.rb
+        ~/su_ai_plugin/html/index.html
+        ~/su_ai_plugin/html/app.js
+        ~/su_ai_plugin/html/style.css
+        SketchUp/Plugins/core/...
+        SketchUp/Plugins/compatibility/su_capability.rb
+
+     The entry-point and its siblings are inside su_ai_plugin/;
+     core/ and compatibility/ are siblings of that folder. This
+     is the locked layout per CodeX Review 021 boundary.
+
+POST-INSTALL BOOT SMOKE
+=========================
+
+  1. Open the Ruby Console (Window > Ruby Console).
+
+  2. Confirm the entry-point loaded without error. Look for any
+     [SU-AI-Plugin] boot failed: ... lines. Expected: none.
+
+  3. Confirm menu idempotency. In the Ruby Console:
+
+        load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+
+     Expected: NO error, NO second menu item. The Plugins menu
+     still has exactly ONE 'Analyze selection' item under
+     'SU-AI-Plugin'. (file_loaded? guard prevents double-load.)
+
+  4. (Optional, advanced) Confirm the constant surface from the
+     Ruby Console:
+
+        SUAnalysis::Extension::Loader.registered?
+        SUAnalysis::Core::PreflightReport.instance_methods(false)
+
+     Expected: no NameError on the constants above; the Loader
+     is loaded; PreflightReport exposes pure-Ruby metrics only.
+
+ANALYZE SELECTION FLOW (REPEAT THE STAGE 6 K..N ON THE INSTALLED BUILD)
+===========================================================================
+
+Use the SAME setup helper from Review/OWNER_VERIFICATION_STAGE_6.txt
+(rebuild a fresh empty model + the 4 fixtures). The installed
+.rbz must produce the SAME results as Stage 6 K1..N (Owner PASS):
+
+  K1 PASS: closed Group (4 edges) ->
+          Edges: 4, Vertices: 4, Warnings: 0
+  K2 PASS: two coincident Component instances ->
+          Edges: 2, Duplicate Candidates: 1, Warnings: 0
+  K3 PASS: nested Group/Component/Group (L-shape) ->
+          Open Endpoints: 2, Deep Nesting: 1
+  K4 PASS: dangling edge Group ->
+          Open Endpoints: 2
+
+If ANY of K1..N fails on the installed build but passed in Stage 6
+on the dev-tree entry-point, the .rbz packaging is broken. STOP
+and report the failing step with the Ruby Console log.
+
+EXPECTED LOADER BEHAVIOR (post-install)
+=========================================
+
+  - First `load 'extension/su_ai_plugin.rb'` registers the menu
+    (one Plugins > SU-AI-Plugin > Analyze selection).
+  - Subsequent loads are no-ops (file_loaded? guard).
+  - The dialog opens on the menu click (no exceptions).
+  - The fingerprint helper from Stage 6 K..N matches before and
+    after (no source-model mutation).
+
+UNINSTALL (CLEANUP)
+====================
+
+After verification, uninstall to leave a clean state:
+
+  1. SketchUp > Extension Manager > SU-AI-Plugin > Uninstall.
+  2. Verify SketchUp/Plugins/su_ai_plugin/ and SketchUp/Plugins/core/
+     and SketchUp/Plugins/compatibility/ are gone (SketchUp does
+     NOT auto-delete the plugin's folders on uninstall in some
+     versions; manually remove if they remain).
+  3. Re-open the Plugins menu; 'SU-AI-Plugin' submenu is gone.
+
+REPORTING BACK
+==============
+
+After completing this checklist on real SketchUp, report one of:
+
+  PASS ON SKETCHUP <version>
+  - Install succeeded (no error from Extension Manager).
+  - Menu registered exactly once.
+  - K1..N on the installed .rbz match Stage 6 K..N.
+  - No Ruby Console errors during boot or analyze.
+  - Uninstall is clean.
+
+  PARTIAL PASS
+  - List which sub-steps passed and which failed.
+  - If a model-mutation is suspected, copy the offending
+    fingerprint field and the failing step's Ruby Console log.
+
+  BLOCKED
+  - If the .rbz does not install at all, copy the SketchUp
+    error verbatim and the .rbz path you tried.
+
+NEXT ACTION (AFTER GATE 2)
+==========================
+
+- If Gate 2 PASS on SU-2020: gate SU-2017 verification (Gate 1
+  per R004). Repeat this checklist on a SU-2017 host.
+- If Gate 1 PASS on SU-2017: TASK 001 is fully shipped (V1.0).
+- If either gate fails on the real host, the Agent cannot proceed
+  past the BLOCK until the failure is investigated (CodeX Round
+  022 final release review cannot be requested).
+
+============================================================
+END OF OWNER VERIFICATION CHECKLIST — RBZ INSTALL
+============================================================
