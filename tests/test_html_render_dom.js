@@ -1066,6 +1066,43 @@ assert('V13: existing V1.2 layer-issue-bucket row remains inert after V1.3 rende
 assert('V13: new V1.3 face-inventory-row remains inert after V1.3 render',
        mockElements['face-inventory-list'].children[0].hasListener('click') === false);
 
+// V13-NIT-001 (per Owner Gate 2 V1.3 NIT): row parts must
+// remain distinct in the DOM, and the row's first child must
+// have class `layer-name` (used by the spacing CSS). The
+// parts (layer name + role badge + visibility badge + face
+// count + separator + holes count) are 6 separate children
+// with distinct classes, NOT merged into a single text node.
+assert('V13-NIT-001: face-inventory-row has 6 distinct child parts (no merge)',
+       (function () {
+         var row = mockElements['face-inventory-list'].children[0];
+         return row && row.children.length === 6;
+       })());
+assert('V13-NIT-001: face-inventory-row children carry distinct class names (no merge)',
+       (function () {
+         var row = mockElements['face-inventory-list'].children[0];
+         var expectedClasses = ['layer-name', 'role-badge', 'visibility-badge',
+                                'face-count', 'face-count-sep', 'holes-count'];
+         return expectedClasses.every(function (cls) {
+           return row.children.some(function (c) {
+             return c.classes.indexOf(cls) !== -1;
+           });
+         });
+       })());
+assert('V13-NIT-001: face-inventory-row child textContent values are distinct (no merge)',
+       (function () {
+         var row = mockElements['face-inventory-list'].children[0];
+         var texts = row.children.map(function (c) { return c.textContent; });
+         // No two adjacent children should have the same textContent
+         // (which would indicate a merge). Each child has a unique
+         // text role.
+         var uniq = {};
+         for (var i = 0; i < texts.length; i++) {
+           if (uniq[texts[i]] !== undefined) return false;
+           uniq[texts[i]] = i;
+         }
+         return texts.length === 6;
+       })());
+
 // V13: ROOT.renderFaceInventory + ROOT.renderFaceInventoryRow are exposed.
 assert('V13: ROOT.renderFaceInventory is exposed',
        typeof context.window.SUAIP.renderFaceInventory === 'function');

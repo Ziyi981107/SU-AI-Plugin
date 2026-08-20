@@ -1,0 +1,31 @@
+OWNER VERDICT:
+PASS WITH NIT ON SKETCHUP 2020 — V1.3 FACE INVENTORY
+
+REAL-HOST RESULT:
+- V13-BLOCK-001 recheck: CLOSED on real SketchUp 2020.
+- V13-1: PASS. One Layer0 face produced Faces=1, Faces With Holes=0, and one Layer0 Face Inventory row.
+- V13-2: PASS. DIM-WALLS face produced Dimension / Visible / 1 face / 0 faces with holes.
+- V13-3: PASS. ANNOTATION-HOLES face with a real inner loop produced Faces With Holes=1 and the correct Annotation bucket.
+- V13-4: PASS. Two instances of one ComponentDefinition produced Faces=2 and one aggregated Layer0 row with 2 faces. The section header's "2 total" correctly denotes total face occurrences, not bucket count.
+- V13-5: PASS. XYZ-NOROLE rendered Unknown / Visible before HIDDEN-FACE; HIDDEN-FACE rendered Unknown / Off-screen with muted styling.
+- V13-6: PASS. Lightweight PRE/POST fixture, layer visibility, selection, active_path, camera, instance transform, and entity-property fingerprint returned MATCH=true.
+
+NIT TO FIX BEFORE THE COMBINED END-OF-STAGE PACKET:
+- [V13-NIT-001] Face Inventory row metadata is visually concatenated, for example:
+  ConstructionVisible1 face0 faces with holes
+  Add clear spacing/gaps between the role badge, visibility badge, face count, separator, and holes count.
+- This is presentation-only and does not reopen V1.3 data contracts or any passed V1.0-V1.2 scope.
+- Use the smallest CSS/layout fix. Preserve row ordering, neutral badges, hidden-row opacity, non-actionable cursor/click behavior, and all existing text values.
+- Add/update DOM assertions that prove the row parts remain distinct and the layout class/style providing spacing exists. Run the full Ruby + Node/DOM suites and git diff --check.
+
+REVIEW CADENCE / NEXT ACTION:
+1. Fix V13-NIT-001 locally; do not request a separate Codex micro-review.
+2. Record this Owner PASS WITH NIT and the post-fix automated evidence.
+3. Assemble ONE consolidated V1.2 + V1.3 end-of-stage review packet after the NIT fix and tests are complete.
+4. Submit that single complete packet to Codex for the planned end-of-stage review.
+5. Do not reopen previously passed V1.0/V1.1 scope, V13-BLOCK-001, or unrelated code without new concrete evidence.
+6. SU2017 remains deferred to the final formal-release Gate under R006; it does not block this V1.3 SU2020 stage acceptance.
+
+OWNER PRODUCT DECISION:
+- Face Inventory behavior is accepted on SU2020 subject only to V13-NIT-001 spacing cleanup.
+- No further Owner SU2020 rerun is required for a CSS-only spacing fix if automated DOM evidence passes and the semantic text/order are unchanged.

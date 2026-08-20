@@ -647,6 +647,19 @@ test 'html_render (V1.3): style.css defines .face-inventory-row style (neutral, 
   end
 end
 
+test 'html_render (V1.3 NIT-001): style.css adds margin-left fallback for face-inventory-row children (no flex-gap reliance)' do
+  # Per Owner Gate 2 V1.3 NIT (V13-NIT-001): the real SU2020
+  # HtmlDialog WebKit does not always honor the CSS `gap`
+  # property on flex containers, so the row parts render
+  # visually concatenated ("ConstructionVisible1 face...").
+  # The minimum CSS fix: a `.face-inventory-row > * + *`
+  # selector that adds margin-left to every child except the
+  # first, mirroring the gap behavior in any webview.
+  src = File.read(HR_HTML_CSS_V13)
+  assert_match(/\.face-inventory-row\s*>\s*\*\s*\+\s*\*/, src,
+               'style.css must define .face-inventory-row > * + * spacing fallback (V13-NIT-001)')
+end
+
 test 'html_render (V1.3): app.js render() invokes renderFaceInventory AFTER renderLayers' do
   src = File.read(HR_HTML_APPJS_V13)
   pos_layers = src.index('renderLayers(payload.layerGroups)')

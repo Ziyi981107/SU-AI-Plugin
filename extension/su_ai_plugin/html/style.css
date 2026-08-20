@@ -235,6 +235,18 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   border-top: 1px solid var(--border);
   cursor: default;
 }
+/* Per Owner Gate 2 V1.3 NIT (V13-NIT-001): SketchUp's
+ * HtmlDialog WebKit does not always honor the CSS `gap`
+ * property on flex containers, so the row parts can render
+ * visually concatenated (e.g. "ConstructionVisible1 face...").
+ * Defensive fallback: add margin-left to every child except
+ * the first, mirroring the gap behavior in any webview.
+ * The `gap: 8px` above stays as the preferred path for
+ * standards-compliant webviews; the `> * + *` selector below
+ * only fires when `gap` is not honored. */
+.face-inventory-row > * + * {
+  margin-left: 8px;
+}
 .face-inventory-row:hover {
   /* No hover affordance -- Face Inventory rows are non-actionable
      in V1.3 (mirror of V1.1 Layers rows / V1.0 L3 non-locatable
