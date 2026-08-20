@@ -1,0 +1,61 @@
+VERDICT:
+PASS WITH NITS
+
+REVIEW MODE:
+STAGE REVIEW - consolidated V1.2 + V1.3 end-of-stage
+
+SCOPE REVIEWED:
+- V1.2 base/head: 23cac28..0460c6b (Issues by Layer; V1.1 closed base retained)
+- V1.3 base/head: 0460c6b..4b56e93 (Face Inventory, V13-BLOCK-001 fix, V13-NIT-001 spacing fix, consolidated packet)
+- production seams: PreflightRunner, LayerRecord/FaceRecord, both groupers, AnalyzersRunner, AnalysisResult, UIBridge, HTML/JS/CSS
+- evidence: combined packet, V13 BLOCK recheck packet, Owner SU2020 checks observed in this Owner session, committed V1.3 Owner report
+- independent re-run by CodeX:
+  - Ruby: 470/470 PASS, 0 fail, 0 error
+  - Node.js DOM: 114 assertions PASS
+  - git diff --check: production extension/tests scope clean
+- previously passed V1.0/V1.1 scope remained closed except for regression evidence at the changed seams
+
+BLOCKS:
+- NONE.
+
+STAGE FINDINGS:
+- V1.2 Issues by Layer is correctly wired from the existing server-side grouper through AnalysisResult/UIBridge to the dialog. Bucket order, issue-row Locate/inert behavior, textContent-only rendering, and read-only behavior are preserved.
+- V1.3 Face Inventory correctly counts face occurrences, holes, named/hidden/unknown layers, and repeated component occurrences while aggregating rows by layer.
+- V13-BLOCK-001 is CLOSED. AnalyzersRunner now passes snapshot.layers (LayerRecord data carrying face counters) to FaceInventoryGrouper; production-path regression tests and the Owner's real SU2020 rerun both confirm the fix.
+- Owner SU2020 V13-1..V13-6 evidence passed, including the lightweight PRE/POST fingerprint MATCH=true.
+- V13-NIT-001 has a narrow CSS fallback and automated guards. No semantic or model-state contract changed.
+- This is a stage acceptance verdict, NOT PASS FOR RELEASE. SU2017 and the final assembled RBZ remain formal-release gates under R006.
+
+NITS:
+1. [DOC-029-001] Durable V1.2 Owner report is missing.
+   Evidence status:
+   - Owner executed the V1.2 SU2020 checks in the current Owner session and reported the expected results.
+   - The combined packet references Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt, but that file does not exist at review time.
+   Action:
+   - Add the durable V1.2 Owner PASS/PASS-WITH-NIT report to Prompt using the results already obtained. Do not rerun SU and do not request another CodeX review.
+
+2. [DOC-029-002] CURRENT_STATE.md is stale.
+   Problem:
+   - It still says V1.2 Owner verification is deferred, V1.3 Owner verification is pending, and 463 tests pass; current evidence is V1.2/V1.3 SU2020 completed and 470 tests pass.
+   Action:
+   - Update CURRENT_STATE.md once with this CodeX 029 verdict, both Owner outcomes, V13-BLOCK-001 closed, 470/470 + 114 assertions, and the next formal-release gate. Documentation-only; no re-review.
+
+3. [UI-029-003] The V13-NIT-001 fallback explanation is technically inaccurate and may double the intended spacing.
+   Location:
+   - extension/su_ai_plugin/html/style.css
+   Problem:
+   - `.face-inventory-row > * + * { margin-left: 8px; }` applies regardless of whether flex `gap` is supported. In modern webviews it combines with `gap: 8px`, producing about 16px rather than 8px. The comment/commit claim that the selector only fires when gap is unsupported is false.
+   Recommendation:
+   - Small/low-risk fix now: use margin-only spacing for this row (remove the flex gap) OR accept the wider modern spacing and correct the explanatory text. Preserve the verified legacy-WebKit margin fallback.
+   - This is non-blocking and does not require another CodeX review. Do not ask Owner to rerun SU for a comment-only or margin-only correction.
+
+DEBT:
+- None added for V1.2/V1.3.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- NONE for V1.2/V1.3.
+- Pi may close both stages after the three NIT actions above and normal automated checks; do not submit a NIT recheck packet.
+- Next CodeX engagement is the FINAL RELEASE REVIEW only, after the final RBZ is assembled and required SU2017 + SU2020 evidence is complete, unless a new high-risk BLOCK appears.

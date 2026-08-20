@@ -229,21 +229,24 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .face-inventory-row {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   cursor: default;
 }
-/* Per Owner Gate 2 V1.3 NIT (V13-NIT-001): SketchUp's
- * HtmlDialog WebKit does not always honor the CSS `gap`
- * property on flex containers, so the row parts can render
- * visually concatenated (e.g. "ConstructionVisible1 face...").
- * Defensive fallback: add margin-left to every child except
- * the first, mirroring the gap behavior in any webview.
- * The `gap: 8px` above stays as the preferred path for
- * standards-compliant webviews; the `> * + *` selector below
- * only fires when `gap` is not honored. */
+/* Per V13-NIT-001 + CodeX 029 UI-029-003: spacing between
+ * row parts (layer-name / role-badge / visibility-badge /
+ * face-count / face-count-sep / holes-count).
+ *
+ * We use margin-left only, NOT flex `gap`, because:
+ *   - SketchUp's HtmlDialog WebKit does not always honor
+ *     the `gap` property on flex containers.
+ *   - Mixing `gap` + `margin-left` would double-space in
+ *     webviews that DO honor `gap` (modern WebKit / Chromium
+ *     variants), producing ~16px instead of the intended 8px.
+ * The `> * + *` adjacent-sibling selector adds margin-left
+ * to every child except the first, giving consistent 8px
+ * spacing in any webview. */
 .face-inventory-row > * + * {
   margin-left: 8px;
 }

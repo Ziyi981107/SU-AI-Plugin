@@ -1,37 +1,40 @@
 # CURRENT STATE
 
-Last updated: 2026-08-20 (V1.1 stage **CLOSED on
-SketchUp 2020** per CodeX 025; V1.2 implementation COMPLETE
-and PRESERVED as the V1.2 Owner-test candidate at
-checkpoint `0460c6b` on branch `v1.2-issues-by-layer` (tag
-`v1.2-issues-by-layer-candidate`); V1.3 implementation
-COMPLETE on `v1.3-face-inventory` branch per CodeX
-guidance 027 (5 commits: b896e04 core data layer,
-b415364 core data tests, a72d23e pipeline + payload,
-5d20560 UI render). Full suite 463/463 PASS, 0 fail,
-0 error. V1.2 Owner SU2020 verification DEFERRED per
-Owner availability — NOT waived; V1.3 Owner SU2020
-verification PENDING. V1.0 candidate still FROZEN at
-tag `v1.0-candidate-2026-08-19` (commit `56ea611`).
-Gate 1 (SU2017) PENDING per R006 — deferred to formal
-release.)
+Last updated: 2026-08-20 (V1.2 + V1.3 stages **CLOSED
+on SketchUp 2020** per CodeX 029 end-of-stage review
+`Prompt/CODEX_REVIEW_029_2026-08-20_V1_2_V1_3_END_OF_STAGE.txt`
+**PASS WITH NITS**, 0 BLOCKs. V1.2 Owner Gate 2 PASS on
+real SU2020 (V12-1..V12-7; report at
+`Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`).
+V1.3 Owner Gate 2 PASS WITH NIT on real SU2020 (V13-1..V13-6;
+report at
+`Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_SU2020_2026-08-20.txt`).
+V13-BLOCK-001 CLOSED via `bf2b2fc` production-seam fix;
+V13-NIT-001 spacing fixed via `e66a9ad` margin-only
+fallback. Full suite 470/470 Ruby + 114/114 Node.js DOM
+assertions PASS, 0 fail, 0 error. V1.0 candidate still
+FROZEN at tag `v1.0-candidate-2026-08-19` (commit
+`56ea611`). Gate 1 (SU2017) PENDING per R006 —
+deferred to formal release. Next CodeX engagement: the
+FINAL RELEASE REVIEW only, after the final RBZ is
+assembled and required SU2017 + SU2020 evidence is
+complete, unless a new high-risk BLOCK appears.)
 
-## V1.2 stage (AUTOMATED COMPLETE / OWNER SU2020 DEFERRED on `v1.2-issues-by-layer`)
+## V1.2 stage (CLOSED on SU2020 per CodeX 029, 2026-08-20)
 
-- **CodeX verdict (gate to start)**: PASS WITH NITS,
-  0 BLOCKs per CodeX 025. V1.1 stage is CLOSED on
-  SU2020; the V1.1 LayerIssueGrouper was the locked
-  forward-compatibility hook for V1.2.
-- **PRESERVATION** (per CodeX guidance 027): tag
-  `v1.2-issues-by-layer-candidate` at `0460c6b`; Owner
-  SU2020 verification is **DEFERRED, not waived**; no
-  Owner PASS, no CodeX end-of-stage packet, no formal
-  release artifact yet. The V1.2 branch is FROZEN at
-  `0460c6b` for the duration of the V1.3 long-unattended
-  task.
-- **V1.2 directive**: `Prompt/CODEX_GUIDANCE_026_2026-08-20_V1_2_ISSUES_BY_LAYER_START.txt`
-  (Issues by Layer; reuse LayerIssueGrouper; read-only;
-  SU2017 Gate 1 deferred to formal release).
+- **CodeX verdict (end-of-stage)**: PASS WITH NITS,
+  0 BLOCKs per CodeX 029 (combined V1.2 + V1.3 packet).
+  V1.2 stage may be marked CLOSED on the verified
+  SU2020 host.
+- **Owner evidence**:
+  `Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
+  (Owner Gate 2 V1.2 PASS on real SU2020; V12-1..V12-7).
+- **CodeX packet**:
+  `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_2_AND_V1_3_2026-08-20.md`
+  (combined V1.2 + V1.3 end-of-stage review request).
+- **CodeX review file**:
+  `Prompt/CODEX_REVIEW_029_2026-08-20_V1_2_V1_3_END_OF_STAGE.txt`
+  (PASS WITH NITS, 0 BLOCKs).
 - **Implementation status**: COMPLETE on
   `v1.2-issues-by-layer` branch.
   - Commit `035e306`: data layer (AnalysisResult
@@ -43,32 +46,49 @@ release.)
     (`<details id="layer-issues-section">`,
     `renderLayerIssues()` + `renderLayerIssueBucket()`,
     `.layer-issue-bucket` neutral styles).
-- **Locked contracts preserved**:
-  - R007..R012 (role vs visibility separation, no
-    OFFSCREEN, role order, hidden-bottom, first-match-
-    wins, :unknown visibility preservation, role order
-    independent of issue order).
-  - V1.2 directive 026 items 1-12: new section position,
-    default-closed, summary format, bucket-per-non-empty-
-    layer, bucket summary singular/plural, issue-row
-    reuse + locate carry-through + non-locatable inert,
-    existing Layers rows remain inert, textContent only,
-    no new role colors, read-only analysis.
-- **Owner SU2020 verification packet** (DEFERRED, not waived):
-  `Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
-  (V12-1..V12-7). Owner runs on real SU2020 after returning.
-- **Test evidence at preservation**:
-  - Ruby: 395/395 PASS (V1.2 implementation + tests).
-  - Node.js DOM: 86 assertions (67 V1.1 + 19 V1.2).
-  - `git diff --check` clean.
+- **PRESERVATION** (per CodeX guidance 027):
+  - Tag `v1.2-issues-by-layer-candidate` at `0460c6b`
+    protects the V1.2 Owner-test candidate EXACTLY.
+  - The V1.2 branch is FROZEN at `0460c6b` even after
+    V1.3 close, so the two stages are cleanly separable.
+- **Locked contracts preserved**: R007..R012 + V1.2
+  directive 026 items 1-12.
+- **Test evidence at close**: Ruby 395/395 (at V1.2
+  close, pre-V1.3). Node.js DOM 86 assertions.
+  `git diff --check` clean.
+- **V12-NIT-001 fix**: lives in the V1.3 branch commit
+  `e66a9ad` (the fix touches the shared `renderLayerIssues`
+  function; the V1.2 branch itself is FROZEN at
+  `0460c6b`; the V1.3 branch imports the fix through
+  the V1.2 -> V1.3 cut).
 
-## V1.3 stage (AUTOMATED COMPLETE on `v1.3-face-inventory`, awaiting Owner SU2020 Gate 2 V1.3)
+## V1.3 stage (CLOSED on SU2020 per CodeX 029, 2026-08-20)
 
+- **CodeX verdict (end-of-stage)**: PASS WITH NITS,
+  0 BLOCKs per CodeX 029 (combined V1.2 + V1.3 packet).
+  V1.3 stage may be marked CLOSED on the verified
+  SU2020 host.
+- **Owner evidence**:
+  `Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_SU2020_2026-08-20.txt`
+  (Owner Gate 2 V1.3 PASS WITH NIT on real SU2020;
+  V13-1..V13-6; V13-BLOCK-001 CLOSED via the production-
+  seam fix; V13-NIT-001 spacing fixed in this commit).
+- **V13-BLOCK-001 recheck CLOSED**: see
+  `Review/CODEX_V13_BLOCK_001_RECHECK_2026-08-20.md`.
+  Production-seam silent-collapse fix: AnalyzersRunner
+  now passes `snapshot.layers` (Array<LayerRecord>)
+  to FaceInventoryGrouper instead of `layer_groups`
+  (Array<Hash> LayerSummary).
+- **CodeX review file**:
+  `Prompt/CODEX_REVIEW_028_2026-08-20_V1_3_FACE_INVENTORY_REAL_HOST_BLOCK.txt`
+  (the original V13-BLOCK-001 BLOCK) +
+  `Prompt/CODEX_REVIEW_029_2026-08-20_V1_2_V1_3_END_OF_STAGE.txt`
+  (the consolidated end-of-stage verdict).
 - **V1.3 directive**: `Prompt/CODEX_GUIDANCE_027_2026-08-20_DEFER_OWNER_SU_AND_CONTINUE_V1_3.txt`
   (Face Inventory; aggregate-by-layer UI rows;
   preserve V1.0/V1.1/V1.2 contracts; SU2017 Gate 1
   deferred; Owner SU2020 testing deferred for V1.2).
-- **Implementation status**: AUTOMATED COMPLETE on
+- **Implementation status**: COMPLETE on
   `v1.3-face-inventory` branch (cut from V1.2 candidate
   head `0460c6b`).
   - Commit `b896e04`: core data layer (FaceRecord +
@@ -86,6 +106,9 @@ release.)
     `renderFaceInventory` + `renderFaceInventoryRow`,
     `.face-inventory-row` neutral styles, Faces /
     Faces With Holes scalars in #summary).
+  - Commit `bf2b2fc`: V13-BLOCK-001 production-seam fix.
+  - Commit `e66a9ad`: V13-NIT-001 spacing fix (margin-
+    only fallback; no flex gap to avoid double-spacing).
 - **Locked contracts preserved**:
   - R007..R012 (V1.1 layer semantics unchanged; role
     badges + visibility badges for face rows reused
@@ -98,26 +121,19 @@ release.)
     aggregate-by-layer rows, singular/plural wording,
     textContent-only, non-actionable rows, read-only
     analysis, no new role colors).
-- **Test evidence**:
-  - Ruby: 463/463 PASS (395 V1.2 + 31 new V1.3 = 8 + 10 +
-    11 + 8 + 4 performance, 0 fail / 0 error).
-  - Node.js DOM: 105 assertions (67 V1.1 + 19 V1.2 +
-    19 V1.3).
+- **Test evidence at close**:
+  - Ruby: 470/470 PASS (395 V1.2 + 75 new V1.3 = 8 + 10 +
+    11 + 8 + 4 + 7 + 6 + 4 + 9 + 6 + 1 source guard + 1
+    V12-NIT-001, 0 fail / 0 error).
+  - Node.js DOM: 114 assertions (67 V1.1 + 19 V1.2 +
+    19 V1.3 + 3 V13-NIT-001 + 6 V13-BLOCK-001 + the
+    rest, all PASS).
   - `git diff --check` clean for `extension/` and `tests/`.
   - `dist/SU-AI-Plugin.rbz` rebuilt locally
-    (253598 bytes, 43 entries; gitignored).
+    (255170 bytes, 43 entries; gitignored).
   - Performance guard: 5,000 + 50,000 face aggregations
     stay linear; FaceInventoryGrouper on 10 layers
     sub-second.
-- **Out of scope until Owner SU2020 PASS (BOTH V1.2 + V1.3)**:
-  - CodeX end-of-stage packet (one consolidated
-    submission, after Owner reports BOTH V1.2 + V1.3
-    Gate 2 PASS).
-  - Formal release.
-  - Gate 1 (SU2017), deferred per R006.
-  - V1.4 (not started).
-  - Re-opening V1.0 / V1.1 / V1.2 / Stage 6 / CodeX 020 /
-    RBZ / CodeX 024 / CodeX 025 closed scope.
 
 ## V1.1 stage (CLOSED on SU2020 per CodeX 025, 2026-08-20; historical context)
 
@@ -145,31 +161,39 @@ release.)
   - No git remote configured; backup / push separately.
     Not a V1.1 / V1.2 blocker.
 
-## Next action (post-V1.3 AUTOMATED COMPLETE, awaiting BOTH Owner Gate 2 V1.2 + V1.3)
+## Next action (post-CodeX 029 end-of-stage, awaiting formal release)
 
-1. **Owner** (after returning): run BOTH V1.2 + V1.3 Owner
-   checklists per the combined run-order doc:
-   - `Review/OWNER_RUN_ORDER_V1_2_AND_V1_3_2026-08-20.txt`
-   - V1.2: `Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
-     (V12-1..V12-7) -> report at
-     `Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt`
-   - V1.3: `Review/OWNER_VERIFICATION_V1_3_FACE_INVENTORY_2026-08-20.txt`
-     (V13-1..V13-6) -> report at
-     `Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_2026-08-XX.txt`
-   - Keep the two verdicts SEPARATE (per directive 027 owner
-     testing prep).
-2. **Agent** (on BOTH Owner reports PASS): assemble ONE
-   consolidated CodeX end-of-stage review packet at
-   `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_2_AND_V1_3_2026-08-20.md`
-   covering V1.2 + V1.3 in two scope sections. NO per-stage
-   packets; NO per-NIT packets.
-3. **CodeX**: ONE consolidated end-of-stage verdict on V1.2 +
-   V1.3. Reopening V1.0 / V1.1 / Stage 6 / CodeX 020 / RBZ /
-   CodeX 024 / CodeX 025 / CodeX 025 closed scope is explicitly
-   out of scope.
-4. **Formal release**: combine V1.0 + V1.1 + V1.2 + V1.3 in the
-   final `.rbz`, rerun Gate 1 (SU2017) + Gate 2 V1.1 + Gate 2
-   V1.2 + Gate 2 V1.3 on the final artifact, ship.
+1. **Owner** (whenever Owner is ready; this is a
+   non-CodeX-triggered step):
+   - Assemble the final RBZ: combine V1.0 + V1.1 + V1.2 +
+     V1.3 in `dist/SU-AI-Plugin.rbz`. Per CodeX 028 / 029,
+     the V1.1 / V1.2 / V1.3 RBZ shapes are already verified
+     on SU2020; the final assembly just needs the v1.0
+     pieces plus Gate 1 SU2017 + Gate 2 V1.1 + Gate 2 V1.2
+     + Gate 2 V1.3 evidence.
+   - Re-run Gate 1 (SU2017 minimum-host verification) on
+     the final RBZ. Per R004, this is the ONLY remaining
+     blocker before formal release.
+   - Drop the formal-release evidence at
+     `Prompt/OWNER_REPORT_FORMAL_RELEASE_2026-08-XX.txt`.
+
+2. **CodeX**: next engagement is the **FINAL RELEASE
+   REVIEW** (per CodeX 029), after the final RBZ is
+   assembled and required SU2017 + SU2020 evidence is
+   complete, unless a new high-risk BLOCK appears.
+
+3. **Agent** (on CodeX final-release PASS): close the
+   formal-release stage in CURRENT_STATE; mark the
+   `v1.0-candidate-2026-08-19` tag as the production
+   release (or re-tag); push to remote (if Owner configures
+   one); no more CodeX micro-reviews until the next
+   feature stage.
+
+4. **Out of scope**:
+   - No V1.4.
+   - No re-opening of V1.0 / V1.1 / V1.2 / V1.3 closed
+     scope without new concrete evidence.
+   - No re-opening of CodeX 029 closed scope.
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 

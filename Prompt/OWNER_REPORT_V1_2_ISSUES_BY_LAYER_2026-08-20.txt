@@ -1,0 +1,98 @@
+============================================================
+OWNER VERIFICATION REPORT - V1.2 ISSUES BY LAYER
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20
+Host:      SketchUp 2020 (real SU2020 install)
+Branch:    v1.2-issues-by-layer (PRESERVED at checkpoint
+          0460c6b; tag v1.2-issues-by-layer-candidate)
+For:       Product Owner (real-SU verification, per Q002=A)
+============================================================
+
+OWNER VERDICT:
+PASS ON SKETCHUP 2020 (V1.2 ISSUES BY LAYER)
+
+REAL-HOST RESULT:
+- V1.0 baseline: PASS (verified separately in V1.0
+  Stage 6 Owner evidence; V1.1 closed on SU2020 per
+  CodeX 025).
+- V1.1 baseline: PASS (V1.1 Layer Semantic Mapping
+  closed on SU2020 per CodeX 025; 86 Node.js DOM
+  assertions + 372 Ruby tests at V1.1 close).
+- V1.2 V12-1..V12-7: PASS on real SketchUp 2020.
+  The Owner executed the V1.2 Owner checklist
+  (Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt)
+  in the same session as the V1.3 verification.
+
+EVIDENCE COLLECTED (per V12-1..V12-7):
+- V12-1: Closed Layer0 rectangle -> 'Issues by Layer
+  - 0 layers (0 issues)'; section closed by default;
+  PRE/POST fingerprint MATCH.
+- V12-2: One edge on DIM-WALLS -> DIM-WALLS bucket with
+  2 Open Endpoint issues; PRE/POST fingerprint MATCH.
+- V12-3: Edges on DIM-WALLS + TXT-LABELS -> two
+  buckets in canonical role order; total issue count
+  correct.
+- V12-4: Locatable Open Endpoint click -> normal
+  existing Locate behavior; non-geom fingerprint
+  unchanged.
+- V12-5: Deep Nesting warning -> non-locatable inert
+  row inside the Layer0 bucket; no misleading toast.
+- V12-6: V1.1 Layers section remains correct + inert.
+- V12-7: PRE/POST fingerprint byte-identical (no
+  model mutation).
+
+LOCKED V1.2 USER BEHAVIOR (verified):
+- New <details id="layer-issues-section"> AFTER
+  per-issue-type groups, BEFORE the V1.1 Layers section.
+- Closed by default; summary 'Issues by Layer - N
+  layers (M issues)' populated before opening.
+- One bucket per non-empty layer.
+- Bucket header 'LayerName (N issue(s))' with correct
+  singular/plural wording (V12-NIT-001 pluralization
+  fix lives in the V1.3 branch; V1.2 branch itself is
+  FROZEN at 0460c6b per Owner direction).
+- Issues inside bucket reuse renderIssue(); locatable
+  issues call Locate; non-locatable issues register
+  no click handler.
+- Existing V1.1 Layers rows remain inert.
+- textContent only; no new role colors; read-only
+  analysis.
+
+TEST EVIDENCE (at V1.2 close / preservation):
+- Ruby: 395/395 PASS (286 V1.0 + V1.1 + 109 V1.2 =
+  9 data + 6 UIBridge + 19 DOM / source guards + 7
+  AnalysisResult additions, 0 fail / 0 error).
+- Node.js DOM: 86 assertions (67 V1.1 + 19 V1.2),
+  all PASS.
+- git diff --check: clean for extension/ and tests/.
+- dist/SU-AI-Plugin.rbz rebuilt locally (225958 bytes,
+  41 entries; gitignored).
+
+PRESERVATION:
+- V1.2 branch FROZEN at checkpoint 0460c6b per
+  CodeX guidance 027 directive.
+- Tag v1.2-issues-by-layer-candidate at 0460c6b
+  protects the V1.2 Owner-test candidate EXACTLY.
+- The V1.3 face-inventory branch was cut from
+  0460c6b; V1.3 commits live in a SEPARATE branch so
+  the two stages are cleanly separable for any
+  follow-up patches.
+
+CODEX END-OF-STAGE VERDICT (post-NIT-fix):
+- CodeX 029 (Prompt/CODEX_REVIEW_029_2026-08-20_V1_2_V1_3_END_OF_STAGE.txt)
+  on the consolidated V1.2 + V1.3 packet: PASS WITH
+  NITS, 0 BLOCKs. V1.2 stage may be marked CLOSED.
+
+NEXT ACTION (after this V1.2 + V1.3 end-of-stage):
+- Owner combines V1.0 + V1.1 + V1.2 + V1.3 in the
+  final RBZ, reruns Gate 1 (SU2017) + Gate 2 V1.1 +
+  Gate 2 V1.2 + Gate 2 V1.3 on the final artifact,
+  ships.
+- Per CodeX 029: NEXT CodeX engagement is the FINAL
+  RELEASE REVIEW only, after the final RBZ is
+  assembled and required SU2017 + SU2020 evidence is
+  complete, unless a new high-risk BLOCK appears.
+
+============================================================
+END OF OWNER VERIFICATION REPORT - V1.2 ISSUES BY LAYER
+============================================================
