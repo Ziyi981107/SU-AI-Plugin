@@ -41,6 +41,29 @@ module SUAnalysis
         }
       end
 
+      # V1.4 (per directive 030): value-based equality. The
+      # rebuild contract requires two EdgeRecord instances with
+      # the same data to be ==, so the SourceSnapshot can be
+      # compared across rebuilds (rebuilds produce new instances).
+      def ==(other)
+        return false unless other.is_a?(EdgeRecord)
+        id == other.id &&
+          source == other.source &&
+          start_point == other.start_point &&
+          end_point == other.end_point &&
+          layer == other.layer &&
+          length == other.length &&
+          metadata == other.metadata
+      end
+
+      def eql?(other)
+        self == other
+      end
+
+      def hash
+        [id, source, start_point, end_point, layer, length, metadata].hash
+      end
+
       private
 
       def euclidean_length(a, b)

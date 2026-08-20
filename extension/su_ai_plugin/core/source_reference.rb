@@ -114,6 +114,36 @@ module SUAnalysis
           layer_name:         @layer_name
         }
       end
+
+      # V1.4 (per directive 030): value-based equality. The
+      # rebuild contract requires two SourceReference instances
+      # with the same data to be ==, so the SourceSnapshot can
+      # be compared across rebuilds (rebuilds produce new
+      # instances). All fields participate; layer_name is
+      # included even when nil so two refs from the same source
+      # entity on the same layer compare equal.
+      def ==(other)
+        return false unless other.is_a?(SourceReference)
+        entity_id == other.entity_id &&
+          persistent_id == other.persistent_id &&
+          kind == other.kind &&
+          label == other.label &&
+          instance_path == other.instance_path &&
+          persistent_id_path == other.persistent_id_path &&
+          structural_depth == other.structural_depth &&
+          pid_path_complete == other.pid_path_complete &&
+          layer_name == other.layer_name
+      end
+
+      def eql?(other)
+        self == other
+      end
+
+      def hash
+        [entity_id, persistent_id, kind, label, instance_path,
+         persistent_id_path, structural_depth, pid_path_complete,
+         layer_name].hash
+      end
     end
   end
 end

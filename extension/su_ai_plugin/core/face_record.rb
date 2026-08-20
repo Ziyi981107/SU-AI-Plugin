@@ -68,6 +68,30 @@ module SUAnalysis
           has_holes:                @has_holes
         }
       end
+
+      # V1.4 (per directive 030): value-based equality. The
+      # rebuild contract requires two FaceRecord instances with
+      # the same data to be ==, so the SourceSnapshot can be
+      # compared across rebuilds (rebuilds produce new instances).
+      def ==(other)
+        return false unless other.is_a?(FaceRecord)
+        id == other.id &&
+          source == other.source &&
+          layer == other.layer &&
+          outer_loop_vertex_count == other.outer_loop_vertex_count &&
+          inner_loop_count == other.inner_loop_count
+        # has_holes is derived from inner_loop_count, so we
+        # don't include it separately (== on inner_loop_count
+        # is sufficient).
+      end
+
+      def eql?(other)
+        self == other
+      end
+
+      def hash
+        [id, source, layer, outer_loop_vertex_count, inner_loop_count].hash
+      end
     end
   end
 end

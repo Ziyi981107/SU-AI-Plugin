@@ -71,6 +71,32 @@ module SUAnalysis
           visibility_unknown: @visibility_unknown
         }
       end
+
+      # V1.4 (per directive 030): value-based equality. The
+      # rebuild contract requires two LayerRecord instances with
+      # the same data to be ==, so the SourceSnapshot can be
+      # compared across rebuilds (rebuilds produce new instances).
+      def ==(other)
+        return false unless other.is_a?(LayerRecord)
+        name == other.name &&
+          id == other.id &&
+          edge_count == other.edge_count &&
+          face_count == other.face_count &&
+          faces_with_holes_count == other.faces_with_holes_count &&
+          role == other.role &&
+          role_rule == other.role_rule &&
+          visible == other.visible &&
+          visibility_unknown == other.visibility_unknown
+      end
+
+      def eql?(other)
+        self == other
+      end
+
+      def hash
+        [name, id, edge_count, face_count, faces_with_holes_count,
+         role, role_rule, visible, visibility_unknown].hash
+      end
     end
   end
 end
