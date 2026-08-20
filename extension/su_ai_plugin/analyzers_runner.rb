@@ -29,6 +29,7 @@ require_relative 'core/issue_enricher'
 require_relative 'core/analysis_result'
 require_relative 'core/layer_semantic_mapper'
 require_relative 'core/layer_issue_grouper'
+require_relative 'core/face_inventory_grouper'
 
 module SUAnalysis
   module Extension
@@ -157,6 +158,22 @@ module SUAnalysis
           layer_groups
         )
 
+        # 7.7. V1.3 (per directive 027): build the per-layer Array of
+        # face-inventory bucket hashes from the LayerRecord list
+        # (`layer_groups` here is Array<LayerSummary>; per directive
+        # we use the same list because both the Layers and Face
+        # Inventory sections share the role + visibility semantics).
+        # The grouper reads role / role_label / visible /
+        # visibility_unknown / visibility_label from each
+        # LayerRecord and emits one bucket per non-empty layer;
+        # no JS-side recomputation (per directive: "Do NOT implement
+        # topology grouping independently in JavaScript").
+        # Backward-compatible default: empty Array when there are
+        # no faces in the snapshot.
+        face_inventory_groups = SUAnalysis::Core::FaceInventoryGrouper.group(
+          layer_groups
+        )
+
         # 8. Selection label and classification. These MUST use
         # `normalized_selection` (the selection array), NOT
         # `normalized_issues`. Per Round 020 REAL-HOST BLOCK recheck:
@@ -169,16 +186,19 @@ module SUAnalysis
         # dialog's Layers section has per-layer data to render.
         # V1.2: also pass layer_issue_groups so the dialog's "Issues
         # by Layer" section has per-layer issue buckets to render.
+        # V1.3: also pass face_inventory_groups so the dialog's
+        # "Face Inventory" section has per-layer face buckets to render.
         SUAnalysis::Core::AnalysisResult.new(
-          preflight:           preflight,
-          registry:            registry,
-          snapshot_lookup:     snapshot_lookup,
-          display_data:        display_data,
-          diagnostics:         diagnostics,
-          selection_type:      classification_label(normalized_selection),
-          selection_label:     selection_label,
-          layer_groups:        layer_groups,
-          layer_issue_groups:  layer_issue_groups
+          preflight:            preflight,
+          registry:             registry,
+          snapshot_lookup:      snapshot_lookup,
+          display_data:         display_data,
+          diagnostics:          diagnostics,
+          selection_type:       classification_label(normalized_selection),
+          selection_label:      selection_label,
+          layer_groups:         layer_groups,
+          layer_issue_groups:   layer_issue_groups,
+          face_inventory_groups: face_inventory_groups
         )
       end
 

@@ -480,3 +480,82 @@ test 'source_ref: instance_path default empty, override via constructor, seriali
   assert_equal 'Group:outer > ComponentInstance:Window#1', r2.instance_path_string
   assert_equal ['Group:outer', 'ComponentInstance:Window#1'], r2.to_h[:instance_path]
 end
+
+# --- V1.3 (per directive 027): PreflightReport face_count + faces_with_holes_count ---
+
+require_relative '../extension/su_ai_plugin/core/face_record'
+
+test 'preflight.V1.3: face_count + faces_with_holes_count default to 0 for V1.0/V1.1/V1.2 callers' do
+  rep = SUAnalysis::Core::PreflightReport.new(
+    edge_count: 0, vertex_count: 0,
+    layer_distribution: {}, bounding_box: nil, z_range: [0.0, 0.0],
+    non_zero_z_vertex_count: 0, non_zero_z_edge_count: 0,
+    significant_z_extrema_count: 0, large_coordinate_extrema_count: 0,
+    warnings: [], sketchup_version: 'SU2020', selection_type: 'Group',
+    group_count: 0, component_count: 0,
+    deepest_nesting: 0, nested_containers: []
+  )
+  assert_equal 0, rep.face_count
+  assert_equal 0, rep.faces_with_holes_count
+end
+
+test 'preflight.V1.3: face_count + faces_with_holes_count round-trip via to_h' do
+  rep = SUAnalysis::Core::PreflightReport.new(
+    edge_count: 0, vertex_count: 0,
+    layer_distribution: {}, bounding_box: nil, z_range: [0.0, 0.0],
+    non_zero_z_vertex_count: 0, non_zero_z_edge_count: 0,
+    significant_z_extrema_count: 0, large_coordinate_extrema_count: 0,
+    warnings: [], sketchup_version: 'SU2020', selection_type: 'Group',
+    group_count: 0, component_count: 0,
+    deepest_nesting: 0, nested_containers: [],
+    face_count: 5, faces_with_holes_count: 2
+  )
+  h = rep.to_h
+  assert_equal 5, h[:face_count]
+  assert_equal 2, h[:faces_with_holes_count]
+end
+
+test 'preflight.V1.3: PreflightAnalyzer populates face_count + faces_with_holes_count from snapshot.faces' do
+  # Build a synthetic snapshot with 2 faces (1 with holes, 1 without).
+  face_no_holes = SUAnalysis::Core::FaceRecord.new(
+    id: 0,
+    source: SUAnalysis::Core::SourceReference.new(kind: 'face', persistent_id: 1,
+                                                layer_name: 'Layer0'),
+    layer: 'Layer0',
+    outer_loop_vertex_count: 4,
+    inner_loop_count: 0
+  )
+  face_with_holes = SUAnalysis::Core::FaceRecord.new(
+    id: 1,
+    source: SUAnalysis::Core::SourceReference.new(kind: 'face', persistent_id: 2,
+                                                layer_name: 'DIM-XX'),
+    layer: 'DIM-XX',
+    outer_loop_vertex_count: 4,
+    inner_loop_count: 1
+  )
+  snap = SUAnalysis::Core::GeometrySnapshot.new(
+    edges: [], faces: [face_no_holes, face_with_holes],
+    layers: [
+      SUAnalysis::Core::LayerRecord.new(
+        name: 'Layer0', face_count: 1, faces_with_holes_count: 0,
+        role: :construction, visible: true, visibility_unknown: false
+      ),
+      SUAnalysis::Core::LayerRecord.new(
+        name: 'DIM-XX', face_count: 1, faces_with_holes_count: 1,
+        role: :dimension, visible: true, visibility_unknown: false
+      )
+    ]
+  )
+  rep = SUAnalysis::Core::PreflightAnalyzer.run(snap)
+  assert_equal 2, rep.face_count,
+               'PreflightAnalyzer must aggregate face_count from snapshot.faces'
+  assert_equal 1, rep.faces_with_holes_count,
+               'PreflightAnalyzer must aggregate holes_count from snapshot.faces'
+end
+
+test 'preflight.V1.3: PreflightAnalyzer with no faces -> face_count=0, holes_count=0' do
+  snap = SUAnalysis::Core::GeometrySnapshot.new(edges: [])
+  rep = SUAnalysis::Core::PreflightAnalyzer.run(snap)
+  assert_equal 0, rep.face_count
+  assert_equal 0, rep.faces_with_holes_count
+end

@@ -450,3 +450,143 @@ test 'ui_bridge.as_html_data: layerIssueGroups and summary.layer_issue_groups ca
   assert_equal payload['layerIssueGroups'].map { |b| b['count'] },
                payload['summary']['layer_issue_groups'].map { |b| b['count'] }
 end
+
+# --- V1.3 (per directive 027): faceInventoryGroups top-level key ---
+
+test 'ui_bridge.as_html_data: faceInventoryGroups top-level key is present (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 0, 0)
+  result = AnalysisResult.new(preflight: pf, registry: reg)
+  payload = UIBridge.as_html_data(result)
+  assert payload.key?('faceInventoryGroups'),
+         "expected top-level 'faceInventoryGroups' key, got #{payload.keys.inspect}"
+  assert_kind_of Array, payload['faceInventoryGroups']
+end
+
+test 'ui_bridge.as_html_data: faceInventoryGroups defaults to empty Array (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 0, 0)
+  result = AnalysisResult.new(preflight: pf, registry: reg)
+  payload = UIBridge.as_html_data(result)
+  assert_equal [], payload['faceInventoryGroups']
+end
+
+test 'ui_bridge.as_html_data: faceInventoryGroups carries V1.3 field set (stringified)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 2, 1)
+  face_inventory_groups = [
+    {
+      name:                   'DIM-XX',
+      face_count:             2,
+      faces_with_holes_count: 1,
+      role:                   :dimension,
+      role_label:             'Dimension',
+      role_rule:              'name_dimension',
+      visible:                true,
+      visibility_unknown:     false,
+      visibility_label:       'Visible'
+    }
+  ]
+  result = AnalysisResult.new(
+    preflight:            pf, registry: reg,
+    face_inventory_groups: face_inventory_groups
+  )
+  payload = UIBridge.as_html_data(result)
+  fig = payload['faceInventoryGroups']
+  assert_equal 1, fig.length
+  # ALL keys (top + nested) MUST be Strings at the JSON boundary.
+  assert fig.all? { |b| b.keys.all? { |k| k.is_a?(String) } },
+         "faceInventoryGroups entries have non-String keys: #{fig.map(&:keys).inspect}"
+  b = fig.first
+  assert_equal 'DIM-XX',        b['name']
+  assert_equal 2,              b['face_count']
+  assert_equal 1,              b['faces_with_holes_count']
+  assert_equal 'Dimension',    b['role_label']
+  assert_equal 'Visible',      b['visibility_label']
+end
+
+test 'ui_bridge.to_json: faceInventoryGroups survives JSON round-trip (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 1, 0)
+  result = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    face_inventory_groups: [
+      { name: 'Layer0', face_count: 1, faces_with_holes_count: 0,
+        role: :construction, role_label: 'Construction', role_rule: 'name_default_layer',
+        visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+    ]
+  )
+  require 'json'
+  json = UIBridge.to_json(result)
+  parsed = JSON.parse(json)
+  refute_nil parsed['faceInventoryGroups']
+  assert_equal 1, parsed['faceInventoryGroups'].length
+  b = parsed['faceInventoryGroups'].first
+  assert_equal 'Layer0',        b['name']
+  assert_equal 1,              b['face_count']
+  assert_equal 'Construction',  b['role_label']
+  # Symbol keys never leak to JSON.
+  assert b.keys.all? { |k| k.is_a?(String) },
+         "JSON keys must be Strings, got #{b.keys.inspect}"
+end
+
+test 'ui_bridge.as_html_data: faceInventoryGroups and summary.face_inventory_groups carry the SAME data (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 3, 1)
+  face_inventory_groups = [
+    { name: 'DIM-XX', face_count: 2, faces_with_holes_count: 1,
+      role: :dimension, role_label: 'Dimension', role_rule: 'name_dimension',
+      visible: true, visibility_unknown: false, visibility_label: 'Visible' },
+    { name: 'Layer0', face_count: 1, faces_with_holes_count: 0,
+      role: :construction, role_label: 'Construction', role_rule: 'name_default_layer',
+      visible: false, visibility_unknown: false, visibility_label: 'Off-screen' }
+  ]
+  result = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    face_inventory_groups: face_inventory_groups
+  )
+  payload = UIBridge.as_html_data(result)
+  # Same number of entries.
+  assert_equal payload['faceInventoryGroups'].length,
+               payload['summary']['face_inventory_groups'].length
+  # Same name sequence (matches V1.1 Layers sort order).
+  assert_equal payload['faceInventoryGroups'].map { |b| b['name'] },
+               payload['summary']['face_inventory_groups'].map { |b| b['name'] }
+  # Same face_count sequence.
+  assert_equal payload['faceInventoryGroups'].map { |b| b['face_count'] },
+               payload['summary']['face_inventory_groups'].map { |b| b['face_count'] }
+end
+
+test 'ui_bridge.as_html_data: V1.2 layerIssueGroups remains byte-for-byte intact (V1.3)' do
+  # Per directive 027: V1.2 layerIssueGroups remains byte-for-byte
+  # behaviorally intact after V1.3 wiring.
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(0, 0, 0, 0, 0, 0)
+  layer_issue_groups = [
+    {
+      name:         'DIM-XX',
+      count:        1,
+      default_open: false,
+      issues:       [
+        { issue_id: 'open_endpoint|1|1', severity: 'low', locatable: true }
+      ]
+    }
+  ]
+  result = AnalysisResult.new(
+    preflight:          pf, registry: reg,
+    layer_issue_groups: layer_issue_groups
+  )
+  payload = UIBridge.as_html_data(result)
+  assert_equal 1, payload['layerIssueGroups'].length
+  lig = payload['layerIssueGroups'].first
+  assert_equal 'DIM-XX',         lig['name']
+  assert_equal 1,                lig['count']
+  assert_equal false,            lig['default_open']
+  assert_equal 'open_endpoint|1|1', lig['issues'][0]['issue_id']
+end

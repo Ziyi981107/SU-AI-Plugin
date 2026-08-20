@@ -54,6 +54,9 @@ module SUAnalysis
       attr_reader :significant_z_extrema_count
       attr_reader :large_coordinate_extrema_count
       attr_reader :warnings
+      # V1.3 (per directive 027): face counts at the report level.
+      # Both default to 0 for V1.0/V1.1/V1.2 callers.
+      attr_reader :face_count, :faces_with_holes_count
 
       # SU-side facts (stored verbatim from snapshot.preflight).
       attr_reader :sketchup_version, :selection_type
@@ -76,7 +79,9 @@ module SUAnalysis
         group_count:,
         component_count:,
         deepest_nesting:,
-        nested_containers:
+        nested_containers:,
+        face_count: 0,
+        faces_with_holes_count: 0
       )
         @edge_count                       = edge_count
         @vertex_count                     = vertex_count
@@ -94,6 +99,9 @@ module SUAnalysis
         @component_count                  = component_count
         @deepest_nesting                  = deepest_nesting
         @nested_containers                = nested_containers
+        # V1.3: additive face counters.
+        @face_count                      = face_count.to_i
+        @faces_with_holes_count          = faces_with_holes_count.to_i
       end
 
       def empty?
@@ -122,7 +130,10 @@ module SUAnalysis
           group_count:                      @group_count,
           component_count:                  @component_count,
           deepest_nesting:                  @deepest_nesting,
-          nested_containers:                @nested_containers
+          nested_containers:                @nested_containers,
+          # V1.3: additive face counters.
+          face_count:                       @face_count,
+          faces_with_holes_count:           @faces_with_holes_count
         }
       end
     end
@@ -199,14 +210,24 @@ module SUAnalysis
 
         pre = snapshot.preflight || {}
 
+        # V1.3 (per directive 027): face_count + faces_with_holes_count
+        # aggregated from snapshot.faces (per-occurrence counts). The
+        # `snapshot.faces` Array is the canonical occurrence list;
+        # PreflightAnalyzer computes the scalar totals here. The
+        # per-layer buckets live in AnalysisResult.face_inventory_groups
+        # (produced by FaceInventoryGrouper in the pipeline step).
+        faces = snapshot.respond_to?(:faces) ? (snapshot.faces || []) : []
+        face_count_total = faces.length
+        holes_count_total = faces.count { |f| f.respond_to?(:has_holes) && f.has_holes }
+
         PreflightReport.new(
           edge_count:                       edges.size,
           vertex_count:                     snapshot.vertex_count,
           layer_distribution:               layer_dist,
           bounding_box:                     bbox,
           z_range:                          z_range,
-          non_zero_z_vertex_count:          non_zero_z_vertex_count,
-          non_zero_z_edge_count:            non_zero_z_edge_count,
+          non_zero_z_vertex_count:            non_zero_z_vertex_count,
+          non_zero_z_edge_count:              non_zero_z_edge_count,
           significant_z_extrema_count:      significant_z_extrema_count,
           large_coordinate_extrema_count:   large_coord_extrema_count,
           warnings:                         warnings,
@@ -215,7 +236,10 @@ module SUAnalysis
           group_count:                      pre[:group_count],
           component_count:                  pre[:component_count],
           deepest_nesting:                  pre[:deepest_nesting],
-          nested_containers:                pre[:nested_containers] || []
+          nested_containers:                pre[:nested_containers] || [],
+          # V1.3: additive face counters.
+          face_count:                       face_count_total,
+          faces_with_holes_count:           holes_count_total
         )
       end
 

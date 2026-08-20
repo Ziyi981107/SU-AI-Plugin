@@ -19,13 +19,15 @@ module SUAnalysis
                   :display_data, :diagnostics,
                   :selection_type, :selection_label,
                   :layer_groups,
-                  :layer_issue_groups
+                  :layer_issue_groups,
+                  :face_inventory_groups
 
       def initialize(preflight:, registry:, snapshot_lookup: nil,
                      display_data: nil, diagnostics: nil,
                      selection_type: nil, selection_label: nil,
                      layer_groups: nil,
-                     layer_issue_groups: nil)
+                     layer_issue_groups: nil,
+                     face_inventory_groups: nil)
         raise ArgumentError, 'preflight is required' if preflight.nil?
         raise ArgumentError, 'registry is required'  if registry.nil?
         @preflight         = preflight
@@ -52,6 +54,13 @@ module SUAnalysis
         # `layerIssueGroups == []` (JS convenience). Backward-
         # compatible: callers that don't supply this get [].
         @layer_issue_groups = (layer_issue_groups || []).dup.freeze
+        # V1.3 (per directive 027): face_inventory_groups is the
+        # locked Array of per-layer face-inventory bucket hashes
+        # produced by FaceInventoryGrouper. Default to an empty
+        # Array for V1.0 / V1.1 / V1.2 callers. Frozen, immutable.
+        # UIBridge exposes both summary['face_inventory_groups']
+        # (Ruby canonical) and faceInventoryGroups (JS convenience).
+        @face_inventory_groups = (face_inventory_groups || []).dup.freeze
         # No public setters; freeze top-level.
         freeze
       end
@@ -92,8 +101,15 @@ module SUAnalysis
           'non_zero_z_vertices' => safe_attr(pf, :non_zero_z_vertex_count, 0),
           'warnings'  => safe_attr(pf, :warning_count, 0),
           'issues'    => @registry.summary,
+          # V1.3 (per directive 027): 'faces' and 'faces_with_holes'
+          # are additive scalar counters derived from the per-layer
+          # face_inventory_groups (sum of face_count /
+          # faces_with_holes_count across all buckets).
+          'faces'              => safe_attr(pf, :face_count, 0),
+          'faces_with_holes'   => safe_attr(pf, :faces_with_holes_count, 0),
           'layer_groups' => layer_groups_payload,
-          'layer_issue_groups' => layer_issue_groups_payload
+          'layer_issue_groups' => layer_issue_groups_payload,
+          'face_inventory_groups' => face_inventory_groups_payload
         }
         result
       end
@@ -137,6 +153,29 @@ module SUAnalysis
             count:        b[:count],
             default_open: b[:default_open] ? true : false,
             issues:       (b[:issues] || []).dup
+          }
+        end
+      end
+
+      # V1.3 (per directive 027): returns a JSON-safe Array of face-
+      # inventory bucket hashes (deep-dup so callers can mutate
+      # without affecting the frozen @face_inventory_groups). The
+      # Hash contents use Symbol keys mirroring the
+      # FaceInventoryGrouper shape. UIBridge.stringify_array
+      # converts Symbol keys to String keys on the JSON boundary.
+      def face_inventory_groups_payload
+        return [] if @face_inventory_groups.nil? || @face_inventory_groups.empty?
+        @face_inventory_groups.map do |b|
+          {
+            name:                      b[:name],
+            face_count:                b[:face_count],
+            faces_with_holes_count:    b[:faces_with_holes_count],
+            role:                      b[:role],
+            role_label:                b[:role_label],
+            role_rule:                 b[:role_rule],
+            visible:                   b[:visible],
+            visibility_unknown:        b[:visibility_unknown],
+            visibility_label:          b[:visibility_label]
           }
         end
       end

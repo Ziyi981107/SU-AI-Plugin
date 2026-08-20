@@ -230,3 +230,102 @@ test 'analysis_result.layer_issue_groups_payload: returns the SAME frozen Array,
   # Same data, though.
   assert_equal payload.first[:issues], r.layer_issue_groups.first[:issues]
 end
+
+# --- V1.3 (per directive 027): face_inventory_groups ---
+
+test 'analysis_result: face_inventory_groups defaults to [] when not supplied' do
+  r = minimal_result
+  assert_equal [], r.face_inventory_groups
+end
+
+test 'analysis_result: face_inventory_groups is frozen' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    face_inventory_groups: [
+      { name: 'DIM-XX', face_count: 2, faces_with_holes_count: 1,
+        role: :dimension, role_label: 'Dimension', role_rule: 'name_dimension',
+        visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+    ]
+  )
+  assert r.face_inventory_groups.frozen?,
+         'face_inventory_groups must be frozen'
+end
+
+test 'analysis_result.summary: includes faces + faces_with_holes scalars (V1.3)' do
+  # Build a preflight with face_count + faces_with_holes_count set.
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count,
+                  :warning_count, :face_count, :faces_with_holes_count).new(
+                    0, 0, 0, 0, 5, 2)
+  reg = IssueRegistry.new([])
+  r = AnalysisResult.new(preflight: pf, registry: reg)
+  summary = r.summary
+  assert_equal 5, summary['faces']
+  assert_equal 2, summary['faces_with_holes']
+end
+
+test 'analysis_result.summary: face scalars default to 0 (V1.0/V1.1/V1.2 callers)' do
+  pf = Object.new  # bare preflight with no face_count / faces_with_holes_count
+  reg = IssueRegistry.new([])
+  r = AnalysisResult.new(preflight: pf, registry: reg)
+  summary = r.summary
+  assert_equal 0, summary['faces']
+  assert_equal 0, summary['faces_with_holes']
+end
+
+test 'analysis_result.summary: face_inventory_groups key present (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    face_inventory_groups: [
+      { name: 'DIM-XX', face_count: 1, faces_with_holes_count: 0,
+        role: :dimension, role_label: 'Dimension', role_rule: 'name_dimension',
+        visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+    ]
+  )
+  summary = r.summary
+  assert summary.key?('face_inventory_groups'),
+         "summary must expose 'face_inventory_groups', got #{summary.keys.inspect}"
+  assert_equal 1, summary['face_inventory_groups'].length
+end
+
+test 'analysis_result.summary: face_inventory_groups defaults to [] (V1.3)' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(preflight: pf, registry: reg)
+  assert_equal [], r.summary['face_inventory_groups']
+end
+
+test 'analysis_result.face_inventory_groups_payload: carries the locked field set' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    face_inventory_groups: [
+      { name: 'DIM-XX', face_count: 2, faces_with_holes_count: 1,
+        role: :dimension, role_label: 'Dimension', role_rule: 'name_dimension',
+        visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+    ]
+  )
+  payload = r.face_inventory_groups_payload
+  assert_equal 1, payload.length
+  b = payload.first
+  assert_equal 'DIM-XX',     b[:name]
+  assert_equal 2,           b[:face_count]
+  assert_equal 1,           b[:faces_with_holes_count]
+  assert_equal :dimension,   b[:role]
+  assert_equal 'Dimension',  b[:role_label]
+  assert_equal 'name_dimension', b[:role_rule]
+  assert_equal true,        b[:visible]
+  assert_equal false,       b[:visibility_unknown]
+  assert_equal 'Visible',   b[:visibility_label]
+end
+
+test 'analysis_result.face_inventory_groups_payload: empty default path' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(preflight: pf, registry: reg)
+  assert_equal [], r.face_inventory_groups_payload
+end

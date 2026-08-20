@@ -38,17 +38,30 @@ module SUAnalysis
       # compatible default: V1.0 / V1.1 callers that don't supply
       # layer_issue_groups get `layerIssueGroups == []` AND
       # `summary['layer_issue_groups'] == []`.
+      #
+      # V1.3 (per directive 027): adds ONE new top-level key
+      # `faceInventoryGroups` for the dialog's 'Face Inventory'
+      # section. Mirrors `summary['face_inventory_groups']`
+      # (canonical Ruby access). Also exposes 'faces' and
+      # 'faces_with_holes' scalar counters at the summary level
+      # (already added by AnalysisResult.summary in commit
+      # b896e04's data layer). Backward-compatible default:
+      # V1.0 / V1.1 / V1.2 callers that don't supply
+      # face_inventory_groups get `faceInventoryGroups == []`
+      # AND `summary['face_inventory_groups'] == []` AND
+      # `summary['faces'] == 0` AND `summary['faces_with_holes'] == 0`.
       def as_html_data(analysis_result)
         return {} if analysis_result.nil?
         result = {
-          'selectionType'    => analysis_result.selection_type.to_s,
-          'selectionLabel'   => analysis_result.selection_label.to_s,
-          'summary'          => stringify_hash(analysis_result.summary),
-          'displayData'      => stringify_hash(analysis_result.display_data),
-          'diagnostics'      => stringify_array(analysis_result.diagnostics),
-          'groups'           => stringify_groups(analysis_result.registry),
-          'layerGroups'      => stringify_array(analysis_result.layer_groups),
-          'layerIssueGroups' => stringify_array(analysis_result.layer_issue_groups)
+          'selectionType'      => analysis_result.selection_type.to_s,
+          'selectionLabel'     => analysis_result.selection_label.to_s,
+          'summary'            => stringify_hash(analysis_result.summary),
+          'displayData'        => stringify_hash(analysis_result.display_data),
+          'diagnostics'        => stringify_array(analysis_result.diagnostics),
+          'groups'             => stringify_groups(analysis_result.registry),
+          'layerGroups'        => stringify_array(analysis_result.layer_groups),
+          'layerIssueGroups'   => stringify_array(analysis_result.layer_issue_groups),
+          'faceInventoryGroups' => stringify_array(analysis_result.face_inventory_groups)
         }
         result
       end
