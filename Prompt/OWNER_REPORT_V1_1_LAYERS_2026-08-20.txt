@@ -176,7 +176,7 @@ NEXT ACTION (POST-OWNER-REPORT)
 2. Agent (next, this commit): dispatches ONE consolidated
    CodeX end-of-stage review packet to Review/, per V1.1
    plan \u00a713. The packet covers:
-     - the V1.1 diff 56ea611..<post-NIT-fix head>
+     - the V1.1 diff 4206e78..<post-NIT-fix HEAD>
      - the 372/372 PASS test summary
      - the three NIT fixes (code + test + checklist)
      - the Owner Gate 2 V1.1 report (this file)
