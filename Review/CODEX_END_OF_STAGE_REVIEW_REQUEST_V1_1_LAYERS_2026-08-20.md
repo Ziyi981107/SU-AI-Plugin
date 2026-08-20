@@ -2,10 +2,27 @@
 
 **Branch**: `v1.1-layer-semantic-mapping`
 **Base (V1.0 freeze)**: `56ea611` (tag `v1.0-candidate-2026-08-19`)
+**Implementation base** (last commit BEFORE the 5 V1.1 commits): `4206e78` (V1.1 plan v3 FINAL)
 **Implementation head**: `823feab` (commit 5 of 5)
-**Post-NIT-fix head**: see packet body (two extra commits on top)
+**Post-NIT-fix head**: `HEAD` of the branch (the 5 implementation commits + the docs checkpoint + the 2 NIT-fix commits + this handoff commit)
 **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md` (864 lines)
 **Owner Gate 2 V1.1 evidence**: `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-20.txt`
+
+When CodeX runs the review, the current `HEAD` of `v1.1-layer-semantic-mapping` is the post-NIT-fix head. The branch was cut from `4206e78`; the diff to review is `4206e78..HEAD` (the 5 V1.1 implementation commits + the docs checkpoint + the 2 NIT-fix commits + this handoff commit). For pure implementation review, use `4206e78..823feab`. For post-NIT-fix verification, use `823feab..HEAD`.
+
+| Order | Commit | Subject |
+|---|---|---|
+| (V1.0 freeze) | `56ea611` | docs(state): 2026-08-19 agent handoff + active baseline block |
+| (plan drafts) | `7d08b82`, `e8e14e0`, `cd94e1e`, `4206e78` | V1.1 plan DRAFT v1/v2/v3 FINAL + R006 routing rule |
+| Implementation 1 | `460037c` | feat(v1.1): pure Ruby layer data layer + V1.1 extension to existing records |
+| Implementation 2 | `a2b05df` | feat(v1.1): LayerSemanticMapper + LayerIssueGrouper (pure Ruby) |
+| Implementation 3 | `4e626d3` | feat(v1.1): SUCapability.layer_visibility + preflight layer population (R007/R010/R011) |
+| Implementation 4 | `ef9ae04` | feat(v1.1): AnalyzersRunner.layer_groups + UIBridge.layerGroups (commit 4) |
+| Implementation 5 | `823feab` | feat(v1.1): UI render for Layers section + locked L4 DOM/CSS/JS contract (commit 5) |
+| (docs checkpoint) | `788e462` | docs(checkpoint): V1.1 IMPLEMENTATION COMPLETE — wait for Owner Gate 2 V1.1 |
+| NIT-1 | (commit A) | fix(v1.1): layer-row separator + plural form (per Gate 2 V1.1 NIT 1) |
+| NIT-2 | (commit B) | docs(checkpoint): OWNER_VERIFICATION V1.1 fixture NITs 2a/2b/2c |
+| (handoff) | (commit C — this commit) | docs(handoff): Owner Gate 2 V1.1 PASS-WITH-NIT report + CodeX end-of-stage packet |
 
 ---
 
@@ -35,8 +52,8 @@ them.
 
 ### 2.1 Implementation (commits 1..5, base → `823feab`)
 
-`git diff --stat 56ea611..823feab` covers the implementation surface
-(65 files, + 2,355 / - 22 net, before the docs commit). The new V1.1
+`git diff --stat 4206e78..823feab` covers the implementation surface
+(27 files, + 2,297 / - 33 net, before the docs checkpoint). The new V1.1
 files (production + tests):
 
 | Area | New files |
@@ -222,7 +239,7 @@ block; no deviation in the implementation.
 ## 7. What CodeX is asked to do
 
 ONE consolidated end-of-stage verdict on the V1.1 implementation
-(`56ea611..823feab`) + the two NIT-fix follow-up commits + the
+(`4206e78..823feab`) + the two NIT-fix follow-up commits + the
 updated `OWNER_VERIFICATION` checklist + the Owner Gate 2 V1.1
 report. The verdict must address:
 
