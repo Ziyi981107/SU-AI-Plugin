@@ -369,3 +369,118 @@ test 'V1.1: layer_groups is exposed in summary payload even when ZERO layers' do
   assert_equal 0, result.layer_groups.length
   assert_equal [], result.summary['layer_groups']
 end
+
+# --- V1.3 (per CodeX review 028 V13-BLOCK-001) ---
+#
+# PRODUCTION-PATH regression guard. The earlier AnalyzersRunner
+# code passed `layer_groups` (Array<Hash> LayerSummary) to
+# FaceInventoryGrouper.group. Hash items do NOT respond to
+# :face_count, so every bucket was silently skipped and the
+# UI rendered '0 total' even when the top scalars reported
+# 'Faces: 1'. Unit tests on the grouper in isolation passed
+# because they used LayerRecord (which DOES respond to
+# :face_count). This guard exercises the real AnalyzersRunner
+# path with a face selection, so the silent skip can never
+# regress.
+require_relative '_fake_su'
+include FakeSU
+
+def ar_face(layer_name: 'Layer0', persistent_id: nil,
+            outer_loop_vertices: 4, inner_loop_vertices: [])
+  layer = layer_name == 'Layer0' ? Layer.new('Layer0') : Layer.new(layer_name)
+  Face.new(
+    layer: layer,
+    persistent_id: persistent_id,
+    outer_loop_vertices: outer_loop_vertices,
+    inner_loop_vertices: inner_loop_vertices
+  )
+end
+
+test 'V13-BLOCK-001: selection = 1 root Face, 0 edges -> summary faces == 1 + 1 Layer0 Face Inventory bucket with face_count == 1' do
+  f = ar_face(layer_name: 'Layer0', persistent_id: 42)
+  sel = Selection.new([f])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  refute_nil result
+  # Top-level scalar counter must report the face.
+  assert_equal 1, result.summary['faces'],
+               'summary.faces must equal 1 for a single root Face'
+  # The single Face Inventory bucket must be Layer0.
+  fig = result.summary['face_inventory_groups']
+  assert_equal 1, fig.length,
+               "expected exactly 1 Face Inventory bucket; got #{fig.inspect}"
+  assert_equal 'Layer0', fig.first[:name]
+  assert_equal 1,        fig.first[:face_count]
+  assert_equal 0,        fig.first[:faces_with_holes_count]
+  # Production-path top-level key must agree with summary.
+  assert_equal fig.length, result.face_inventory_groups.length
+  assert_equal 'Layer0',   result.face_inventory_groups.first[:name]
+end
+
+test 'V13-BLOCK-001: 1 named-layer Face -> 1 bucket with the right role + visibility' do
+  dim = Layer.new('DIM-WALLS')
+  f = Face.new(layer: dim, persistent_id: 1, outer_loop_vertices: 4)
+  sel = Selection.new([f])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  fig = result.summary['face_inventory_groups']
+  assert_equal 1, fig.length
+  b = fig.first
+  assert_equal 'DIM-WALLS', b[:name]
+  assert_equal :dimension,   b[:role]
+  assert_equal 'Dimension',  b[:role_label]
+  assert_equal 'Visible',    b[:visibility_label]
+  assert_equal 1,            b[:face_count]
+end
+
+test 'V13-BLOCK-001: face with 1 inner loop -> face_count=1, faces_with_holes_count=1' do
+  f = Face.new(layer: Layer.new('HOLES'),
+               persistent_id: 1, outer_loop_vertices: 4,
+               inner_loop_vertices: [3])
+  sel = Selection.new([f])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  fig = result.summary['face_inventory_groups']
+  assert_equal 1, fig.length
+  assert_equal 1, fig.first[:face_count]
+  assert_equal 1, fig.first[:faces_with_holes_count]
+  assert_equal 1, result.summary['faces_with_holes'],
+               'summary.faces_with_holes must equal 1 for a face with one inner loop'
+end
+
+test 'V13-BLOCK-001: 2 ComponentInstances of one defn -> 2 Face Inventory buckets (occurrence count semantics)' do
+  inner = Face.new(layer: Layer.new('Layer0'),
+                   persistent_id: 7, outer_loop_vertices: 4)
+  defn = ComponentDefinition.new(name: 'Window', children: [inner], persistent_id: 999)
+  inst_a = ComponentInstance.new(definition: defn, persistent_id: 10)
+  inst_b = ComponentInstance.new(definition: defn, persistent_id: 11)
+  sel = Selection.new([inst_a, inst_b])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  # 2 face occurrences on Layer0 -> one bucket (Layer0) with face_count=2.
+  assert_equal 1, result.summary['face_inventory_groups'].length
+  assert_equal 2, result.summary['face_inventory_groups'].first[:face_count]
+  # But total face scalar must be 2 (one per occurrence).
+  assert_equal 2, result.summary['faces']
+end
+
+test 'V13-BLOCK-001: empty selection -> empty face_inventory_groups + 0 summary scalars (no crash)' do
+  sel = Selection.new([])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  assert_equal [], result.face_inventory_groups
+  assert_equal [], result.summary['face_inventory_groups']
+  assert_equal 0, result.summary['faces']
+  assert_equal 0, result.summary['faces_with_holes']
+end
+
+test 'V13-BLOCK-001: guard against silent collapse -- grouper input shape cannot yield [] when snapshot has faces' do
+  # Belt-and-suspenders regression guard. If anyone ever
+  # re-introduces the wrong production-seam input shape
+  # (Array<Hash> LayerSummary instead of Array<LayerRecord>),
+  # this test fires because the per-layer face_count would
+  # silently collapse to 0.
+  f = ar_face(layer_name: 'Layer0', persistent_id: 1)
+  sel = Selection.new([f])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  fig = result.summary['face_inventory_groups']
+  assert !fig.empty?, 'Face Inventory must NOT collapse to [] when snapshot has faces'
+  assert fig.first[:face_count] > 0, 'bucket face_count must be > 0 (no silent zero)'
+  assert_equal result.summary['faces'], fig.first[:face_count],
+               'top scalar faces must equal the (only) bucket face_count'
+end

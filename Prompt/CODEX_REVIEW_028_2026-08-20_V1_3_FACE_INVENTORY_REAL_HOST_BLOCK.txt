@@ -1,0 +1,63 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+RISK ESCALATION / REAL-HOST BLOCK
+
+SCOPE REVIEWED:
+- branch/head: v1.3-face-inventory @ 0176c97
+- production seam: PreflightRunner -> LayerSemanticMapper -> AnalyzersRunner -> FaceInventoryGrouper -> AnalysisResult/UI
+- Owner evidence: SU2020 V13-1, one selected root Face on Layer0
+- passed scope kept closed: V1.0/V1.1/V1.2; do not reopen them
+
+BLOCKS:
+1. [V13-BLOCK-001] Face Inventory is empty while the same run reports Faces: 1
+   Location:
+   - extension/su_ai_plugin/analyzers_runner.rb, V1.3 wiring around FaceInventoryGrouper.group
+   - extension/su_ai_plugin/core/face_inventory_grouper.rb, group input contract
+
+   Observed real-host evidence:
+   - top counters: Faces: 1, Faces With Holes: 0
+   - Layers: 1 total (0 with issues)
+   - Face Inventory: 0 total (0 with holes)
+
+   Root cause:
+   - LayerSemanticMapper.build returns Array<Hash> (LayerSummary).
+   - AnalyzersRunner passes that Array<Hash> as the sole input to FaceInventoryGrouper.group.
+   - FaceInventoryGrouper requires each item to respond_to?(:face_count), which Hash does not.
+   - Every LayerSummary is therefore skipped. Unit tests exercised LayerRecord input directly but did not cover the production integration seam.
+
+   Minimum acceptable fix:
+   - Make the production seam pass face counts and the locked V1.1 role/visibility/order semantics correctly.
+   - Prefer the narrowest design with a single source of truth. Acceptable examples:
+     A. extend LayerSemanticMapper summaries to preserve face_count and faces_with_holes_count from LayerRecord, then make FaceInventoryGrouper explicitly support the documented Hash shape; or
+     B. pass snapshot.layers to FaceInventoryGrouper and ensure its canonical ordering remains exactly aligned with V1.1.
+   - Do not compute face inventory independently in JavaScript.
+   - Do not change source geometry, selection, camera, active_path, layers, or visibility.
+   - Do not broadly refactor V1.0-V1.2.
+
+   Required regression evidence:
+   - Add a production-path AnalyzersRunner test: selection containing one root Face and zero edges must yield summary faces == 1 and exactly one Face Inventory Layer0 bucket with face_count == 1.
+   - Add/retain integration coverage for named-layer faces, faces_with_holes_count, and two occurrences of one component definition.
+   - Add a guard proving the grouper input shape used by AnalyzersRunner cannot silently collapse to [].
+   - Run the full Ruby and Node/DOM suites; report exact totals and git diff --check.
+   - Commit the minimum fix, then write ONE complete BLOCK recheck packet to Review. Do not submit intermediate micro-reviews.
+
+NITS:
+- [V12-NIT-001] UI says "1 layers". If the pluralization fix is isolated, tiny, and low-risk, fix it in this same work cycle with DOM coverage; otherwise record as deferred NIT. It does not block V1.2.
+- Correct the Owner V1.3 checklist/fixture notes while touching documentation:
+  1. assign layer to each Face entity, not merely its parent Group;
+  2. create a real inner loop for a hole (creating and erasing the inner face is acceptable); reverse! does not create a hole;
+  3. use a layer name that actually maps to Annotation (for example ANNOTATION-HOLES), or expect Unknown for HOLES-OK;
+  4. two component occurrences on the same Layer0 aggregate to ONE Face Inventory row with face_count 2, not two rows.
+
+DEBT:
+- None added by this review.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None. This is a deterministic implementation defect; Pi should fix it without asking Owner.
+
+NEXT REVIEW:
+- Recheck V13-BLOCK-001 only after the complete minimum fix and regression packet.
+- Owner then restarts SketchUp, reruns V13-1, and continues V13-2..V13-6 only after V13-1 shows Face Inventory = 1 total.
+- Do not request another full Codex stage review until the combined V1.2 + V1.3 end-of-stage packet, unless a new high-risk BLOCK appears.

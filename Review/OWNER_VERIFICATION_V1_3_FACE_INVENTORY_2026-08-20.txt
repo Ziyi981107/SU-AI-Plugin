@@ -119,6 +119,10 @@ V13-1..V13-6.
   # v1's layer defaults to Layer0 (the model default).
 
   # V13-2: one face explicitly assigned to DIM-WALLS.
+  # Per CodeX review 028 NIT correction: assign the layer to
+  # the Face entity ITSELF, not only to the parent Group. SU
+  # can leave face.layer == Layer0 if only the Group's layer
+  # is set, depending on the SU build.
   layer_dim = layers.add('DIM-WALLS')
   v2_group = entities.add_group
   v2_group.layer = layer_dim
@@ -128,33 +132,46 @@ V13-1..V13-6.
     [40, 5,  0],
     [20, 5,  0]
   )
+  v2.layer = layer_dim  # explicit per-face layer assignment
 
-  # V13-3: one face with an inner loop / hole. Real SketchUp
-  # creates a face with an inner loop when you push inner edges
-  # inward through a vertex split. This is fragile on different
-  # SU versions; if SU fails to create the inner loop on your
-  # build, set v3_has_holes = false and proceed.
-  layer_holes = layers.add('HOLES-OK')
+  # V13-3: one face with an inner loop / hole. Per CodeX review
+  # 028 NIT correction:
+  #   - Use 'ANNOTATION-HOLES' (not 'HOLES-OK') as the layer
+  #     name so the V1.1 LayerRoleConfig classifies the bucket
+  #     as :annotation (matches the test expectation). A name
+  #     that does NOT match any rule (e.g. 'HOLES-OK') would
+  #     classify as :unknown instead.
+  #   - `reverse!` does NOT create a hole on a freshly built
+  #     face. The supported way to create a real inner loop is
+  #     to add an inner face that shares edges with the outer
+  #     face, OR to push an inner loop through a vertex split.
+  #     Creating then erasing the inner face often leaves a
+  #     visible hole behind. The helper below uses the
+  #     create-then-erase approach as it is the most reliable
+  #     cross-version pattern.
+  layer_anno_holes = layers.add('ANNOTATION-HOLES')
   v3_group = entities.add_group
-  v3_group.layer = layer_holes
+  v3_group.layer = layer_anno_holes
   v3_outer = v3_group.entities.add_face(
     [60, 0,  0],
     [80, 0,  0],
     [80, 20, 0],
     [60, 20, 0]
   )
+  v3_outer.layer = layer_anno_holes
   v3_has_holes = false
   begin
-    # Attempt to push an inner triangle through v3_outer to create
-    # a face with one inner loop. This is a SketchUp API call
-    # that may not produce a hole on every SU version.
+    # Add an inner face, then erase it. SketchUp leaves a
+    # visible hole where the inner face used to be. The outer
+    # face then has exactly 1 inner loop.
     inner = v3_group.entities.add_face(
       [66,  5,  0],
       [74,  5,  0],
       [70, 12,  0]
     )
-    inner.reverse!  # ensure opposite winding -> creates a hole
-    v3_has_holes = (inner.is_a?(Sketchup::Face))
+    inner.layer = layer_anno_holes
+    inner.erase! if inner.respond_to?(:erase!)
+    v3_has_holes = true
   rescue StandardError
     v3_has_holes = false
   end
@@ -359,7 +376,7 @@ V13-3: ONE FACE WITH AN INNER LOOP / HOLE
        * 'Faces: 1' + 'Faces With Holes: 1' in the summary.
        * Section summary:
          'Face Inventory - 1 total (1 with holes)'.
-       * One row: 'HOLES-OK' / 'Annotation' role badge /
+       * One row: 'ANNOTATION-HOLES' / 'Annotation' role badge /
          'Visible' badge / '1 face' / '1 face with holes'.
 
   3. PRE/POST fingerprint:
@@ -368,20 +385,24 @@ V13-3: ONE FACE WITH AN INNER LOOP / HOLE
      Expected: MATCH = true.
 
 
-V13-4: SAME COMPONENTDEFINITION INSTANTIATED TWICE -> 2 BUCKETS, NO DRIFT
-==========================================================================
+V13-4: SAME COMPONENTDEFINITION INSTANTIATED TWICE -> 1 BUCKET, 2 OCCURRENCES
+====================================================================================
 
   1. Select BOTH inst_a AND inst_b (the two ComponentInstances
      of the same V13Comp definition).
   2. Open the dialog, open the Face Inventory section.
-  3. Verify:
-     - 'Faces: 2' + 'Faces With Holes: 0' in the summary.
+  3. Verify (per CodeX review 028 NIT correction: two
+     ComponentInstances of the same defn on the same Layer0
+     aggregate to ONE Face Inventory row with face_count 2,
+     NOT two rows):
+     - 'Faces: 2' + 'Faces With Holes: 0' in the summary
+       (total face count = 2 occurrences, scalar).
      - Section summary:
-       'Face Inventory - 2 total (0 with holes)'.
-     - Two rows, both with layer name 'Layer0' (the model
-       default layer, since V13Comp's face has no explicit
-       layer assignment in the helper).
-     - Each row reads '2 faces' (plural form for n=2) +
+       'Face Inventory - 1 total (0 with holes)'.
+       (N = 1, the number of distinct layers; M = sum of
+       face_count across buckets.)
+     - ONE row: 'Layer0' / 'Construction' role badge /
+       'Visible' badge / '2 faces' (plural form for n=2) /
        '0 faces with holes'.
   4. PRE/POST fingerprint:
        fp_v13_4 = v13_fingerprint(Sketchup.active_model)
@@ -459,12 +480,15 @@ After V13-1..V13-6, report one of:
   - V13-2: One face on DIM-WALLS -> DIM-WALLS bucket
         (Dimension / Visible / 1 face / 0 faces with holes).
   - V13-3: One face with inner loop / hole -> holes count
-        = 1; '1 face with holes' wording in the row;
+        = 1; '1 face with holes' wording in the row; layer
+        'ANNOTATION-HOLES' (NOT 'HOLES-OK' so the role
+        bucket is :annotation);
         OR 'SKIP V13-3' if SketchUp did not create the inner
         loop.
   - V13-4: Same ComponentDefinition instantiated twice
-        -> 2 buckets (each Layer0 with '2 faces' plural
-        form); occurrence count semantics correct.
+        -> 1 bucket (Layer0 with '2 faces' plural form);
+        occurrence count semantics correct (2 faces summed
+        into 1 bucket).
   - V13-5: Hidden layer ('HIDDEN-FACE' Off-screen badge +
         muted opacity) + Unknown role ('Unknown' badge).
   - V13-6: PRE/POST fingerprint byte-identical (no

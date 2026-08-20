@@ -746,9 +746,10 @@ assert('V12: each bucket is a <details> element',
        v12LayerIssuesList.children.every(function (c) {
          return c.tag === 'details';
        }));
+var _b0 = v12LayerIssuesList.children[0].children[0].textContent;
+var _b1 = v12LayerIssuesList.children[1].children[0].textContent;
 assert('V12: bucket summary shows layer name + issue count (correct singular form for n=1)',
-       v12LayerIssuesList.children[0].children[0].textContent === 'DIM-WALLS (1 issue)' &&
-       v12LayerIssuesList.children[1].children[0].textContent === 'TXT-LABELS (1 issue)');
+       _b0 === 'DIM-WALLS (1 issue)' && _b1 === 'TXT-LABELS (1 issue)');
 assert('V12: each bucket body contains the issue row(s) from renderIssue',
        v12LayerIssuesList.children[0].children.length === 2 &&
        v12LayerIssuesList.children[0].children[1].classes.indexOf('issue') !== -1);
@@ -876,6 +877,32 @@ assert('V12: ROOT.renderLayerIssues is exposed (so other scripts can call it)',
        typeof context.window.SUAIP.renderLayerIssues === 'function');
 assert('V12: ROOT.renderLayerIssueBucket is exposed',
        typeof context.window.SUAIP.renderLayerIssueBucket === 'function');
+
+// V12-NIT-001 (per CodeX review 028; deferred NIT, not blocking
+// V1.2). Re-render with a single layer / single issue so the
+// summary reads '1 layer' (NOT '1 layers') in the singular case.
+// Placed AFTER all V12 bucket assertions because
+// renderWithPayload clears the document state.
+renderWithPayload({
+  selectionLabel: 'single_layer',
+  selectionType:  'Group',
+  summary: { edges: 2, vertices: 4, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: [
+    {
+      name: 'DIM-XX', count: 1, default_open: false,
+      issues: [
+        { issue_id: 'open_endpoint|1|1', issue_type: 'open_endpoint',
+          severity: 'low', locatable: true, message: 'm',
+          source: { layer_name: 'DIM-XX' } }
+      ]
+    }
+  ]
+});
+assert('V12-NIT-001: summary uses singular form for n=1 layer ("Issues by Layer \u2014 1 layer (1 issues)")',
+       mockElements['layer-issues-summary'].textContent ===
+         'Issues by Layer \u2014 1 layer (1 issues)');
 
 // --- V1.3 (per directive 027): "Face Inventory" section tests -----
 

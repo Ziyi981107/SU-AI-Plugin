@@ -305,8 +305,16 @@
       if (listEl) listEl.appendChild(renderLayerIssueBucket(b));
     });
     if (summaryEl) {
-      summaryEl.textContent = 'Issues by Layer \u2014 ' + totalBuckets +
-                              ' layers (' + totalIssues + ' issues)';
+      // Per CodeX review 028 V12-NIT-001 (deferred NIT, not blocking
+      // V1.2): use the central formatCount helper for the 'layer(s)'
+      // noun so the singular form '1 layer' reads correctly when
+      // the selection only contributes one layer. The V1.1 Layers
+      // section's 'Layers -- N total (M with issues)' wording is
+      // already word-independent (always 'total'); the V1.2
+      // wording uses 'layer(s)' which the formatCount helper
+      // pluralizes correctly.
+      summaryEl.textContent = 'Issues by Layer \u2014 ' + formatCount(totalBuckets, 'layer') +
+                              ' (' + totalIssues + ' issues)';
     }
   }
 

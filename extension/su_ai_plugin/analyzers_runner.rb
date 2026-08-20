@@ -159,19 +159,40 @@ module SUAnalysis
         )
 
         # 7.7. V1.3 (per directive 027): build the per-layer Array of
-        # face-inventory bucket hashes from the LayerRecord list
-        # (`layer_groups` here is Array<LayerSummary>; per directive
-        # we use the same list because both the Layers and Face
-        # Inventory sections share the role + visibility semantics).
-        # The grouper reads role / role_label / visible /
-        # visibility_unknown / visibility_label from each
-        # LayerRecord and emits one bucket per non-empty layer;
-        # no JS-side recomputation (per directive: "Do NOT implement
-        # topology grouping independently in JavaScript").
-        # Backward-compatible default: empty Array when there are
-        # no faces in the snapshot.
+        # face-inventory bucket hashes.
+        #
+        # Per CodeX review 028 V13-BLOCK-001 (real-host block):
+        # Pass `snapshot.layers` (Array<LayerRecord>) directly to
+        # the grouper. The earlier seam passed `layer_groups` (the
+        # Array<Hash> LayerSummary list produced by
+        # LayerSemanticMapper.build), but FaceInventoryGrouper
+        # requires each item to respond_to?(:face_count); Hash
+        # items don't, so every bucket was silently skipped -> the
+        # UI rendered '0 total' even when Faces: N reported N > 0.
+        #
+        # Why `snapshot.layers` is the right input:
+        #   - It is the single source of truth for face_count /
+        #     faces_with_holes_count (populated by
+        #     PreflightRunner.build_snapshot in commit b896e04).
+        #   - It carries role / role_rule / visible /
+        #     visibility_unknown / visibility_label already
+        #     classified by the V1.1 path (LayerRoleConfig +
+        #     SUCapability.layer_visibility).
+        #   - LayerInventoryGrouper's `layer_name_of` and
+        #     `sort_like_layers` both handle both Hash and
+        #     LayerRecord (the Hash branch is preserved for
+        #     unit tests that exercise the grouper in isolation).
+        #   - The bucket order matches the V1.1 Layers display
+        #     order because both the V1.1 layer_groups and
+        #     snapshot.layers are constructed in the same
+        #     snapshot.layers order (PreflightRunner adds
+        #     LayerRecords in encounter order; build_layer_records
+        #     preserves that order).
+        #
+        # Do NOT compute face inventory independently in JS
+        # (per directive 027). Do NOT reopen V1.0/V1.1/V1.2.
         face_inventory_groups = SUAnalysis::Core::FaceInventoryGrouper.group(
-          layer_groups
+          snapshot.layers
         )
 
         # 8. Selection label and classification. These MUST use
