@@ -20,9 +20,10 @@ When CodeX runs the review, the current `HEAD` of `v1.1-layer-semantic-mapping` 
 | Implementation 4 | `ef9ae04` | feat(v1.1): AnalyzersRunner.layer_groups + UIBridge.layerGroups (commit 4) |
 | Implementation 5 | `823feab` | feat(v1.1): UI render for Layers section + locked L4 DOM/CSS/JS contract (commit 5) |
 | (docs checkpoint) | `788e462` | docs(checkpoint): V1.1 IMPLEMENTATION COMPLETE — wait for Owner Gate 2 V1.1 |
-| NIT-1 | (commit A) | fix(v1.1): layer-row separator + plural form (per Gate 2 V1.1 NIT 1) |
-| NIT-2 | (commit B) | docs(checkpoint): OWNER_VERIFICATION V1.1 fixture NITs 2a/2b/2c |
-| (handoff) | (commit C — this commit) | docs(handoff): Owner Gate 2 V1.1 PASS-WITH-NIT report + CodeX end-of-stage packet |
+| NIT-1 | `33b601a` | fix(v1.1): layer-row separator + plural form (per Gate 2 V1.1 NIT 1) |
+| NIT-2 | `0a1f2af` | docs(checkpoint): OWNER_VERIFICATION V1.1 fixture NITs 2a/2b/2c |
+| (handoff) | `0debb81` | docs(handoff): Owner Gate 2 V1.1 PASS-WITH-NIT report + CodeX end-of-stage packet |
+| (packet-correction) | `b80f28b` | docs(packet): correct commit-range references in the CodeX end-of-stage packet |
 
 ---
 
