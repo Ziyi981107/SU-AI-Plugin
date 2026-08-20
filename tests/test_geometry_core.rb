@@ -152,6 +152,84 @@ test 'core.GeometrySnapshot: bounding_box covers all edges' do
   assert_equal [10, 5, 0], bb[:max]
 end
 
+# --- V1.3 (per directive 027): GeometrySnapshot.faces ---
+
+test 'core.GeometrySnapshot: faces defaults to [] for V1.0/V1.1/V1.2 callers' do
+  edges = [
+    SyntheticFactory.edge(0, [0, 0, 0], [10, 0, 0]),
+    SyntheticFactory.edge(1, [10, 0, 0], [10, 5, 0])
+  ]
+  # V1.0/V1.1/V1.2 callers don't supply :faces.
+  snap = GeometrySnapshot.new(edges: edges)
+  assert_equal [], snap.faces
+  assert_equal 0,    snap.face_count
+end
+
+test 'core.GeometrySnapshot: faces Array is frozen' do
+  fr = SUAnalysis::Core::FaceRecord.new(
+    id: 0,
+    source: SUAnalysis::Core::SourceReference.new(kind: 'face', persistent_id: 1,
+                                                layer_name: 'Layer0'),
+    layer:  'Layer0',
+    outer_loop_vertex_count: 4
+  )
+  snap = GeometrySnapshot.new(edges: [], faces: [fr])
+  assert snap.faces.frozen?, 'faces Array must be frozen'
+end
+
+test 'core.GeometrySnapshot: faces nil is coerced to []' do
+  snap = GeometrySnapshot.new(edges: [], faces: nil)
+  assert_equal [], snap.faces
+  assert_equal 0,    snap.face_count
+end
+
+test 'core.GeometrySnapshot: face_count returns faces.size' do
+  fr1 = SUAnalysis::Core::FaceRecord.new(
+    id: 0,
+    source: SUAnalysis::Core::SourceReference.new(kind: 'face', persistent_id: 1,
+                                                layer_name: 'Layer0'),
+    layer:  'Layer0', outer_loop_vertex_count: 4
+  )
+  fr2 = SUAnalysis::Core::FaceRecord.new(
+    id: 1,
+    source: SUAnalysis::Core::SourceReference.new(kind: 'face', persistent_id: 2,
+                                                layer_name: 'DIM-XX'),
+    layer:  'DIM-XX', outer_loop_vertex_count: 4, inner_loop_count: 1
+  )
+  snap = GeometrySnapshot.new(edges: [], faces: [fr1, fr2])
+  assert_equal 2, snap.face_count
+end
+
+test 'core.LayerRecord: face_count + faces_with_holes_count default to 0 (V1.0/V1.1 callers)' do
+  rec = LayerRecord.new(name: 'Layer0')
+  assert_equal 0, rec.face_count
+  assert_equal 0, rec.faces_with_holes_count
+end
+
+test 'core.LayerRecord: increment_face_count! adds 1 (no holes)' do
+  rec = LayerRecord.new(name: 'Layer0')
+  rec.increment_face_count!
+  assert_equal 1, rec.face_count
+  assert_equal 0, rec.faces_with_holes_count
+end
+
+test 'core.LayerRecord: increment_face_count!(has_holes: true) counts holes too' do
+  rec = LayerRecord.new(name: 'Layer0')
+  rec.increment_face_count!(has_holes: true)
+  assert_equal 1, rec.face_count
+  assert_equal 1, rec.faces_with_holes_count
+  rec.increment_face_count!  # second face, no holes
+  assert_equal 2, rec.face_count
+  assert_equal 1, rec.faces_with_holes_count
+end
+
+test 'core.LayerRecord: to_h includes face_count + faces_with_holes_count' do
+  rec = LayerRecord.new(name: 'DIM-XX', face_count: 5, faces_with_holes_count: 2)
+  h = rec.to_h
+  assert_equal 5, h[:face_count]
+  assert_equal 2, h[:faces_with_holes_count]
+end
+
 # --- Issue Registry field completeness (PI_TASK_001 §11) ---------------
 
 test 'issue hash includes all §11 fields for short edge' do

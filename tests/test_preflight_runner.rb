@@ -1035,3 +1035,164 @@ test 'REAL-HOST BLOCK (recheck): BrokenToArySelection selection_label uses group
                'selection_label must reflect the Group typename, not be the default "selection"'
   refute_equal 'empty', result.selection_type
 end
+
+# --- V1.3 (per directive 027): Face Inventory adapter tests -----------
+
+require_relative '../extension/su_ai_plugin/core/face_record'
+
+def fake_face(layer: 'Layer0', persistent_id: nil, outer_loop_vertices: 4,
+              inner_loop_vertices: [], invalid: false)
+  FakeSU::Face.new(
+    layer: FakeSU::Layer.new(layer),
+    persistent_id: persistent_id,
+    outer_loop_vertices: outer_loop_vertices,
+    inner_loop_vertices: inner_loop_vertices,
+    invalid: invalid
+  )
+end
+
+test 'V1.3: root selected Face counts once (single FaceRecord)' do
+  f = fake_face(layer: 'Layer0', persistent_id: 1, outer_loop_vertices: 4)
+  sel = FakeSU::Selection.new([f])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length,
+               'one root Face -> exactly one FaceRecord'
+  assert_equal 'Layer0', snapshot.faces.first.layer
+  assert_equal 4,        snapshot.faces.first.outer_loop_vertex_count
+  assert_equal false,    snapshot.faces.first.has_holes
+end
+
+test 'V1.3: Face inside Group counts once with correct occurrence identity' do
+  f = fake_face(layer: 'DIM-WALLS', persistent_id: 42, outer_loop_vertices: 4)
+  g = FakeSU::Group.new(name: 'outer', children: [f], persistent_id: 100)
+  sel = FakeSU::Selection.new([g])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length
+  rec = snapshot.faces.first
+  assert_equal 'DIM-WALLS', rec.layer
+  # SourceReference instance_path includes 'Group:outer'.
+  assert_includes rec.source.instance_path, 'Group:outer'
+end
+
+test 'V1.3: same ComponentDefinition instantiated twice -> 2 FaceRecord occurrences' do
+  inner_face = fake_face(layer: 'Layer0', persistent_id: 7, outer_loop_vertices: 4)
+  defn = FakeSU::ComponentDefinition.new(
+    name: 'Window', children: [inner_face], persistent_id: 999
+  )
+  inst_a = FakeSU::ComponentInstance.new(definition: defn, persistent_id: 10)
+  inst_b = FakeSU::ComponentInstance.new(definition: defn, persistent_id: 11)
+  sel = FakeSU::Selection.new([inst_a, inst_b])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 2, snapshot.faces.length,
+               'two ComponentInstance occurrences of the same defn -> 2 FaceRecords'
+end
+
+test 'V1.3: nested Group traversal preserves occurrence identity + path depth' do
+  inner_face = fake_face(layer: 'Layer0', persistent_id: 7, outer_loop_vertices: 4)
+  inner_grp = FakeSU::Group.new(name: 'inner', children: [inner_face], persistent_id: 1)
+  outer_grp = FakeSU::Group.new(name: 'outer', children: [inner_grp], persistent_id: 2)
+  sel = FakeSU::Selection.new([outer_grp])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length
+  rec = snapshot.faces.first
+  # The face is 2 deep (outer -> inner).
+  assert_equal 2, rec.source.structural_depth
+  # Path includes both groups.
+  path = rec.source.instance_path
+  assert_includes path, 'Group:outer'
+  assert_includes path, 'Group:inner'
+end
+
+test 'V1.3: Face with outer loop only -> has_holes = false' do
+  f = fake_face(layer: 'Layer0', outer_loop_vertices: 4, inner_loop_vertices: [])
+  sel = FakeSU::Selection.new([f])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length
+  assert_equal false, snapshot.faces.first.has_holes
+  assert_equal 0,    snapshot.faces.first.inner_loop_count
+end
+
+test 'V1.3: Face with one inner loop -> has_holes = true (inner_loop_count=1)' do
+  f = fake_face(layer: 'Layer0', outer_loop_vertices: 4, inner_loop_vertices: [3])
+  sel = FakeSU::Selection.new([f])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length
+  rec = snapshot.faces.first
+  assert_equal true, rec.has_holes
+  assert_equal 1,    rec.inner_loop_count
+end
+
+test 'V1.3: Face with multiple inner loops -> inner_loop_count summed' do
+  f = fake_face(layer: 'Layer0', outer_loop_vertices: 4,
+                inner_loop_vertices: [3, 5, 7])
+  sel = FakeSU::Selection.new([f])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  rec = snapshot.faces.first
+  assert_equal true, rec.has_holes
+  assert_equal 3,    rec.inner_loop_count
+end
+
+test 'V1.3: hidden + unknown-visibility layer behavior matches V1.1 (face)' do
+  # Hidden face: layer.visible? = false.
+  hidden_layer = FakeSU::Layer.new('HIDDEN')
+  hidden_layer.visible = false
+  f_hidden = FakeSU::Face.new(layer: hidden_layer, persistent_id: 1,
+                              outer_loop_vertices: 4)
+  # Unknown-visibility face: entity.layer is a bare Struct that does
+  # NOT expose :visible? at all. The adapter falls back to the
+  # R011 :unknown contract (visible: true, visibility_unknown: true).
+  no_vis_layer = Struct.new(:name).new('NO_VIS')
+  f_no_vis = FakeSU::Face.new(layer: no_vis_layer, persistent_id: 2,
+                              outer_loop_vertices: 4)
+  sel = FakeSU::Selection.new([f_hidden, f_no_vis])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  # LayerRecord for each layer should carry the correct visibility.
+  layers = snapshot.layers.sort_by(&:name)
+  hidden_rec  = layers.find { |r| r.name == 'HIDDEN' }
+  no_vis_rec  = layers.find { |r| r.name == 'NO_VIS' }
+  assert_equal false, hidden_rec.visible
+  assert_equal false, hidden_rec.visibility_unknown
+  assert_equal true,  no_vis_rec.visible
+  assert_equal true,  no_vis_rec.visibility_unknown
+end
+
+test 'V1.3: one invalid Face skipped while valid sibling Face remains' do
+  good  = fake_face(layer: 'Layer0', persistent_id: 1, outer_loop_vertices: 4)
+  bad   = fake_face(layer: 'Layer0', persistent_id: 2, outer_loop_vertices: 4,
+                    invalid: true)
+  sel = FakeSU::Selection.new([good, bad])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  assert_equal 1, snapshot.faces.length,
+               'invalid Face must be skipped; valid sibling must remain'
+  assert_equal 1, snapshot.faces.first.source.persistent_id
+end
+
+test 'V1.3: face_aggregates accumulate face_count + faces_with_holes_count per layer' do
+  f1 = fake_face(layer: 'DIM-XX', outer_loop_vertices: 4)        # no holes
+  f2 = fake_face(layer: 'DIM-XX', outer_loop_vertices: 4,
+                inner_loop_vertices: [3])                        # holes
+  f3 = fake_face(layer: 'TXT-XX', outer_loop_vertices: 4)        # no holes
+  sel = FakeSU::Selection.new([f1, f2, f3])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  dim_rec = snapshot.layers.find { |r| r.name == 'DIM-XX' }
+  txt_rec = snapshot.layers.find { |r| r.name == 'TXT-XX' }
+  assert_equal 2, dim_rec.face_count
+  assert_equal 1, dim_rec.faces_with_holes_count
+  assert_equal 1, txt_rec.face_count
+  assert_equal 0, txt_rec.faces_with_holes_count
+end
+
+test 'V1.3: edge counts unchanged after face traversal (no regression)' do
+  edges = fake_rectangle_edges([0, 0], 10, 5)
+  g = FakeSU::Group.new(name: 'g', children: edges, persistent_id: 100)
+  face = fake_face(layer: 'Layer0', outer_loop_vertices: 4)
+  sel = FakeSU::Selection.new([g, face])
+  snapshot = SUAnalysis::Extension::PreflightRunner.build_snapshot(sel)
+  # 4 edges, 1 face.
+  assert_equal 4, snapshot.edge_count
+  assert_equal 1, snapshot.face_count
+  # Layer0 aggregates 4 edges AND 1 face.
+  layer0 = snapshot.layers.find { |r| r.name == 'Layer0' }
+  assert_equal 4, layer0.edge_count
+  assert_equal 1, layer0.face_count
+end

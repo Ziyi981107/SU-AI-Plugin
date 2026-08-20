@@ -127,6 +127,11 @@ module FakeSU
     def visible?
       @visible
     end
+
+    # V1.3: setter for tests that need to flip visibility mid-test.
+    def visible=(v)
+      @visible = v ? true : false
+    end
   end
 
   # Fake ComponentDefinition (mocks Sketchup::ComponentDefinition).
