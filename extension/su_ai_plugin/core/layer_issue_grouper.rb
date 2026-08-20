@@ -22,9 +22,19 @@ module SUAnalysis
       DEFAULT_LAYER_NAME = 'Layer0'.freeze
 
       # Build buckets. Returns Array<Hash> with the locked field set.
+      #
+      # `layer_records` may be Array<LayerRecord> (snapshot order) or
+      # Array<Hash-with-:-name-key> (LayerSemanticMapper output,
+      # role-sorted). V1.2 wiring in AnalyzersRunner passes the
+      # role-sorted LayerSummary hashes so bucket order matches the
+      # existing Layers display order (Dimension -> Annotation ->
+      # Guide -> Construction -> Unknown, visible before hidden,
+      # then name ASC).
       def group(issues, layer_records)
-        # Build a set of known layer names (no phantom layers).
-        known_names = layer_records.map { |r| r.name.to_s }.uniq
+        # Build a set of known layer names (no phantom layers). The
+        # input order is preserved so the bucket output order mirrors
+        # the order of `layer_records`.
+        known_names = layer_records.map { |r| layer_name_of(r) }.uniq
         # Always include the V1.0 fallback "Layer0" so issues with
         # nil layer_name still have a bucket.
         known_names << DEFAULT_LAYER_NAME if issues && !issues.empty?
@@ -70,6 +80,17 @@ module SUAnalysis
           }
         end
         result
+      end
+
+      # Internal: extract a layer name from either a LayerRecord
+      # (responds to .name) or a Hash (keyed by :name). Defensive
+      # coercion handles nil / non-string names.
+      def layer_name_of(rec)
+        if rec.is_a?(Hash)
+          (rec[:name] || rec['name']).to_s
+        else
+          rec.name.to_s
+        end
       end
     end
   end

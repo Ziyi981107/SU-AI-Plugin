@@ -18,12 +18,14 @@ module SUAnalysis
       attr_reader :preflight, :registry, :snapshot_lookup,
                   :display_data, :diagnostics,
                   :selection_type, :selection_label,
-                  :layer_groups
+                  :layer_groups,
+                  :layer_issue_groups
 
       def initialize(preflight:, registry:, snapshot_lookup: nil,
                      display_data: nil, diagnostics: nil,
                      selection_type: nil, selection_label: nil,
-                     layer_groups: nil)
+                     layer_groups: nil,
+                     layer_issue_groups: nil)
         raise ArgumentError, 'preflight is required' if preflight.nil?
         raise ArgumentError, 'registry is required'  if registry.nil?
         @preflight         = preflight
@@ -41,6 +43,15 @@ module SUAnalysis
         # UIBridge will surface as `summary['layer_groups'] == []`
         # and `layerGroups == []`.
         @layer_groups = (layer_groups || []).dup.freeze
+        # V1.2 (per directive 026): layer_issue_groups is the locked
+        # Array of LayerIssueBucket hashes produced by LayerIssueGrouper.
+        # Default to an empty Array for V1.0 / V1.1 callers. The
+        # frozen Array is the immutable contract — UIBridge stringifies
+        # it once on the way out and exposes it both as
+        # `summary['layer_issue_groups'] == []` (Ruby canonical) and
+        # `layerIssueGroups == []` (JS convenience). Backward-
+        # compatible: callers that don't supply this get [].
+        @layer_issue_groups = (layer_issue_groups || []).dup.freeze
         # No public setters; freeze top-level.
         freeze
       end
@@ -60,11 +71,18 @@ module SUAnalysis
       #   - V1.1 (plan §4.8): layer_groups — per-layer Array<Hash>
       #     with role / role_label / visibility / visibility_label /
       #     edge_count / issue_count for the dialog's Layers section.
+      #   - V1.2 (directive 026): layer_issue_groups — per-layer
+      #     Array<Hash> with name / count / default_open / issues
+      #     for the dialog's "Issues by Layer" section. The top-level
+      #     `layerIssueGroups` field in the JS payload mirrors this
+      #     data; UIBridge builds both from the SAME @layer_issue_groups
+      #     so they cannot drift.
       # Returns String-keyed Hash so the UI bridge String-keys it once.
-      # NOTE: @layer_groups is Array<Hash-with-Symbol-keys>. The UI
-      # bridge (UIBridge.stringify_value) recursively converts Symbol
-      # keys to String keys on the JSON boundary; we do NOT deep-dup
-      # here because summary is called many times in tests.
+      # NOTE: @layer_groups and @layer_issue_groups are
+      # Array<Hash-with-Symbol-keys>. The UI bridge
+      # (UIBridge.stringify_value) recursively converts Symbol keys to
+      # String keys on the JSON boundary; we do NOT deep-dup here
+      # because summary is called many times in tests.
       def summary
         pf = @preflight
         result = {
@@ -74,7 +92,8 @@ module SUAnalysis
           'non_zero_z_vertices' => safe_attr(pf, :non_zero_z_vertex_count, 0),
           'warnings'  => safe_attr(pf, :warning_count, 0),
           'issues'    => @registry.summary,
-          'layer_groups' => layer_groups_payload
+          'layer_groups' => layer_groups_payload,
+          'layer_issue_groups' => layer_issue_groups_payload
         }
         result
       end
@@ -100,6 +119,24 @@ module SUAnalysis
             visibility_label:   g[:visibility_label],
             edge_count:         g[:edge_count],
             issue_count:        g[:issue_count]
+          }
+        end
+      end
+
+      # V1.2 (per directive 026): returns a JSON-safe Array of layer
+      # issue-bucket hashes (deep-dup so callers can mutate without
+      # affecting the frozen @layer_issue_groups). The Hash contents
+      # use Symbol keys mirroring the LayerIssueGrouper shape
+      # (name, count, default_open, issues). UIBridge.stringify_array
+      # converts Symbol keys to String keys on the JSON boundary.
+      def layer_issue_groups_payload
+        return [] if @layer_issue_groups.nil? || @layer_issue_groups.empty?
+        @layer_issue_groups.map do |b|
+          {
+            name:         b[:name],
+            count:        b[:count],
+            default_open: b[:default_open] ? true : false,
+            issues:       (b[:issues] || []).dup
           }
         end
       end

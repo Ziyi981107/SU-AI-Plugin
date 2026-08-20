@@ -152,3 +152,81 @@ test 'analysis_result.summary: includes Edges/Vertices and registry counts' do
   assert_equal 1, summary['issues']['short_edge']
   assert_equal 'g', summary['selection']
 end
+
+# --- V1.2: layer_issue_groups ---
+
+test 'analysis_result: layer_issue_groups defaults to [] when not supplied' do
+  r = minimal_result
+  assert_equal [], r.layer_issue_groups
+end
+
+test 'analysis_result: layer_issue_groups is frozen' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    layer_issue_groups: [
+      { name: 'DIM-XX', count: 1, default_open: false, issues: [] }
+    ]
+  )
+  assert r.layer_issue_groups.frozen?,
+         'layer_issue_groups must be frozen'
+  # Mutating the frozen Array raises.
+  assert_raises(RuntimeError, FrozenError) do
+    r.layer_issue_groups << { name: 'X', count: 1, default_open: false, issues: [] }
+  end
+end
+
+test 'analysis_result.summary: includes layer_issue_groups (V1.2)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count).new(0, 0, 0, 0)
+  buckets = [
+    { name: 'DIM-XX', count: 2, default_open: true,
+      issues: [
+        { issue_id: 'open_endpoint|1|1', severity: 'low', source: { layer_name: 'DIM-XX' }, locatable: true },
+        { issue_id: 'short_edge|1|1',   severity: 'low', source: { layer_name: 'DIM-XX' }, locatable: false }
+      ]
+    }
+  ]
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    layer_issue_groups: buckets
+  )
+  summary = r.summary
+  assert summary.key?('layer_issue_groups'),
+         "summary must expose 'layer_issue_groups', got #{summary.keys.inspect}"
+  assert_equal 1, summary['layer_issue_groups'].length
+  bucket = summary['layer_issue_groups'].first
+  assert_equal 'DIM-XX', bucket[:name]
+  assert_equal 2, bucket[:count]
+  assert_equal true, bucket[:default_open]
+  assert_equal 2, bucket[:issues].length
+end
+
+test 'analysis_result.summary: layer_issue_groups defaults to [] (V1.2)' do
+  reg = IssueRegistry.new([])
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count).new(0, 0, 0, 0)
+  r = AnalysisResult.new(preflight: pf, registry: reg)
+  assert_equal [], r.summary['layer_issue_groups']
+end
+
+test 'analysis_result.layer_issue_groups_payload: returns the SAME frozen Array, not a deep-dup copy of issues' do
+  reg = IssueRegistry.new([])
+  pf = Object.new
+  inner_issues = [{ issue_id: 'open_endpoint|1|1', severity: 'low', locatable: true }]
+  r = AnalysisResult.new(
+    preflight: pf, registry: reg,
+    layer_issue_groups: [
+      { name: 'DIM-XX', count: 1, default_open: false, issues: inner_issues }
+    ]
+  )
+  payload = r.layer_issue_groups_payload
+  assert_equal 1, payload.length
+  # Per the locked contract: payload is a deep-dup of the bucket Hash
+  # but the inner issues Array is freshly duped so the caller can
+  # mutate without affecting @layer_issue_groups.
+  refute_equal payload.first[:issues].object_id, r.layer_issue_groups.first[:issues].object_id,
+         'inner issues Array must be duped per call (caller-mutable)'
+  # Same data, though.
+  assert_equal payload.first[:issues], r.layer_issue_groups.first[:issues]
+end

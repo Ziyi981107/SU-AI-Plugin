@@ -28,6 +28,7 @@ require_relative 'core/issue_normalizer'
 require_relative 'core/issue_enricher'
 require_relative 'core/analysis_result'
 require_relative 'core/layer_semantic_mapper'
+require_relative 'core/layer_issue_grouper'
 
 module SUAnalysis
   module Extension
@@ -141,6 +142,21 @@ module SUAnalysis
           registry.issues
         )
 
+        # 7.6. V1.2 (per directive 026): build the per-layer Array of
+        # LayerIssueBucket hashes from `registry.issues` + the
+        # sorted `layer_groups` (LayerSummary hashes). The grouper
+        # iterates the LayerSummary list in the locked role-bucket
+        # order (Dimension -> Annotation -> Guide -> Construction ->
+        # Unknown), so bucket order in the resulting array matches
+        # the existing Layers display order with no extra sort.
+        # The grouper's default_open policy mirrors IssueGrouper
+        # (open iff :high in bucket, else first non-empty bucket);
+        # see core/layer_issue_grouper.rb.
+        layer_issue_groups = SUAnalysis::Core::LayerIssueGrouper.group(
+          registry.issues,
+          layer_groups
+        )
+
         # 8. Selection label and classification. These MUST use
         # `normalized_selection` (the selection array), NOT
         # `normalized_issues`. Per Round 020 REAL-HOST BLOCK recheck:
@@ -151,15 +167,18 @@ module SUAnalysis
 
         # 9. Frozen immutable result. V1.1: pass layer_groups so the
         # dialog's Layers section has per-layer data to render.
+        # V1.2: also pass layer_issue_groups so the dialog's "Issues
+        # by Layer" section has per-layer issue buckets to render.
         SUAnalysis::Core::AnalysisResult.new(
-          preflight:        preflight,
-          registry:         registry,
-          snapshot_lookup:  snapshot_lookup,
-          display_data:     display_data,
-          diagnostics:      diagnostics,
-          selection_type:   classification_label(normalized_selection),
-          selection_label:  selection_label,
-          layer_groups:     layer_groups
+          preflight:           preflight,
+          registry:            registry,
+          snapshot_lookup:     snapshot_lookup,
+          display_data:        display_data,
+          diagnostics:         diagnostics,
+          selection_type:      classification_label(normalized_selection),
+          selection_label:     selection_label,
+          layer_groups:        layer_groups,
+          layer_issue_groups:  layer_issue_groups
         )
       end
 
