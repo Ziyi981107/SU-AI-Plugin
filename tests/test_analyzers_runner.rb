@@ -184,3 +184,188 @@ test 'S6-GATE-B-BLOCK-005: diagnostics is initialized before the analyzer loop (
     ar_unpatch_analyzers(original)
   end
 end
+
+# --------------------------------------------------------------------------
+# V1.1 (per plan §4.8 / §7.2): layer_groups appears on result.summary and
+# AnalysisResult#layer_groups. The AnalyzersRunner is the single
+# integration point that wires snapshot.layers + registry.issues
+# through LayerSemanticMapper.
+# --------------------------------------------------------------------------
+
+# Build a 2-edge selection on a CUSTOM layer 'DIM-XX' so the snapshot
+# produces non-default-layer LayerRecords.
+def ar_two_edges_on_layer(layer_name)
+  v0 = FakeSU::Vertex.new(0.0, 0.0, 0.0)
+  v1 = FakeSU::Vertex.new(10.0, 0.0, 0.0)
+  layer = FakeSU::Layer.new(layer_name)
+  e0 = FakeSU::Edge.new(start: v0, finish: v1, layer: layer, persistent_id: 1)
+  e1 = FakeSU::Edge.new(start: v1, finish: FakeSU::Vertex.new(20.0, 0.0, 0.0), layer: layer, persistent_id: 2)
+  [e0, e1]
+end
+
+test 'V1.1: result.layer_groups is an Array (defaults present)' do
+  rect = ar_rectangle_edges
+  group = FakeSU::Group.new(name: 'rect', children: rect, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  assert_kind_of Array, result.layer_groups
+  # The closed rectangle uses Layer0 (default) for all 4 edges, so
+  # the layer_groups array has exactly 1 entry.
+  assert_equal 1, result.layer_groups.length
+end
+
+test 'V1.1: result.summary includes layer_groups key' do
+  rect = ar_rectangle_edges
+  group = FakeSU::Group.new(name: 'rect', children: rect, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  s = result.summary
+  assert s.key?('layer_groups'),
+         "expected summary to have 'layer_groups' key, got #{s.keys.inspect}"
+  assert_kind_of Array, s['layer_groups']
+end
+
+test 'V1.1: layer_summary has the locked V1.1 field set' do
+  rect = ar_rectangle_edges
+  group = FakeSU::Group.new(name: 'rect', children: rect, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  gs = result.layer_groups
+  assert_equal 1, gs.length
+  g = gs.first
+  # Per LayerSemanticMapper.locked_field_set:
+  expected_fields = [:name, :role, :role_rule, :role_label,
+                     :visible, :visibility_unknown, :visibility_label,
+                     :edge_count, :issue_count]
+  expected_fields.each do |k|
+    assert g.key?(k), "layer_summary missing field #{k.inspect}: got #{g.keys.inspect}"
+  end
+  # Closed rectangle -> no issues -> issue_count == 0.
+  assert_equal 0, g[:issue_count]
+  # 4 edges on Layer0 -> edge_count == 4.
+  assert_equal 4, g[:edge_count]
+  # Layer0 is the V1.0 default layer; role should be :construction.
+  assert_equal :construction, g[:role]
+  assert_equal 'Construction', g[:role_label]
+  # visibility defaults to [true, false].
+  assert_equal true, g[:visible]
+  assert_equal false, g[:visibility_unknown]
+  assert_equal 'Visible', g[:visibility_label]
+end
+
+test 'V1.1: layer_summary for a custom DIM-* layer is classified as :dimension' do
+  edges = ar_two_edges_on_layer('DIM-XX')
+  group = FakeSU::Group.new(name: 'g', children: edges, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  gs = result.layer_groups
+  # Exactly 1 distinct layer (DIM-XX).
+  assert_equal 1, gs.length
+  g = gs.first
+  assert_equal 'DIM-XX', g[:name]
+  assert_equal :dimension, g[:role]
+  assert_equal 'Dimension', g[:role_label]
+  assert_equal 'name_dimension', g[:role_rule]
+  assert_equal 2, g[:edge_count]
+end
+
+test 'V1.1: layer_summary issue_count reflects registry issues attributed to that layer' do
+  # Build a synthetic Analyzer-like issue via the existing pipeline
+  # by injecting a coincident edge. Two coincident edges -> 1
+  # duplicate_edge_candidate issue. Both edges are on Layer0, so the
+  # issue's source[:layer_name] = 'Layer0' and issue_count on the
+  # Layer0 summary should be 1.
+  v00 = FakeSU::Vertex.new(0.0, 0.0, 0.0)
+  v10 = FakeSU::Vertex.new(10.0, 0.0, 0.0)
+  layer = FakeSU::Layer.new('Layer0')
+  e0 = FakeSU::Edge.new(start: v00, finish: v10, layer: layer, persistent_id: 1)
+  # Coincident edge: same start/end, different persistent_id.
+  e1 = FakeSU::Edge.new(start: v00, finish: v10, layer: layer, persistent_id: 2)
+  # Two more edges to keep the snapshot non-empty (and not crash
+  # preflight walkers).
+  v20 = FakeSU::Vertex.new(20.0, 0.0, 0.0)
+  e2 = FakeSU::Edge.new(start: v10, finish: v20, layer: layer, persistent_id: 3)
+  v30 = FakeSU::Vertex.new(0.0, 5.0, 0.0)
+  e3 = FakeSU::Edge.new(start: v20, finish: v30, layer: layer, persistent_id: 4)
+  e4 = FakeSU::Edge.new(start: v30, finish: v00, layer: layer, persistent_id: 5)
+  edges = [e0, e1, e2, e3, e4]
+  group = FakeSU::Group.new(name: 'g', children: edges, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  # 4 distinct vertex positions; the duplicate detector should
+  # surface at least 1 duplicate_edge_candidate issue on Layer0.
+  gs = result.layer_groups
+  layer0_summary = gs.find { |g| g[:name] == 'Layer0' }
+  refute_nil layer0_summary
+  assert layer0_summary[:issue_count] >= 1,
+         "expected Layer0 issue_count >= 1, got #{layer0_summary[:issue_count]} (groups=#{gs.inspect})"
+end
+
+test 'V1.1: layer_groups are sorted in role bucket order [dim, anno, guide, construction, unknown]' do
+  # Build 4 layers across 4 roles in MIXED insertion order.
+  v = ->(x, y) { FakeSU::Vertex.new(x.to_f, y.to_f, 0.0) }
+  layers_with_names = [
+    FakeSU::Layer.new('UNK-99'),       # :unknown
+    FakeSU::Layer.new('Layer0'),       # :construction
+    FakeSU::Layer.new('TXT-LABEL'),    # :annotation
+    FakeSU::Layer.new('DIM-XX')        # :dimension
+  ]
+  edges = []
+  layers_with_names.each_with_index do |layer, li|
+    base_x = li * 100.0
+    e0 = FakeSU::Edge.new(start: v.call(base_x, 0.0), finish: v.call(base_x + 10.0, 0.0),
+                            layer: layer, persistent_id: li * 10 + 1)
+    e1 = FakeSU::Edge.new(start: v.call(base_x + 10.0, 0.0), finish: v.call(base_x + 20.0, 0.0),
+                            layer: layer, persistent_id: li * 10 + 2)
+    edges << e0 << e1
+  end
+  group = FakeSU::Group.new(name: 'multi', children: edges, persistent_id: 999)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  names = result.layer_groups.map { |g| g[:name] }
+  # Expected bucket order: DIM-XX (dimension) before TXT-LABEL
+  # (annotation) before Layer0 (construction) before UNK-99
+  # (unknown). Hidden layers sort AFTER visible in same bucket, but
+  # all are visible here.
+  expected_first = 'DIM-XX'
+  assert_equal expected_first, names.first,
+               "expected #{expected_first} as first layer (role order dim first), got #{names.inspect}"
+  # Layer0 should come BEFORE UNK-99 (construction before unknown).
+  idx_layer0 = names.index('Layer0')
+  idx_unk    = names.index('UNK-99')
+  refute_nil idx_layer0
+  refute_nil idx_unk
+  assert idx_layer0 < idx_unk,
+         "expected Layer0 before UNK-99, got order #{names.inspect}"
+end
+
+test 'V1.1: each issue in registry has source[:layer_name] populated by AnalyzersRunner' do
+  # Per plan §4.8: the AnalyzersRunner injects source[:layer_name] on
+  # each enriched issue BEFORE the registry freezes the issue. This
+  # is what allows LayerSemanticMapper / LayerIssueGrouper to
+  # attribute issues to layers on the production path.
+  edges = ar_two_edges_on_layer('DIM-XX')
+  group = FakeSU::Group.new(name: 'g', children: edges, persistent_id: 100)
+  sel = FakeSU::Selection.new([group])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  # ALL frozen issues in the registry MUST have source[:layer_name].
+  result.registry.issues.each do |iss|
+    src = iss[:source]
+    assert src.is_a?(Hash),
+           "issue #{iss[:issue_id]} missing source Hash: got #{src.inspect}"
+    ln = src[:layer_name]
+    assert ln.is_a?(String) && !ln.empty?,
+           "issue #{iss[:issue_id]} missing source[:layer_name]: got #{ln.inspect}"
+  end
+end
+
+test 'V1.1: layer_groups is exposed in summary payload even when ZERO layers' do
+  # An empty selection (or a selection with no edges) MUST still
+  # expose layer_groups (as []). The UIBridge will then surface
+  # `summary['layer_groups'] == []` and `layerGroups == []`.
+  sel = FakeSU::Selection.new([])
+  result = SUAnalysis::Extension::AnalyzersRunner.run(sel)
+  assert_kind_of Array, result.layer_groups
+  assert_equal 0, result.layer_groups.length
+  assert_equal [], result.summary['layer_groups']
+end

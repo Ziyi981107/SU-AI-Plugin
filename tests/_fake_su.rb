@@ -112,10 +112,20 @@ module FakeSU
   end
 
   # Fake Layer.
+  #
+  # V1.1 (per plan §4.7 / R011): FakeSU::Layer exposes `visible?`
+  # returning the stored `@visible` flag (default true) so the
+  # SU-AI-Plugin visibility probe path mirrors real SU behavior.
+  # Tests that need a hidden layer construct with `visible: false`.
   class Layer
     attr_reader :name
-    def initialize(name = 'Layer0')
+    def initialize(name = 'Layer0', visible: true)
       @name = name.to_s
+      @visible = visible ? true : false
+    end
+
+    def visible?
+      @visible
     end
   end
 

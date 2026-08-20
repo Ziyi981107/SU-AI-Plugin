@@ -27,6 +27,7 @@ require_relative 'core/issue_registry'
 require_relative 'core/issue_normalizer'
 require_relative 'core/issue_enricher'
 require_relative 'core/analysis_result'
+require_relative 'core/layer_semantic_mapper'
 
 module SUAnalysis
   module Extension
@@ -113,11 +114,32 @@ module SUAnalysis
           normalized_issues, snapshot_lookup: snapshot_lookup
         )
 
+        # 5.5. V1.1 (per plan §4.8): populate `source[:layer_name]` on
+        # each enriched issue so LayerSemanticMapper can attribute the
+        # issue to the correct layer. The IssueRegistry freezes each
+        # issue, so we MUST populate the field BEFORE constructing the
+        # registry; we do this by creating shallow copies (dup the issue
+        # Hash + dup the source sub-Hash if present). Issues whose first
+        # edge has no resolvable layer_name are passed through as-is;
+        # LayerSemanticMapper's Layer0 fallback will catch them.
+        enriched_with_source = inject_source_layer_name(enriched, snapshot_lookup)
+
         # 6. Build IssueRegistry (drops malformed issues with diagnostics).
-        registry = SUAnalysis::Core::IssueRegistry.new(enriched, diagnostics: diagnostics)
+        registry = SUAnalysis::Core::IssueRegistry.new(enriched_with_source, diagnostics: diagnostics)
 
         # 7. Display unit formatting (lengths only).
         display_data = SUAnalysis::Extension::DisplayUnitFormatter.format_all(registry.issues)
+
+        # 7.5. V1.1 (per plan §4.8 + §4.4): build the per-layer Array
+        # of LayerSummary hashes from `snapshot.layers` + the
+        # registry's issues. The mapper handles dedup by name,
+        # edge_count summation, visibility_label composition (R011),
+        # role bucket order (R009/R012), and the cross-role visibility
+        # sort (visible first, then issue_count DESC, then name ASC).
+        layer_groups = SUAnalysis::Core::LayerSemanticMapper.build(
+          snapshot.layers,
+          registry.issues
+        )
 
         # 8. Selection label and classification. These MUST use
         # `normalized_selection` (the selection array), NOT
@@ -127,7 +149,8 @@ module SUAnalysis
         # the selection contained a 4-edge Group.
         selection_label = selection_label_for(normalized_selection)
 
-        # 9. Frozen immutable result.
+        # 9. Frozen immutable result. V1.1: pass layer_groups so the
+        # dialog's Layers section has per-layer data to render.
         SUAnalysis::Core::AnalysisResult.new(
           preflight:        preflight,
           registry:         registry,
@@ -135,7 +158,8 @@ module SUAnalysis
           display_data:     display_data,
           diagnostics:      diagnostics,
           selection_type:   classification_label(normalized_selection),
-          selection_label:  selection_label
+          selection_label:  selection_label,
+          layer_groups:     layer_groups
         )
       end
 
@@ -180,6 +204,61 @@ module SUAnalysis
         # PreflightRunner's collect_preflight_facts. Tests can
         # override this by passing a custom model.
         'selection'
+      end
+
+      # V1.1 helper (per plan §4.8): for each enriched issue, derive
+      # the layer_name from the first edge's layer (the only canonical
+      # place a layer_name is recorded for an analyzer issue) and
+      # populate `source[:layer_name]` on the issue. The mapper and
+      # grouper (commit 1+2) read `iss[:source][:layer_name]`; this
+      # helper makes that read succeed on the production path.
+      #
+      # Returns a NEW array of issues (does NOT mutate input). Each
+      # issue with a resolvable layer_name is shallow-duped and gets
+      # a `source: { layer_name: <String> }` Hash. Issues without a
+      # resolvable layer_name (no edge_ids, no resolvable edge, edge
+      # has nil/empty layer name) pass through unchanged so the
+      # mapper's `Layer0` fallback still works.
+      #
+      # The dup is shallow: only the issue Hash itself and the
+      # `source` sub-Hash (if present) are duplicated. The frozen
+      # `sources` / `source_tokens` / `edge_ids` Arrays inside the
+      # issue Hash are NOT mutated by this helper, so they keep their
+      # frozen state across the registry's `iss.freeze` call below.
+      def inject_source_layer_name(enriched, snapshot_lookup)
+        return enriched if enriched.nil? || enriched.empty?
+        enriched.map do |iss|
+          next iss unless iss.is_a?(Hash)
+          # Resolve the first edge_id -> edge record -> layer name.
+          layer_name = nil
+          eids = iss[:edge_ids]
+          if eids.is_a?(Array) && !eids.empty?
+            eid = eids.first
+            begin
+              edge = snapshot_lookup[Integer(eid)]
+            rescue StandardError
+              edge = nil
+            end
+            if edge && edge.respond_to?(:layer) && edge.layer && !edge.layer.to_s.empty?
+              layer_name = edge.layer.to_s
+            end
+          end
+          # No resolvable layer name -> leave the issue unchanged so
+          # the mapper's Layer0 fallback handles it.
+          next iss if layer_name.nil?
+          # Shallow-copy the issue; copy the source sub-Hash too if
+          # present (other Hash slots like sources / source_tokens /
+          # edge_ids are NOT mutated, so they can stay aliased).
+          new_iss = iss.dup
+          src = if iss[:source].is_a?(Hash)
+                  iss[:source].dup
+                else
+                  {}
+                end
+          src[:layer_name] = layer_name
+          new_iss[:source] = src
+          new_iss
+        end
       end
     end
   end

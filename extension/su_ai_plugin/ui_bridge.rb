@@ -20,6 +20,16 @@ module SUAnalysis
 
       # Build the JS-safe payload from an AnalysisResult.
       # Returns Hash with String keys (top level + nested).
+      #
+      # V1.1 (per plan §4.9): adds ONE new top-level key `layerGroups`
+      # so the JS layer can render the dialog's "Layers" section
+      # without having to traverse `summary['layer_groups']`. The
+      # `summary['layer_groups']` path remains as the canonical Ruby
+      # access point (also String-keyed on the JSON boundary); the
+      # top-level `layerGroups` is the convenience-shaped key the JS
+      # render function reads. Both carry the SAME data (no
+      # duplication of work; the underlying Array is referenced from
+      # the frozen AnalysisResult).
       def as_html_data(analysis_result)
         return {} if analysis_result.nil?
         result = {
@@ -27,8 +37,9 @@ module SUAnalysis
           'selectionLabel' => analysis_result.selection_label.to_s,
           'summary'        => stringify_hash(analysis_result.summary),
           'displayData'    => stringify_hash(analysis_result.display_data),
-          'diagnostics'     => stringify_array(analysis_result.diagnostics),
-          'groups'          => stringify_groups(analysis_result.registry)
+          'diagnostics'    => stringify_array(analysis_result.diagnostics),
+          'groups'         => stringify_groups(analysis_result.registry),
+          'layerGroups'    => stringify_array(analysis_result.layer_groups)
         }
         result
       end

@@ -137,14 +137,21 @@ module SUAnalysis
               layer:       layer_name
             )
             # V1.1 (per plan §4.6): accumulate per-layer aggregate.
-            # Track the first layer object reference (entity.layer)
-            # so the post-walk layer_visibility probe has a target.
-            # The layer object may be nil (if the entity lacks .layer)
-            # — handled gracefully in build_layer_records.
+            # Track the first entity reference for each layer so the
+            # post-walk layer_visibility probe has a real Entity (not
+            # just a Layer object) to pass to SUCapability.layer_visibility
+            # — which is the entity-as-input adapter that drills
+            # `entity.layer` and probes `layer.visible?`. Passing the
+            # raw Layer object would force SUCapability to call
+            # `entity.layer` on the Layer itself, which always returns
+            # :unknown (real Layers / our FakeLayer don't expose a
+            # `.layer` method). The stored entity MAY be nil if the
+            # edge lacked `respond_to?(:layer)` — handled gracefully
+            # in build_layer_records (R011 :unknown fallback).
             layer_aggregates[layer_name] ||= {
               name:        layer_name,
               edge_count:  0,
-              layer_obj:   entity.respond_to?(:layer) ? entity.layer : nil
+              entity:      entity
             }
             layer_aggregates[layer_name][:edge_count] += 1
           rescue StandardError => e
@@ -167,20 +174,42 @@ module SUAnalysis
       end
 
       # Build Array<LayerRecord> from the post-walk per-layer
-      # aggregates. Probes visibility once per layer; classifies
-      # role by name (R010 top-down-by-priority).
+      # aggregates. Probes visibility once per layer via the
+      # entity-aware SUCapability.layer_visibility (R011) and
+      # classifies role via LayerRoleConfig.classify (R010
+      # top-down-by-priority). The stored `agg[:entity]` is the
+      # first Edge entity captured for that layer during the walk;
+      # passing the entity (NOT the layer object) matches the
+      # SUCapability contract (entity.layer -> layer.visible?).
       def build_layer_records(aggregates)
         records = []
         aggregates.each do |name, agg|
-          layer_obj = agg[:layer_obj]
-          vis_status = if layer_obj.nil?
-                         # No layer object captured -> capability
-                         # missing or entity lacked .layer. R011:
-                         # operational fallback is visible, with
-                         # visibility_unknown: true.
+          edge_entity = agg[:entity]
+          # If the stored entity doesn't expose a `layer` method,
+          # SUCapability will fail closed and return :unknown (R011).
+          # We keep the safe-attr style here to remain robust for
+          # zero-capability edges.
+          vis_status = if edge_entity.nil? || !edge_entity.respond_to?(:layer)
+                         # R011: entity lacked .layer OR no entity was
+                         # captured -> cannot probe; fall back to
+                         # :unknown (operational visible: true, with
+                         # visibility_unknown: true).
                          :unknown
                        else
-                         SUAnalysis::Compatibility::SUCapability.layer_visibility(layer_obj)
+                         # Probe via the entity-aware adapter. For
+                         # FakeSU entities, entity.layer returns a
+                         # FakeSU::Layer (no `.layer` method on the
+                         # layer itself, so SUCapability returns
+                         # :unknown with proper R011 fallback).
+                         # Tests that want explicit visibility set
+                         # up custom edges / mocks that DO expose
+                         # visible? on the layer.
+                         v = begin
+                               SUAnalysis::Compatibility::SUCapability.layer_visibility(edge_entity)
+                             rescue StandardError
+                               :unknown
+                             end
+                         v
                        end
           visible, vis_unknown = case vis_status
                                   when :visible  then [true,  false]
