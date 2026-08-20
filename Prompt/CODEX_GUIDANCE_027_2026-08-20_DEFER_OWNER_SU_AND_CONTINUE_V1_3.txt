@@ -1,0 +1,169 @@
+DIRECTIVE:
+DEFER OWNER SU2020 TESTING TEMPORARILY AND CONTINUE DEVELOPMENT
+
+OWNER AVAILABILITY:
+The Owner will be away for an extended lunch break. Do not wait for interactive SketchUp testing and do not ask the Owner routine questions during this period.
+
+V1.2 STATUS AND REQUIRED HANDLING:
+- V1.2 Issues by Layer automated implementation is complete at checkpoint `0460c6b` on branch `v1.2-issues-by-layer`.
+- Preserve this checkpoint exactly as the V1.2 Owner-test candidate.
+- Owner SU2020 checks V12-1..V12-7 are DEFERRED, not waived.
+- Do NOT write or imply Owner PASS, Gate PASS, real-host PASS, stage CLOSED, or CodeX end-of-stage PASS.
+- Do NOT dispatch the V1.2 CodeX end-of-stage review packet yet. Owner evidence must be added first.
+- Record in CURRENT_STATE that V1.2 is `AUTOMATED COMPLETE / OWNER SU2020 PENDING`.
+- Keep the existing Owner checklist in Review unchanged except for clear factual corrections discovered during non-host work.
+
+LONG UNATTENDED TASK:
+START V1.3 FACE INVENTORY (READ-ONLY FACE / POLYGON EXTRACTION)
+
+WHY THIS TASK:
+- Face/polygon extraction is the next natural item from the original deferred feature list.
+- It is a coherent, substantial stage that can be implemented and heavily tested without Owner interaction.
+- It remains inside the product's read-only CAD analysis contract and does not require settings persistence, network services, AI/MCP, or model repair.
+
+BRANCH AND CHECKPOINT DISCIPLINE:
+1. Confirm V1.2 worktree is clean and `0460c6b` is reachable.
+2. Create branch `v1.3-face-inventory` from the current V1.2 candidate head.
+3. Preserve V1.2 commits as a distinct prefix; do not squash, rewrite, or mix them with V1.3 commits.
+4. Commit V1.3 in meaningful checkpoints only: core data/traversal, integration/payload, UI/tests, final automated checkpoint.
+5. Do not merge to the V1.1 branch and do not create a formal release artifact.
+
+LOCKED V1.3 PRODUCT OUTCOME:
+Add a read-only Face Inventory that reports face topology from the current SketchUp selection while preserving every V1.0, V1.1, and V1.2 behavior.
+
+LOCKED USER-VISIBLE BEHAVIOR:
+1. Add scalar summary counters:
+   - `Faces: N`
+   - `Faces With Holes: H`
+2. Add one top-level details section after `Layers`:
+   `Face Inventory — N total (H with holes)`
+3. Keep this section CLOSED by default and populate its summary before it is opened.
+4. Render aggregate rows by source face layer, not one UI row per individual face, to prevent unusable dialogs on large selections.
+5. Each row shows:
+   - layer name;
+   - face count with correct singular/plural form;
+   - count of faces with holes;
+   - role badge and visibility badge using the already-locked V1.1 layer semantics when available.
+6. Use the same layer order as the existing Layers section:
+   Dimension -> Annotation -> Guide -> Construction -> Unknown;
+   visible before hidden; deterministic name ordering.
+7. Face Inventory rows are informational and non-actionable in V1.3. No click handler, no Locate action, default cursor, no toast.
+8. Existing issue-type groups, Issues by Layer, Layers, Locate behavior, role rules, and issue severity remain unchanged.
+9. All user/model strings are rendered with textContent only. No innerHTML, eval, new Function, or document.write.
+10. The analyzer remains read-only. No entity/property/layer/visibility/material/soft/smooth/hidden/active-path mutation.
+
+LOCKED FACE DATA CONTRACT:
+- Count one Face occurrence for each face reached through the selected occurrence tree. Two ComponentInstances using the same definition count as two occurrences, matching the existing Edge occurrence semantics.
+- Recursively support Group.entities and ComponentInstance.definition.entities using the existing accumulated transformation and occurrence-path discipline.
+- A FaceRecord (or equivalently narrow immutable core record) must carry at least:
+  - deterministic analysis-local id;
+  - SourceReference / occurrence identity compatible with existing snapshot rules;
+  - layer name with established Layer0 fallback;
+  - outer-loop vertex count;
+  - inner-loop count;
+  - `has_holes` Boolean (`inner_loop_count > 0`).
+- Extend GeometrySnapshot additively with `faces`, defaulting to `[]` for old callers.
+- Extend PreflightReport / AnalysisResult additively for face_count and faces_with_holes_count without changing existing keys.
+- Aggregate Face Inventory by layer in pure Ruby. Do not implement topology grouping independently in JavaScript.
+- Preserve host uncertainty: if layer visibility cannot be determined, use the existing `visible: true, visibility_unknown: true` contract.
+- Invalid/erased/malformed Face objects must be skipped per entity without aborting sibling geometry; expose a diagnostic or skipped count using the existing failure-isolation pattern.
+
+EXPLICITLY OUT OF SCOPE:
+- Face repair, creation, deletion, reversal, triangulation, merge, weld, flatten, extrusion, or material changes.
+- Face area. Correct area under nested non-uniform transforms is intentionally deferred; do not introduce a misleading approximate area.
+- Normal-vector quality analysis, reversed-face warnings, manifold/solid classification, volume, UVs, materials, textures, or smoothing analysis.
+- Per-face Locate actions.
+- Persisted configuration or settings UI.
+- Any change to issue detection thresholds or layer classification rules.
+- SU2017 Owner evidence and formal release packaging.
+
+IMPLEMENTATION GUIDANCE:
+- Extend the existing single traversal instead of performing an unrelated second walk when practical.
+- Keep SketchUp API probing inside compatibility/extension boundaries; core remains host-independent.
+- Use capability checks for Face, loops, outer_loop, vertices, layer, visibility, validity, and persistent ID.
+- Do not rely on a face being created merely because four edges form a loop in a fake host. Tests must construct explicit Face fakes.
+- Do not infer holes from raw edge count. Determine inner loops from the host face-loop structure, with defensive fallback when capabilities are absent.
+- Keep Ruby 2.2.4 syntax compatibility: no safe navigation, pattern matching, numbered parameters, endless methods, or newer-only APIs.
+- Agent owns ordinary helper/class names and local structure. Use the simplest additive path consistent with the contracts above.
+
+REQUIRED AUTOMATED TESTS:
+A. Pure core:
+- FaceRecord validation/defaults/immutability.
+- GeometrySnapshot faces default to [] and preserve old callers.
+- Face aggregation by layer, role, visibility, face_count, holes_count.
+- Deterministic ordering identical to Layers ordering.
+- Empty and malformed inputs fail safely.
+
+B. Adapter/traversal:
+- Root selected Face counts once.
+- Face inside Group counts once with correct occurrence identity.
+- Same ComponentDefinition instantiated twice counts two Face occurrences.
+- Nested Group/Component traversal preserves path depth and transformation discipline.
+- Face with outer loop only -> has_holes=false.
+- Face with one or more inner loops -> has_holes=true and correct inner_loop_count.
+- Hidden and unknown-visibility layer behavior matches V1.1.
+- One invalid Face is skipped while valid sibling faces remain.
+- Edge counts and all prior snapshot facts remain unchanged.
+
+C. Pipeline/payload:
+- Summary exposes Faces and Faces With Holes without removing/reordering existing required fields incorrectly.
+- Face inventory payload defaults to [].
+- UIBridge recursively stringifies keys and JSON round-trip preserves counts/Booleans.
+- V1.2 `layerIssueGroups` remains byte-for-byte behaviorally intact.
+
+D. DOM/source guards:
+- Face Inventory section exists exactly once, closed by default.
+- Summary is populated before opening.
+- Empty payload renders zero rows without error.
+- Named-layer aggregate rows display correct counters and pluralization.
+- Hidden/unknown visibility labels remain separate from role.
+- Rows register no click handlers and never call Locate.
+- textContent-only and forbidden-pattern guards remain green.
+- No role color selectors are added.
+
+E. Regression/performance/build:
+- Run the complete existing suite plus all V1.3 tests.
+- Keep all 372 V1.1 tests and all V1.2 additions passing.
+- Add a representative high-face-count synthetic test with a reasonable runtime budget; avoid quadratic aggregation.
+- Run git diff --check for production/tests.
+- Rebuild RBZ as a packaging smoke test and verify the new production files are included and tests/WIP files are excluded.
+
+OWNER TESTING PREPARATION WHILE OWNER IS AWAY:
+- Write a separate focused checklist `Review/OWNER_VERIFICATION_V1_3_FACE_INVENTORY_2026-08-20.txt`.
+- Do not execute or mark it PASS yourself.
+- Make the checklist copy/paste friendly and compatible with real SU2020 Ruby Console.
+- Include fixtures for:
+  1. one rectangular face on Layer0;
+  2. one face explicitly assigned to DIM-WALLS;
+  3. one face with an inner loop/hole if SketchUp creates it reliably;
+  4. the same component definition instantiated twice;
+  5. hidden-layer and unknown-role presentation;
+  6. PRE/POST fingerprint proving no geometry/property mutation.
+- Also prepare one short combined Owner run order: V1.2 V12-1..V12-7 first, then V1.3 checks. Keep the two verdicts separate so a V1.3 failure cannot erase valid V1.2 evidence.
+
+REVIEW CADENCE WHILE OWNER IS AWAY:
+- Do not send CodeX partial progress, plans, per-commit diffs, or cosmetic NITs.
+- Do not fabricate Owner evidence to unlock review.
+- Continue independently through implementation, tests, build smoke, documentation, and clean checkpoints.
+- If a routine ambiguity appears, choose the smallest reversible solution and record it in CURRENT_STATE.
+- Use ChatGPT only if a genuine product/UX ambiguity materially changes the locked visible behavior.
+- Escalate to CodeX only for a high-risk BLOCK: potential model mutation/corruption, architecture/source-of-truth failure, unsafe host API uncertainty, RBZ failure, security issue, or inability to preserve passed V1.0-V1.2 contracts.
+- Otherwise stop at `V1.3 AUTOMATED COMPLETE / OWNER SU2020 PENDING` and wait for the Owner's return.
+
+DO NOT DO WHILE OWNER IS AWAY:
+- Do not call V1.2 or V1.3 CLOSED.
+- Do not assemble a final CodeX end-of-stage verdict request as if Owner testing passed.
+- Do not start V1.4.
+- Do not run or control the real SketchUp GUI on the Owner's behalf.
+- Do not publish, push, release, or overwrite prior candidate artifacts.
+
+FINAL EXPECTED STATE BEFORE WAITING:
+- V1.2 preserved at its clean Owner-test checkpoint.
+- V1.3 implementation complete on its own branch with full automated suite green.
+- RBZ packaging smoke passes.
+- V1.2 and V1.3 Owner checklists ready but explicitly PENDING.
+- CURRENT_STATE clearly records both pending real-host gates.
+- No CodeX review requested until Owner returns and supplies the combined SU2020 evidence.
+
+BEGIN NOW AND WORK THROUGH ALL SAFE NON-OWNER STEPS WITHOUT INTERRUPTION.
+
