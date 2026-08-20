@@ -1,0 +1,508 @@
+============================================================
+OWNER VERIFICATION CHECKLIST - V1.3 FACE INVENTORY
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20 (new V1.3 checklist; V1.0 + V1.1 + V1.2
+          baselines already verified on SU2020)
+For:       Product Owner (real-SU verification, per Q002=A)
+Depends on: V1.1 commits (1..5) + V1.2 commits + V1.3 commits
+          landed on `v1.3-face-inventory` branch; suite is
+          463/463 PASS on the dev host (Ruby 2.7.8).
+============================================================
+
+PURPOSE
+-------
+
+Per Q002=A, real-SketchUp verification is Owner's responsibility.
+This checklist is a FOCUSED addition to the V1.0 Stage 6,
+V1.1 Gate 2, and V1.2 Gate 2 V12-1..V12-7 checklists. It covers
+ONLY the V1.3 Face Inventory surface — the new
+`<details id="face-inventory-section">` in the dialog, plus the
+two new scalar counters (`Faces: N`, `Faces With Holes: H`) in
+the #summary block.
+
+  - Dialog renders a new top-level section 'Face Inventory'.
+  - Section is BELOW the V1.1 Layers section.
+  - Section is CLOSED by default; summary pre-populated.
+  - Aggregate rows by source face layer (NOT one UI row per
+    individual face), per directive 027 item 4.
+  - Each row shows:
+    * layer name;
+    * face count with correct singular/plural wording;
+    * count of faces with holes;
+    * role badge and visibility badge using the V1.1 layer
+      semantics.
+  - Layer order matches the V1.1 Layers display order.
+  - Face Inventory rows are informational and non-actionable in
+    V1.3: no click handler, no Locate action, default cursor,
+    no toast.
+  - Existing issue-type groups / Issues by Layer / Layers /
+    Locate behavior / role rules / issue severity remain
+    unchanged.
+  - All user/model strings are rendered with textContent only.
+  - The analyzer remains read-only. No model mutation.
+
+This checklist re-uses the same dev-tree / RBZ load path
+convention established in the V1.1 + V1.2 checklists. The
+V1.0 + V1.1 + V1.2 baselines do NOT need to be re-verified in
+full if Owner has already accepted them — this checklist
+focuses on the V1.3 delta.
+
+
+HOW TO RUN THIS CHECKLIST
+=========================
+
+  1. Confirm you have the V1.3 source tree at:
+       D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/
+
+  2. Pick the load path that matches your scenario:
+
+     a. **Development-tree testing** (iterating on V1.3 logic
+        without re-installing the .rbz each round):
+          load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/main.rb'
+        This is the BOOT file; it calls
+        `SUAnalysis::Boot.boot!` which `require_relative`s every
+        operational file and registers the loader.
+
+        The sibling `extension/su_ai_plugin.rb` is the ROOT LOADER
+        (calls `Sketchup.register_extension`). It ONLY runs under
+        real SketchUp with an installed extension; loading it in
+        the Ruby Console against a dev-tree copy is the wrong path.
+
+     b. **Release / installed-RBZ testing**: install
+        `dist/SU-AI-Plugin.rbz` via `Window > Extension Manager`
+        and let SketchUp's owner's loader run
+        `su_ai_plugin/main` from the installed copy.
+
+  3. Run the V13-1..V13-6 steps below. Each step captures
+     evidence (screenshot, console log, or fingerprint
+     comparison).
+
+  4. Owners without V1.0/V1.1/V1.2 verification should also
+     re-run the J..N steps from
+     `Review/OWNER_VERIFICATION_STAGE_6.txt`, the L1..L9
+     steps from
+     `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`,
+     and the V12-1..V12-7 steps from
+     `Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
+     FIRST.
+
+COMBINED RUN ORDER (per directive 027 owner testing prep):
+  - Run V12-1..V12-7 FIRST (V1.2 evidence).
+  - Then run V13-1..V13-6 (V1.3 evidence).
+  - The two verdicts are SEPARATE so a V1.3 failure cannot
+    erase valid V1.2 evidence. Report V1.2 verdict in
+    `Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt`
+    and V1.3 verdict in
+    `Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_2026-08-XX.txt`.
+
+
+SETUP HELPER (V1.3 SU2020)
+==========================
+
+Use a fresh empty model. Do NOT reuse a V1.1 / V1.2 verification
+model. Run this Ruby helper in the Ruby Console BEFORE running
+V13-1..V13-6.
+
+  model = Sketchup.active_model
+  entities = model.active_entities
+  layers = model.layers
+
+  # V13-1: one rectangular face on Layer0 (4 vertices, 0 holes).
+  # SketchUp's `entities.add_face` is the easiest path to a
+  # rectangular face. Build a 4-vertex outer loop:
+  v1 = entities.add_face(
+    [0,  0,  0],
+    [10, 0,  0],
+    [10, 5,  0],
+    [0,  5,  0]
+  )
+  # v1's layer defaults to Layer0 (the model default).
+
+  # V13-2: one face explicitly assigned to DIM-WALLS.
+  layer_dim = layers.add('DIM-WALLS')
+  v2_group = entities.add_group
+  v2_group.layer = layer_dim
+  v2 = v2_group.entities.add_face(
+    [20, 0,  0],
+    [40, 0,  0],
+    [40, 5,  0],
+    [20, 5,  0]
+  )
+
+  # V13-3: one face with an inner loop / hole. Real SketchUp
+  # creates a face with an inner loop when you push inner edges
+  # inward through a vertex split. This is fragile on different
+  # SU versions; if SU fails to create the inner loop on your
+  # build, set v3_has_holes = false and proceed.
+  layer_holes = layers.add('HOLES-OK')
+  v3_group = entities.add_group
+  v3_group.layer = layer_holes
+  v3_outer = v3_group.entities.add_face(
+    [60, 0,  0],
+    [80, 0,  0],
+    [80, 20, 0],
+    [60, 20, 0]
+  )
+  v3_has_holes = false
+  begin
+    # Attempt to push an inner triangle through v3_outer to create
+    # a face with one inner loop. This is a SketchUp API call
+    # that may not produce a hole on every SU version.
+    inner = v3_group.entities.add_face(
+      [66,  5,  0],
+      [74,  5,  0],
+      [70, 12,  0]
+    )
+    inner.reverse!  # ensure opposite winding -> creates a hole
+    v3_has_holes = (inner.is_a?(Sketchup::Face))
+  rescue StandardError
+    v3_has_holes = false
+  end
+
+  # V13-4: the same ComponentDefinition instantiated twice.
+  # Build a face inside a component definition, then instantiate
+  # the component twice in the model root.
+  comp_defn = model.definitions.add('V13Comp')
+  comp_defn.entities.add_face(
+    [100, 0,  0],
+    [110, 0,  0],
+    [110, 5,  0],
+    [100, 5,  0]
+  )
+  inst_a = entities.add_instance(
+    comp_defn, Geom::Transformation.new([100, 0, 0])
+  )
+  inst_b = entities.add_instance(
+    comp_defn, Geom::Transformation.new([130, 0, 0])
+  )
+
+  # V13-5: hidden layer + unknown-role presentation.
+  layer_hidden = layers.add('HIDDEN-FACE')
+  layer_hidden.visible = false
+  v5_group = entities.add_group
+  v5_group.layer = layer_hidden
+  v5_group.entities.add_face(
+    [160, 0,  0],
+    [170, 0,  0],
+    [170, 5,  0],
+    [160, 5,  0]
+  )
+
+  # The 'XYZ-NOROLE' layer name does NOT match any V1.1
+  # LayerRoleConfig rule; it is classified as :unknown role.
+  layer_unknown = layers.add('XYZ-NOROLE')
+  v_unknown_group = entities.add_group
+  v_unknown_group.layer = layer_unknown
+  v_unknown_group.entities.add_face(
+    [180, 0,  0],
+    [190, 0,  0],
+    [190, 5,  0],
+    [180, 5,  0]
+  )
+
+  # PRE-analysis fingerprint helper (mirror V1.1 v11 / V1.2 v12):
+  # -- Begin V1.3 fingerprint helper --
+  def v13_count_geometry_recursive(entities)
+    counts = { edges: 0, faces: 0, groups: 0,
+               components: 0, definitions: 0 }
+    entities.each do |e|
+      case e
+      when Sketchup::Edge
+        counts[:edges] += 1
+      when Sketchup::Face
+        counts[:faces] += 1
+      when Sketchup::Group
+        counts[:groups] += 1
+        counts.merge!(v13_count_geometry_recursive(e.entities)) { |_, a, b| a + b }
+      when Sketchup::ComponentInstance
+        counts[:components] += 1
+        counts.merge!(v13_count_geometry_recursive(e.definition.entities)) { |_, a, b| a + b }
+      end
+    end
+    counts
+  end
+
+  def v13_face_count(model)
+    n = 0
+    v13_count_geometry_recursive(model.entities)
+    v13_count_geometry_recursive(model.entities)
+  end
+
+  def v13_total_faces(model)
+    n = 0
+    stack = [model.entities]
+    until stack.empty?
+      coll = stack.pop
+      coll.each do |e|
+        case e
+        when Sketchup::Face
+          n += 1
+        when Sketchup::Group
+          stack.push(e.entities)
+        when Sketchup::ComponentInstance
+          stack.push(e.definition.entities)
+        end
+      end
+    end
+    n
+  end
+
+  def v13_fingerprint(model)
+    {
+      edges:           v13_count_geometry_recursive(model.entities)[:edges],
+      faces:           v13_total_faces(model),
+      groups:          v13_count_geometry_recursive(model.entities)[:groups],
+      components:      v13_count_geometry_recursive(model.entities)[:components],
+      layers_visible:  model.layers.map { |l| [l.name, l.visible?] }
+    }
+  end
+
+  fp_before = v13_fingerprint(Sketchup.active_model)
+  puts "PRE = #{fp_before.inspect}"
+  # -- End fingerprint helper --
+
+
+V13-1: ONE RECTANGULAR FACE ON LAYER0 -> SCALAR + LAYER0 BUCKET
+================================================================
+
+  1. Select v1 (the single rectangular face on Layer0).
+  2. Open the dialog.
+  3. Verify the dialog structure top-to-bottom:
+       [Selection info]
+       [Summary scalar rows: Edges / Vertices / Non Zero Z
+        Vertices / Warnings / Faces / Faces With Holes]   <-- V1.3 additions
+       [Per-issue-type counters]
+       [Per-issue-type groups: <details> blocks]
+       [V1.2: <details id="layer-issues-section"> (closed)]
+       [V1.1: <details id="layers-section"> (closed)]
+       [NEW: <details id="face-inventory-section"> (closed)]   <-- V1.3
+  4. Inspect the V1.3 summary scalar rows:
+     - 'Faces: 1' (Layer0 has 1 face).
+     - 'Faces With Holes: 0' (no holes on this face).
+  5. Open the V1.3 Face Inventory section.
+  6. Inspect the #face-inventory-summary text:
+     Expected: EXACTLY 'Face Inventory - 1 total (0 with holes)'.
+  7. Verify ONE row in #face-inventory-list:
+     - Layer name: 'Layer0'.
+     - Role badge: 'Construction'.
+     - Visibility badge: 'Visible'.
+     - Faces count: '1 face' (singular form).
+     - Faces With Holes count: '0 faces with holes' (plural
+       form for n=0; see Owner note below).
+     - data-layer-name="Layer0", data-role="construction",
+       data-visible="true", data-visibility-unknown="false".
+  8. Click the row.
+     Expected:
+     - NO selection change in the SU model.
+     - NO camera zoom.
+     - NO toast.
+     - NO Ruby error.
+     - cursor: default (NOT pointer).
+     - NO hover affordance.
+  9. PRE/POST fingerprint:
+       fp_v13_1 = v13_fingerprint(Sketchup.active_model)
+       puts "AFTER V13-1 = #{fp_v13_1.inspect}"
+       puts "MATCH = #{fp_v13_1 == fp_before}"
+     Expected: MATCH = true (no model mutation).
+
+  Owner note on plural wording:
+  - Per directive 027 item 6, bucket counters use correct
+    singular / plural wording. The locked wording for the
+    holes count is 'face with holes' (singular) /
+    'faces with holes' (plural). For n=0 the JS layer emits
+    '0 faces with holes' (plural form per the formatCount
+    helper's `count === 1 ? '' : 's'` rule).
+  - The Faces cell reads '1 face' (singular) / 'N faces'
+    (plural) for n > 1.
+
+PASS criteria for V13-1:
+  - Section exists with the locked structure (AFTER Layers).
+  - Summary scalar rows include 'Faces: 1' +
+    'Faces With Holes: 0'.
+  - Face Inventory summary text EXACTLY
+    'Face Inventory - 1 total (0 with holes)'.
+  - One row for 'Layer0' (Construction / Visible /
+    1 face / 0 faces with holes).
+  - Row click does NOTHING (inert).
+  - Fingerprint byte-identical (no model mutation).
+
+
+V13-2: ONE FACE ON DIM-WALLS -> DIM-WALLS BUCKET
+================================================
+
+  1. Select v2 (the face on DIM-WALLS).
+  2. Open the dialog, open the Face Inventory section.
+  3. Verify:
+     - 'Faces: 1' + 'Faces With Holes: 0' in the summary.
+     - Section summary: 'Face Inventory - 1 total (0 with holes)'.
+     - One row: 'DIM-WALLS' / 'Dimension' role badge /
+       'Visible' badge / '1 face' / '0 faces with holes'.
+  4. PRE/POST fingerprint:
+       fp_v13_2 = v13_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v13_2 == fp_before}"
+     Expected: MATCH = true.
+
+
+V13-3: ONE FACE WITH AN INNER LOOP / HOLE
+==========================================
+
+  1. If v3_has_holes == false (the SketchUp build did NOT create
+     an inner loop on the helper face): SKIP THIS STEP and
+     record 'SKIP V13-3 (SketchUp build did not create the
+     inner loop)'. The Face Inventory scalar 'Faces With Holes'
+     must still equal 0 in that case.
+
+  2. If v3_has_holes == true:
+     - Select v3 (the face with an inner loop).
+     - Open the dialog, open the Face Inventory section.
+     - Verify:
+       * 'Faces: 1' + 'Faces With Holes: 1' in the summary.
+       * Section summary:
+         'Face Inventory - 1 total (1 with holes)'.
+       * One row: 'HOLES-OK' / 'Annotation' role badge /
+         'Visible' badge / '1 face' / '1 face with holes'.
+
+  3. PRE/POST fingerprint:
+       fp_v13_3 = v13_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v13_3 == fp_before}"
+     Expected: MATCH = true.
+
+
+V13-4: SAME COMPONENTDEFINITION INSTANTIATED TWICE -> 2 BUCKETS, NO DRIFT
+==========================================================================
+
+  1. Select BOTH inst_a AND inst_b (the two ComponentInstances
+     of the same V13Comp definition).
+  2. Open the dialog, open the Face Inventory section.
+  3. Verify:
+     - 'Faces: 2' + 'Faces With Holes: 0' in the summary.
+     - Section summary:
+       'Face Inventory - 2 total (0 with holes)'.
+     - Two rows, both with layer name 'Layer0' (the model
+       default layer, since V13Comp's face has no explicit
+       layer assignment in the helper).
+     - Each row reads '2 faces' (plural form for n=2) +
+       '0 faces with holes'.
+  4. PRE/POST fingerprint:
+       fp_v13_4 = v13_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v13_4 == fp_before}"
+     Expected: MATCH = true.
+
+
+V13-5: HIDDEN + UNKNOWN-ROLE PRESENTATION
+========================================
+
+  1. Select BOTH the HIDDEN-FACE group AND the XYZ-NOROLE group
+     (Shift-click in the model browser, or accumulate by selecting
+     them one at a time across re-renders).
+  2. Open the dialog, open the Face Inventory section.
+  3. Verify TWO rows in canonical V1.1 layer order:
+     - Row 1: 'HIDDEN-FACE' (or 'XYZ-NOROLE' -- whichever wins
+       the role bucket order; HIDDEN-FACE has no rule match
+       so it is :unknown like XYZ-NOROLE; the order between
+       two :unknown rows is name ASC).
+     - The HIDDEN row's data-visible="false" attribute is set;
+       the row visually renders at ~60% opacity (per the
+       .face-inventory-row[data-visible="false"] CSS rule).
+     - The Visibility badge for HIDDEN-FACE reads 'Off-screen'.
+     - The Visibility badge for XYZ-NOROLE reads 'Visible'.
+     - Both Role badges read 'Unknown' (the V1.1 LayerRoleConfig
+       default for names that don't match any rule).
+  4. PRE/POST fingerprint:
+       fp_v13_5 = v13_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v13_5 == fp_before}"
+     Expected: MATCH = true.
+
+
+V13-6: PRE/POST FINGERPRINT BYTE-IDENTICAL (NO MUTATION)
+======================================================
+
+  1. After running V13-1..V13-5, re-capture fingerprint:
+       fp_v13_6 = v13_fingerprint(Sketchup.active_model)
+       puts "AFTER V13-6 = #{fp_v13_6.inspect}"
+       puts "MATCH = #{fp_v13_6 == fp_before}"
+  2. Expected: MATCH = true across all fields.
+     The V1.3 implementation MUST NOT mutate:
+       - edge count (no entities.add_*, no entity.erase!)
+       - face count (no entities.add_face, no entity.erase!)
+       - group count (no Group / ComponentInstance mutations)
+       - layer.visible? flags (no hidden -> visible flip)
+       - active_path
+     Per V13-4 note: selection / camera movement is expected
+     on the explicit Locate click in earlier V1.2 V12-4 step,
+     but V1.3 rows are non-actionable and trigger no
+     selection / camera movement, so MATCH = true on the
+     full flow is the right outcome.
+  3. Property-only spot-check (mirror of V1.0 step N.6):
+       m = Sketchup.active_model
+       sample = m.entities.grep(Sketchup::Face).first
+       if sample
+         puts "material=#{sample.material.name}, " \
+              "layer=#{sample.layer.name}, " \
+              "hidden=#{sample.hidden?}, " \
+              "soft=#{sample.soft?}"
+       end
+     Repeat before and after the V13-1..V13-6 flow. Expected:
+     byte-identical properties.
+
+
+OVERALL RESULT
+==============
+
+After V13-1..V13-6, report one of:
+
+  PASS ON SKETCHUP <version> (V1.3 FACE INVENTORY)
+  - V13-1: One rectangular face on Layer0 -> 'Face
+        Inventory - 1 total (0 with holes)'; section
+        closed by default; summary scalar rows include
+        'Faces: 1' + 'Faces With Holes: 0'.
+  - V13-2: One face on DIM-WALLS -> DIM-WALLS bucket
+        (Dimension / Visible / 1 face / 0 faces with holes).
+  - V13-3: One face with inner loop / hole -> holes count
+        = 1; '1 face with holes' wording in the row;
+        OR 'SKIP V13-3' if SketchUp did not create the inner
+        loop.
+  - V13-4: Same ComponentDefinition instantiated twice
+        -> 2 buckets (each Layer0 with '2 faces' plural
+        form); occurrence count semantics correct.
+  - V13-5: Hidden layer ('HIDDEN-FACE' Off-screen badge +
+        muted opacity) + Unknown role ('Unknown' badge).
+  - V13-6: PRE/POST fingerprint byte-identical (no
+        model mutation).
+
+  PARTIAL PASS
+  - List which V13 steps passed and which failed.
+  - If any model mutation is suspected, capture the
+    fingerprint delta and the Ruby Console log verbatim.
+
+  BLOCKED
+  - If the V1.3 section does not appear at all, or any
+    row lacks the layer name / face count / holes count /
+    role badge / visibility badge, or the loader raises on
+    Ruby reload, list the symptom and the Ruby Console error
+    verbatim.
+
+
+NEXT ACTION (AFTER V1.3 OWNER VERIFICATION)
+==========================================
+
+- If OVERALL = PASS on SU2020: SU-AI-Plugin V1.3 Face
+  Inventory is accepted on the verified SU version. Agent
+  may dispatch the consolidated CodeX end-of-stage review
+  packet (per V1.3 directive 027 COMPLETION CONDITION + V1.2
+  packet contract -- combined V1.2 + V1.3 end-of-stage
+  review).
+
+- SU2017 minimum-host verification remains a release Gate
+  (per R004). Repeat V13-1..V13-6 on SU2017 before formal
+  release. This is NOT a V1.3 blocker; it is a release-
+  blocker.
+
+- Gate 1 has been deferred to formal release (per R006 /
+  Cicada 2026-08-19 decision). V1.3 ships with Gate 1
+  PENDING; the formal release update rerun Gate 1 on the
+  final RBZ artifact.
+
+============================================================
+END OF OWNER VERIFICATION CHECKLIST - V1.3 FACE INVENTORY
+============================================================

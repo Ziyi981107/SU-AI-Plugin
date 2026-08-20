@@ -1,0 +1,96 @@
+============================================================
+OWNER COMBINED RUN ORDER — V1.2 + V1.3 (deferred during lunch)
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20
+For:       Product Owner (real-SU verification, per Q002=A)
+============================================================
+
+This file is a SHORT companion to the two Owner verification
+checklists (V1.2 V12-1..V12-7 and V1.3 V13-1..V13-6). Per V1.3
+directive 027 owner-testing-prep section: "Keep the two
+verdicts separate so a V1.3 failure cannot erase valid V1.2
+evidence."
+
+ORDER
+=====
+
+  1. **V1.0 baseline** (if not already verified):
+     - Run Review/OWNER_VERIFICATION_STAGE_6.txt steps J..N
+       on a fresh empty model.
+
+  2. **V1.1 baseline** (if not already verified):
+     - Run Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt
+       steps L1..L9.
+
+  3. **V1.2 Owner Gate 2** (REQUIRED, defer-then-run):
+     - Run Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_
+       2026-08-20.txt steps V12-1..V12-7 on the same fresh
+       model (use the V1.2 setup helper; do not reuse a V1.1
+       verification model).
+     - Report verdict in:
+       Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt
+
+  4. **V1.3 Owner Gate 2** (REQUIRED, after V1.2):
+     - Run Review/OWNER_VERIFICATION_V1_3_FACE_INVENTORY_
+       2026-08-20.txt steps V13-1..V13-6 on a fresh empty
+       model (use the V1.3 setup helper; do NOT reuse a
+       V1.2 verification model).
+     - Report verdict in:
+       Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_2026-08-XX.txt
+
+  5. **Formal release prep** (after V1.0 + V1.1 + V1.2 + V1.3
+     all PASS on SU2020):
+     - Combine V1.0 + V1.1 + V1.2 + V1.3 in the final RBZ.
+     - Re-run Gate 1 (SU2017) + Gate 2 V1.1 + Gate 2 V1.2 +
+       Gate 2 V1.3 on the combined artifact.
+     - Agent assembles ONE consolidated CodeX end-of-stage
+       review packet covering V1.2 + V1.3 (since V1.2 is
+       also awaiting CodeX end-of-stage).
+     - Owner routes the packet to CodeX; CodeX returns a
+       verdict; Agent acts on the verdict.
+
+RULES FOR KEEPING THE TWO VERDICTS INDEPENDENT
+==============================================
+
+- Do NOT collapse V12 and V13 into a single verdict.
+- If V13 fails, V12 evidence stands (do not re-run V12
+  unless V12 evidence is also questioned).
+- V12 evidence file lives at:
+    Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt
+- V13 evidence file lives at:
+    Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_2026-08-XX.txt
+- The two files have INDEPENDENT verdict sections.
+
+WHEN TO ASK FOR HELP
+====================
+
+- If V12 fails: the V1.2 Owner-test candidate (commit 0460c6b
+  on branch v1.2-issues-by-layer, tagged
+  v1.2-issues-by-layer-candidate) is preserved exactly. Do
+  NOT reopen V1.2 implementation; ask the Agent to address
+  the V12 failure as a follow-up patch.
+
+- If V13 fails: the V1.3 implementation commit on branch
+  v1.3-face-inventory is preserved. Do NOT reopen V1.2; the
+  Agent addresses the V13 failure as a V1.3 follow-up patch.
+
+- If both V12 AND V13 fail at the SAME failure mode (e.g.
+  selector mismatch or dialog layout issue): report both
+  separately; do NOT attempt a combined fix without an Agent
+  checkpoint.
+
+LOAD PATH
+=========
+
+Same convention as the V1.1 / V1.2 checklists:
+
+  a. Development-tree testing:
+       load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/main.rb'
+
+  b. Release / installed-RBZ testing:
+       Install dist/SU-AI-Plugin.rbz via Window > Extension
+       Manager; let SketchUp's loader run su_ai_plugin/main.
+
+============================================================
+END OF OWNER COMBINED RUN ORDER - V1.2 + V1.3
+============================================================
