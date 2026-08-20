@@ -1,0 +1,55 @@
+VERDICT:
+PASS WITH NITS
+
+REVIEW MODE:
+STAGE REVIEW - ONE consolidated V1.1 end-of-stage review
+
+SCOPE REVIEWED:
+- Branch: v1.1-layer-semantic-mapping
+- Implementation base/head: 4206e78..823feab
+- Post-Owner NIT fix range: 823feab..a0248ba
+- Production path: layer role/config -> PreflightRunner -> AnalyzersRunner -> AnalysisResult/UIBridge -> HtmlDialog Layers render
+- Locked decisions: R007..R012 and the two plan section 12 implementation defaults
+- Owner evidence: Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-20.txt plus the Owner's completed SU2020 L1..L9 run, final fingerprint MATCH=true
+- Tests rerun by CodeX: 372/372 PASS, 0 fail, 0 error, using the bundled Ruby 2.7.8 runtime
+- git diff --check: clean for the implementation and test surfaces in both 4206e78..823feab and 823feab..a0248ba
+
+BLOCKS:
+NONE.
+
+STAGE DECISION:
+- V1.1 Layer Semantic Mapping is accepted and may be marked CLOSED on the verified SketchUp 2020 host.
+- The five-role model, role/visibility separation, unknown-visibility preservation, role-bucket ordering, hidden-row ordering, neutral role styling, issue emphasis, inert layer rows, and no-model-mutation contract are implemented consistently.
+- The Owner's pre-fix SU2020 evidence plus the narrow DOM/CSS regression tests are sufficient for this stage. The post-NIT separator change is cosmetic and does not require another CodeX review.
+- SU2017 verification remains deferred under R006. It is a mandatory formal-release gate on the final RBZ, not a blocker for closing this V1.1 stage.
+
+NITS:
+1. [DOC-025-001] Correct the Owner verification run instructions before they are reused.
+   Location: Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt
+   Problem:
+   - The development-tree instruction still says to load extension/su_ai_plugin.rb directly. In the Owner's real SU2020 session this registration-only loader could not resolve su_ai_plugin/main after the installed copy was removed. For development-tree testing, load extension/su_ai_plugin/main.rb directly; for release testing, install and load the RBZ normally.
+   - L7 says to select five fixtures but later describes six fixtures. With the listed five-fixture selection the expected total is N=5; N=6 applies only when TXT-LABEL-HIDDEN is also selected.
+   - L2 repeats the same no-.has-issues assertion twice.
+   Minimum fix: documentation-only correction. No CodeX recheck required.
+
+2. [DOC-025-002] Qualify the packet's git-diff cleanliness statement.
+   Location: Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md
+   Problem: implementation/tests are diff-check clean, but an unrestricted 4206e78..HEAD check also reports historical Review documents with conflict-marker-looking text and CRLF/trailing-whitespace findings. The current wording can be read as claiming the entire broad documentation diff is clean.
+   Minimum fix: state explicitly that `git diff --check` is clean for `extension/` and `tests/`; treat broad historical documentation cleanup separately. No CodeX recheck required.
+
+3. [EVIDENCE-025-003] The separator/plural NIT fix was not visually rerun on the post-fix SU2020 head.
+   Assessment: non-blocking. The fix is narrow, the real DOM separator is explicit, and automated DOM/source guards pass. Owner may confirm it opportunistically on the next SU2020 session. The final RBZ must still receive the normal Gate 2 host run before formal release.
+
+DEBT:
+- LayerIssueGrouper remains intentionally unconnected to the V1.1 UI. Keep it parked until a future Issues-by-Layer stage actually consumes it; do not expand this closed stage for that work.
+- No remote is configured. Preserve local Git checkpoints and arrange backup/push separately; this is not a V1.1 code blocker.
+
+QUESTIONS FOR PRODUCT OWNER:
+NONE.
+
+NEXT REVIEW:
+- NONE for the documentation NITs above.
+- Do not request review for ordinary V1.2 product/UX decisions or small implementation commits.
+- Next CodeX review only after the next complete meaningful technical stage, a high-risk BLOCK, a complete BLOCK fix, or final release readiness.
+- Formal release review must include the final RBZ, SU2017 Gate 1, SU2020 Gate 2, and the final no-mutation evidence.
+

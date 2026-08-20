@@ -1,79 +1,74 @@
 # CURRENT STATE
 
-Last updated: 2026-08-20 (V1.1 implementation COMPLETE
-on `v1.1-layer-semantic-mapping` branch; 5 implementation
-commits landed at head `823feab`. Owner Gate 2 V1.1 PASS
-WITH NIT on real SU2020; all three NITs fixed in 2 follow-up
-commits `33b601a` (NIT 1: separator + plural) and `0a1f2af`
-(NIT 2: fixtures). Consolidated CodeX end-of-stage review
-packet drafted at
-`Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
-Full suite 372/372 PASS, 0 fail, 0 error. V1.0 candidate
-still FROZEN at tag `v1.0-candidate-2026-08-19` (commit
-`56ea611`). Gate 1 (SU2017) PENDING per R006 — deferred to
-formal release.)
+Last updated: 2026-08-20 (V1.1 stage **CLOSED on
+SketchUp 2020** per CodeX end-of-stage review
+`Prompt/CODEX_REVIEW_025_2026-08-20_V1_1_LAYER_SEMANTIC_MAPPING_STAGE.txt`
+**PASS WITH NITS**, 0 BLOCKs. Three V1.1 NITs (1 code/UI,
+2 fixture/doc) all fixed in 2 follow-up commits; three
+CodeX DOC NITs all fixed in this session's CodeX-025
+follow-up. Full suite 372/372 PASS, 0 fail, 0 error.
+Branch `v1.1-layer-semantic-mapping` is ready for
+**formal release** once the Owner combines the V1.0 + V1.1
+artifacts and re-runs Gate 1 (SU2017) + Gate 2 on the
+final RBZ per R006. V1.0 candidate still FROZEN at tag
+`v1.0-candidate-2026-08-19` (commit `56ea611`). Gate 1
+(SU2017) PENDING per R006 — deferred to formal release.)
 
-## Agent hand-off status (2026-08-20)
+## V1.1 stage (CLOSED on SU2020 per CodeX 025, 2026-08-20)
 
-The Agent has entered the **WAIT-FOR-CODEX-END-OF-STAGE-REVIEW**
-phase. V1.1 implementation COMPLETE on
-`v1.1-layer-semantic-mapping` (5 commits, head `823feab`),
-Owner Gate 2 V1.1 PASS WITH NIT collected on real SU2020,
-all three NITs fixed in 2 follow-up commits, and ONE
-consolidated CodeX end-of-stage review packet staged at
-`Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
-The branch `HEAD` is ready for the one-shot Codex submission.
+- **CodeX verdict**: PASS WITH NITS. 0 BLOCKs. V1.1 stage
+  may be marked CLOSED on the verified SU2020 host.
+- **Owner evidence**: `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-20.txt`
+  (Owner Gate 2 V1.1 PASS WITH NIT on real SU2020).
+- **CodeX packet**: `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
+- **CodeX review file**: `Prompt/CODEX_REVIEW_025_2026-08-20_V1_1_LAYER_SEMANTIC_MAPPING_STAGE.txt`.
+- **NITs closed in this session**:
+  - V1.1 NIT 1 (visual spacing + plural): commit `33b601a`.
+  - V1.1 NIT 2a/2b/2c (fixtures): commit `0a1f2af`.
+  - CodeX DOC-025-001 (OWNER_VERIFICATION loader path +
+    L7 fixture count + L2 duplicate): in the CodeX-025
+    follow-up commit. Also converted
+    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
+    to LF line endings (CRLF was introduced by a recent
+    editor session and triggered false-positive
+    `git diff --check` trailing-whitespace complaints).
+  - CodeX DOC-025-002 (qualify the packet's
+    `git diff --check` statement to scope to `extension/`
+    and `tests/`): in the same follow-up commit.
+  - CodeX EVIDENCE-025-003 (visual re-verification of
+    separator/plural NIT fix on post-fix SU2020): no
+    action required per CodeX; Owner may confirm on the
+    next SU2020 session.
+- **Debt** (per CodeX 025, kept parked):
+  - LayerIssueGrouper is intentionally unconnected to
+    the V1.1 UI; do NOT reopen V1.1 for that work.
+  - No git remote configured; backup / push separately.
+    Not a V1.1 blocker.
+- **Out of scope until formal release**:
+  - CodeX next review only after the next complete
+    meaningful technical stage, a high-risk BLOCK, a
+    complete BLOCK fix, or final-release readiness.
+  - Gate 1 (SU2017) is a formal-release gate, not a
+    V1.1 blocker.
+  - Any V1.1 / V1.0 scope re-opening requires Owner
+    approval.
 
-  - **Owner right now**: route the CodeX packet from
-    `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`
-    to Codex (one-shot submission, NOT per-NIT or per-commit).
-    Optional: re-run L4..L9 on top of the NIT-fix head and
-    drop a brief re-verification record at
-    `Prompt/OWNER_REVERIFICATION_V1_1_LAYERS_2026-08-XX.txt`.
-    The automated L4 source-level guard tests already cover
-    the NIT 1 fix; the fixture rewrite in commit `0a1f2af` is
-    self-evidencing in the checklist itself.
-  - **Agent right now**: idle on CodeX verdict. On CodeX PASS,
-    Agent closes the V1.1 stage on the verified host. On CodeX
-    PASS WITH NIT, Agent fixes the NITs in a follow-up commit
-    without dispatching a new packet. On CodeX BLOCK, Agent
-    addresses each BLOCK in a follow-up commit and dispatches a
-    follow-up packet.
-  - **Out of scope until CodeX verdict**: formal release,
-    Gate 1 (SU2017, deferred to formal release per R006), and
-    any V1.1 / V1.0 scope re-opening.
+## Next action (post-V1.1-stage-CLOSED)
 
-Independent Agent-side work already committed (no behavior
-change beyond the three NIT fixes Owner reported):
-
-  - Whitespace / encoding audit on `CURRENT_STATE.md`: file is
-    clean (no trailing whitespace, no NBSP / ZWSP / BOM).
-  - `data/_check_tmp/` audit: all WIP files are already
-    isolated (`data/_check_tmp/` is `.gitignore`d AND listed
-    in `scripts/build_rbz.rb EXCLUDED_TOP_LEVEL`). RBZ
-    shipping is confirmed WIP-free.
-  - `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt` L5
-    title typo (`EMHASIS` → `EMPHASIS`) corrected.
-  - **NIT 1 fix** (commit `33b601a`): layer-row separator +
-    plural form. Rendered text now reads `4 edges · 0 issues`
-    with visible middle-dot separator; `formatCount` helper
-    centralizes the plural rule. Tests:
-    `tests/test_html_render.rb` (CSS guard for
-    `.layer-row .layer-count-sep`),
-    `tests/test_html_render_dom.js` (L4.3 exact-match +
-    L4.3.1 separator + L4.4.1 plural correctness).
-  - **NIT 2 fix** (commit `0a1f2af`): OWNER_VERIFICATION
-    fixture rewrite. New `make_rect(entities, layer, x, y)`
-    helper builds a 4-edge closed rectangle and explicitly
-    assigns the named layer to each Edge. Hidden layer
-    renamed `TXT-HIDDEN` → `TXT-LABEL-HIDDEN` (matches
-    Annotation via `label`). L3 / L4 / L5 step descriptions
-    updated.
-  - Full suite re-run: **372/372 PASS, 0 fail, 0 error**
-    (V1.0 baseline 286 + V1.1 additions 86 unchanged).
-  - All commit messages reference the locked contracts
-    (R007..R012) and explicitly state no V1.0 / Stage 6 /
-    CodeX 020 / RBZ / CodeX 024 re-opening.
+1. **Owner**: combine V1.0 + V1.1 in the final `.rbz`
+   (one entry-point `su_ai_plugin.rb` at the package
+   root; one support folder `su_ai_plugin/` with
+   `main.rb`, `core/`, `compatibility/`, `html/`).
+   Re-run Gate 1 (SU2017) + Gate 2 V1.1 (Owner
+   verification checklist) on the combined artifact.
+2. **Agent**: idle until formal release evidence or a
+   new Owner task lands. Reopening V1.1 for the
+   parked LayerIssueGrouper UI integration or any
+   other V1.1.1 surface is Owner-approved work, NOT
+   automatic.
+3. **CodeX**: next engagement is the formal-release
+   review packet (final RBZ + SU2017 Gate 1 + SU2020
+   Gate 2 + no-mutation evidence).
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 
@@ -93,6 +88,13 @@ change beyond the three NIT fixes Owner reported):
   (IssueNormalizer private/module_function), L3 non-locatable
   warning (renderIssue click-handler gate). All 286 tests PASS,
   all evidence in the lower sections of this file.
+
+## V1.1 stage (historical implementation record; superseded by the CLOSED-ON-SU2020 section above)
+
+The new V1.1 section at the top of this file is authoritative
+after CodeX 025 (2026-08-20). The narrative below is preserved
+for historical context only; it captures the implementation
+details and locked decisions at the time of `823feab`.
 
 ## V1.1 stage (IMPLEMENTATION COMPLETE on
             `v1.1-layer-semantic-mapping` branch, head = `823feab`)
@@ -221,36 +223,41 @@ change beyond the three NIT fixes Owner reported):
 
 ## Open / pending (NOT in scope to act on now)
 
-- **Owner Gate 2 V1.1 verification** (current next action):
-  Cicada runs `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
-  L1..L9 on real SU2020. Per Q002=A, only Owner can run real-SU
-  verification. Once Owner drops the report at
-  `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-XX.txt`, the V1.1
-  stage moves to accepted-on-SU2020.
-- **CodeX end-of-stage review** (next code action after Owner
-  Gate 2 V1.1 PASS): one consolidated packet per V1.1 plan §13.
-  CodeX is reserved for: complete coherent stage (the V1.1
-  implementation IS that), high-risk blocker, BLOCK recheck,
-  final release review. Reopening V1.0 scope is explicitly out
-  of scope for this packet.
-- **Gate 1 (SU2017 minimum-host verification)**: PENDING. Cicada
-  (2026-08-19) has chosen to defer this until formal release.
-  Per R004 + R006 posture, this is a final release gate and
-  MUST be repeated on whatever RBZ is shipped. Do not block
-  V1.1 acceptance on this; do not fake SU2020 evidence as SU2017
-  evidence.
-- **V1.1 LayerIssueGrouper integration into the UI**: the
-  commit-2 pure-Ruby grouper (`core/layer_issue_grouper.rb`)
-  exists but is not yet consumed by any UI surface. It is a
-  forward-compatibility hook for a future V1.1.1 stage that
-  wants an "Issues by Layer" <details> block. Per plan §4.5
-  the API is locked; the UI integration is intentionally
-  deferred. NOT a V1.1 blocker.
-- **CodeX review cadence**: Pi's handoff is explicit — do NOT
-  submit tiny edit packets, partial packets, or progress pings.
-  Codex is reserved for: complete coherent stage, high-risk
-  blocker, BLOCK recheck, final release review. Routine coding
-  decisions stay with the agent.
+- **Owner formal-release prep** (current next action):
+  Cicada combines V1.0 + V1.1 in the final `.rbz`
+  (one entry-point `su_ai_plugin.rb` at the package root;
+  one support folder `su_ai_plugin/` with `main.rb`,
+  `core/`, `compatibility/`, `html/`), then re-runs
+  Gate 1 (SU2017) + Gate 2 V1.1 (Owner verification
+  checklist) on the combined artifact.
+- **CodeX formal-release review** (next code action after
+  Owner formal-release evidence lands). Next CodeX
+  engagement is the formal-release review packet (final
+  RBZ + SU2017 Gate 1 + SU2020 Gate 2 + no-mutation
+  evidence). CodeX is reserved for: complete coherent
+  stage (V1.1 was that; formal release is the next),
+  high-risk blocker, BLOCK recheck, final release review.
+  Reopening V1.0 / V1.1 scope is explicitly out of scope.
+- **Gate 1 (SU2017 minimum-host verification)**: PENDING.
+  Cicada (2026-08-19) has chosen to defer this until
+  formal release. Per R004 + R006 posture, this is a
+  final release gate and MUST be repeated on whatever
+  RBZ is shipped. Do not block V1.1 acceptance on this;
+  do not fake SU2020 evidence as SU2017 evidence.
+- **V1.1 LayerIssueGrouper integration into the UI**:
+  the commit-2 pure-Ruby grouper
+  (`core/layer_issue_grouper.rb`) exists but is not yet
+  consumed by any UI surface. It is a forward-compatibility
+  hook for a future V1.1.1 stage that wants an
+  "Issues by Layer" <details> block. Per plan §4.5 the
+  API is locked; the UI integration is intentionally
+  deferred. **NOT a V1.1 blocker; do NOT reopen V1.1 for
+  this work.**
+- **CodeX review cadence**: Pi's handoff is explicit —
+  do NOT submit tiny edit packets, partial packets, or
+  progress pings. Codex is reserved for: complete coherent
+  stage, high-risk blocker, BLOCK recheck, final release
+  review. Routine coding decisions stay with the agent.
 
 ## 决策落地 (PI_TASK_001)
 

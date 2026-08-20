@@ -137,7 +137,19 @@ The Node.js DOM test (`tests/test_html_render_dom.js`, 67 assertions)
 runs `PASS` and is called from the Ruby suite
 (`tests/test_html_render.rb`).
 
-`git diff --check` clean on all V1.1 + NIT-fix commits.
+`git diff --check` is clean for the implementation and test
+surfaces (`extension/` and `tests/`). The unrestricted
+`4206e78..HEAD` check also reports:
+  - pre-existing leftover conflict markers in legacy Stage-6
+    recheck packets in `Review/` (committed before V1.1; not
+    a V1.1 diff);
+  - CRLF line endings in
+    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
+    (introduced by a recent editor session, fixed in the
+    CodeX-025 follow-up commit that converts the file to LF).
+Both are documentation-cleanup debt, not production-code
+debt, and are out of scope for this V1.1 packet per the
+"do not re-open V1.0 scope" rule.
 
 `dist/SU-AI-Plugin.rbz` rebuilds locally (gitignored, not committed)
 and ships:

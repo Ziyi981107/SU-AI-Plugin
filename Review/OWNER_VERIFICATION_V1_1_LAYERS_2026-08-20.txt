@@ -211,12 +211,31 @@ in any step that needs an after-state):
 HOW TO RUN THIS CHECKLIST
 =========================
 
-  1. Confirm you have the V1.1 entrypoint at:
-       D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb
-     (Same V1.0-supported entrypoint. V1.1 does NOT introduce a
-      new entrypoint.)
-  2. Load the entrypoint via the V1.0 RBZ install path or via
-       load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+  1. Confirm you have the V1.1 source tree at:
+       D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/
+
+  2. Pick the load path that matches your scenario:
+
+     a. **Development-tree testing** (iterating on V1.1 logic
+        without re-installing the .rbz each round):
+          load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/main.rb'
+        This is the BOOT file; it calls
+        `SUAnalysis::Boot.boot!` which `require_relative`s every
+        operational file and registers the loader.
+
+        The sibling `extension/su_ai_plugin.rb` is the ROOT LOADER
+        (calls `Sketchup.register_extension`). It ONLY runs under
+        real SketchUp with an installed extension; loading it in
+        the Ruby Console against a dev-tree copy is the wrong path
+        because the registration API is not available outside SU.
+
+     b. **Release / installed-RBZ testing** (the Owner Gate 2
+        V1.1 evidence path): install `dist/SU-AI-Plugin.rbz`
+        via `Window > Extension Manager` and let SketchUp's own
+        loader run `su_ai_plugin/main` from the installed copy.
+        Do NOT mix this with a dev-tree copy on disk in the same
+        SketchUp session.
+
   3. Run the L1..L9 steps below. Each step captures evidence
      (screenshot, console log, or fingerprint comparison).
   4. Owners without V1.0 Gate 2 SU2020 verification should also
@@ -275,7 +294,6 @@ L2. LAYERS SECTION APPEARS
         (i.e. "4 edges · 0 issues" visually, per Owner Gate 2
         V1.1 NIT fix). The "0 issues" cell does NOT carry the
         .has-issues class.
-      - The "0 issues" cell does NOT carry the .has-issues class.
    4. The row has cursor: default; clicking it does NOT change
       the selection and does NOT display a toast.
 
@@ -385,7 +403,14 @@ L6. NO ROLE COLOR HINTS (R008 / ChatGPT 11.7)
 L7. LAYERS DETAILS DEFAULT-CLOSED + SUMMARY PRE-POPULATED
 =========================================================
 
-   1. Select all 5 fixtures together again.
+   1. Select fixtures. Two valid selections:
+      - 5 fixtures (visible only): test_group + dim_group +
+        txt_group_visible + guide_g + unknown_g.
+        Expected: N=5, M=0 (all closed rectangles, 0 issues).
+      - 6 fixtures (visible + hidden): the 5 above PLUS
+        txt_group_hidden (TXT-LABEL-HIDDEN).
+        Expected: N=6, M=0 (the hidden layer's closed
+        rectangle is also issue-free).
    2. Open the dialog.
    3. WITHOUT opening the Layers <details> manually, inspect
       its `<summary>` child (`id="layers-summary"`).
@@ -394,9 +419,7 @@ L7. LAYERS DETAILS DEFAULT-CLOSED + SUMMARY PRE-POPULATED
         "Layers - N total (M with issues)"
         where N = the number of distinct layers you selected
         and M = the number of those layers with at least one
-        issue. (For our 5 visible + 1 hidden = 6 fixtures,
-        N=6; M depends on the open-endpoint / duplicate
-        counts, but is usually 0 in this fixture.)
+        issue. With all closed rectangles, M is always 0.
       - The <details> is rendered CLOSED (no `open` attribute
         on the element via DevTools).
       - The summary text is populated BEFORE the user opens
