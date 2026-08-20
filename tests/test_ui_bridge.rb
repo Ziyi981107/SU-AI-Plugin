@@ -285,3 +285,168 @@ test 'ui_bridge.as_html_data: layerGroups and summary.layer_groups carry the SAM
   from_sum  = payload['summary']['layer_groups'].first.keys.sort
   assert_equal from_top, from_sum
 end
+
+# --- V1.2: layerIssueGroups top-level key (directive 026) ---
+
+test 'ui_bridge.as_html_data: layerIssueGroups top-level key is present (V1.2)' do
+  reg = IssueRegistry.new([])
+  result = AnalysisResult.new(preflight: Object.new, registry: reg)
+  payload = UIBridge.as_html_data(result)
+  assert payload.key?('layerIssueGroups'),
+         "expected top-level 'layerIssueGroups' key, got #{payload.keys.inspect}"
+  assert_kind_of Array, payload['layerIssueGroups']
+end
+
+test 'ui_bridge.as_html_data: layerIssueGroups defaults to empty Array (V1.2)' do
+  # V1.0 / V1.1 callers that don't supply layer_issue_groups
+  # MUST get [] (NOT nil, NOT raise).
+  reg = IssueRegistry.new([])
+  result = AnalysisResult.new(preflight: Object.new, registry: reg)
+  payload = UIBridge.as_html_data(result)
+  assert_equal [], payload['layerIssueGroups']
+end
+
+test 'ui_bridge.as_html_data: layerIssueGroups is an empty Array when caller passes nothing (V1.2)' do
+  reg = IssueRegistry.new([])
+  result = AnalysisResult.new(
+    preflight:           Object.new,
+    registry:            reg,
+    layer_issue_groups:  []
+  )
+  payload = UIBridge.as_html_data(result)
+  assert_equal [], payload['layerIssueGroups']
+end
+
+test 'ui_bridge.as_html_data: layerIssueGroups contains Symbol-keyed bucket hashes (stringified, V1.2)' do
+  reg = IssueRegistry.new([])
+  layer_issue_groups = [
+    {
+      name:         'DIM-XX',
+      count:        2,
+      default_open: true,
+      issues:       [
+        { issue_id: 'open_endpoint|1|1', severity: 'low',  locatable: true,  source: { layer_name: 'DIM-XX' } },
+        { issue_id: 'short_edge|2|1',   severity: 'low',  locatable: false, source: { layer_name: 'DIM-XX' } }
+      ]
+    },
+    {
+      name:         'Layer0',
+      count:        1,
+      default_open: false,
+      issues:       [
+        { issue_id: 'duplicate|1|1',    severity: 'high', locatable: true,  source: { layer_name: 'Layer0' } }
+      ]
+    }
+  ]
+  result = AnalysisResult.new(
+    preflight:          Object.new,
+    registry:           reg,
+    layer_issue_groups: layer_issue_groups
+  )
+  payload = UIBridge.as_html_data(result)
+  lig = payload['layerIssueGroups']
+  assert_equal 2, lig.length
+  # ALL keys (top + nested) MUST be Strings at the JSON boundary.
+  assert lig.all? { |b| b.keys.all? { |k| k.is_a?(String) } },
+         "layerIssueGroups entries have non-String keys: #{lig.map(&:keys).inspect}"
+  lig.each do |b|
+    assert b['issues'].all? { |i| i.keys.all? { |k| k.is_a?(String) } },
+           "inner issues have non-String keys: #{b['issues'].map(&:keys).inspect}"
+  end
+  # Field set preserved end-to-end. NOTE: bucket field names
+  # are snake_case to match the Ruby Symbol keys (V1.1
+  # layerGroups payload uses the same snake_case keys;
+  # stringify_groups renames to camelCase for the issue-type
+  # groups path, but layerIssueGroups does not — consistent
+  # with the V1.1 layerGroups contract).
+  dim = lig.find { |b| b['name'] == 'DIM-XX' }
+  refute_nil dim
+  assert_equal 2,    dim['count']
+  assert_equal true, dim['default_open']
+  assert_equal 2,    dim['issues'].length
+  assert_equal 'open_endpoint|1|1', dim['issues'][0]['issue_id']
+  assert_equal 'low',  dim['issues'][0]['severity']
+  assert_equal true,  dim['issues'][0]['locatable']
+  assert_equal 'DIM-XX', dim['issues'][0]['source']['layer_name']
+  l0 = lig.find { |b| b['name'] == 'Layer0' }
+  refute_nil l0
+  assert_equal 1,     l0['count']
+  assert_equal false, l0['default_open']
+  assert_equal 'duplicate|1|1', l0['issues'][0]['issue_id']
+  assert_equal 'high', l0['issues'][0]['severity']
+end
+
+test 'ui_bridge.to_json: layerIssueGroups survives JSON round-trip (V1.2)' do
+  reg = IssueRegistry.new([])
+  layer_issue_groups = [
+    {
+      name:         'DIM-XX',
+      count:        1,
+      default_open: true,
+      issues:       [
+        { issue_id: 'open_endpoint|1|1', severity: 'low', locatable: true }
+      ]
+    }
+  ]
+  result = AnalysisResult.new(
+    preflight:          Object.new,
+    registry:           reg,
+    layer_issue_groups: layer_issue_groups
+  )
+  require 'json'
+  json = UIBridge.to_json(result)
+  parsed = JSON.parse(json)
+  refute_nil parsed['layerIssueGroups']
+  assert_equal 1, parsed['layerIssueGroups'].length
+  bucket = parsed['layerIssueGroups'].first
+  assert_equal 'DIM-XX', bucket['name']
+  assert_equal 1, bucket['count']
+  assert_equal true, bucket['default_open']
+  # Symbol keys never leak to JSON.
+  assert bucket.keys.all? { |k| k.is_a?(String) },
+         "JSON keys must be Strings, got #{bucket.keys.inspect}"
+end
+
+test 'ui_bridge.as_html_data: layerIssueGroups and summary.layer_issue_groups carry the SAME data (V1.2)' do
+  # Per directive 026: 'the summary and top-level payload cannot
+  # drift if both are exposed'. The top-level 'layerIssueGroups'
+  # and summary['layer_issue_groups'] MUST agree.
+  reg = IssueRegistry.new([])
+  layer_issue_groups = [
+    {
+      name:         'DIM-XX',
+      count:        2,
+      default_open: true,
+      issues:       [
+        { issue_id: 'open_endpoint|1|1', severity: 'low', locatable: true }
+      ]
+    },
+    {
+      name:         'Layer0',
+      count:        1,
+      default_open: false,
+      issues:       [
+        { issue_id: 'duplicate|1|1', severity: 'high', locatable: true }
+      ]
+    }
+  ]
+  result = AnalysisResult.new(
+    preflight:          Object.new,
+    registry:           reg,
+    layer_issue_groups: layer_issue_groups
+  )
+  payload = UIBridge.as_html_data(result)
+  # Same number of entries.
+  assert_equal payload['layerIssueGroups'].length,
+               payload['summary']['layer_issue_groups'].length
+  # Same per-entry String keys (recursively).
+  from_top = payload['layerIssueGroups'].first.keys.sort
+  from_sum = payload['summary']['layer_issue_groups'].first.keys.sort
+  assert_equal from_top, from_sum
+  # Same name sequence.
+  assert_equal payload['layerIssueGroups'].map { |b| b['name'] },
+               payload['summary']['layer_issue_groups'].map { |b| b['name'] }
+  # Same counts.
+  assert_equal payload['layerIssueGroups'].map { |b| b['count'] },
+               payload['summary']['layer_issue_groups'].map { |b| b['count'] }
+end
