@@ -114,3 +114,70 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   border-radius: 4px;
   font-size: 13px;
 }
+
+/*
+ * V1.1: Layers section (per plan §4.12).
+ *
+ * Per R008 / ChatGPT §11.7: NO data-role="..." color selectors.
+ * Layers get a single neutral `.layer-row` style; the only data-
+ * attribute-driven style is `[data-visible="false"]` (muted
+ * opacity for hidden layers, per ChatGPT §11.2).
+ *
+ * The V1.0 issue severity palette above is NOT reused for layer
+ * roles. Roles use text + neutral badge only.
+ */
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  cursor: default;
+}
+.layer-row:hover {
+  /* No hover affordance — layers are intentionally non-actionable
+     (mirrors V1.0 L3 non-locatable warning pattern from Round 020). */
+  background: transparent;
+}
+.layer-row .layer-name {
+  flex: 1 0 auto;
+  font-weight: 500;
+}
+.layer-row .role-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #fff;
+  background: var(--muted);
+}
+.layer-row .visibility-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--fg);
+  background: #ececec;
+}
+.layer-row .edge-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.layer-row .issue-count {
+  font-size: 11px;
+  color: var(--muted);
+  /* Per ChatGPT §11.4: when issue_count > 0, the issue count is
+     visually emphasized (bold). NO color hint beyond the existing
+     severity palette — this stays locked to text emphasis only. */
+}
+.layer-row .issue-count.has-issues {
+  font-weight: bold;
+}
+/* Hidden layers get muted style (per ChatGPT §11.2 / R009).
+   This is the ONLY data-attribute-driven style. The selection of
+   `data-visible="false"` (NOT `data-role="..."`) is deliberate —
+   we do NOT classify hidden layers as a separate role. */
+.layer-row[data-visible="false"] {
+  opacity: 0.6;
+}

@@ -312,3 +312,156 @@ test 'html_render (L3): executable render test runs the new assertions and passe
   assert_match(/ASSERT L3\.1:.*locatable row invokes window\.sketchup\.locate ONCE PASS/, out)
   assert_match(/ASSERT L3\.2:.*non-locatable row does NOT invoke window\.sketchup\.locate PASS/, out)
 end
+
+# --------------------------------------------------------------------------
+# V1.1 (per plan §7.3 / §4.10..§4.12): L4 source-level guards for the
+# Layers section. The Ruby-level tests below validate:
+#   - index.html has the locked Layers DOM structure.
+#   - app.js exports the locked LAYER_ROLE_LABELS (5 canonical) and
+#     LAYER_VISIBILITY_LABELS.
+#   - app.js exposes ROOT.renderLayers.
+#   - app.js uses textContent only for layer row data (no innerHTML).
+#   - app.js NEVER adds an addEventListener('click', ...) inside the
+#     renderLayerRow / renderLayers path (per L3-mirroring non-actionable
+#     pattern, R008).
+#   - style.css defines .layer-row + .role-badge + .visibility-badge
+#     + .issue-count.has-issues + .layer-row[data-visible="false"].
+#   - style.css does NOT define .layer-row[data-role="..."] color
+#     selectors (R008 / ChatGPT §11.7).
+# --------------------------------------------------------------------------
+
+HR_HTML_INDEX_L4 = HR_HTML_INDEX
+HR_HTML_APPJS_L4 = HR_HTML_APPJS
+HR_HTML_CSS_L4   = HR_HTML_CSS
+
+test 'html_render (L4): index.html has <details id="layers-section"> with <summary id="layers-summary"> first child' do
+  src = File.read(HR_HTML_INDEX_L4)
+  assert_match(/<details\s+id="layers-section">/, src,
+               'index.html must include <details id="layers-section"> (V1.1 plan §4.11)')
+  # The summary must be the FIRST child of the details block.
+  # Use a non-greedy lookahead: <details id="layers-section"> followed
+  # by whitespace then <summary id="layers-summary">.
+  assert_match(/<details\s+id="layers-section">\s*<summary\s+id="layers-summary">/, src,
+               'the <summary id="layers-summary"> must be the first child of <details id="layers-section">')
+  # The block must contain a <div id="layers-list">.
+  assert_match(/<div\s+id="layers-list">/, src,
+               '<details id="layers-section"> must contain <div id="layers-list">')
+end
+
+test 'html_render (L4): index.html layers-section is rendered closed by default (no open attribute)' do
+  src = File.read(HR_HTML_INDEX_L4)
+  # The rendered HTML MUST NOT have the `open` attribute on the
+  # layers details — the section starts collapsed per ChatGPT §11.5.
+  # We assert NO `open` attribute within the layers-section block by
+  # extracting the block and scanning it.
+  m = src.match(/<details\s+id="layers-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
+  refute_nil m, 'failed to extract <details id="layers-section"> block'
+  block = m[0]
+  refute_match(/\bopen\b/, block,
+               '<details id="layers-section"> must NOT carry the `open` attribute (closed by default per ChatGPT §11.5)')
+end
+
+test 'html_render (L4): app.js exports LAYER_ROLE_LABELS in canonical order (no OFFSCREEN, R007)' do
+  src = File.read(HR_HTML_APPJS_L4)
+  assert_match(/ROOT\.LAYER_ROLE_LABELS\s*=\s*LAYER_ROLE_LABELS/, src,
+               'app.js must expose ROOT.LAYER_ROLE_LABELS for harness introspection')
+  expected_roles = %w[dimension annotation guide construction unknown]
+  expected_roles.each do |r|
+    assert_match(/['"]#{r}['"]/, src,
+                 "LAYER_ROLE_LABELS must include '#{r}' (canonical role label, per R007)")
+  end
+  # No OFFSCREEN role (R007 removed the symbol).
+  refute_match(/['"]offscreen['"]/, src,
+               "LAYER_ROLE_LABELS must NOT include 'offscreen' (R007 removed the OFFSCREEN role)")
+end
+
+test 'html_render (L4): app.js exports LAYER_VISIBILITY_LABELS with visible/hidden/unknown keys' do
+  src = File.read(HR_HTML_APPJS_L4)
+  assert_match(/ROOT\.LAYER_VISIBILITY_LABELS\s*=\s*LAYER_VISIBILITY_LABELS/, src,
+               'app.js must expose ROOT.LAYER_VISIBILITY_LABELS')
+  assert_match(/LAYER_VISIBILITY_LABELS\s*=\s*\{/, src,
+               'LAYER_VISIBILITY_LABELS is an object literal')
+  assert_match(/visible:\s*['"]Visible['"]/, src,
+               'LAYER_VISIBILITY_LABELS.visible is "Visible"')
+  assert_match(/hidden:\s*['"]Off-screen['"]/, src,
+               'LAYER_VISIBILITY_LABELS.hidden is "Off-screen"')
+  assert_match(/unknown:\s*['"]Visibility: unknown['"]/, src,
+               'LAYER_VISIBILITY_LABELS.unknown is "Visibility: unknown"')
+end
+
+test 'html_render (L4): app.js exposes ROOT.renderLayers (callable surface)' do
+  src = File.read(HR_HTML_APPJS_L4)
+  assert_match(/ROOT\.renderLayers\s*=\s*renderLayers/, src,
+               'app.js must expose ROOT.renderLayers so harness + future callers can invoke the render path')
+end
+
+test 'html_render (L4): renderLayers uses textContent only for layer row data (no innerHTML)' do
+  src = File.read(HR_HTML_APPJS_L4)
+  # Extract the renderLayerRow function body and assert it never
+  # assigns to innerHTML for user-supplied strings. The locked
+  # contract from Stage 6 extends to V1.1.
+  m = src.match(/function\s+renderLayerRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderLayerRow function body'
+  body = m[0]
+  # No innerHTML = ... assignment in the function body.
+  refute_match(/\.innerHTML\s*=/, body,
+               'renderLayerRow must not assign .innerHTML for user strings (locked contract)')
+  # textContent IS the only DOM-mutation API used for user strings.
+  assert_match(/\.textContent\s*=/, body,
+               'renderLayerRow must use .textContent for user strings (locked contract)')
+end
+
+test 'html_render (L4): renderLayers / renderLayerRow do NOT register a click handler (mirrors L3)' do
+  # Per plan §4.10: "The row has `cursor: default` and NO click
+  # handler (mirrors V1.0 L3 non-locatable warning pattern)."
+  # We assert there is NO addEventListener('click', ...) inside
+  # the renderLayerRow body (the rest of app.js has ONE addEventListener
+  # for locatable issue rows; that one is in renderIssue).
+  src = File.read(HR_HTML_APPJS_L4)
+  m = src.match(/function\s+renderLayerRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderLayerRow function body'
+  body = m[0]
+  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
+               'renderLayerRow must NOT register a click listener (layer rows are intentionally non-actionable)')
+end
+
+test 'html_render (L4): style.css defines .layer-row + role-badge + visibility-badge + has-issues emphasis' do
+  src = File.read(HR_HTML_CSS_L4)
+  assert_match(/\.layer-row\s*\{/, src,
+               'style.css must define .layer-row (V1.1 plan §4.12)')
+  assert_match(/\.layer-row\s+\.role-badge/, src,
+               'style.css must define .layer-row .role-badge for the locked neutral role badge')
+  assert_match(/\.layer-row\s+\.visibility-badge/, src,
+               'style.css must define .layer-row .visibility-badge for the separate visibility badge')
+  assert_match(/\.layer-row\s+\.issue-count\.has-issues/, src,
+               'style.css must define .layer-row .issue-count.has-issues for the locked issue-count emphasis')
+  # The muted style for hidden layers (data-visible="false"). This
+  # is the ONLY data-attribute-driven style on layer rows.
+  assert_match(/\.layer-row\[data-visible="false"\]/, src,
+               'style.css must define the muted style for hidden layers via [data-visible="false"]')
+  assert_match(/opacity:\s*0\.6/, src,
+               'the muted style uses opacity: 0.6 (per ChatGPT §11.2)')
+  # The row has cursor: default (no click affordance).
+  assert_match(/\.layer-row\s*\{[^}]*cursor:\s*default/m, src,
+               '.layer-row must set cursor: default (mirrors V1.0 L3 non-actionable pattern)')
+end
+
+test 'html_render (L4): style.css does NOT use data-role="..." color selectors (R008)' do
+  # Per ChatGPT §11.7 / R008: the locked neutral style MUST NOT
+  # color rows by data-role. The only data-attribute-driven style
+  # allowed is [data-visible="false"] (for muted hidden layers).
+  # We scan ONLY the .layer-row CSS rule bodies (NOT any
+  # preceding block comments) and assert NO `data-role="..."`
+  # selector appears inside any of them.
+  src = File.read(HR_HTML_CSS_L4)
+  # Strip block comments first so the regex scan below does not
+  # pick up comments like "...NO data-role=..." that quote the
+  # forbidden pattern intentionally.
+  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
+  blocks = stripped.scan(/[^{}]*\.layer-row[^{}]*\{[^}]*\}/m)
+  assert blocks.length > 0, 'failed to extract any .layer-row CSS block'
+  blocks.each do |b|
+    refute_match(/data-role\s*=/, b,
+                 ".layer-row CSS block must NOT use a [data-role=\"...\"] selector (R008): #{b.inspect}")
+  end
+end

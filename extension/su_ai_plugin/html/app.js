@@ -18,6 +18,24 @@
  * issue_type, all in a single linear summary block. The order of
  * canonical issue types is locked and matches
  * `SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES`.
+ *
+ * V1.1 (per plan §4.10):
+ *   - renderLayers(payload.layerGroups) renders the dialog Layers
+ *     section. Each layer row exposes both a `role` badge AND a
+ *     SEPARATE `visibility` badge (R007); they are independent.
+ *   - The `<summary id="layers-summary">` text is populated at
+ *     render time to "Layers — N total (M with issues)" BEFORE the
+ *     user opens the details (so the user sees the count even when
+ *     collapsed). Per ChatGPT §11.5.
+ *   - Layer rows have `cursor: default` and NO click handler (mirrors
+ *     V1.0 L3 non-locatable warning pattern from Round 020).
+ *   - NO role color hints (R008); the CSS applies a single neutral
+ *     `.layer-row` style and only `data-visible="false"` carries
+ *     the muted `opacity: 0.6` style.
+ *   - Hidden rows are placed at the BOTTOM of their role bucket by
+ *     the Ruby-side mapper (per ChatGPT §11.2 / R009); the JS layer
+ *     preserves the locked canonical order it receives and does NOT
+ *     re-sort.
  */
 (function () {
   'use strict';
@@ -36,6 +54,32 @@
     ['abnormal_large_coord',      'Abnormal Large Coordinate'],
     ['deep_nesting',              'Deep Nesting']
   ];
+
+  // V1.1 (per plan §4.10): locked layer-role labels. 5 canonical roles
+  // ONLY (R007 — the OFFSCREEN role Symbol is REMOVED). Order mirrors
+  // `SUAnalysis::Core::LayerRole::ALL` and is INDEPENDENT from the
+  // issue-type order above (R012). The Ruby mapper already enforces
+  // role bucket order when sorting layerGroups; JS preserves the
+  // received order without re-sorting.
+  var LAYER_ROLE_LABELS = [
+    ['dimension',    'Dimension'],
+    ['annotation',   'Annotation'],
+    ['guide',        'Guide'],
+    ['construction', 'Construction'],
+    ['unknown',      'Unknown']
+  ];
+
+  // V1.1 (per plan §4.10): locked layer visibility labels. Mirrors
+  // `SUAnalysis::Core::LayerRole::VISIBILITY_HUMAN` +
+  // `LayerRole::VISIBILITY_UNKNOWN_HUMAN`. Per the plan, the
+  // visibility_label on each row is pre-computed server-side
+  // (LayerRole.visibility_label) and JS uses the per-row string
+  // verbatim; this table is exposed for harness introspection only.
+  var LAYER_VISIBILITY_LABELS = {
+    visible: 'Visible',
+    hidden:  'Off-screen',
+    unknown: 'Visibility: unknown'
+  };
 
   function render(payload) {
     var sel = document.getElementById('selection-info');
@@ -86,6 +130,14 @@
       });
       groupsEl.appendChild(det);
     });
+
+    // V1.1 (per plan §4.10): render the Layers section BELOW the
+    // per-issue-type groups block (per ChatGPT §11.1). The function
+    // is resilient to undefined / null / non-Array layerGroups — an
+    // empty selection or a V1.0 caller that does not supply
+    // layerGroups results in an empty list with summary text
+    // "Layers — 0 total (0 with issues)".
+    renderLayers(payload.layerGroups);
   }
 
   function humanizeKey(k) {
@@ -167,9 +219,106 @@
     setTimeout(function () { el.hidden = true; }, 4000);
   }
 
+  // V1.1 (per plan §4.10): render the dialog Layers section.
+  // Populates #layers-list with one .layer-row per group and the
+  // #layers-summary text with "Layers — N total (M with issues)"
+  // BEFORE the user opens the details. The locked render contract
+  // (textContent only, no innerHTML for user strings, no eval,
+  // no new Function) is preserved.
+  function renderLayers(layerGroups) {
+    var layersList = document.getElementById('layers-list');
+    var layersSummary = document.getElementById('layers-summary');
+    // Defensive: clear the previous render so a re-render does not
+    // accumulate. textContent = '' is the spec-clean equivalent of
+    // element.innerHTML = '' without touching the locked contract.
+    if (layersList) layersList.textContent = '';
+    // Coerce undefined / null / non-Array to []. This keeps the
+    // no-payload path testable (a V1.0 caller that does not supply
+    // layerGroups, or an empty selection, both end up here).
+    var groups = Array.isArray(layerGroups) ? layerGroups : [];
+    var total = groups.length;
+    var withIssues = 0;
+    groups.forEach(function (g) {
+      if (g && g.issue_count && g.issue_count > 0) withIssues++;
+      if (layersList) layersList.appendChild(renderLayerRow(g));
+    });
+    if (layersSummary) {
+      layersSummary.textContent = 'Layers \u2014 ' + total + ' total (' +
+                                  withIssues + ' with issues)';
+    }
+  }
+
+  // V1.1 (per plan §4.10): render one layer row. The row carries:
+  //   - data-role (locked canonical role symbol)
+  //   - data-visible (true | false)        — operational layer
+  //                                          visibility (R007).
+  //   - data-visibility-unknown (true | false) — whether the host
+  //                                          capability was missing
+  //                                          (R011).
+  //   - data-layer-name                    — verbatim layer name.
+  // The row exposes BOTH a role badge (e.g. "Dimension") AND a
+  // SEPARATE visibility badge ("Visible" / "Off-screen" /
+  // "Visibility: unknown"); the two are independent (R007). The row
+  // has cursor: default and NO click handler; it is intentionally
+  // non-actionable (mirrors V1.0 L3 non-locatable warning pattern).
+  function renderLayerRow(g) {
+    var div = document.createElement('div');
+    div.className = 'layer-row';
+    var role = (g && g.role) ? String(g.role) : 'unknown';
+    var visibility_unknown = !!(g && g.visibility_unknown);
+    var visible = !!(g && g.visible);
+    // The Ruby mapper already coerces these to the right shape.
+    // We re-check on the JS side for defensive rendering of any
+    // future payload shape (e.g. a malformed layerGroups array).
+    div.setAttribute('data-role', role);
+    div.setAttribute('data-visible', visible ? 'true' : 'false');
+    div.setAttribute('data-visibility-unknown', visibility_unknown ? 'true' : 'false');
+    div.setAttribute('data-layer-name', (g && g.name) ? String(g.name) : '');
+
+    var name = document.createElement('span');
+    name.className = 'layer-name';
+    name.textContent = (g && g.name) ? String(g.name) : '';
+
+    var roleBadge = document.createElement('span');
+    roleBadge.className = 'role-badge';
+    // g.role_label is the source-of-truth server-composed label
+    // (LayerRole::HUMAN[role]). We fall back to a humanized
+    // version of the role symbol only if role_label is missing.
+    roleBadge.textContent = (g && g.role_label) ? String(g.role_label)
+                                                : humanizeKey(role);
+
+    var visBadge = document.createElement('span');
+    visBadge.className = 'visibility-badge';
+    visBadge.textContent = (g && g.visibility_label) ? String(g.visibility_label)
+                                                     : '';
+
+    var edgesCell = document.createElement('span');
+    edgesCell.className = 'edge-count';
+    var edgeCount = (g && g.edge_count != null) ? g.edge_count : 0;
+    edgesCell.textContent = edgeCount + ' edges';
+
+    var issuesCell = document.createElement('span');
+    var issueCount = (g && g.issue_count != null) ? g.issue_count : 0;
+    issuesCell.className = 'issue-count' + (issueCount > 0 ? ' has-issues' : '');
+    issuesCell.textContent = issueCount + ' issues';
+
+    div.appendChild(name);
+    div.appendChild(roleBadge);
+    div.appendChild(visBadge);
+    div.appendChild(edgesCell);
+    div.appendChild(issuesCell);
+    // No click handler — layers are intentionally non-actionable.
+    // There is no path to window.sketchup.locate from this row.
+    return div;
+  }
+
   ROOT.render = render;
   ROOT.toast   = toast;
-  ROOT.ISSUE_TYPE_LABELS = ISSUE_TYPE_LABELS;
+  ROOT.ISSUE_TYPE_LABELS       = ISSUE_TYPE_LABELS;
+  ROOT.LAYER_ROLE_LABELS       = LAYER_ROLE_LABELS;
+  ROOT.LAYER_VISIBILITY_LABELS = LAYER_VISIBILITY_LABELS;
+  ROOT.renderLayers            = renderLayers;
+  ROOT.renderLayerRow          = renderLayerRow;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {

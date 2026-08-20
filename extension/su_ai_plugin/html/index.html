@@ -13,6 +13,21 @@
   <main>
     <section id="summary"></section>
     <section id="groups"></section>
+    <!--
+      V1.1 (per plan §4.11): the Layers section sits BELOW the per-
+      issue-type groups block (per ChatGPT §11.1). It is a `<details>`
+      block with an explicit `<summary id="layers-summary">` first
+      child; JS renders the summary text ("Layers — N total (M with
+      issues)") at render time and emits the layer rows INSIDE
+      `#layers-list`. The block is rendered CLOSED by default (no
+      `open` attribute on this HTML; JS does not call details.open).
+      Per plan §4.12 + R008, there is NO data-role="..." color
+      selector in style.css; layers get a single neutral style.
+    -->
+    <details id="layers-section">
+      <summary id="layers-summary">Layers</summary>
+      <div id="layers-list"></div>
+    </details>
   </main>
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>

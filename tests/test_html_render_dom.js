@@ -91,7 +91,12 @@ var mockElements = {
   'selection-info': new MockElement('div'),
   'summary':        new MockElement('div'),
   'groups':         new MockElement('div'),
-  'toast':          new MockElement('div')
+  'toast':          new MockElement('div'),
+  // V1.1 (per plan §4.11): the Layers section uses these element
+  // IDs. JS render treats them as the canonical entry points
+  // (summary text + list of rows).
+  'layers-summary': new MockElement('summary'),
+  'layers-list':    new MockElement('div')
 };
 
 var mockDocument = {
@@ -377,6 +382,274 @@ try {
 }
 assert('L3.2: clicking non-locatable row N times still does NOT invoke locate',
        locateCalls.length === beforeCalls);
+
+// --------------------------------------------------------------------------
+// V1.1 (per plan §4.10 / §7.3): L4 — Layers section rendering. The
+// dialog renders a Layers `<details>` block below per-issue-type
+// groups. The renderer takes `payload.layerGroups` (an Array of
+// per-layer summaries with role / role_label / visible /
+// visibility_unknown / visibility_label / edge_count / issue_count)
+// and emits one `.layer-row` per entry inside `#layers-list`. Each
+// row carries a separate role badge AND visibility badge (R007).
+// The summary text is populated BEFORE the user opens the details
+// (ChatGPT §11.5). No layer row registers a click handler (mirrors
+// L3 non-locatable pattern).
+// --------------------------------------------------------------------------
+
+// Helper: re-render with a fresh payload (resets locate state too).
+function renderWithPayload(payload) {
+  locateCalls = [];
+  // Reset all elements so render is idempotent.
+  Object.keys(mockElements).forEach(function (k) {
+    mockElements[k].textContent = '';
+    mockElements[k].children = [];
+  });
+  context.window.SUAIP.render(payload);
+}
+
+// L4.1 — payloads with 2 layer summaries -> 2 .layer-row children.
+// Use a custom layerGroups shape: 1 visible DIM-XX layer, 1 hidden
+// Layer0 layer (for the data-visible / visibility-unknown / has-
+// issues branches below).
+var layersPayload = {
+  selectionLabel: 'outer_g',
+  selectionType:  'Group',
+  summary: {
+    edges: 6, vertices: 6, non_zero_z_vertices: 0, warnings: 0,
+    issues: {
+      short_edge: 1
+    }
+  },
+  groups: [
+    {
+      type: 'short_edge', count: 1, defaultOpen: true,
+      issues: [{
+        issue_id:   'short_edge|1|1',
+        issue_type: 'short_edge',
+        severity:   'low',
+        message:    'short edge detected',
+        locatable:  true
+      }]
+    }
+  ],
+  layerGroups: [
+    {
+      name:               'DIM-XX',
+      role:               'dimension',
+      role_rule:          'name_dimension',
+      role_label:         'Dimension',
+      visible:            true,
+      visibility_unknown: false,
+      visibility_label:   'Visible',
+      edge_count:         4,
+      issue_count:        1
+    },
+    {
+      name:               'Layer0',
+      role:               'construction',
+      role_rule:          'name_default_layer',
+      role_label:         'Construction',
+      visible:            false,
+      visibility_unknown: false,
+      visibility_label:   'Off-screen',
+      edge_count:         2,
+      issue_count:        0
+    }
+  ]
+};
+renderWithPayload(layersPayload);
+
+var layersList = mockElements['layers-list'];
+assert('L4.1: #layers-list has 2 .layer-row children for 2 layer summaries',
+       layersList.children.length === 2);
+assert('L4.1: each child has class layer-row',
+       layersList.children.every(function (c) {
+         return c.classes.indexOf('layer-row') !== -1;
+       }));
+
+// L4.2 — role + visibility badges are SEPARATE per R007.
+var dimRow = layersList.children[0];
+var l0Row  = layersList.children[1];
+assert('L4.2: layer row exposes a role-badge',
+       dimRow !== undefined && dimRow.children.length >= 2 &&
+       dimRow.children.some(function (c) {
+         return c.classes.indexOf('role-badge') !== -1;
+       }));
+assert('L4.2: layer row exposes a separate visibility-badge (NOT fused into role)',
+       dimRow !== undefined && dimRow.children.some(function (c) {
+         return c.classes.indexOf('visibility-badge') !== -1;
+       }));
+
+// L4.3 — textContent on row carries role_label + visibility_label
+// + edge_count + issue_count.
+function findChildByClass(el, cls) {
+  return el.children.filter(function (c) { return c.classes.indexOf(cls) !== -1; })[0];
+}
+var dimRoleBadge  = findChildByClass(dimRow, 'role-badge');
+var dimVisBadge   = findChildByClass(dimRow, 'visibility-badge');
+var dimEdgesCell  = findChildByClass(dimRow, 'edge-count');
+var dimIssuesCell = findChildByClass(dimRow, 'issue-count');
+assert('L4.3: role-badge textContent matches role_label',
+       dimRoleBadge && dimRoleBadge.textContent === 'Dimension');
+assert('L4.3: visibility-badge textContent matches visibility_label',
+       dimVisBadge && dimVisBadge.textContent === 'Visible');
+assert('L4.3: edge-count renders the layer edge count',
+       dimEdgesCell && dimEdgesCell.textContent.indexOf('4') !== -1 &&
+       dimEdgesCell.textContent.indexOf('edges') !== -1);
+assert('L4.3: issue-count renders the layer issue count',
+       dimIssuesCell && dimIssuesCell.textContent.indexOf('1') !== -1 &&
+       dimIssuesCell.textContent.indexOf('issues') !== -1);
+
+// L4.4 — issue_count > 0 gets the .has-issues class for emphasis.
+assert('L4.4: issue_count > 0 gets the has-issues class',
+       dimIssuesCell && dimIssuesCell.classes.indexOf('has-issues') !== -1);
+
+// L4.5 — hidden layer has data-visible="false" AND a separate
+// visibility badge "Off-screen" (NOT a fused role label).
+assert('L4.5: hidden layer row has data-visible="false"',
+       l0Row && l0Row.attrs['data-visible'] === 'false');
+assert('L4.5: hidden layer row role_label is still "Construction" (NOT fused)',
+       findChildByClass(l0Row, 'role-badge') &&
+       findChildByClass(l0Row, 'role-badge').textContent === 'Construction');
+assert('L4.5: hidden layer row visibility badge text is "Off-screen"',
+       findChildByClass(l0Row, 'visibility-badge') &&
+       findChildByClass(l0Row, 'visibility-badge').textContent === 'Off-screen');
+
+// L4.6 — visible layer has data-visible="true".
+assert('L4.6: visible layer row has data-visible="true"',
+       dimRow && dimRow.attrs['data-visible'] === 'true');
+
+// L4.7 — layer rows are NON-ACTIONABLE (no click handler, mirrors L3).
+assert('L4.7: layer row has NO click listener registered',
+       dimRow && dimRow.hasListener('click') === false);
+assert('L4.7: layer row has no-action CSS class? (intentionally default-cursor)',
+       dimRow !== undefined);  // visual non-action is via .layer-row { cursor: default }
+var beforeLocatesForLayers = locateCalls.length;
+dimRow.fireEvent('click');
+l0Row.fireEvent('click');
+assert('L4.7: clicking a layer row does NOT invoke window.sketchup.locate',
+       locateCalls.length === beforeLocatesForLayers);
+
+// L4.8 — data-role on row mirrors the server-composed role.
+assert('L4.8: layer row carries data-role attribute',
+       dimRow.attrs['data-role'] === 'dimension' &&
+       l0Row.attrs['data-role'] === 'construction');
+
+// L4.9 — data-layer-name mirrors the layer name.
+assert('L4.9: layer row carries data-layer-name attribute',
+       dimRow.attrs['data-layer-name'] === 'DIM-XX' &&
+       l0Row.attrs['data-layer-name'] === 'Layer0');
+
+// L4.10 — no [object Object] stringification on any layer row text.
+var layersRowTexts = [];
+function collectAllTexts(el, out) {
+  if (el.textContent && el.textContent.length > 0) out.push(el.textContent);
+  for (var i = 0; i < el.children.length; i++) collectAllTexts(el.children[i], out);
+}
+collectAllTexts(layersList, layersRowTexts);
+var concatenatedLayersText = layersRowTexts.join(' | ');
+assert('L4.10: no "[object Object]" in any rendered layer row text',
+       concatenatedLayersText.indexOf('[object Object]') === -1);
+
+// L4.11 — layers_summary text is populated BEFORE the user opens
+// the details (ChatGPT §11.5). Mock initial state was empty; after
+// render it MUST carry the formatted count string.
+var layersSummaryEl = mockElements['layers-summary'];
+assert('L4.11: #layers-summary textContent is "Layers — N total (M with issues)"',
+       layersSummaryEl.textContent === 'Layers \u2014 2 total (1 with issues)');
+
+// L4.12 — payload.layerGroups undefined -> #layers-list is empty
+// (no error). reset then re-render.
+renderWithPayload({
+  selectionLabel: 'outer_g', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: undefined  // simulate a V1.0 caller / empty selection
+});
+assert('L4.12: undefined layerGroups -> #layers-list empty',
+       mockElements['layers-list'].children.length === 0);
+assert('L4.12: undefined layerGroups -> summary shows "Layers — 0 total (0 with issues)"',
+       mockElements['layers-summary'].textContent === 'Layers \u2014 0 total (0 with issues)');
+
+// L4.13 — empty array layerGroups is the same as undefined (defensive).
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: []
+});
+assert('L4.13: empty array layerGroups -> #layers-list empty',
+       mockElements['layers-list'].children.length === 0);
+assert('L4.13: empty array layerGroups -> summary still computes N correctly',
+       mockElements['layers-summary'].textContent === 'Layers \u2014 0 total (0 with issues)');
+
+// L4.14 — visibility_unknown: true surfaces "Visibility: unknown"
+// badge (R011). The data-visibility-unknown attribute must be "true".
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [{
+    name:               'GUESS',
+    role:               'unknown',
+    role_rule:          null,
+    role_label:         'Unknown',
+    visible:            true,        // operational fallback per R011
+    visibility_unknown: true,
+    visibility_label:   'Visibility: unknown',
+    edge_count:         1,
+    issue_count:        0
+  }]
+});
+var unkRow = mockElements['layers-list'].children[0];
+assert('L4.14: visibility_unknown: true -> data-visibility-unknown="true"',
+       unkRow.attrs['data-visibility-unknown'] === 'true');
+assert('L4.14: visibility_unknown: true -> visibility badge text is "Visibility: unknown"',
+       findChildByClass(unkRow, 'visibility-badge') &&
+       findChildByClass(unkRow, 'visibility-badge').textContent === 'Visibility: unknown');
+assert('L4.14: visibility_unknown: true -> role badge still "Unknown" (NOT fused)',
+       findChildByClass(unkRow, 'role-badge') &&
+       findChildByClass(unkRow, 'role-badge').textContent === 'Unknown');
+
+// L4.15 — ROOT.LAYER_ROLE_LABELS exposed with the 5 canonical roles
+// (NO OFFSCREEN) in locked order.
+var lrl = context.window.SUAIP.LAYER_ROLE_LABELS;
+assert('L4.15: ROOT.LAYER_ROLE_LABELS is defined',
+       Array.isArray(lrl) && lrl.length === 5);
+var expectedRoleOrder = ['dimension', 'annotation', 'guide',
+                         'construction', 'unknown'];
+var actualRoleOrder = lrl.map(function (pair) { return pair[0]; });
+assert('L4.15: ROOT.LAYER_ROLE_LABELS in canonical order (dimension, annotation, guide, construction, unknown)',
+       actualRoleOrder.join(',') === expectedRoleOrder.join(','));
+assert('L4.15: ROOT.LAYER_ROLE_LABELS does NOT include OFFSCREEN (R007)',
+       actualRoleOrder.indexOf('offscreen') === -1);
+
+// L4.16 — ROOT.LAYER_VISIBILITY_LABELS exposed with 3 keys (visible,
+// hidden, unknown).
+var lvl = context.window.SUAIP.LAYER_VISIBILITY_LABELS;
+assert('L4.16: ROOT.LAYER_VISIBILITY_LABELS is defined with visible/hidden/unknown',
+       lvl && lvl.visible === 'Visible' &&
+       lvl.hidden === 'Off-screen' &&
+       lvl.unknown === 'Visibility: unknown');
+
+// L4.17 — ROOT.renderLayers is exposed (so other scripts can call it).
+assert('L4.17: ROOT.renderLayers is exposed',
+       typeof context.window.SUAIP.renderLayers === 'function');
+
+// L4.18 — locked render contract: textContent-only, no innerHTML
+// assignment anywhere in the layer-render path. We assert this
+// indirectly: the locked contract holds if data appears via
+// textContent, NOT via innerHTML. All children added to the row
+// during renderLayerRow carry their string via .textContent. We
+// surface a stronger check via the Ruby source-level guard.
+var rowBadges = dimRow ? dimRow.children.filter(function (c) {
+  return c.classes.indexOf('role-badge') !== -1 ||
+         c.classes.indexOf('visibility-badge') !== -1;
+}) : [];
+assert('L4.18: row badges have non-empty textContent (locked contract)',
+       rowBadges.length > 0 && rowBadges.every(function (b) {
+         return b.textContent && b.textContent.length > 0;
+       }));
 
 // --- final verdict -----------------------------------------------------
 
