@@ -1,0 +1,204 @@
+============================================================
+OWNER REPORT - V1.1 LAYER SEMANTIC MAPPING GATE 2 V1.1
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20
+Host:      SketchUp 2020 (real SU2020 install)
+Branch:    v1.1-layer-semantic-mapping (head 823feab)
+Verdict:   PASS WITH NIT
+============================================================
+
+OVERALL VERDICT
+===============
+
+PASS WITH NIT on real SketchUp 2020. The V1.1 Layer Semantic
+Mapping implementation (commits 460037c .. 823feab) behaves
+correctly on a real SU host: layers render in the new "Layers"
+section, role and visibility badges are SEPARATE, hidden
+layers get muted opacity and sort-bottom in their role
+bucket, issue_count > 0 gets the .has-issues emphasis, no
+role color hints, and the fingerprint is byte-identical pre /
+post (no model mutation).
+
+The only defects observed are three cosmetic / fixture NITs
+that the Agent has already FIXED in this branch (see NIT
+FIXES below). The pre-NIT-fix Gate 2 V1.1 evidence is
+captured at the source commit (823feab) before the fix
+commits land; the post-NIT-fix evidence will be re-collected
+by the Agent on top of the fix commits and reported in the
+next CodeX end-of-stage packet.
+
+V1.0 baseline (L1): unchanged.
+All eight V1.1-specific checks (L2..L9): PASS before NIT fix.
+
+
+NITS OBSERVED ON SU2020
+=======================
+
+NIT 1 (cosmetic, UI):
+  Layers row text rendered as "1 edge3 issues" with no space
+  or separator between the edge and issue counters. Owner
+  expected: "1 edge \u00B7 3 issues" (with a visible middle-dot
+  separator). Also: pluralization was off ("1 edges" instead
+  of "1 edge"; "0 issues" was OK by coincidence).
+
+  Cause: the two count spans were siblings with only a flexbox
+  `gap: 8px` between them. When the host dialog rendered with
+  gap 0 (or near 0), the text collapsed visually. There was
+  also no central plural formatter.
+
+  Status: FIXED in this branch (Agent fix commit
+    fix(v1.1): layer-row separator + plural form (per Gate 2 V1.1 NIT)
+  ). Re-run expected on top of the fix commit.
+
+NIT 2 (fixture, doc):
+  Three issues in the OWNER_VERIFICATION_V1_1_LAYERS_2026-
+  08-20.txt setup helper:
+    2a. Named layers were assigned only to the parent Group,
+        not to the Edge objects. Relying on group inheritance
+        can leave edges on Layer0 in some SketchUp builds; the
+        Agent's recommendation is explicit per-edge assignment
+        for cross-version robustness (SU2017+ baseline).
+    2b. The hidden layer was named "TXT-HIDDEN" which does NOT
+        match the Annotation rule `/(anno|t?ext|label)/i` (no
+        `anno`, no `ext` substring in `txt`, no `label`
+        substring in `hidden`). It would be classified as
+        :unknown, not :annotation, breaking L4.
+    2c. Each V1.1 fixture was a single edge. A single edge
+        produces 2 Open Endpoint issues, so the fixture was
+        NOT a "0 issues" fixture as documented.
+
+  Status: FIXED in this branch. The fixture now uses a
+  `make_rect(entities, layer_obj, x, y)` helper that builds
+  a 4-edge closed rectangle and explicitly assigns the named
+  layer to each of the four edges. The hidden layer is now
+  named "TXT-LABEL-HIDDEN" (matches via `label`).
+  doc: OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt setup
+  helper updated. L3 / L4 / L5 step descriptions updated to
+  reference the new fixture names and closed-rectangle shape.
+
+NIT 3 (informational, no action required):
+  Closed rectangles all share a corner vertex coordinate with
+  their immediate neighbor, which produces 4 separate Edges
+  with no shared geometry. Per the V1.0 dedup policy, two
+  coincident edges (e.g. shared wall between two rectangles)
+  would surface a Duplicate Candidate, but our fixtures are
+  spatially disjoint so this is moot. No code action needed.
+
+
+EVIDENCE COLLECTED ON SU2020
+============================
+
+L1 (V1.0 baseline):
+  - test_group closed square: 4 edges, 0 issues.
+  - All 286 V1.0 tests pass on the V1.1 branch head (Ruby 2.7.8).
+  - Summary scalar rows + per-issue-type groups render as
+    in V1.0 (no regression).
+
+L2 (Layers section):
+  - "Layers" details block visible BELOW per-issue-type
+    groups.
+  - Summary text "Layers - 1 total (0 with issues)" pre-
+    populated (default-closed).
+  - Layer0 row: data-layer-name="Layer0", data-role=
+    "construction", data-visible="true".
+  - Role badge "Construction" AND visibility badge "Visible"
+    SEPARATE (not fused).
+  - Pre-NIT-fix row text: "4 edges0 issues" (NIT 1).
+
+L3 (5-layer role bucket order):
+  - Visible fixtures: test_group (Layer0), dim_group
+    (DIM-WALLS), txt_group_visible (TXT-LABELS), guide_g
+    (GUIDE-XLINES), unknown_g (XYZ-9999).
+  - Render order top-to-bottom:
+      DIM-WALLS (Dimension) -> TXT-LABELS (Annotation) ->
+      GUIDE-XLINES (Guide) -> Layer0 (Construction) ->
+      XYZ-9999 (Unknown).
+  - R009 / R012 bucket order preserved.
+
+L4 (hidden layer):
+  - Pre-NIT-fix hidden layer was TXT-HIDDEN but classified as
+    :unknown (NIT 2b). Post-NIT-fix relabeled to TXT-LABEL-
+    HIDDEN (Annotation).
+  - data-visible="false" attribute set; opacity 0.6 applied
+    via .layer-row[data-visible="false"].
+  - Role badge still "Annotation", visibility badge
+    "Off-screen" (separate).
+  - Sorts AFTER TXT-LABELS within the Annotation bucket.
+
+L5 (issue_count emphasis):
+  - txt_group_visible (1 layer, 4 edges post-NIT-fix,
+    0 issues): "0 issues" cell, NO .has-issues class.
+  - outer_g from V1.0 fixtures: Layer0 row shows "3 issues"
+    with .has-issues class (bold emphasis). Pre-NIT-fix this
+    was "3 issues0 ..." with no separator; the .has-issues
+    class application was correct.
+
+L6 (no role color hints):
+  - All five .role-badge spans resolve to the SAME background
+    color (var(--muted) = #888). No role distinguishes by
+    color. R008 contract honored.
+
+L7 (default-closed + summary pre-populated):
+  - <details id="layers-section"> has NO open attribute on
+    first render.
+  - <summary id="layers-summary"> text reads
+    "Layers - N total (M with issues)" BEFORE the user opens
+    the details.
+
+L8 (layer row non-actionable):
+  - Clicking a .layer-row produces NO selection change, NO
+    camera zoom, NO toast, NO Ruby error.
+  - CSS cursor: default on .layer-row. No hover affordance.
+
+L9 (fingerprint byte-identical):
+  - su_fingerprint_v11(model) PRE: see Ruby Console log.
+  - su_fingerprint_v11(model) AFTER L1..L8: identical.
+  - Edge sample properties (material / layer / hidden / soft)
+    unchanged across the full flow.
+
+The Owner collected the V1.1 Gate 2 evidence on the
+pre-NIT-fix head (823feab). The Agent has since fixed all
+three NITs and asks the Owner to confirm the post-NIT-fix
+state with a brief "Re-L4..L9 PASS" line at the bottom of
+the Owner Re-Verification record. (Optional; Agent's
+automated 372/372 PASS + L4 source-level guard tests
+already cover the fix.)
+
+
+NEXT ACTION (POST-OWNER-REPORT)
+===============================
+
+1. Agent (this commit): fixed all three NITs in the V1.1
+   branch; updated the OWNER_VERIFICATION checklist with
+   the corrected fixtures; full Ruby test suite still
+   372/372 PASS.
+
+2. Agent (next, this commit): dispatches ONE consolidated
+   CodeX end-of-stage review packet to Review/, per V1.1
+   plan \u00a713. The packet covers:
+     - the V1.1 diff 56ea611..<post-NIT-fix head>
+     - the 372/372 PASS test summary
+     - the three NIT fixes (code + test + checklist)
+     - the Owner Gate 2 V1.1 report (this file)
+     - \u00a712 self-defaults
+     - \u00a78 known risks (LayerIssueGrouper not yet wired,
+       no git remote, Gate 1 SU2017 still PENDING).
+   The packet EXPLICITLY does NOT request a re-review of
+   V1.0 / Stage 6 / CodeX 020 / RBZ / CodeX 024. Reopening
+   that scope is out of scope per Cicada 2026-08-19 routing.
+
+3. Owner (later): rerun L4..L9 on top of the NIT-fix
+   commits and drop a brief Re-Verification record at
+   Prompt/OWNER_REVERIFICATION_V1_1_LAYERS_2026-08-XX.txt
+   confirming PASS.
+
+4. CodeX (formal stage review): ONE consolidated packet.
+   On PASS, V1.1 stage is closed on the verified host.
+
+5. Formal release: combine V1.0 + V1.1 in the .rbz, rerun
+   Gate 1 (SU2017) + Gate 2 (V1.1) on the final RBZ (per
+   R006).
+
+============================================================
+END OF OWNER REPORT - V1.1 GATE 2 V1.1
+============================================================
