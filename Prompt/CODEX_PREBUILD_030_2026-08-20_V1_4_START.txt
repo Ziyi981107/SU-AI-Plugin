@@ -1,0 +1,300 @@
+SU-AI-PLUGIN - CODEX PRE-BUILD TECHNICAL PREVIEW 030
+Target: V1.4 Derived Workspace + Repair Foundation
+Date: 2026-08-20
+For: Pi (Implementation Owner)
+Review authority: SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt
+
+======================================================================
+VERDICT
+======================================================================
+
+PASS TO IMPLEMENT V1.4
+
+REVIEW MODE:
+PRE-BUILD TECHNICAL PREVIEW - intentionally narrow
+
+BLOCKS:
+NONE.
+
+This verdict authorizes V1.4 foundation work only. It does not authorize
+V1.5 repairs, gap closure, flattening, topology/loop reconstruction, face/site
+generation, MCP, AI behavior, or any source-CAD mutation.
+
+V1.0-V1.3 passed unchanged scope remains closed.
+
+======================================================================
+SCOPE AND EVIDENCE REVIEWED
+======================================================================
+
+- Repo/head: D:\Projects\SU-AI-Plugin, branch v1.3-face-inventory,
+  HEAD 550eb74; working tree clean at preview time.
+- Project state: AGENT.md, CURRENT_STATE.md, CodeX 029 V1.2/V1.3 close.
+- Master-plan questions: section 23, questions 1-7 only.
+- Production seams:
+  - core/geometry_snapshot.rb
+  - core/source_reference.rb
+  - core/edge_record.rb, face_record.rb, vertex_record.rb
+  - core/analysis_config.rb, tolerance.rb, layer_role_config.rb
+  - preflight_runner.rb
+  - compatibility/su_capability.rb
+  - issue_locator.rb
+  - analyzers_runner.rb
+- Existing evidence retained: CodeX 029 independently reported
+  470/470 Ruby PASS and 114/114 Node DOM assertions PASS; Owner SU2020
+  V1.2/V1.3 evidence passed. Those results are baseline evidence, not V1.4
+  mutation-safety evidence.
+- PROJECT_HANDOFF.txt was not present; CURRENT_STATE.md and Git were used.
+
+======================================================================
+ANSWERS TO THE SEVEN PRE-FLIGHT QUESTIONS
+======================================================================
+
+1. Clean seam for a derived workspace?
+
+YES, with a required contract extension. The existing boundary is good:
+SketchUp access is concentrated in extension/compatibility code, while the
+analyzers consume a pure-Ruby GeometrySnapshot. AnalyzersRunner already builds
+one snapshot per command. Add V1.4 alongside this seam; do not place host writes
+inside analyzers or the current read-only records.
+
+The current GeometrySnapshot is not yet a complete V1.4 SourceSnapshot. It
+does not capture snapshot identity/fingerprint, explicit unit/coordinate
+context, workspace/profile/rule versions, or sufficient transform context for
+all future reconstruction decisions. Its immutability is also shallow: arrays
+are frozen at the aggregate level, while nested point arrays, metadata and
+preflight values can still be mutable. It may be evolved compatibly or wrapped,
+but it must not be treated as a safe rebuild contract unchanged.
+
+2. Source identity/provenance strong enough?
+
+PARTIALLY. Complete persistent_id_path plus structural_depth and
+pid_path_complete correctly distinguish nested occurrences, including shared
+component definitions. The locator correctly fails closed for incomplete
+nested paths instead of using entityID as false occurrence identity.
+
+V1.4 must add a snapshot-local occurrence/record identity that is always unique
+within one snapshot, separate from host-resolvable identity. For every source
+record, preserve identity quality explicitly (resolvable complete PID path vs
+transient root fallback vs unresolved nested occurrence). Never claim stable
+cross-session provenance when pid_path_complete is false. A display-only
+instance_path/object_id label is not canonical provenance.
+
+3. Snapshot/world-coordinate model safe for later canonical topology?
+
+YES AS A FOUNDATION, NOT AS-IS AS THE FINAL CONTRACT. The traversal correctly
+accumulates parent * child transformations, seeds active edit transform, emits
+one occurrence per shared component instance, and stores edge endpoints in
+world coordinates. This is the right canonical-analysis direction.
+
+Before derived creation, freeze an explicit coordinate policy:
+- raw source coordinates and derived/canonical coordinates remain distinct;
+- SketchUp internal lengths remain inches;
+- world-space snapshot values record how they were obtained;
+- workspace insertion coordinates are explicitly converted for the chosen
+  destination context (root/active context), never assumed;
+- active-edit, nested transform and shared-definition cases are regression
+  fixtures.
+
+Do not add normalization or change Z in V1.4.
+
+4. Existing UI/highlight/settings mutation danger?
+
+NO CURRENT ENTITY-MUTATION PATH WAS FOUND. IssueLocator changes Selection and
+camera zoom only; the repository scan found no existing erase/transform/entity
+attribute write path. This remains view-state, not source-geometry mutation.
+
+V1.4 source-vs-derived presentation must preserve this rule. Do not recolor,
+re-layer, hide, transform, or attach persistent diagnostics to source entities.
+Selection/camera changes may remain reversible UI behavior. UI must make source,
+working mode, invalid workspace, discard and rebuild states understandable.
+
+5. Reproducible config/profile/tolerance architecture?
+
+PARTIALLY. AnalysisConfig and Tolerance provide a centralized entry point and
+inch-based values; LayerRoleConfig has explicit ordered rules and rule IDs.
+However, there is no complete persisted/versioned execution context. Profile
+name alone and live constants are insufficient to reproduce a repair plan.
+
+V1.4 must capture an immutable execution-config snapshot containing at least:
+- profile identifier and profile version;
+- rule-set identifier/version (or deterministic digest);
+- tolerance schema/version and all effective numeric values;
+- relevant session overrides;
+- SourceSnapshot/schema version.
+
+Repair actions read only this captured context. Do not scatter new thresholds
+or layer-name rules through workspace/repair code. Add only the minimum
+persistence needed for reproducibility.
+
+6. SU2017+ compatibility invalidates the architecture?
+
+NO. The existing capability-adapter pattern, persistent-ID probing, HtmlDialog
+boundary, world-transform traversal and pure-Ruby core are compatible with the
+planned architecture. Continue the actual minimum Ruby-runtime syntax baseline
+used by this repo and capability detection instead of scattered version checks.
+
+Any new SketchUp calls for groups/entities/model operations must be isolated
+behind host adapters and fail safely when unavailable. SU2020 real-host evidence
+is required for the V1.4 exit gate. SU2017 remains a separate pending real-host
+gate; automated or SU2020 evidence must not be relabeled as SU2017 evidence.
+
+7. Existing architectural choice requiring correction before bulk repair?
+
+NO PRE-V1.4 BLOCK, but two V1.4 internal gates are mandatory before the first
+mutation-capable implementation is allowed to proceed:
+
+A. Make the SourceSnapshot/rebuild input deeply immutable or defensively copied,
+   versioned, fingerprintable, and explicit about coordinate/identity quality.
+
+B. Prove derived geometry owns independent editable geometry. Never create a
+   derived ComponentInstance that still shares a ComponentDefinition with the
+   source and then edit that definition. Shared-definition aliasing would mutate
+   source CAD indirectly and is a release BLOCK.
+
+These are the expensive seams. Solve and test them first inside V1.4; no broad
+V1.0-V1.3 refactor is requested.
+
+======================================================================
+PI IMPLEMENTATION DIRECTIVE - V1.4 ONLY
+======================================================================
+
+Product invariant:
+
+SOURCE CAD IS IMMUTABLE. ALL PREPARE/REPAIR WRITES TARGET A DISPOSABLE,
+PLUGIN-OWNED DERIVED WORKSPACE. UNDO IS ADDITIONAL SAFETY, NOT THE ONLY
+RECOVERY MECHANISM.
+
+Recommended meaningful stages (Pi may rename/split helpers without review):
+
+Stage 1 - Freeze the source/rebuild contract
+
+- Introduce or compatibly extend the SourceSnapshot contract.
+- Add snapshot/schema identity, selection-scope identity, unit/coordinate
+  metadata, transform context, execution-config snapshot, source fingerprint,
+  and snapshot-local occurrence IDs.
+- Preserve existing V1.0-V1.3 analyzer behavior and payload contracts.
+- Define a deterministic fingerprint comparison suitable for proving zero
+  source mutation. It must cover material source state, not only edge count.
+- Do not use live SketchUp entity objects as the authoritative rebuild input.
+
+Stage 2 - RepairPlan pure-data foundation
+
+- Implement explicit RepairAction/RepairPlan lifecycle and validation without
+  applying substantive repairs.
+- Minimum semantics: action_id/type, rule_id, evidence-driven confidence,
+  explanation, source occurrence IDs, affected derived IDs, before/proposed
+  after summary, topology impact, auto_applicable, status and validation result.
+- Use proposed/applied/skipped/rejected/failed states; failed plans/results are
+  never READY.
+- No fake AI confidence and no short-edge deletion policy.
+
+Stage 3 - DerivedGeometryWorkspace ownership and host adapter
+
+- Create a plugin-owned, visually identifiable, disposable workspace from the
+  frozen source snapshot.
+- Every editable derived entity must be independently owned; no shared mutable
+  definition or attribute container may alias source.
+- Preserve derived-record -> source-occurrence provenance.
+- Choose and document the destination coordinate context, then perform explicit
+  world/local conversion at the adapter boundary.
+- Wrap host writes in compatible SketchUp operations. On exception, abort or
+  invalidate the partial derived result; source remains untouched. If cleanup
+  cannot complete, the result must require discard/rebuild and must not appear
+  valid or READY.
+- Apply/discard/rebuild must operate only on the plugin-owned workspace.
+- A second build from identical source + captured config must produce the same
+  canonical derived fingerprint, excluding documented host-assigned IDs.
+
+Stage 4 - Minimal working-mode UI and integration
+
+- Enter working/prepared mode, show source vs derived ownership, show config
+  identity, and expose discard/rebuild.
+- Repair preview plumbing may render no-op/proposed actions, but V1.5 repair
+  behavior stays out of scope.
+- Do not permanently modify source appearance to distinguish it.
+
+======================================================================
+MANDATORY V1.4 RISK TESTS / EXIT EVIDENCE
+======================================================================
+
+Automated/fake-host evidence must include:
+
+1. Source fingerprint is identical before/after:
+   - successful create;
+   - discard;
+   - rebuild;
+   - injected failure during workspace creation;
+   - host-operation abort/failure path.
+2. Derived edits in a shared-component-definition fixture do not change either
+   source instance or the source definition.
+3. Nested groups/components and two instances sharing one definition retain
+   distinct provenance and correct world coordinates.
+4. Active edit-context insertion/conversion is correct, or the workflow fails
+   closed with a clear unsupported state; it must not create misplaced geometry.
+5. Missing PID in a nested path stays explicitly unresolved/transient and is
+   never upgraded to stable identity by entityID/object_id.
+6. Invalid/erased source during build cannot corrupt source or yield a valid
+   workspace.
+7. User selection scope is preserved; V1.4 does not silently prepare the whole
+   model.
+8. Rebuild is deterministic for identical source + captured config.
+9. RepairPlan lifecycle rejects illegal state transitions and failed validation
+   cannot produce READY.
+10. Existing V1.0-V1.3 full regression suite remains green.
+
+Real SketchUp 2020 workflow evidence must include:
+
+- select representative imported/nested CAD;
+- capture source-integrity fingerprint;
+- create derived workspace;
+- visibly distinguish source from derived without changing source properties;
+- discard and confirm source unchanged;
+- rebuild and compare derived result;
+- inject or safely simulate an interrupted/failing creation path;
+- verify source unchanged and partial result not READY;
+- verify Undo as an extra safety layer, not the only discard mechanism;
+- confirm scale/units/world position on nested/shared-instance cases.
+
+Do not package or call V1.4 complete solely from unit tests. Create a stable Git
+checkpoint and request the mandatory CodeX V1.4 Stage Review with base/head,
+changed files, focused source-integrity/provenance/failure evidence, full
+regression result, and real-SU2020 evidence.
+
+======================================================================
+STOP / ESCALATE CONDITIONS
+======================================================================
+
+STOP and escalate to CodeX immediately if:
+
+- any normal path changes source entities, source definitions, transforms,
+  layers/tags, materials, coordinates, attributes, visibility, or scale;
+- independent derived ownership cannot be proven;
+- shared definitions make source/derived isolation ambiguous;
+- a failure can leave source changed or a partial workspace marked valid;
+- provenance collapses distinct nested/shared-instance occurrences;
+- world/local conversion or unit handling is uncertain;
+- SU2017+ requires a material architecture change.
+
+Escalate to AIPM/Owner if visible repair authority, UX flow, product scope,
+privacy/recoverability promise, or V1/V2 boundary would change.
+
+Do not stop for ordinary class names, helper splits, compatible data structures,
+or small internal UI/CSS choices that remain inside this contract.
+
+======================================================================
+NEXT REVIEW
+======================================================================
+
+MANDATORY STAGE REVIEW after V1.4 reaches its exit gate.
+
+Review scope then:
+- source vs derived ownership;
+- SourceSnapshot and provenance contract;
+- deep immutability/fingerprint evidence;
+- shared-definition isolation;
+- failure/discard/rebuild behavior;
+- SU2017+ compatibility implications;
+- relevant regressions and real SU2020 workflow.
+
+Do not submit tiny edit packets. Submit one meaningful V1.4 stage packet unless
+a STOP/escalation condition is hit earlier.
