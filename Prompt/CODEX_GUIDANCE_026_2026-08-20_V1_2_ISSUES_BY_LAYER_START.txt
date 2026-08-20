@@ -1,0 +1,119 @@
+DIRECTIVE:
+START V1.2 IMPLEMENTATION NOW
+
+V1.2 TITLE:
+Issues by Layer (按图层查看问题)
+
+WHY THIS IS THE DEFAULT V1.2:
+- V1.1 Layer Semantic Mapping is CLOSED on SketchUp 2020 at commit 23cac28.
+- V1.1 already implemented and tested the pure-Ruby LayerIssueGrouper, but intentionally did not connect it to the UI.
+- Connecting that existing seam is the smallest coherent next product stage. It extends the read-only analyzer without introducing repair actions, persistence, external services, or new SketchUp mutations.
+- Unless the Owner later explicitly changes scope, treat this file as the locked V1.2 direction.
+
+STARTING POINT:
+- Confirm the worktree is clean.
+- Create and work on branch `v1.2-issues-by-layer` from current V1.1-closed HEAD (`23cac28` or its direct documentation-only successor).
+- Preserve all V1.0 and V1.1 passed behavior. Do not reopen or redesign the existing issue-type groups, Layers table, Locate policy, RBZ loader, or closed review scope.
+- Keep SU2017 Gate 1 deferred to formal release under R006. It does not block V1.2 development or SU2020 Owner verification.
+
+PRODUCT OUTCOME:
+The result dialog must let a user inspect the same analyzer issues grouped by source layer, while retaining the existing issue-type view and the existing layer summary view.
+
+LOCKED V1.2 USER BEHAVIOR:
+1. Add one new top-level details section named `Issues by Layer`.
+2. Place it after the existing issue-type groups and before the existing `Layers` section.
+3. Keep the new top-level section CLOSED by default.
+4. Populate its summary before opening, using:
+   `Issues by Layer — N layers (M issues)`
+   where N is the number of non-empty layer buckets and M is the total number of issues in those buckets.
+5. Inside it, render one bucket per layer that has at least one issue. Do not render empty layer buckets.
+6. Each bucket header must show the layer name and issue count with correct singular/plural wording.
+7. Issues inside each layer bucket reuse the existing issue-row renderer and existing Locate contract:
+   - locatable issue: existing click-to-locate behavior remains unchanged;
+   - non-locatable issue: inert, default cursor, no toast, no Ruby error.
+8. Preserve the existing `Layers` rows as non-actionable. Do not turn layer-summary rows into buttons or navigation controls.
+9. Order layer buckets consistently with the existing Layers role order where practical:
+   Dimension -> Annotation -> Guide -> Construction -> Unknown;
+   visible before hidden within a role; then deterministic name order.
+   If a fallback issue cannot be matched to an existing layer record, use the established Layer0 fallback and append it deterministically without inventing host state.
+10. Use textContent only for user/model strings. No innerHTML, eval, new Function, or document.write.
+11. No new role colors. Reuse neutral styling; severity colors remain exclusive to issue severity.
+12. Analysis remains read-only. No entity creation/deletion, property edits, layer visibility changes, active-path changes, or automatic selection/camera changes except the already-approved explicit Locate action.
+
+OUT OF SCOPE FOR V1.2:
+- Geometry repair, merge, weld, flatten, delete, or automatic cleanup.
+- AI/MCP/network integration.
+- Settings UI or persisted tolerances.
+- Face/polygon extraction.
+- Changing layer-role classification rules from V1.1.
+- Changing issue severity, issue-type order, or existing Locate semantics.
+- Packaging or calling this a formal release.
+- Broad refactor of stable V1.0/V1.1 code.
+
+IMPLEMENTATION BOUNDARY:
+- Reuse `SUAnalysis::Core::LayerIssueGrouper`; do not create a second grouping implementation in JavaScript.
+- Wire the grouped result through the existing pipeline in the same direction as V1.1:
+  AnalyzersRunner -> AnalysisResult -> UIBridge -> HtmlDialog payload -> app.js render.
+- Use one canonical payload field, recommended top-level name: `layerIssueGroups`.
+- Avoid keeping two independently computed versions of the same grouped data.
+- Preserve backward-compatible defaults (`[]`) for callers that do not provide V1.2 data.
+- Keep all core code host-independent and Ruby 2.2.4 syntax compatible.
+- Agent owns ordinary details such as helper names, exact class placement, defensive nil handling, and local test structure. Do not ask Owner or CodeX about routine implementation choices.
+
+REQUIRED AUTOMATED EVIDENCE:
+1. Existing 372-test baseline remains green with zero regressions.
+2. Add focused pure-Ruby tests for production-path grouping integration, including:
+   - empty issues -> empty buckets;
+   - issues on two named layers -> two buckets and correct counts;
+   - missing layer source -> established Layer0 fallback;
+   - unknown layer name does not silently create an invalid host layer;
+   - deterministic bucket order matching the Layers display order;
+   - high/low/default-open policy remains deterministic;
+   - input data is not mutated.
+3. Add AnalysisResult/UIBridge tests proving:
+   - default `layerIssueGroups == []`;
+   - all JSON keys are strings at the boundary;
+   - issue data and locatable flags survive the round trip;
+   - the summary and top-level payload cannot drift if both are exposed.
+4. Add executable DOM tests proving:
+   - section exists exactly once and is closed by default;
+   - summary is populated before opening;
+   - empty input renders zero buckets without error;
+   - bucket name/count and singular/plural text are correct;
+   - locatable issues call Locate exactly as before;
+   - non-locatable issues register no click handler and show no toast;
+   - user layer names render through textContent;
+   - existing Layers rows remain inert;
+   - no forbidden DOM APIs or role-color selectors are introduced.
+5. Run full Ruby + Node suite, `git diff --check` on production/tests, and rebuild the RBZ as a packaging smoke test.
+
+OWNER SU2020 VERIFICATION PACKET:
+After implementation and self-tests are complete, write ONE concise Owner checklist to Review. It must use a fresh disposable model and cover at least:
+- V12-1: closed Layer0 rectangle -> `Issues by Layer — 0 layers (0 issues)`; section closed by default.
+- V12-2: one single edge explicitly assigned to DIM-WALLS -> DIM-WALLS bucket with 2 Open Endpoint issues.
+- V12-3: one single edge on DIM-WALLS plus one on TXT-LABELS -> two buckets in canonical role order, correct total count.
+- V12-4: click one locatable Open Endpoint -> normal existing Locate behavior.
+- V12-5: Deep Nesting warning remains non-locatable and inert; no misleading toast.
+- V12-6: existing Layers section remains correct and its rows remain non-actionable.
+- V12-7: PRE/POST fingerprint MATCH=true after analysis and all non-Locate clicks. For the explicit Locate check, compare geometry/properties separately because selection/camera movement is expected behavior.
+
+WORK AND REVIEW CADENCE:
+- Do not stop after drafting a plan. This is a low-risk additive stage; make a short internal plan, then implement immediately.
+- Self-test and commit at meaningful checkpoints. Do not create a review packet for every commit or minor UI adjustment.
+- Do not ask Owner about routine technical decisions. If a contained ambiguity appears, choose the smallest behavior consistent with this directive and document it in CURRENT_STATE.
+- Ask ChatGPT only if a genuine product/UX choice would materially change the visible scope.
+- Ask CodeX immediately only for a high-risk BLOCK involving architecture, source-of-truth, data/model mutation, security, real-host failure, RBZ failure, or an unresolved prior contract.
+- Otherwise, CodeX enters ONCE after the complete V1.2 stage: implementation complete + full automated tests + Owner SU2020 verification complete + one consolidated end-of-stage packet.
+- Documentation NITs and cosmetic fixes do not trigger another CodeX review.
+
+COMPLETION CONDITION:
+V1.2 is ready for the single end-of-stage CodeX review only when:
+- the complete Issues-by-Layer flow is implemented;
+- all old and new automated tests pass;
+- worktree/checkpoint state is clean and understandable;
+- Owner has completed the focused real-SU2020 checklist;
+- no unresolved high-risk BLOCK remains;
+- one consolidated Review packet contains base/head, diff manifest, test evidence, Owner evidence, known risks, and exact review scope.
+
+BEGIN NOW.
+
