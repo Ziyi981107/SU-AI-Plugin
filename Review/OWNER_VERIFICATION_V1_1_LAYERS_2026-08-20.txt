@@ -102,11 +102,38 @@ Setup helper (Ruby Console, fresh empty model):
   layer_guide = layers.add('GUIDE-XLINES')  # :guide role
   layer_oops  = layers.add('XYZ-9999')      # :unknown role (no rule match)
 
-  # A hidden layer (verify muted style + sort-bottom-in-bucket)
-  layer_hidden = layers.add('TXT-HIDDEN')
+  # A hidden layer (verify muted style + sort-bottom-in-bucket).
+  # Owner Gate 2 V1.1 NIT (corrected): the name MUST match the
+  # Annotation regex `/(anno|t?ext|label)/i` so it is classified
+  # as :annotation rather than falling through to :unknown. The
+  # original 'TXT-HIDDEN' did not match and was relabeled to
+  # 'TXT-LABEL-HIDDEN' (matches via the `label` alternation).
+  layer_hidden = layers.add('TXT-LABEL-HIDDEN')
   layer_hidden.visible = false  # OFF-SCREEN
 
-  # Fixture 1 (V1.0): a 4-edge closed square on Layer0.
+  # Helper: build a 4-edge closed rectangle whose edges live on a
+  # NAMED LAYER. Owner Gate 2 V1.1 NIT (corrected):
+  #   - Named layers must be assigned to the Edge objects
+  #     themselves, not only to the parent Group. Relying on group
+  #     inheritance can leave edges on Layer0 in some SketchUp
+  #     builds; explicit per-edge assignment is unambiguous and
+  #     works on all SU2017+ versions.
+  #   - Closed rectangles (4 edges forming a loop) are the right
+  #     '0 issues' fixture. A single edge produces 2 Open Endpoint
+  #     issues, so it cannot represent an issue-free layer. Closed
+  #     rectangles produce 0 Open Endpoints, 0 Short Edges, 0
+  #     Duplicates, and 0 Gap Candidates.
+  def make_rect(entities, layer_obj, x, y)
+    g = entities.add_group
+    e1 = g.entities.add_line([x,    y,    0], [x+10, y,    0])
+    e2 = g.entities.add_line([x+10, y,    0], [x+10, y+5,  0])
+    e3 = g.entities.add_line([x+10, y+5,  0], [x,    y+5,  0])
+    e4 = g.entities.add_line([x,    y+5,  0], [x,    y,    0])
+    [e1, e2, e3, e4].each { |e| e.layer = layer_obj }
+    g
+  end
+
+  # Fixture 1 (V1.0 baseline): 4-edge closed square on Layer0.
   test_group = entities.add_group
   test_group.layer = layers['Layer0']
   test_group.entities.add_line([0,0,0],      [10,0,0])
@@ -114,34 +141,24 @@ Setup helper (Ruby Console, fresh empty model):
   test_group.entities.add_line([10,5,0],     [0,5,0])
   test_group.entities.add_line([0,5,0],      [0,0,0])
 
-  # Fixture 2 (V1.1): an edge on the DIM-WALLS layer (becomes a
-  # 'Dimension' role row in the Layers section).
-  dim_group = entities.add_group
-  dim_group.layer = layers['DIM-WALLS']
-  dim_group.entities.add_line([20,0,0], [40,0,0])
+  # Fixture 2 (V1.1): closed rectangle on the DIM-WALLS layer
+  # (becomes a 'Dimension' role row in the Layers section).
+  dim_group = make_rect(entities, layers['DIM-WALLS'], 20, 0)
 
-  # Fixture 3 (V1.1): an edge on the TXT-LABELS layer (becomes an
-  # 'Annotation' role row) + the HIDDEN layer (hidden rows render
-  # with .layer-row[data-visible="false"] -> opacity 0.6).
-  txt_group_visible = entities.add_group
-  txt_group_visible.layer = layers['TXT-LABELS']
-  txt_group_visible.entities.add_line([60,0,0], [60,5,0])
+  # Fixture 3 (V1.1): closed rectangles on the TXT-LABELS layer
+  # (visible Annotation) and on the TXT-LABEL-HIDDEN layer (hidden
+  # Annotation). Hidden rows render with .layer-row[data-visible=
+  # "false"] -> opacity 0.6.
+  txt_group_visible = make_rect(entities, layers['TXT-LABELS'], 60, 0)
+  txt_group_hidden  = make_rect(entities, layers['TXT-LABEL-HIDDEN'], 80, 0)
 
-  txt_group_hidden = entities.add_group
-  txt_group_hidden.layer = layers['TXT-HIDDEN']   # hidden
-  txt_group_hidden.entities.add_line([80,0,0], [80,5,0])
+  # Fixture 4 (V1.1): closed rectangle on the GUIDE-XLINES layer
+  # (becomes a 'Guide' role row).
+  guide_g = make_rect(entities, layers['GUIDE-XLINES'], 100, 0)
 
-  # Fixture 4 (V1.1): an edge on the GUIDE-XLINES layer (becomes a
-  # 'Guide' role row).
-  guide_g = entities.add_group
-  guide_g.layer = layers['GUIDE-XLINES']
-  guide_g.entities.add_line([100,0,0], [110,0,0])
-
-  # Fixture 5 (V1.1): an edge on the XYZ-9999 layer (no rule match
-  # -> :unknown role).
-  unknown_g = entities.add_group
-  unknown_g.layer = layers['XYZ-9999']
-  unknown_g.entities.add_line([120,0,0], [130,0,0])
+  # Fixture 5 (V1.1): closed rectangle on the XYZ-9999 layer (no
+  # rule match -> :unknown role).
+  unknown_g = make_rect(entities, layers['XYZ-9999'], 120, 0)
 
 Capture PRE-analysis Ruby fingerprint (paste once, then re-paste
 in any step that needs an after-state):
@@ -253,7 +270,11 @@ L2. LAYERS SECTION APPEARS
         data-visibility-unknown="false".
       - The row has a "Construction" role badge AND a separate
         "Visible" badge (NOT fused).
-      - The row text includes "4 edges" and "0 issues".
+      - The row text includes "4 edges" and "0 issues" rendered
+        with the visible middle-dot separator between them
+        (i.e. "4 edges · 0 issues" visually, per Owner Gate 2
+        V1.1 NIT fix). The "0 issues" cell does NOT carry the
+        .has-issues class.
       - The "0 issues" cell does NOT carry the .has-issues class.
    4. The row has cursor: default; clicking it does NOT change
       the selection and does NOT display a toast.
@@ -277,21 +298,25 @@ L3. MULTI-LAYER ROLE BUCKET ORDER (R009, R012)
         4. Layer0              - role "Construction"
         5. XYZ-9999            - role "Unknown"
       This is the locked role bucket order per R009 / R012.
-   5. (Optional) Verify the hidden TXT-HIDDEN layer would sort
+   5. (Optional) Verify the hidden TXT-LABEL-HIDDEN layer would sort
       to the bottom of its bucket - covered in L4 below.
 
 
 L4. HIDDEN LAYER MUTED + BUCKET-INTERIOR (R009 / ChatGPT 11.2)
 =============================================================
 
-   1. Select txt_group_hidden alone (single layer, hidden).
+   1. Select txt_group_hidden alone (closed rectangle, hidden).
    2. Open the dialog, open the Layers section.
    3. Expected:
-      - Exactly 1 layer row, named "TXT-HIDDEN".
+      - Exactly 1 layer row, named "TXT-LABEL-HIDDEN".
       - The row carries data-visible="false".
       - The row's role badge is "Annotation" (NOT a fused
         "Annotation (off-screen)" label).
       - The row's visibility badge is "Off-screen".
+      - The row text shows "4 edges · 0 issues" with the
+        visible middle-dot separator between the edge and issue
+        counts (per Owner Gate 2 V1.1 NIT fix). Pluralization:
+        "4 edges" (plural), "0 issues" (plural).
       - Visually the row is rendered at ~60% opacity (CSS
         `.layer-row[data-visible="false"] { opacity: 0.6; }`).
         Click the row in the model browser to compare the
@@ -303,7 +328,7 @@ L4. HIDDEN LAYER MUTED + BUCKET-INTERIOR (R009 / ChatGPT 11.2)
       - Two rows in the Layers section, both with role
         "Annotation".
       - TXT-LABELS first (visible).
-      - TXT-HIDDEN second (hidden, muted opacity 0.6).
+      - TXT-LABEL-HIDDEN second (hidden, muted opacity 0.6).
       - The bucket-internal order is visible-before-hidden.
       The role bucket order still holds overall (Dimension
       first, ..., Construction, Unknown).
@@ -312,11 +337,15 @@ L4. HIDDEN LAYER MUTED + BUCKET-INTERIOR (R009 / ChatGPT 11.2)
 L5. ISSUE_COUNT > 0 GETS EMPHASIS (ChatGPT 11.4)
 ===============================================
 
-   1. Select txt_group_visible (1 layer, 1 edge, no issues
-      expected).
+   1. Select txt_group_visible (closed rectangle on TXT-LABELS,
+      1 layer, 4 edges, 0 issues expected).
       Open the dialog, open Layers.
-      The TXT-LABELS row's "issues" cell shows "0 issues"
-      with NO `.has-issues` class.
+      The TXT-LABELS row's "edges" cell shows "4 edges"
+      (plural form, per Owner Gate 2 V1.1 NIT fix), the "issues"
+      cell shows "0 issues" (plural form), and the row text
+      renders as "4 edges · 0 issues" with the visible
+      middle-dot separator. The "0 issues" cell carries NO
+      `.has-issues` class.
 
    2. Select outer_g from the V1.0 fixtures (depth 3 nested
       group, produces 1 deep_nesting preflight warning +
@@ -426,14 +455,17 @@ After steps L1..L9, report one of:
   PASS ON SKETCHUP <version> (V1.1 LAYER SEMANTIC MAPPING)
   - V1.0 baseline (steps L1): UNCHANGED.
   - L2: Layers section visible with 1 layer for the closed
-        square; role + visibility badges are SEPARATE.
+        square; role + visibility badges are SEPARATE;
+        row text "4 edges · 0 issues" with the visible
+        middle-dot separator.
   - L3: 5-layer role bucket order
         [Dimension, Annotation, Guide, Construction, Unknown].
-  - L4: Hidden layer shows opacity 0.6 AND sorts after
-        visible rows in the same role bucket; role + visibility
-        remain separate.
+  - L4: Hidden TXT-LABEL-HIDDEN layer shows opacity 0.6 AND
+        sorts after visible TXT-LABELS in the same role bucket;
+        role + visibility remain separate.
   - L5: issue_count > 0 renders bold (.has-issues); 0 does
-        not.
+        not. Edge / issue pluralization correct
+        ("1 edge" / "4 edges", "1 issue" / "0 issues").
   - L6: No role color hints (single neutral role badge
         color across all roles).
   - L7: Layers <details> default-closed + summary
