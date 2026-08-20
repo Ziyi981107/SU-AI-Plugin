@@ -47,6 +47,24 @@
       <summary id="layers-summary">Layers</summary>
       <div id="layers-list"></div>
     </details>
+    <!--
+      V1.3 (per directive 027): the "Face Inventory" section sits
+      AFTER the V1.1 Layers section. It is a `<details>` block with
+      an explicit `<summary id="face-inventory-summary">` first
+      child; JS renders the summary text ("Face Inventory — N
+      total (H with holes)") at render time and emits one
+      `.face-inventory-row` per layer INSIDE `#face-inventory-list`.
+      The block is rendered CLOSED by default (no `open` attribute
+      on this HTML; JS does not call details.open). Aggregate rows
+      by source face layer, NOT one UI row per individual face
+      (per directive item 4). Rows are informational / non-
+      actionable in V1.3: no click handler, no Locate action,
+      default cursor, no toast. No new role color selectors.
+    -->
+    <details id="face-inventory-section">
+      <summary id="face-inventory-summary">Face Inventory</summary>
+      <div id="face-inventory-list"></div>
+    </details>
   </main>
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>

@@ -100,7 +100,11 @@ var mockElements = {
   // V1.2 (per directive 026): the "Issues by Layer" section uses
   // these element IDs (placed AFTER #groups and BEFORE #layers-section).
   'layer-issues-summary': new MockElement('summary'),
-  'layer-issues-list':    new MockElement('div')
+  'layer-issues-list':    new MockElement('div'),
+  // V1.3 (per directive 027): the "Face Inventory" section uses
+  // these element IDs (placed AFTER #layers-section).
+  'face-inventory-summary': new MockElement('summary'),
+  'face-inventory-list':    new MockElement('div')
 };
 
 var mockDocument = {
@@ -872,6 +876,188 @@ assert('V12: ROOT.renderLayerIssues is exposed (so other scripts can call it)',
        typeof context.window.SUAIP.renderLayerIssues === 'function');
 assert('V12: ROOT.renderLayerIssueBucket is exposed',
        typeof context.window.SUAIP.renderLayerIssueBucket === 'function');
+
+// --- V1.3 (per directive 027): "Face Inventory" section tests -----
+
+// Reset the document state and re-render with a V1.3 payload.
+renderWithPayload({
+  selectionLabel: 'mixed_layers',
+  selectionType:  'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 2, faces_with_holes: 1, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: [],
+  faceInventoryGroups: [
+    { name: 'DIM-WALLS', face_count: 1, faces_with_holes_count: 1,
+      role: 'dimension', role_label: 'Dimension', role_rule: 'name_dimension',
+      visible: true, visibility_unknown: false, visibility_label: 'Visible' },
+    { name: 'Layer0', face_count: 1, faces_with_holes_count: 0,
+      role: 'construction', role_label: 'Construction', role_rule: 'name_default_layer',
+      visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+  ]
+});
+
+var v13FaceInvList = mockElements['face-inventory-list'];
+var v13FaceInvSummary = mockElements['face-inventory-summary'];
+
+assert('V13: face-inventory-list contains one .face-inventory-row per layer bucket',
+       v13FaceInvList && v13FaceInvList.children.length === 2);
+assert('V13: face-inventory-summary populated BEFORE opening with format "N total (H with holes)"',
+       v13FaceInvSummary && v13FaceInvSummary.textContent ===
+         'Face Inventory \u2014 2 total (1 with holes)');
+assert('V13: each row has class face-inventory-row',
+       v13FaceInvList.children.every(function (c) {
+         return c.classes.indexOf('face-inventory-row') !== -1;
+       }));
+assert('V13: row 1 (DIM-WALLS) renders layer name + role badge + visibility badge + face count + holes count',
+       (function () {
+         var row = v13FaceInvList.children[0];
+         if (!row) return false;
+         var children = row.children;
+         var layerName  = children.filter(function (c) { return c.classes.indexOf('layer-name') !== -1; })[0];
+         var roleBadge  = children.filter(function (c) { return c.classes.indexOf('role-badge') !== -1; })[0];
+         var visBadge   = children.filter(function (c) { return c.classes.indexOf('visibility-badge') !== -1; })[0];
+         var facesCell  = children.filter(function (c) { return c.classes.indexOf('face-count') !== -1; })[0];
+         var holesCell  = children.filter(function (c) { return c.classes.indexOf('holes-count') !== -1; })[0];
+         var sep        = children.filter(function (c) { return c.classes.indexOf('face-count-sep') !== -1; })[0];
+         if (!layerName || !roleBadge || !visBadge || !facesCell || !holesCell || !sep) return false;
+         if (layerName.textContent !== 'DIM-WALLS') return false;
+         if (roleBadge.textContent !== 'Dimension') return false;
+         if (visBadge.textContent !== 'Visible') return false;
+         if (facesCell.textContent !== '1 face') return false;
+         if (holesCell.textContent !== '1 face with holes') return false;
+         if (sep.textContent !== '\u00B7') return false;
+         return true;
+       })());
+assert('V13: face_count singular form for n=1 ("1 face")',
+       v13FaceInvList.children[0].children
+         .filter(function (c) { return c.classes.indexOf('face-count') !== -1; })[0]
+         .textContent === '1 face');
+assert('V13: faces_with_holes_count singular form for n=1 ("1 face with holes")',
+       v13FaceInvList.children[0].children
+         .filter(function (c) { return c.classes.indexOf('holes-count') !== -1; })[0]
+         .textContent === '1 face with holes');
+assert('V13: data-layer-name attribute carries the layer name verbatim',
+       v13FaceInvList.children[0].attrs['data-layer-name'] === 'DIM-WALLS');
+assert('V13: data-role attribute mirrors the server-composed role',
+       v13FaceInvList.children[0].attrs['data-role'] === 'dimension' &&
+       v13FaceInvList.children[1].attrs['data-role'] === 'construction');
+assert('V13: data-visible + data-visibility-unknown attributes set per row',
+       v13FaceInvList.children[0].attrs['data-visible'] === 'true' &&
+       v13FaceInvList.children[0].attrs['data-visibility-unknown'] === 'false');
+
+// V13: row is non-actionable.
+assert('V13: face-inventory-row has NO click listener (non-actionable)',
+       v13FaceInvList.children.every(function (c) {
+         return c.hasListener('click') === false;
+       }));
+var v13BeforeLI = locateCalls.length;
+v13FaceInvList.children.forEach(function (c) { c.fireEvent('click'); });
+assert('V13: clicking a face-inventory-row does NOT invoke Locate',
+       locateCalls.length === v13BeforeLI);
+
+// V13: empty faceInventoryGroups renders zero rows + correct summary.
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: []
+});
+assert('V13: empty faceInventoryGroups -> #face-inventory-list empty',
+       mockElements['face-inventory-list'].children.length === 0);
+assert('V13: empty faceInventoryGroups -> summary "Face Inventory — 0 total (0 with holes)"',
+       mockElements['face-inventory-summary'].textContent ===
+         'Face Inventory \u2014 0 total (0 with holes)');
+
+// V13: undefined faceInventoryGroups is the default-empty path.
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: undefined  // V1.0/V1.1/V1.2 caller path
+});
+assert('V13: undefined faceInventoryGroups -> empty list + zero-summary',
+       mockElements['face-inventory-list'].children.length === 0 &&
+       mockElements['face-inventory-summary'].textContent ===
+         'Face Inventory \u2014 0 total (0 with holes)');
+
+// V13: hidden layer row gets data-visible="false" + opacity (via CSS attr).
+renderWithPayload({
+  selectionLabel: 'hidden_layer', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 1, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [
+    { name: 'HIDDEN', face_count: 1, faces_with_holes_count: 0,
+      role: 'annotation', role_label: 'Annotation', role_rule: 'name_annotation',
+      visible: false, visibility_unknown: false, visibility_label: 'Off-screen' }
+  ]
+});
+var v13HiddenRow = mockElements['face-inventory-list'].children[0];
+assert('V13: hidden layer row carries data-visible="false" + Visibility badge = "Off-screen"',
+       v13HiddenRow.attrs['data-visible'] === 'false' &&
+       v13HiddenRow.children.filter(function (c) {
+         return c.classes.indexOf('visibility-badge') !== -1;
+       })[0].textContent === 'Off-screen');
+assert('V13: hidden layer row still has NO click listener',
+       v13HiddenRow.hasListener('click') === false);
+
+// V13: user-supplied layer names render via textContent (no innerHTML).
+var v13FinalRow = v13HiddenRow;
+assert('V13: hidden row text uses textContent (no [object Object] / no innerHTML)',
+       v13FinalRow.textContent.indexOf('[object Object]') === -1 &&
+       v13FinalRow.innerHTML === undefined);
+
+// V13: V1.2 Issues by Layer + V1.1 Layers rows remain inert after V1.3 render.
+renderWithPayload({
+  selectionLabel: 'multi', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 1, faces_with_holes: 0, issues: {} },
+  groups:  [],
+  layerGroups: [
+    { name: 'Layer0', role: 'construction', role_rule: 'name_default_layer',
+      role_label: 'Construction', visible: true, visibility_unknown: false,
+      visibility_label: 'Visible', edge_count: 4, issue_count: 0 }
+  ],
+  layerIssueGroups: [
+    { name: 'Layer0', count: 1, default_open: false,
+      issues: [{ issue_id: 'open_endpoint|1|1', severity: 'low', locatable: true, source: { layer_name: 'Layer0' } }] }
+  ],
+  faceInventoryGroups: [
+    { name: 'Layer0', face_count: 1, faces_with_holes_count: 0,
+      role: 'construction', role_label: 'Construction', role_rule: 'name_default_layer',
+      visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+  ]
+});
+assert('V13: existing Layers row remains inert after V1.3 render',
+       mockElements['layers-list'].children[0].hasListener('click') === false);
+assert('V13: existing V1.2 layer-issue-bucket row remains inert after V1.3 render',
+       mockElements['layer-issues-list'].children[0].hasListener('click') === false);
+assert('V13: new V1.3 face-inventory-row remains inert after V1.3 render',
+       mockElements['face-inventory-list'].children[0].hasListener('click') === false);
+
+// V13: ROOT.renderFaceInventory + ROOT.renderFaceInventoryRow are exposed.
+assert('V13: ROOT.renderFaceInventory is exposed',
+       typeof context.window.SUAIP.renderFaceInventory === 'function');
+assert('V13: ROOT.renderFaceInventoryRow is exposed',
+       typeof context.window.SUAIP.renderFaceInventoryRow === 'function');
+
+// V13: Faces / Faces With Holes scalar counters in #summary block.
+assert('V13: summary block contains "Faces: 1" + "Faces With Holes: 0" scalars',
+       (function () {
+         var summaryEl = mockElements['summary'];
+         var texts = [];
+         function collect(el) {
+           if (el.textContent) texts.push(el.textContent);
+           for (var i = 0; i < el.children.length; i++) collect(el.children[i]);
+         }
+         collect(summaryEl);
+         var all = texts.join(' | ');
+         return all.indexOf('Faces: 1') !== -1 && all.indexOf('Faces With Holes: 0') !== -1;
+       })());
 
 // --- final verdict -----------------------------------------------------
 

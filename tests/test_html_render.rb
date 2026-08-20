@@ -566,3 +566,102 @@ test 'html_render (V1.2): app.js render() invokes renderLayerIssues AFTER groups
   assert pos_groups < pos_layerissues,
          'renderLayerIssues must come AFTER renderLayers (the per-issue-type groups render); directive 026 says "after groups, before layers" — but the layers-section is rendered separately, so position is between renderLayers-call and end of render()'
 end
+
+# --- V1.3 (per directive 027): "Face Inventory" source-level guards ---
+
+HR_HTML_INDEX_V13 = HR_HTML_INDEX
+HR_HTML_APPJS_V13 = HR_HTML_APPJS
+HR_HTML_CSS_V13   = HR_HTML_CSS
+
+test 'html_render (V1.3): index.html has <details id="face-inventory-section"> with <summary id="face-inventory-summary"> first child' do
+  src = File.read(HR_HTML_INDEX_V13)
+  assert_match(/<details\s+id="face-inventory-section">/, src,
+               'index.html must include <details id="face-inventory-section"> (V1.3 directive 027)')
+  assert_match(/<details\s+id="face-inventory-section">\s*<summary\s+id="face-inventory-summary">/, src,
+               'the <summary id="face-inventory-summary"> must be the first child of <details id="face-inventory-section">')
+  assert_match(/<div\s+id="face-inventory-list">/, src,
+               '<details id="face-inventory-section"> must contain <div id="face-inventory-list">')
+end
+
+test 'html_render (V1.3): face-inventory-section is rendered closed by default (no open attribute)' do
+  src = File.read(HR_HTML_INDEX_V13)
+  m = src.match(/<details\s+id="face-inventory-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
+  refute_nil m, 'failed to extract <details id="face-inventory-section"> block'
+  block = m[0]
+  refute_match(/\bopen\b/, block,
+               '<details id="face-inventory-section"> must NOT carry the `open` attribute (closed by default per directive 027)')
+end
+
+test 'html_render (V1.3): face-inventory-section is positioned AFTER layers-section' do
+  src = File.read(HR_HTML_INDEX_V13)
+  pos_layers = src.index('id="layers-section"')
+  pos_fi     = src.index('id="face-inventory-section"')
+  refute_nil pos_layers, '#layers-section element must exist'
+  refute_nil pos_fi,     '#face-inventory-section element must exist'
+  assert pos_layers < pos_fi,
+         '#face-inventory-section must come AFTER #layers-section (per directive 027 item 2)'
+end
+
+test 'html_render (V1.3): app.js exposes renderFaceInventory + renderFaceInventoryRow on ROOT' do
+  src = File.read(HR_HTML_APPJS_V13)
+  assert_match(/function\s+renderFaceInventory\s*\(/, src,
+               'app.js must define renderFaceInventory function')
+  assert_match(/function\s+renderFaceInventoryRow\s*\(/, src,
+               'app.js must define renderFaceInventoryRow function')
+  assert_match(/ROOT\.renderFaceInventory\s*=\s*renderFaceInventory/, src,
+               'app.js must expose ROOT.renderFaceInventory for harness + future callers')
+  assert_match(/ROOT\.renderFaceInventoryRow\s*=\s*renderFaceInventoryRow/, src,
+               'app.js must expose ROOT.renderFaceInventoryRow')
+end
+
+test 'html_render (V1.3): renderFaceInventoryRow uses textContent only (no innerHTML)' do
+  src = File.read(HR_HTML_APPJS_V13)
+  m = src.match(/function\s+renderFaceInventoryRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderFaceInventoryRow function body'
+  body = m[0]
+  refute_match(/\.innerHTML\s*=/, body,
+               'renderFaceInventoryRow must not assign .innerHTML for user strings (locked contract)')
+  assert_match(/\.textContent\s*=/, body,
+               'renderFaceInventoryRow must use .textContent for user strings (locked contract)')
+end
+
+test 'html_render (V1.3): renderFaceInventoryRow does NOT register a click handler (rows are non-actionable)' do
+  src = File.read(HR_HTML_APPJS_V13)
+  m = src.match(/function\s+renderFaceInventoryRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderFaceInventoryRow function body'
+  body = m[0]
+  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
+               'renderFaceInventoryRow must NOT register a click listener (rows are non-actionable per directive 027 item 7)')
+end
+
+test 'html_render (V1.3): style.css defines .face-inventory-row style (neutral, no new role colors)' do
+  src = File.read(HR_HTML_CSS_V13)
+  assert_match(/\.face-inventory-row/, src,
+               'style.css must define .face-inventory-row (V1.3 directive 027)')
+  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
+  blocks = stripped.scan(/[^{}]*\.face-inventory-row[^{}]*\{[^}]*\}/m)
+  assert blocks.length > 0, 'failed to extract any .face-inventory-row CSS block'
+  blocks.each do |b|
+    refute_match(/data-role\s*=/, b,
+                 ".face-inventory-row CSS block must NOT use a [data-role=\"...\"] color selector (R008 / directive 027 item 11): #{b.inspect}")
+  end
+end
+
+test 'html_render (V1.3): app.js render() invokes renderFaceInventory AFTER renderLayers' do
+  src = File.read(HR_HTML_APPJS_V13)
+  pos_layers = src.index('renderLayers(payload.layerGroups)')
+  pos_fi     = src.index('renderFaceInventory(payload.faceInventoryGroups)')
+  refute_nil pos_layers, 'render() must invoke renderLayers(payload.layerGroups)'
+  refute_nil pos_fi,     'render() must invoke renderFaceInventory(payload.faceInventoryGroups)'
+  assert pos_layers < pos_fi,
+         'renderFaceInventory must come AFTER renderLayers (per directive 027 item 2)'
+end
+
+test 'html_render (V1.3): app.js render() summary block includes faces + faces_with_holes scalars' do
+  src = File.read(HR_HTML_APPJS_V13)
+  scalar_match = src.match(/scalarKeys\s*=\s*\[([^\]]+)\]/)
+  refute_nil scalar_match, 'render() must define scalarKeys Array'
+  list = scalar_match[1]
+  assert list.include?("'faces'"),            "scalarKeys must include 'faces'"
+  assert list.include?("'faces_with_holes'"), "scalarKeys must include 'faces_with_holes'"
+end

@@ -217,3 +217,48 @@ details[open] summary { border-bottom: 1px solid var(--border); }
      V1.0 still apply for non-locatable rows. */
   padding-left: 24px;
 }
+
+/*
+ * V1.3 (per directive 027): "Face Inventory" section styles.
+ * Each row is a <div> with class .face-inventory-row; rows are
+ * informational and non-actionable (no click handler). The section
+ * reuses the V1.1 .layer-row + .role-badge + .visibility-badge
+ * neutral palette; no new role colors, no new severity palette,
+ * no data-role="..." color selectors per R008 + directive 027 item 11.
+ */
+.face-inventory-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  cursor: default;
+}
+.face-inventory-row:hover {
+  /* No hover affordance -- Face Inventory rows are non-actionable
+     in V1.3 (mirror of V1.1 Layers rows / V1.0 L3 non-locatable
+     warning pattern). */
+  background: transparent;
+}
+.face-inventory-row .layer-name {
+  flex: 1 0 auto;
+  font-weight: 500;
+}
+.face-inventory-row .face-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.face-inventory-row .face-count-sep {
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+}
+.face-inventory-row .holes-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.face-inventory-row[data-visible="false"] {
+  opacity: 0.6;
+}

@@ -92,11 +92,17 @@
     // so the summary block is reserved for the snapshot+issue
     // counts. We do NOT include the selection label here to avoid
     // duplicating it.
-    var scalarKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings'];
+    // V1.3 (per directive 027 items 1 + 2): the scalar rows include
+    // 'Faces' and 'Faces With Holes' as additive counters derived
+    // from payload.summary (which UIBridge populates from
+    // preflight.face_count + preflight.faces_with_holes_count).
+    var scalarKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings',
+                     'faces', 'faces_with_holes'];
     scalarKeys.forEach(function (k) {
       var stat = document.createElement('div');
       stat.className = 'stat';
-      stat.textContent = humanizeKey(k) + ': ' + (payload.summary ? payload.summary[k] : 0);
+      stat.setAttribute('data-stat', k);
+      stat.textContent = humanizeKey(k) + ': ' + (payload.summary ? (payload.summary[k] || 0) : 0);
       summary.appendChild(stat);
     });
 
@@ -147,6 +153,14 @@
     // bucket reuse renderIssue() so the click-to-locate and
     // non-locatable-inert contracts carry through unchanged.
     renderLayerIssues(payload.layerIssueGroups);
+
+    // V1.3 (per directive 027): render the "Face Inventory" section
+    // AFTER the V1.1 Layers section. Resilient to undefined / null /
+    // non-Array payload.faceInventoryGroups — defaults to "Face
+    // Inventory — 0 total (0 with holes)" with zero rows. Rows are
+    // aggregate-by-layer (NOT per-face), non-actionable, neutral
+    // styling; reuse the V1.1 role + visibility badge semantics.
+    renderFaceInventory(payload.faceInventoryGroups);
   }
 
   function humanizeKey(k) {
@@ -296,6 +310,97 @@
     }
   }
 
+  // V1.3 (per directive 027): render the dialog "Face Inventory"
+  // section. Populates #face-inventory-list with one .face-inventory-row
+  // per layer that has at least one face, and the #face-inventory-summary
+  // text with "Face Inventory — N total (H with holes)" BEFORE the user
+  // opens the details. Aggregate rows by source face layer (per directive
+  // item 4: NOT one UI row per individual face). Rows reuse the
+  // V1.1 layer semantics: role badge + visibility badge are SEPARATE
+  // (R007), neutral styling, no role color selectors.
+  // Locked render contract preserved: no innerHTML, no eval, no new
+  // Function, no document.write.
+  function renderFaceInventory(faceInventoryGroups) {
+    var listEl = document.getElementById('face-inventory-list');
+    var summaryEl = document.getElementById('face-inventory-summary');
+    if (listEl) listEl.textContent = '';
+    var buckets = Array.isArray(faceInventoryGroups) ? faceInventoryGroups : [];
+    var totalFaces = 0;
+    var totalHoles = 0;
+    buckets.forEach(function (b) {
+      if (!b) return;
+      var fc = (typeof b.face_count === 'number') ? b.face_count : 0;
+      var hc = (typeof b.faces_with_holes_count === 'number') ? b.faces_with_holes_count : 0;
+      totalFaces += fc;
+      totalHoles += hc;
+      if (listEl) listEl.appendChild(renderFaceInventoryRow(b));
+    });
+    if (summaryEl) {
+      summaryEl.textContent = 'Face Inventory \u2014 ' + totalFaces +
+                              ' total (' + totalHoles + ' with holes)';
+    }
+  }
+
+  // V1.3: render one Face Inventory row. Per directive 027 item 5:
+  //   - layer name;
+  //   - face count with correct singular/plural wording;
+  //   - count of faces with holes;
+  //   - role badge and visibility badge using the V1.1 layer
+  //     semantics when available.
+  // Per directive item 7: rows are informational and non-actionable.
+  // No click handler. No Locate action. Default cursor. No toast.
+  // Per directive item 11: no new role colors; reuse neutral
+  // styling; severity colors remain exclusive to issue severity.
+  function renderFaceInventoryRow(b) {
+    var div = document.createElement('div');
+    div.className = 'face-inventory-row';
+    var role = (b && b.role) ? String(b.role) : 'unknown';
+    var visibility_unknown = !!(b && b.visibility_unknown);
+    var visible = !!(b && b.visible);
+    div.setAttribute('data-role', role);
+    div.setAttribute('data-visible', visible ? 'true' : 'false');
+    div.setAttribute('data-visibility-unknown', visibility_unknown ? 'true' : 'false');
+    div.setAttribute('data-layer-name', (b && b.name) ? String(b.name) : '');
+
+    var name = document.createElement('span');
+    name.className = 'layer-name';
+    name.textContent = (b && b.name) ? String(b.name) : '';
+
+    var roleBadge = document.createElement('span');
+    roleBadge.className = 'role-badge';
+    roleBadge.textContent = (b && b.role_label) ? String(b.role_label)
+                                                : humanizeKey(role);
+
+    var visBadge = document.createElement('span');
+    visBadge.className = 'visibility-badge';
+    visBadge.textContent = (b && b.visibility_label) ? String(b.visibility_label)
+                                                      : '';
+
+    var facesCell = document.createElement('span');
+    facesCell.className = 'face-count';
+    var fc = (b && typeof b.face_count === 'number') ? b.face_count : 0;
+    facesCell.textContent = formatCount(fc, 'face');
+
+    var facesSep = document.createElement('span');
+    facesSep.className = 'face-count-sep';
+    facesSep.setAttribute('aria-hidden', 'true');
+    facesSep.textContent = '\u00B7'; // middle dot "·"
+
+    var holesCell = document.createElement('span');
+    holesCell.className = 'holes-count';
+    var hc = (b && typeof b.faces_with_holes_count === 'number') ? b.faces_with_holes_count : 0;
+    holesCell.textContent = formatCount(hc, 'face with holes');
+
+    div.appendChild(name);
+    div.appendChild(roleBadge);
+    div.appendChild(visBadge);
+    div.appendChild(facesCell);
+    div.appendChild(facesSep);
+    div.appendChild(holesCell);
+    // No click handler -- Face Inventory rows are non-actionable.
+    return div;
+  }
+
   // V1.2: render one layer-issue bucket. Returns a `<details>`
   // element whose summary is "LayerName (N issue(s))" and whose
   // body contains the existing renderIssue() rows for each issue
@@ -405,6 +510,8 @@
   ROOT.renderLayerRow          = renderLayerRow;
   ROOT.renderLayerIssues       = renderLayerIssues;
   ROOT.renderLayerIssueBucket  = renderLayerIssueBucket;
+  ROOT.renderFaceInventory     = renderFaceInventory;
+  ROOT.renderFaceInventoryRow  = renderFaceInventoryRow;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {
