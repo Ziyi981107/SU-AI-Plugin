@@ -14,10 +14,29 @@
     <section id="summary"></section>
     <section id="groups"></section>
     <!--
+      V1.2 (per directive 026): the "Issues by Layer" section
+      sits AFTER the per-issue-type groups block and BEFORE the
+      V1.1 Layers section. It is a `<details>` block with an
+      explicit `<summary id="layer-issues-summary">` first child;
+      JS renders the summary text ("Issues by Layer — N layers
+      (M issues)") at render time and emits one `<details>`
+      bucket per layer INSIDE `#layer-issues-list`. The block is
+      rendered CLOSED by default (no `open` attribute on this
+      HTML; JS does not call details.open). Each inner bucket's
+      default-open state is determined by the bucket's
+      `default_open` flag (mirrors IssueGrouper policy: open iff
+      bucket has :high, else first non-empty bucket opens).
+    -->
+    <details id="layer-issues-section">
+      <summary id="layer-issues-summary">Issues by Layer</summary>
+      <div id="layer-issues-list"></div>
+    </details>
+    <!--
       V1.1 (per plan §4.11): the Layers section sits BELOW the per-
-      issue-type groups block (per ChatGPT §11.1). It is a `<details>`
-      block with an explicit `<summary id="layers-summary">` first
-      child; JS renders the summary text ("Layers — N total (M with
+      issue-type groups block AND BELOW the V1.2 Issues-by-Layer
+      section (per ChatGPT §11.1). It is a `<details>` block with
+      an explicit `<summary id="layers-summary">` first child;
+      JS renders the summary text ("Layers — N total (M with
       issues)") at render time and emits the layer rows INSIDE
       `#layers-list`. The block is rendered CLOSED by default (no
       `open` attribute on this HTML; JS does not call details.open).

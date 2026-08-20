@@ -138,6 +138,15 @@
     // layerGroups results in an empty list with summary text
     // "Layers — 0 total (0 with issues)".
     renderLayers(payload.layerGroups);
+
+    // V1.2 (per directive 026): render the "Issues by Layer" section
+    // AFTER the per-issue-type groups block AND BEFORE the V1.1
+    // Layers section. Resilient to undefined / null / non-Array
+    // payload.layerIssueGroups — defaults to "Issues by Layer — 0
+    // layers (0 issues)" with zero buckets. Issues inside each
+    // bucket reuse renderIssue() so the click-to-locate and
+    // non-locatable-inert contracts carry through unchanged.
+    renderLayerIssues(payload.layerIssueGroups);
   }
 
   function humanizeKey(k) {
@@ -259,6 +268,57 @@
     }
   }
 
+  // V1.2 (per directive 026): render the dialog "Issues by Layer"
+  // section. Populates #layer-issues-list with one .layer-issue-bucket
+  // per non-empty bucket and the #layer-issues-summary text with
+  // "Issues by Layer — N layers (M issues)" BEFORE the user opens
+  // the details. Each bucket is a `<details>` with its own summary;
+  // issues inside reuse renderIssue() so the existing click-to-
+  // locate and non-locatable-inert contracts carry through unchanged.
+  // Locked render contract preserved: no innerHTML, no eval, no new
+  // Function, no document.write.
+  function renderLayerIssues(layerIssueGroups) {
+    var listEl = document.getElementById('layer-issues-list');
+    var summaryEl = document.getElementById('layer-issues-summary');
+    // Defensive: clear the previous render.
+    if (listEl) listEl.textContent = '';
+    var buckets = Array.isArray(layerIssueGroups) ? layerIssueGroups : [];
+    var totalBuckets = buckets.length;
+    var totalIssues = 0;
+    buckets.forEach(function (b) {
+      if (!b || !Array.isArray(b.issues)) return;
+      totalIssues += b.issues.length;
+      if (listEl) listEl.appendChild(renderLayerIssueBucket(b));
+    });
+    if (summaryEl) {
+      summaryEl.textContent = 'Issues by Layer \u2014 ' + totalBuckets +
+                              ' layers (' + totalIssues + ' issues)';
+    }
+  }
+
+  // V1.2: render one layer-issue bucket. Returns a `<details>`
+  // element whose summary is "LayerName (N issue(s))" and whose
+  // body contains the existing renderIssue() rows for each issue
+  // in the bucket. The bucket honors `default_open` (set by
+  // LayerIssueGrouper).
+  function renderLayerIssueBucket(b) {
+    var det = document.createElement('details');
+    det.open = !!(b && b.default_open);
+    var sum = document.createElement('summary');
+    var layerName = (b && b.name) ? String(b.name) : '';
+    var count = (b && typeof b.count === 'number') ? b.count : 0;
+    // Locked per directive 026 item 6: "Each bucket header must
+    // show the layer name and issue count with correct singular/
+    // plural wording."
+    sum.textContent = layerName + ' (' + formatCount(count, 'issue') + ')';
+    det.appendChild(sum);
+    var issues = (b && Array.isArray(b.issues)) ? b.issues : [];
+    issues.forEach(function (issue) {
+      det.appendChild(renderIssue(issue));
+    });
+    return det;
+  }
+
   // V1.1 (per plan §4.10): render one layer row. The row carries:
   //   - data-role (locked canonical role symbol)
   //   - data-visible (true | false)        — operational layer
@@ -343,6 +403,8 @@
   ROOT.LAYER_VISIBILITY_LABELS = LAYER_VISIBILITY_LABELS;
   ROOT.renderLayers            = renderLayers;
   ROOT.renderLayerRow          = renderLayerRow;
+  ROOT.renderLayerIssues       = renderLayerIssues;
+  ROOT.renderLayerIssueBucket  = renderLayerIssueBucket;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {

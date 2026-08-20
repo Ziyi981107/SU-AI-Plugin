@@ -96,7 +96,11 @@ var mockElements = {
   // IDs. JS render treats them as the canonical entry points
   // (summary text + list of rows).
   'layers-summary': new MockElement('summary'),
-  'layers-list':    new MockElement('div')
+  'layers-list':    new MockElement('div'),
+  // V1.2 (per directive 026): the "Issues by Layer" section uses
+  // these element IDs (placed AFTER #groups and BEFORE #layers-section).
+  'layer-issues-summary': new MockElement('summary'),
+  'layer-issues-list':    new MockElement('div')
 };
 
 var mockDocument = {
@@ -690,6 +694,184 @@ assert('L4.18: row badges have non-empty textContent (locked contract)',
        rowBadges.length > 0 && rowBadges.every(function (b) {
          return b.textContent && b.textContent.length > 0;
        }));
+
+// --- V1.2 (per directive 026): "Issues by Layer" section tests -----
+
+// Reset the document state and re-render with a V1.2 payload.
+renderWithPayload({
+  selectionLabel: 'multi_layer',
+  selectionType:  'Group',
+  summary: { edges: 2, vertices: 4, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: [
+    {
+      name:         'DIM-WALLS',
+      count:        1,
+      default_open: false,
+      issues: [
+        { issue_id: 'open_endpoint|1|1', issue_type: 'open_endpoint',
+          severity: 'low', locatable: true,
+          message: 'open endpoint on DIM-WALLS',
+          source: { layer_name: 'DIM-WALLS' } }
+      ]
+    },
+    {
+      name:         'TXT-LABELS',
+      count:        1,
+      default_open: false,
+      issues: [
+        { issue_id: 'open_endpoint|2|1', issue_type: 'open_endpoint',
+          severity: 'low', locatable: true,
+          message: 'open endpoint on TXT-LABELS',
+          source: { layer_name: 'TXT-LABELS' } }
+      ]
+    }
+  ]
+});
+
+var v12LayerIssuesList = mockElements['layer-issues-list'];
+var v12LayerIssuesSummary = mockElements['layer-issues-summary'];
+
+assert('V12: layer-issues-list contains one .layer-issue-bucket per non-empty bucket',
+       v12LayerIssuesList && v12LayerIssuesList.children.length === 2);
+assert('V12: layer-issues-summary populated BEFORE the user opens the section',
+       v12LayerIssuesSummary && v12LayerIssuesSummary.textContent ===
+         'Issues by Layer \u2014 2 layers (2 issues)');
+assert('V12: each bucket is a <details> element',
+       v12LayerIssuesList.children.every(function (c) {
+         return c.tag === 'details';
+       }));
+assert('V12: bucket summary shows layer name + issue count (correct singular form for n=1)',
+       v12LayerIssuesList.children[0].children[0].textContent === 'DIM-WALLS (1 issue)' &&
+       v12LayerIssuesList.children[1].children[0].textContent === 'TXT-LABELS (1 issue)');
+assert('V12: each bucket body contains the issue row(s) from renderIssue',
+       v12LayerIssuesList.children[0].children.length === 2 &&
+       v12LayerIssuesList.children[0].children[1].classes.indexOf('issue') !== -1);
+assert('V12: locatable issue in bucket still invokes Locate on click',
+       (function () {
+         var issueRow = v12LayerIssuesList.children[0].children[1];
+         var beforeLocates = locateCalls.length;
+         issueRow.fireEvent('click');
+         return locateCalls.length === beforeLocates + 1 &&
+                locateCalls[locateCalls.length - 1] === 'open_endpoint|1|1';
+       })());
+
+// V12: non-locatable issue inside a bucket is inert.
+renderWithPayload({
+  selectionLabel: 'multi_layer',
+  selectionType:  'Group',
+  summary: { edges: 1, vertices: 2, non_zero_z_vertices: 0, warnings: 1, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: [
+    {
+      name:         'Layer0',
+      count:        1,
+      default_open: true,
+      issues: [
+        { issue_id: 'deep_nesting|1|1', issue_type: 'deep_nesting',
+          severity: 'low', locatable: false,
+          message: 'deeply nested group',
+          source: { layer_name: 'Layer0' } }
+      ]
+    }
+  ]
+});
+var v12NonLocatableBucket = mockElements['layer-issues-list'].children[0];
+var v12NonLocatableIssue = v12NonLocatableBucket.children[1];
+assert('V12: non-locatable issue inside bucket has no-action class (inert)',
+       v12NonLocatableIssue.classes.indexOf('no-action') !== -1);
+assert('V12: non-locatable issue inside bucket has NO click listener',
+       v12NonLocatableIssue.hasListener('click') === false);
+var v12BeforeNL = locateCalls.length;
+v12NonLocatableIssue.fireEvent('click');
+assert('V12: clicking non-locatable issue inside bucket does NOT invoke Locate',
+       locateCalls.length === v12BeforeNL);
+assert('V12: bucket honors default_open flag (true => <details open>)',
+       v12NonLocatableBucket.attrs['open'] === 'true' ||
+       v12NonLocatableBucket._open === true ||
+       v12NonLocatableBucket.open === true);
+
+// V12: empty layerIssueGroups renders zero buckets + correct summary.
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: []
+});
+assert('V12: empty layerIssueGroups -> #layer-issues-list empty',
+       mockElements['layer-issues-list'].children.length === 0);
+assert('V12: empty layerIssueGroups -> summary "Issues by Layer — 0 layers (0 issues)"',
+       mockElements['layer-issues-summary'].textContent ===
+         'Issues by Layer \u2014 0 layers (0 issues)');
+
+// V12: undefined layerIssueGroups is the default-empty path.
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: undefined  // V1.0 / V1.1 caller path
+});
+assert('V12: undefined layerIssueGroups -> empty list + zero-summary',
+       mockElements['layer-issues-list'].children.length === 0 &&
+       mockElements['layer-issues-summary'].textContent ===
+         'Issues by Layer \u2014 0 layers (0 issues)');
+
+// V12: bucket summary plural form (n > 1 -> plural wording).
+renderWithPayload({
+  selectionLabel: 'multi', selectionType: 'Group',
+  summary: { edges: 5, vertices: 10, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [],
+  layerIssueGroups: [
+    { name: 'DIM-XX', count: 2, default_open: true,
+      issues: [
+        { issue_id: 'open_endpoint|1|1', issue_type: 'open_endpoint',
+          severity: 'low', locatable: true, message: 'm1', source: { layer_name: 'DIM-XX' } },
+        { issue_id: 'short_edge|2|1',   issue_type: 'short_edge',
+          severity: 'low', locatable: true, message: 'm2', source: { layer_name: 'DIM-XX' } }
+      ]
+    }
+  ]
+});
+var v12MultiBucket = mockElements['layer-issues-list'].children[0];
+assert('V12: bucket summary plural form for n=2 ("2 issues")',
+       v12MultiBucket.children[0].textContent === 'DIM-XX (2 issues)');
+assert('V12: bucket body has 2 issue rows',
+       v12MultiBucket.children.length === 3 &&
+       v12MultiBucket.children[1].classes.indexOf('issue') !== -1 &&
+       v12MultiBucket.children[2].classes.indexOf('issue') !== -1);
+
+// V12: user-supplied layer names render via textContent (no innerHTML).
+assert('V12: bucket summary text uses textContent (no [object Object] / no innerHTML)',
+       v12MultiBucket.children[0].textContent.indexOf('[object Object]') === -1 &&
+       v12MultiBucket.children[0].innerHTML === undefined);
+
+// V12: the existing Layers section rows are STILL inert after V1.2 render.
+renderWithPayload({
+  selectionLabel: 'g', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0, issues: {} },
+  groups:  [],
+  layerGroups: [
+    { name: 'Layer0', role: 'construction', role_rule: 'name_default_layer',
+      role_label: 'Construction', visible: true, visibility_unknown: false,
+      visibility_label: 'Visible', edge_count: 4, issue_count: 0 }
+  ],
+  layerIssueGroups: []
+});
+var v12LayersList = mockElements['layers-list'];
+var v12LayerRow = v12LayersList.children[0];
+assert('V12: existing Layers row has NO click listener after V1.2 render (still inert)',
+       v12LayerRow && v12LayerRow.hasListener('click') === false);
+
+// V12: ROOT.renderLayerIssues and ROOT.renderLayerIssueBucket are exposed.
+assert('V12: ROOT.renderLayerIssues is exposed (so other scripts can call it)',
+       typeof context.window.SUAIP.renderLayerIssues === 'function');
+assert('V12: ROOT.renderLayerIssueBucket is exposed',
+       typeof context.window.SUAIP.renderLayerIssueBucket === 'function');
 
 // --- final verdict -----------------------------------------------------
 

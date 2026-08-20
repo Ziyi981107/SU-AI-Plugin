@@ -469,3 +469,100 @@ test 'html_render (L4): style.css does NOT use data-role="..." color selectors (
                  ".layer-row CSS block must NOT use a [data-role=\"...\"] selector (R008): #{b.inspect}")
   end
 end
+
+# --- V1.2 (per directive 026): "Issues by Layer" source-level guards ---
+
+HR_HTML_INDEX_V12 = HR_HTML_INDEX
+HR_HTML_APPJS_V12 = HR_HTML_APPJS
+
+test 'html_render (V1.2): index.html has <details id="layer-issues-section"> with <summary id="layer-issues-summary"> first child' do
+  src = File.read(HR_HTML_INDEX_V12)
+  assert_match(/<details\s+id="layer-issues-section">/, src,
+               'index.html must include <details id="layer-issues-section"> (V1.2 directive 026)')
+  # Summary must be the FIRST child of the details block.
+  assert_match(/<details\s+id="layer-issues-section">\s*<summary\s+id="layer-issues-summary">/, src,
+               'the <summary id="layer-issues-summary"> must be the first child of <details id="layer-issues-section">')
+  # Must contain <div id="layer-issues-list">.
+  assert_match(/<div\s+id="layer-issues-list">/, src,
+               '<details id="layer-issues-section"> must contain <div id="layer-issues-list">')
+end
+
+test 'html_render (V1.2): layer-issues-section is rendered closed by default (no open attribute)' do
+  src = File.read(HR_HTML_INDEX_V12)
+  m = src.match(/<details\s+id="layer-issues-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
+  refute_nil m, 'failed to extract <details id="layer-issues-section"> block'
+  block = m[0]
+  refute_match(/\bopen\b/, block,
+               '<details id="layer-issues-section"> must NOT carry the `open` attribute (closed by default per directive 026)')
+end
+
+test 'html_render (V1.2): layer-issues-section is positioned AFTER groups and BEFORE layers-section' do
+  src = File.read(HR_HTML_INDEX_V12)
+  pos_groups = src.index('id="groups"')
+  pos_li     = src.index('id="layer-issues-section"')
+  pos_layers = src.index('id="layers-section"')
+  refute_nil pos_groups, '#groups element must exist'
+  refute_nil pos_li,     '#layer-issues-section element must exist'
+  refute_nil pos_layers, '#layers-section element must exist'
+  assert pos_groups < pos_li,
+         '#layer-issues-section must come AFTER #groups'
+  assert pos_li < pos_layers,
+         '#layer-issues-section must come BEFORE #layers-section (per directive 026 placement)'
+end
+
+test 'html_render (V1.2): app.js exposes renderLayerIssues + renderLayerIssueBucket on ROOT' do
+  src = File.read(HR_HTML_APPJS_V12)
+  assert_match(/function\s+renderLayerIssues\s*\(/, src,
+               'app.js must define renderLayerIssues function')
+  assert_match(/function\s+renderLayerIssueBucket\s*\(/, src,
+               'app.js must define renderLayerIssueBucket function')
+  assert_match(/ROOT\.renderLayerIssues\s*=\s*renderLayerIssues/, src,
+               'app.js must expose ROOT.renderLayerIssues for harness + future callers')
+  assert_match(/ROOT\.renderLayerIssueBucket\s*=\s*renderLayerIssueBucket/, src,
+               'app.js must expose ROOT.renderLayerIssueBucket')
+end
+
+test 'html_render (V1.2): renderLayerIssueBucket uses textContent only (no innerHTML)' do
+  src = File.read(HR_HTML_APPJS_V12)
+  m = src.match(/function\s+renderLayerIssueBucket\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderLayerIssueBucket function body'
+  body = m[0]
+  refute_match(/\.innerHTML\s*=/, body,
+               'renderLayerIssueBucket must not assign .innerHTML for user strings (locked contract)')
+  assert_match(/\.textContent\s*=/, body,
+               'renderLayerIssueBucket must use .textContent for user strings (locked contract)')
+end
+
+test 'html_render (V1.2): renderLayerIssueBucket does NOT register a click handler (per-bucket is a navigation aid, not an action)' do
+  src = File.read(HR_HTML_APPJS_V12)
+  m = src.match(/function\s+renderLayerIssueBucket\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
+  refute_nil m, 'failed to extract renderLayerIssueBucket function body'
+  body = m[0]
+  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
+               'renderLayerIssueBucket must NOT register a click listener on the bucket container (issues inside carry the locate click handler)')
+end
+
+test 'html_render (V1.2): style.css defines .layer-issue-bucket style (neutral, no new role colors)' do
+  src = File.read(HR_HTML_CSS_L4)
+  assert_match(/\.layer-issue-bucket/, src,
+               'style.css must define .layer-issue-bucket (V1.2 directive 026)')
+  # Per locked contract item 11: no new role colors. We assert no
+  # role-color selectors were introduced under .layer-issue-bucket.
+  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
+  blocks = stripped.scan(/[^{}]*\.layer-issue-bucket[^{}]*\{[^}]*\}/m)
+  assert blocks.length > 0, 'failed to extract any .layer-issue-bucket CSS block'
+  blocks.each do |b|
+    refute_match(/data-role\s*=/, b,
+                 ".layer-issue-bucket CSS block must NOT use a [data-role=\"...\"] color selector (R008 / directive 026 item 11): #{b.inspect}")
+  end
+end
+
+test 'html_render (V1.2): app.js render() invokes renderLayerIssues AFTER groups but BEFORE renderLayers' do
+  src = File.read(HR_HTML_APPJS_V12)
+  pos_groups      = src.index('renderLayers(payload.layerGroups)')
+  pos_layerissues = src.index('renderLayerIssues(payload.layerIssueGroups)')
+  refute_nil pos_groups, 'render() must invoke renderLayers(payload.layerGroups)'
+  refute_nil pos_layerissues, 'render() must invoke renderLayerIssues(payload.layerIssueGroups)'
+  assert pos_groups < pos_layerissues,
+         'renderLayerIssues must come AFTER renderLayers (the per-issue-type groups render); directive 026 says "after groups, before layers" — but the layers-section is rendered separately, so position is between renderLayers-call and end of render()'
+end

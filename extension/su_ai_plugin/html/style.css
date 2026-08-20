@@ -194,3 +194,26 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .layer-row[data-visible="false"] {
   opacity: 0.6;
 }
+
+/*
+ * V1.2 (per directive 026): "Issues by Layer" section styles.
+ * Each bucket is a `<details>` element with class .layer-issue-bucket
+ * and contains the existing renderIssue() rows. The section reuses
+ * neutral styling — no new role colors, no new severity palette.
+ * Per locked contract item 11: "No new role colors. Reuse neutral
+ * styling; severity colors remain exclusive to issue severity."
+ */
+.layer-issue-bucket > summary {
+  /* The bucket summary already inherits cursor: pointer from the
+     generic `details summary` rule above; no override needed. We
+     only nudge the font weight slightly so the bucket header
+     visually distinguishes from the issue rows below. */
+  font-weight: 500;
+}
+.layer-issue-bucket .issue {
+  /* Reuse the .issue class from the V1.0 issue-type groups block;
+     ensure the issue sits inside the bucket with the same padding
+     indent. The .issue.no-action + cursor: default rules from
+     V1.0 still apply for non-locatable rows. */
+  padding-left: 24px;
+}
