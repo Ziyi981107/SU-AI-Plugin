@@ -1,0 +1,136 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+STAGE / GATE A IMPLEMENTATION
+
+SCOPE REVIEWED:
+- base/head: aeced98..f68f4bd
+- commit: f68f4bd feat(stage6): Gate A Core contract
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_gate_a_impl.md
+- code: Gate A core/source_reference.rb, structural_facts.rb, Issue contract,
+  enrichment, deterministic IDs, grouping, registry, locator policy
+- tests: full suite independently rerun: 161/161 PASS, 0 fail, 0 error
+- diff hygiene: git show --check PASS
+- excluded from technical verdict: scripts/prompt_monitor*.ps1 operational tooling
+
+SUMMARY:
+- Gate A is substantially implemented and all existing/new tests pass.
+- Core/host boundary, aligned SourceToken shape, fail-closed defaults, severity mapping,
+  tolerant registry, grouping policy and nested entityID prohibition are present.
+- Two product-critical contracts are implemented incorrectly and are not covered by the
+  reported 161 tests: structural-depth semantics and deterministic issue IDs.
+- Fix both in one consolidated commit/recheck packet. Do not split into micro reviews.
+- NITs do not require a separate review cycle.
+
+BLOCKS:
+
+1. [S6-GATE-A-BLOCK-001] Leaf is incorrectly counted as structural nesting
+
+   Location:
+   - core/structural_facts.rb:47-55 and 73
+   - core/issue_enricher.rb:119
+   - tests/test_structural_facts.rb root cases
+
+   Problem:
+   `StructuralFacts.compute` and `from_canonical_path` calculate:
+       structural_depth = active_path_count + ancestry_count + 1
+   The `+1` counts the leaf Entity itself. `IssueEnricher` then defines:
+       nested = src.structural_depth > 0
+   Therefore a root-level Edge has structural_depth=1 and is classified as nested.
+
+   This contradicts the locked locator contract used throughout the plan and previous
+   reviews:
+       root-level leaf -> structural_depth 0 / nested false
+       one enclosing Group/Component -> structural_depth 1 / nested true
+       expected_pid_count = structural_depth + 1 (the +1 is the leaf PID)
+
+   Consequences:
+   - a root Edge with missing PID cannot use the allowed root entityID fallback;
+   - a complete root Edge can be routed to InstPath#root instead of InstPath#leaf;
+   - Gate B will receive incorrect SourceToken profiles even if its adapter is correct.
+
+   Minimum acceptable fix:
+   - Define structural_depth as the count of structural ancestor containers/edit-path
+     entities, excluding the leaf.
+   - Root leaf: depth 0; two ancestors: depth 2.
+   - Keep full-path completeness invariant:
+       expected_pid_count = structural_depth + 1
+   - Ensure active edit-path entities and walked container ancestry are not double-counted.
+   - Update StructuralFacts tests and add an integration test that pipes its root result
+     through SourceReference -> IssueEnricher -> IssueLocatorPolicy:
+       complete root -> :inst_path_leaf
+       incomplete root + entityID -> :entity_id
+   - Retain nested complete/incomplete controls.
+
+   Recheck evidence needed:
+   - focused diff + corrected structural tests + full suite
+
+2. [S6-GATE-A-BLOCK-002] Issue IDs still use transient identity and input-order counters
+
+   Location:
+   - core/issue_id_assigner.rb:57-68
+   - core/issue_enricher.rb:70-89
+   - tests/test_issue_id_assigner.rb and test_issue_enricher.rb
+
+   Problem A — forbidden fallback:
+   `geometry_signature` falls back to:
+       "entity_id:#{token[:entity_id]}"
+       "anon:#{token.object_id}"
+   Both directly violate the locked requirement that issue_id NEVER use entity_id or
+   object_id. The existing test passes only because it supplies a PID or location and
+   never exercises these branches.
+
+   Problem B — unstable counter assignment:
+   `IssueEnricher.enrich_all` groups in input order and calls `list.each_with_index`
+   without sorting by canonical source/semantic keys first. Reversing analyzer output can
+   change the counter suffix assigned to the same logical Issue, so its issue_id changes
+   across equivalent runs.
+
+   Why it matters:
+   HtmlDialog callbacks address Issues by issue_id. IDs must be deterministic for stable
+   ordering, rendering and lookup. Runtime Ruby object identity is explicitly unsuitable.
+
+   Minimum acceptable fix:
+   - Delete every entity_id/object_id issue-id fallback.
+   - For missing PID and missing location, use only deterministic analysis data, such as
+     a canonical issue-level signature from issue_type + sorted edge_ids + sanitized
+     semantic metadata/message; a constant no-source key plus deterministic semantic
+     tie-breaker is also acceptable for preflight warnings.
+   - Before assigning counter_within_type, sort each type bucket by a complete canonical
+     stable key. Counter remains the final tie-breaker.
+   - Add tests that force the no-PID/no-location branches and assert the ID contains
+     neither entity_id nor object_id-derived data.
+   - Add a permutation test: enrich the same logical Issues in reversed/shuffled input
+     order and assert each logical Issue receives the same issue_id.
+
+   Recheck evidence needed:
+   - focused diff + adversarial ID tests + full suite
+
+NITS:
+
+- `IssueRegistry` accepts unknown issue_type values, but `groups` only emits canonical
+  types, so an unknown Issue can count in size/summary yet disappear from groups. Either
+  reject unknown types with a diagnostic or deterministically append unknown groups.
+- Freeze/copy nested `sources`, metadata and group arrays if the UI contract relies on
+  deep immutability; otherwise keep the claim explicitly shallow.
+- `IssueEnricher.enrich_one` computes `canonical_keys` but never uses it.
+- Missing edge IDs should be recorded in metadata/diagnostics as planned, not represented
+  only by an anonymous empty SourceToken.
+- Monitor scripts and .gitignore changes were authorized operational work but should use a
+  separate commit from Gate A next time, so review/rollback scope stays clean.
+
+DEBT:
+- NONE added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- One consolidated BLOCK RECHECK for S6-GATE-A-BLOCK-001 and -002 only.
+- Review only the fix diff, direct dependencies and adversarial tests; do not reopen the
+  passed Gate A modules.
+- NITs do not trigger another loop.
+- After both BLOCKs close: PASS Gate A and authorize Gate B.
+- Gate B must still prove active-edit structural depth/completeness using actual
+  model.active_path facts before nil PID filtering.

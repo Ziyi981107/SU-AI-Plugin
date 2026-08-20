@@ -1,0 +1,113 @@
+============================================================
+PI NEXT-STAGE HANDOFF
+Project: SU-AI-Plugin
+Date: 2026-08-19
+From: Owner / Codex workflow direction
+============================================================
+
+CURRENT STATUS
+==============
+
+V1.0 / TASK 001 implementation is functionally complete on the
+currently verified host:
+
+- Stage 6 real-host UI verification on SketchUp 2020: PASS.
+- Gate 2 (installed RBZ on SketchUp 2020): PASS.
+- RBZ packaging/root-loader BLOCK-022 and BLOCK-023: CLOSED by
+  CodeX Review 024.
+- Candidate archive: dist/SU-AI-Plugin.rbz.
+- Automated evidence at the last package recheck: 286/286 PASS and
+  git diff --check clean.
+- Gate 1 (real SketchUp 2017 minimum-host verification) is PENDING
+  solely because the Owner does not currently have SU2017.
+
+This is NOT a formal V1.0 release verdict yet. SU2017 verification
+remains mandatory before a release claiming SU2017 support.
+
+FROZEN RELEASE-CANDIDATE BOUNDARY
+=================================
+
+1. Preserve the current Gate-2-passed RBZ, its commit history, and
+   Owner evidence as the V1.0 candidate baseline.
+2. Do not silently alter that baseline or represent it as released.
+3. New feature work may continue, but it is a NEXT-STAGE / V1.1
+   stream. Do not claim the old Gate 2 evidence proves a newly changed
+   RBZ.
+4. If a future change is included in the same release artifact, both
+   Gate 2 and Gate 1 must be repeated on that new artifact.
+
+WHAT TO DO NOW
+==============
+
+1. Read the active task contract, current project state, and Git
+   history. Identify the next explicitly scoped, unfinished item.
+2. Continue only clearly specified next-stage work. Do not invent a
+   new product feature or change compatibility/release promises.
+3. Make normal implementation decisions yourself; implement and test
+   coherent milestones; commit stable checkpoints.
+4. Keep the V1.0 candidate separable from new work (a clear branch,
+   tag, or documented baseline is acceptable; choose the ordinary
+   Git mechanics yourself).
+5. If the next feature scope is not actually defined in project
+   materials, do not fabricate it. Produce one concise Owner-facing
+   scope/options note and wait for an explicit feature direction.
+
+REVIEW AND DECISION ROUTING
+===========================
+
+Use the least expensive appropriate reviewer:
+
+- Ordinary product/priority/UX decisions, wording, routine tradeoffs,
+  planning discussion, or questions that do NOT require direct code
+  inspection: default to ChatGPT.
+- Routine coding details: Pi owns the decision; self-test and commit.
+- Codex is the default technical reviewer when direct source/Git/diff
+  review is genuinely needed, especially for a meaningful coherent
+  stage, high-risk architecture/data/state/persistence/security issue,
+  real-host/runtime failure, package/release issue, or final release
+  review.
+
+CODEx REVIEW CADENCE (STRICT)
+=============================
+
+Do NOT submit tiny edit packets, partial packets, progress pings, or
+incremental commits for Codex review. Pi must make ordinary technical
+choices independently.
+
+Ask Codex only:
+
+- after one meaningful, independently testable stage;
+- for a concrete high-risk blocker that Pi cannot safely resolve;
+- to recheck a previously reported BLOCK after one complete fix;
+- for final release review after required Owner evidence is complete.
+
+Before a Codex review, create ONE complete Review packet with:
+
+- purpose and exact review question;
+- base/head commit(s) and changed files;
+- tests actually run and concise results;
+- relevant real-host evidence or exact failure logs;
+- any remaining known risk;
+- no request to reopen previously passed unchanged scope.
+
+Do not write into Prompt/. Pi writes Review/ packets. Codex writes
+Prompt/ decisions and reviews.
+
+ESCALATE IMMEDIATELY TO CODEX (NO WAITING FOR A MILESTONE) ONLY FOR:
+
+- data/model mutation, corruption, undo/recovery uncertainty;
+- security/permissions/secrets issue;
+- package/install/target-host startup failure;
+- a broken compatibility or release contract;
+- an architectural issue that materially changes product scope or
+  cannot be safely resolved by local implementation/testing.
+
+OWNER ACTION OUTSIDE DEVELOPMENT
+================================
+
+When SU2017 becomes available, the Owner will run Gate 1 against the
+frozen V1.0 candidate using the existing real-host checklist. Until
+then, do not block next-stage development on SU2017 and do not treat
+Gate 1 as passed.
+
+END

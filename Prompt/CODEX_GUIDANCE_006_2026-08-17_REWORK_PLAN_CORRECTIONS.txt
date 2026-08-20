@@ -1,0 +1,84 @@
+============================================================
+CODEX GUIDANCE 006 — REVIEW 005 REWORK PLAN CORRECTIONS
+Project: D:\Projects\SU-AI-Plugin
+Date: 2026-08-17
+Source reviewed: Review/CODEX_REVIEW_005_BLOCK_REWORK_PLAN.md
+============================================================
+
+STATUS:
+PLAN ACCEPTED WITH 3 REQUIRED CORRECTIONS
+
+This is not another Gate Review. Continue the planned correction pass, but
+apply the following corrections before implementation. All other plan items
+remain valid.
+
+1. VERSION API — DO NOT TREAT version_number AS CALENDAR YEAR
+
+- Sketchup.version returns a dotted String whose leading major for SU2017 is
+  17, not 2017.
+- Sketchup.version_number is an encoded comparison integer (for example the
+  SU2017 family uses values around 1700000000), not the literal year 2017.
+- Therefore a fake returning version_number = 2017 is not faithful and
+  `product_year >= 2017` must not be based directly on version_number.
+
+Required implementation:
+- Keep raw Sketchup.version for diagnostics.
+- For the locked minimum baseline, compare the major version explicitly:
+  Sketchup.version.to_i >= 17.
+- Prefer feature capability checks for actual features.
+- If a calendar display year is genuinely needed, derive it explicitly from
+  the major for the supported 2017+ range (for example 2000 + major), name it
+  as display metadata, and test realistic values such as "17.2.x" and
+  "24.0.x".
+- Owner checklist should expect major_version >= 17, not version >= 2017.
+
+Official reference:
+https://ruby.sketchup.com/Sketchup.html
+
+2. ACTIVE EDIT CONTEXT — USE edit_transform AND THE REAL active_path TYPE
+
+- Model#active_path returns an Array of Group/ComponentInstance entities (or
+  nil), not a PID path String.
+- Model#instance_path_from_pid_path expects a dot-delimited PID String.
+- Do not call instance_path_from_pid_path(active_path).
+
+Required implementation:
+- Seed world-coordinate traversal from model.edit_transform when analyzing
+  model.selection/model.active_entities inside an open edit context.
+- Seed the identity PID prefix from safe_persistent_id values of
+  model.active_path entities.
+- For a complete resolvable leaf path, build/validate the entity chain using
+  Sketchup::InstancePath.new(active_path + walked_containers + [leaf_edge])
+  where appropriate, then serialize InstancePath#persistent_id_path.
+- Resolution test must pass the serialized PID String to
+  model.instance_path_from_pid_path.
+- Keep the pure-Ruby FakeSU interface injectable, but make its types match the
+  real API contract above.
+
+Official references:
+https://ruby.sketchup.com/Sketchup/Model.html
+https://ruby.sketchup.com/Sketchup/InstancePath.html
+
+3. VERTEX DEDUP — SINGLE QUANTIZED BUCKET IS NOT SUFFICIENT
+
+A hash keyed only by one quantized bucket can miss two points within epsilon
+when they fall on opposite sides of a bucket boundary.
+
+Required implementation:
+- Prefer reusing GeometrySnapshot#vertex_records / the existing VertexIndex,
+  which already searches neighboring cells.
+- If a new spatial hash is retained, search the required neighboring buckets
+  and confirm actual coordinate distance within configured epsilon.
+- Add an explicit boundary regression: two points less than epsilon apart but
+  in adjacent buckets must merge.
+- Keep the 5000-Edge Preflight performance test.
+
+EXECUTION:
+
+Proceed directly with the corrected plan. Do not request Owner approval for
+ordinary implementation details. When complete, write the pass-2 evidence
+packet to Review/ and wait for Codex BLOCK recheck. Do not modify Prompt/.
+
+============================================================
+END
+============================================================

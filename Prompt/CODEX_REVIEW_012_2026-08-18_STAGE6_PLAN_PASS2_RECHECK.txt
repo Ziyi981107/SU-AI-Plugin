@@ -1,0 +1,176 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+PRE-BUILD / BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: aeced98 (no Stage 6 implementation exists yet)
+- prior verdict: Prompt/CODEX_REVIEW_011_2026-08-18_STAGE6_PLAN_RECHECK.txt
+- plan: Review/STAGE_6_PLAN_REVISED_2026_08_18_PASS2.md
+- verification draft: Review/OWNER_VERIFICATION_STAGE_6.txt
+- implementation truth checked: core/source_reference.rb, extension/preflight_runner.rb,
+  compatibility/su_capability.rb, the four existing analyzer contracts, Tolerance defaults
+- evidence: working tree contains plans/checklists only; no Gate A code to review
+
+SUMMARY:
+- S6-PLAN-BLOCK-003 (pure-core/host boundary): CLOSED.
+- S6-PLAN-BLOCK-001 (source identity and locator contract): STILL OPEN, narrowly.
+- The aligned SourceToken array is a correct improvement, but its independent nesting/
+  path-completeness facts are still missing.
+- OWNER_VERIFICATION_STAGE_6.txt is not yet a reliable executable checklist; it must be
+  corrected before Gate B/Owner dispatch.
+- Do NOT begin Gate A implementation yet.
+
+BLOCKS:
+
+1. [S6-PLAN-BLOCK-001] Empty/partial PID paths still lose occurrence identity
+
+   Location:
+   - STAGE_6_PLAN_REVISED_2026_08_18_PASS2.md §3.2, §3.9, §6.3
+   - §3.9 currently sets:
+       nested = pid_path.is_a?(Array) && pid_path.size > 1
+   - core/source_reference.rb currently carries persistent_id_path and display
+     instance_path, but no independent structural-depth/path-completeness fact.
+
+   Problem:
+   The plan says an empty PID path can be either empty-root or empty-nested, but the
+   proposed enricher derives nested only from PID-path length. Therefore every empty
+   path becomes nested=false and the empty-nested branch is unreachable. A nested
+   source whose container PID is unavailable can also have a partial path such as
+   [leaf_pid]; the plan would misclassify it as a complete root-leaf path and may
+   resolve/select the wrong object or occurrence.
+
+   This is not theoretical: the existing traversal deliberately skips nil PIDs while
+   building the path (`new_pid_path = ...`), so path length does not prove structural
+   depth or completeness. The current SourceReference comment also says empty means
+   root-level, which contradicts both the traversal and the revised plan's meaning
+   “PID capability/data missing”.
+
+   Why it matters:
+   Shared ComponentDefinitions require occurrence identity. A partial path must never
+   silently degrade into a root entity lookup. That can select/zoom the wrong source,
+   violating the core Locate contract.
+
+   Minimum acceptable fix:
+   A. Carry structural identity independently of PID availability. The snapshot-side
+      SourceReference/record must expose, at minimum:
+        - nested (derived from actual container/edit-context ancestry, not PID count)
+        - pid_path_complete (or equivalent explicit fact)
+        - persistent_id_path
+        - entity_id
+      An explicit structural_depth is also acceptable and makes completeness auditable.
+
+   B. Define completeness at snapshot construction, where the traversal actually knows
+      the container chain. Do not try to reconstruct it later from pid_path.size.
+      Active edit context must be included in that structural fact.
+
+   C. Locator policy must be:
+        - complete root path -> resolve path, select leaf
+        - complete nested path -> resolve path, select root occurrence
+        - missing/incomplete root path + entity_id -> model.find_entity_by_id fallback
+        - missing/incomplete nested path -> non-locatable
+      Any incomplete non-empty path is non-locatable unless a complete, occurrence-safe
+      resolution contract is explicitly provided.
+
+   D. Add tests for all five cases:
+        1) complete root [leaf]
+        2) complete nested [container, leaf]
+        3) root missing leaf PID [] + entity_id fallback
+        4) nested with all PIDs missing []
+        5) nested with only leaf PID [leaf] / missing container PID
+      Cases 4 and 5 must never use entityID fallback and must never be treated as root.
+
+   E. Make the root fallback callable contract concrete. The current
+      compatibility/su_capability.rb does not define `find_entity_by_id`, while the plan
+      calls `SUCapability.find_entity_by_id`. Either add a safe capability wrapper and
+      list it in the modified-file contract, or call `model.find_entity_by_id` safely in
+      extension/issue_locator.rb. Do not leave a planned call to a nonexistent method.
+
+   Recheck evidence needed:
+   - revised §3.2/§3.9/§6.3 with independent nesting + completeness
+   - updated SourceReference/snapshot contract in the file inventory
+   - the five exact policy tests above
+   - explicit safe find_entity_by_id ownership
+
+2. [S6-VERIFY-BLOCK-001] Owner checklist cannot currently produce credible Gate B evidence
+
+   Location:
+   - Review/OWNER_VERIFICATION_STAGE_6.txt: fixture setup, J.3, K.8, L, M, N
+
+   Problem:
+   Several commands/expectations contradict the current code or SketchUp runtime shape:
+
+   - The duplicate fixture offsets edges by 0.001 inch, but the locked duplicate
+     tolerance is 0.0001 inch. It is expected to produce zero duplicate candidates.
+   - One duplicate pair produces ONE Issue row containing two SourceTokens, not TWO rows.
+   - A single dangling edge has two degree-1 vertices, so OpenEndpointDetector produces
+     TWO open-endpoint Issues, not one.
+   - `active_path` is nil at model root; direct `active_path.length` raises.
+   - The optional stale-source snippet assigns `.find` to `edges` (one Entity), then calls
+     `edges.first`; it therefore does not erase the intended source. Closing/reopening the
+     dialog rebuilds the registry and does not verify the promised stale-row behavior.
+   - M expects the fingerprint to match after deliberately erasing a group/edge, which
+     cannot be true against the pre-erasure fingerprint. The explanation does not define
+     a usable comparison pair.
+   - J.3 relies on UI::Menu introspection (`submenus`, `name`, `items`) that is not part of
+     the normal public menu workflow. Idempotency should be proven by adapter tests and a
+     visible one-item smoke check, not an unsupported console query.
+   - N's fingerprint counts only root `m.entities` geometry, so mutations inside Groups/
+     ComponentDefinitions can escape detection. It also includes the optional destructive
+     stale-source test inside a flow expected to have byte-identical before/after counts.
+
+   Why it matters:
+   This checklist is the planned real-host evidence for no source mutation, Locate, stale
+   recovery, and menu lifecycle. As written it can falsely reject correct code and falsely
+   pass dangerous behavior. Release evidence must be reproducible.
+
+   Minimum acceptable fix before Gate B dispatch:
+   A. Build a reliable duplicate fixture using two distinct containers/occurrences whose
+      edges are world-coincident; do not depend on a 0.001 offset. Expect one Issue row,
+      two SourceTokens, and two locate targets.
+   B. Expect two open-endpoint Issues for one isolated edge, or construct a fixture whose
+      topology truly yields the intended count.
+   C. Use a nil-safe active-path helper everywhere.
+   D. Make stale-source verification mandatory and keep the same dialog open. Retain a
+      direct reference to the exact nested source Edge before opening the dialog, erase
+      that Edge from Ruby Console while the modeless dialog remains open, then click the
+      stale row. Compare fingerprints immediately before and after the Locate click—not
+      before and after the deliberate erase.
+   E. Remove unsupported menu introspection. Keep automated FakeUI idempotency proof plus
+      a real-host visual confirmation that only one command appears after reload.
+   F. Separate N (non-mutating end-to-end flow) from M (intentional erase). N must not run
+      the destructive stale fixture between its before/after captures. Count geometry
+      recursively across reachable Groups/ComponentDefinitions, or explicitly state and
+      supplement the root-only fingerprint so nested mutation cannot be missed.
+
+   Recheck evidence needed:
+   - corrected OWNER_VERIFICATION_STAGE_6.txt only; no SU execution is required at this
+     planning recheck
+
+NITS:
+
+- The UIIssue/SourceToken contract should state whether Ruby-side keys are Symbols or
+  Strings and identify the single conversion boundary. “JSON-safe Hash” plus symbol-key
+  pseudocode is otherwise ambiguous.
+- `AnalysisResult.freeze` alone is shallow. Either freeze/copy nested arrays and hashes or
+  narrow the claim from “immutable” to “no public setters”; add a mutation test matching
+  the chosen contract.
+- Correct the fixture description: outer_g currently adds two edges, not one.
+- Do not claim `test_no_overlay_lint.rb` “proves no model mutation”. It proves absence of a
+  finite forbidden-token set; real-host fingerprint/behavior evidence remains necessary.
+- UI toast interpolation should pass a JSON String argument consistently. The plan's
+  unresolved-path pseudocode currently JSON-encodes an Array containing one String.
+
+DEBT:
+- NONE added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE. These are engineering contract/test corrections and do not change product scope.
+
+NEXT REVIEW:
+- Recheck S6-PLAN-BLOCK-001 plus S6-VERIFY-BLOCK-001 only.
+- S6-PLAN-BLOCK-003 remains CLOSED.
+- S6-PLAN-BLOCK-002 and S6-PLAN-BLOCK-004 remain CLOSED.
+- After both blocks close: PASS TO IMPLEMENT Gate A.
+- Do not implement Gate A before that recheck.

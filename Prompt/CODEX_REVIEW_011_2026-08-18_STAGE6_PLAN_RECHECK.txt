@@ -1,0 +1,172 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+PRE-BUILD / BLOCK RECHECK
+
+SCOPE REVIEWED:
+- Review/STAGE_6_PLAN_REVISED_2026-08-18.md
+- original S6-PLAN-BLOCK-001..004 only
+- current PreflightRunner/SourceReference API shape
+- relevant official SketchUp Model/InstancePath contracts
+- no Stage 6 source code exists; source remains untouched
+
+RECHECK SUMMARY:
+- S6-PLAN-BLOCK-002 — CLOSED in the revised plan.
+  The plan now has one snapshot per command and an idempotent loader/menu
+  entrypoint.
+- S6-PLAN-BLOCK-004 — CLOSED in the revised plan.
+  set_file, ready handshake, JSON push, block callbacks, close/reopen lifecycle,
+  and test-only FakeUI placement are now defined credibly.
+- S6-PLAN-BLOCK-001 — REMAINS OPEN narrowly: source locator identity and
+  canonical type details are internally contradictory.
+- S6-PLAN-BLOCK-003 — REMAINS OPEN narrowly: SketchUp-dependent locator/unit
+  formatting are still placed in pure core.
+
+BLOCKS:
+
+1. S6-PLAN-BLOCK-001 — REMAINS OPEN: source identity loses root/missing-PID cases
+   Location:
+   - revised plan sections 3.1, 3.5, 3.8, 6.3
+
+   Problem:
+   The revised contract uses two parallel arrays:
+     source_paths: Array<Array<Integer>>
+     source_entity_ids: Array<Integer>
+
+   It then drops every empty source_path. That loses the association between a
+   source path and its entity ID and makes a missing-PID source impossible to
+   locate safely. For multi-source duplicate/gap Issues, deduping one parallel
+   array independently can also destroy positional alignment.
+
+   The root-level policy is based on a false premise. Current
+   PreflightRunner.walk_entity_world appends the Edge's own persistent_id, so a
+   normal root-level Edge path is `[edge_pid]`, not `[]`. An empty path means
+   PID capability/data is missing. SUCapability.resolve_pid_path explicitly
+   rejects an empty path, so the planned `source_path.empty? -> inst_path.leaf`
+   branch can never be reached after successful resolution.
+
+   Two other contract inconsistencies remain:
+   - section 4 says IssueNormalizer converts String severity to Symbol, while
+     UIIssue requires JSON-safe severity Strings;
+   - preflight messages are described as ASCII-sanitized, which would discard
+     valid UTF-8 text. Only control characters need sanitization.
+
+   Why it matters:
+   This is the canonical Issue -> host locator contract. If implemented as
+   written, root/missing-PID behavior is either falsely marked locatable or
+   silently discarded, and multi-source identity can become misaligned.
+
+   Minimum acceptable plan correction:
+   - Replace the parallel identity arrays with an aligned source-token list:
+
+       sources: Array<{
+         persistent_id_path: Array<Integer>,
+         entity_id: Integer or nil,
+         nested: Boolean
+       }>
+
+     Keep `source_entity_ids` as a derived serialized field only if required by
+     PI_TASK_001; do not use two independent arrays as the source of truth.
+
+   - Enrichment creates one source token per resolved EdgeRecord and dedupes
+     whole tokens, not individual fields.
+   - Normal root-level PID path `[leaf_pid]` resolves via
+     instance_path_from_pid_path and targets InstancePath#leaf.
+   - Nested non-empty PID path resolves and targets InstancePath#root.
+   - Empty PID path means missing PID capability, not root-level. For a
+     non-nested root entity only, the extension locator may try
+     model.find_entity_by_id(entity_id) when capability-supported. For a nested
+     source without a complete occurrence PID path, mark it non-locatable;
+     entityID alone cannot identify which shared component occurrence to use.
+   - `locatable` is true iff at least one complete PID path exists, or a valid
+     root-level entityID fallback is available.
+   - Deterministic issue_id must still use PID paths or canonical geometry, not
+     transient entityID.
+   - Canonical severity remains a String end-to-end in UIIssue; Symbol values
+     may exist only before normalization.
+   - Preserve valid UTF-8; strip/replace control characters only.
+
+   Recheck evidence needed:
+   - Revised UIIssue source-token table and enrichment pseudocode.
+   - Revised locator cases for `[leaf_pid]`, nested PID path, empty PID with
+     root entityID fallback, nested missing PID, and two-source Issue.
+
+2. S6-PLAN-BLOCK-003 — REMAINS OPEN: pure-core boundary still depends on SketchUp
+   Location:
+   - revised plan sections 3.6, 4.1, 6.3, 8, 10 Q5
+
+   Problem:
+   The plan puts `issue_locator.rb` in `core/`, but its algorithm accepts a
+   Sketchup::Model and calls SUCapability.resolve_pid_path. The text calls it
+   pure Ruby while simultaneously assigning host resolution to it.
+
+   The Q5 answer also creates `core/display_unit_formatter.rb` as the only
+   place that calls `Sketchup.format_length`. That directly violates the
+   locked rule that core is unit-agnostic pure Ruby and only extension code
+   may talk to SketchUp. The formatter is not consistently listed in the file
+   inventory either.
+
+   Why it matters:
+   This recreates the exact core/host coupling the project architecture is
+   designed to prevent, and makes core tests dependent on SketchUp constants.
+
+   Minimum acceptable plan correction:
+   - Move the host locator to `extension/issue_locator.rb`. It owns Model,
+     SUCapability, InstancePath, Selection targets, and entityID fallback.
+   - If a pure policy helper is useful, it may remain in core only if all host
+     resolution is injected as ordinary callables/data and no SketchUp or
+     compatibility module is referenced. This extra abstraction is optional;
+     the simpler extension locator is preferred for V1.
+   - Move unit formatting to `extension/display_unit_formatter.rb` (or fold it
+     into the extension bridge/runner). Core stores raw inch Floats only.
+   - Extension formatter calls Sketchup.format_length and returns plain String
+     display values before data crosses UIBridge.
+   - Update Gate A/B file lists and tests accordingly. Host-dependent locator
+     and display formatting belong in Gate B.
+
+   Recheck evidence needed:
+   - Corrected file inventory/module diagram and Gate ownership.
+   - Core dependency test/lint proving no `Sketchup`, `UI`, `Geom`, or
+     `compatibility/` references in new core files.
+
+NITS:
+- Runtime pseudocode calls `snapshot.edges_by_id`, which does not exist today.
+  Replace it with one explicit index built from `snapshot.edges`, or add a
+  pure read-only method only if Gate A demonstrates a real need. Do not silently
+  assume the method exists.
+- Clarify IssueRegistry behavior: per-Issue validation may raise internally,
+  but the constructor catches it, drops that Issue, and returns a valid
+  registry plus diagnostics. The public constructor must not both "raise" and
+  "continue" for the same error.
+- Ripper wording should say `Ripper.sexp` for AST walking or `Ripper.lex` for
+  token scanning; a token stream does not contain `method_add_arg` AST nodes.
+- Owner verification step M should say erase the source after analysis in the
+  same test model, not "another SU window".
+- Model Info Statistics does not credibly cover every listed collection.
+  Stage 6 checklist N should use a Ruby fingerprint for layer/material/style
+  counts in addition to geometry statistics.
+- The target of ~130 new tests is not a quality requirement. Prefer the
+  smallest risk-based suite that proves the contracts; do not create tests to
+  hit a round number.
+
+DEBT:
+- Rich nested leaf highlighting remains deferred, unchanged.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None. Remaining corrections are technical boundary/source-identity fixes.
+
+AUTHORITATIVE API NOTE:
+- Model#find_entity_by_id is documented for entityID lookup and is available
+  before the SU2017 baseline. Use it only as a capability-probed transient
+  fallback, never as deterministic issue identity:
+  https://ruby.sketchup.com/Sketchup/Model.html#find_entity_by_id-instance_method
+- Entity#entityID is not persistent between sessions:
+  https://ruby.sketchup.com/Sketchup/Entity.html#entityID-instance_method
+
+NEXT REVIEW:
+- Recheck only the revised source-token/locator contract and corrected
+  core-vs-extension file ownership.
+- Do not implement Gate A yet.
+- S6-PLAN-BLOCK-002 and S6-PLAN-BLOCK-004 remain closed unless the next edit
+  changes those sections materially.

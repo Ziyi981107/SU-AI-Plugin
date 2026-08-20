@@ -1,0 +1,98 @@
+# CodeX Review 022 — RBZ Package Structure
+
+VERDICT:
+BLOCKED FOR RELEASE CANDIDATE
+
+REVIEW MODE:
+RISK ESCALATION / RELEASE-PACKAGING REVIEW
+
+SCOPE REVIEWED:
+- dist/SU-AI-Plugin.rbz entry listing
+- scripts/build_rbz.rb
+- tests/test_rbz_smoke.rb
+- Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt
+- Official SketchUp extension packaging guidance
+
+BLOCK-022-001: RBZ has no required root registration loader
+
+Evidence:
+- The artifact contains `su_ai_plugin/su_ai_plugin.rb`, plus root-level
+  `core/` and `compatibility/` directories.
+- It does NOT contain exactly one root-level `.rb` registration loader.
+- The current build script explicitly asserts the incorrect layout.
+
+Why this blocks release:
+- SketchUp's official extension structure requires exactly two items in
+  Plugins after installation: a root `.rb` registration loader and a
+  same-named support folder. The root loader constructs and registers a
+  `SketchupExtension`, whose load path points to the extension's main file.
+- The current package places the only loader inside its support folder and
+  spills `core/` and `compatibility/` into the shared Plugins root. That
+  breaks the normal Extension Manager registration/enable/disable/uninstall
+  contract and risks collisions with other extensions.
+- Fake extraction/parse tests cannot prove Extension Manager registration.
+- Therefore Gate 2 is NOT ready for Owner testing, and Gate 1 SU2017 must
+  not be requested yet.
+
+MINIMUM ACCEPTABLE FIX:
+1. Produce this standard RBZ shape (names may be adjusted consistently):
+
+   su_ai_plugin.rb                 # ONLY root .rb; registration-only
+   su_ai_plugin/                   # same-base-name support folder
+     main.rb                        # actual boot/load implementation
+     core/...
+     compatibility/...
+     html/...
+     loader.rb ...
+
+2. The root `su_ai_plugin.rb` must:
+   - require `sketchup.rb` and `extensions.rb` as appropriate;
+   - define a uniquely namespaced `SketchupExtension` object with metadata;
+   - call `Sketchup.register_extension(extension, true)`;
+   - load no operational plugin code itself.
+
+3. Move/adapt `require_relative` paths so all runtime code lives under the
+   support folder. Do NOT leave `core/` or `compatibility/` as root siblings.
+
+4. Update the RBZ smoke tests to require:
+   - exactly one root `.rb` loader;
+   - exactly one same-named support folder;
+   - root loader registration metadata / load target;
+   - no root `core/` or `compatibility/` directories;
+   - installed-main boot through the registered extension path.
+
+5. Correct the Owner RBZ checklist:
+   - do NOT tell Owner to `load D:/Projects/.../extension/su_ai_plugin.rb`
+     after installing; that tests the dev tree and bypasses the installed RBZ.
+   - verification must restart/use the installed extension, confirm its
+     Extension Manager state, one menu item, and execute K..N on that installed
+     build.
+
+6. Rebuild the artifact, run the full suite, and submit one complete
+   BLOCK recheck packet with the new archive listing and the corrected
+   Owner install checklist.
+
+AUTHORITATIVE REFERENCE:
+https://developer.sketchup.com/article-creating-a-sketchup-extension
+
+REVIEW CADENCE:
+- Treat BLOCK-022-001 as ONE coherent packaging rework, not a sequence of
+  micro-reviews.
+- Pi owns ordinary implementation decisions: loader/module decomposition,
+  archive writer details, test-fixture structure, path adjustments, and
+  documentation wording. Make those decisions directly and checkpoint them
+  locally; do not ask Owner or CodeX to choose among routine technical options.
+- Do NOT write Review packets for partial edits, individual failed local tests,
+  interim archive listings, or incremental commits.
+- Submit exactly ONE consolidated BLOCK recheck packet only when all of the
+  following are complete: standard package layout, corrected smoke tests,
+  rebuilt artifact, corrected Owner checklist, full test suite, diff check,
+  and concise evidence of the final archive listing.
+- Escalate immediately only for a high-risk uncertainty that materially changes
+  product behavior, source-model safety, the locked SU2017+ baseline, or makes
+  the standard Extension Manager packaging contract impossible to meet.
+
+NEXT REVIEW:
+- Recheck BLOCK-022-001 only after the complete corrected package evidence.
+- Owner Gate 2 (installed RBZ on SU2020) comes after this recheck passes.
+- Owner Gate 1 (SU2017) comes only after Gate 2 passes.

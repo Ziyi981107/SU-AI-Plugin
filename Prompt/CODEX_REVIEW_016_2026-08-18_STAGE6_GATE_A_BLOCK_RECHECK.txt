@@ -1,0 +1,75 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: f68f4bd..8ddacda
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_gate_a_recheck.txt
+- files: structural_facts, issue_id_assigner, issue_enricher, issue_registry and directly related tests
+- tests/evidence: full suite independently rerun: 171/171 PASS; git diff --check PASS
+- adversarial reproduction: same Edge/PID, two open-endpoint locations, reversed input
+
+RESULT:
+- S6-GATE-A-BLOCK-001: CLOSED.
+  structural_depth now excludes the leaf; root depth is 0. The root locator integration
+  cases are correct, and the active-edit requirements remain explicitly assigned to Gate B.
+- S6-GATE-A-BLOCK-002: NOT CLOSED.
+  entity_id/object_id fallbacks are removed, but counter assignment is still not stable for
+  distinct logical Issues that share the same canonical source keys.
+
+BLOCKS:
+1. [S6-GATE-A-BLOCK-002-R2] Equal source keys still make logical issue IDs input-order dependent
+
+   Location:
+   - core/issue_enricher.rb, enrich_all sort key
+   - core/issue_id_assigner.rb, canonical_source_keys
+   - tests/test_issue_enricher.rb permutation tests
+
+   Problem:
+   enrich_all sorts only by canonical_source_keys. When a source has a PID, that key contains
+   only the PID path and ignores issue location/semantics. Multiple Issues of the same type can
+   legitimately share one source. The concrete existing case is the two open endpoints of one
+   Edge: both have the same issue_type and PID source key, but different locations.
+
+   Independent reproduction on 8ddacda:
+     input [location 0, location 10]  -> location 10 gets |1; location 0 gets |2
+     input [location 10, location 0]  -> location 0 gets |1; location 10 gets |2
+
+   Thus the same logical endpoint receives a different issue_id when analyzer order changes.
+   The new permutation tests miss this because they use three different PID paths and compare
+   only the sorted set of IDs, not the logical-Issue-to-ID mapping.
+
+   Why it matters:
+   issue_id is the UI callback/lookup identity. The locked contract requires the same logical
+   Issue to retain the same ID across equivalent runs; a stable ID set is insufficient if IDs
+   are reassigned to different Issues.
+
+   Minimum acceptable fix:
+   - Sort each type bucket by a complete deterministic issue key, with canonical source keys
+     first and deterministic issue-level discriminators before the counter. At minimum include
+     quantized location and sorted edge_ids; use normalized deterministic semantic data only if
+     still needed to distinguish legitimate equal-source/equal-location Issues.
+   - Do not use entity_id, object_id, traversal order, or input position.
+   - Keep counter as the final tie-breaker only after the complete stable key.
+   - Add an adversarial test with two open_endpoint Issues on the same Edge/PID at opposite
+     endpoint locations. Reverse/shuffle the input and compare location -> issue_id mappings.
+   - Retain the no-PID/no-location tests and rerun the full suite.
+
+   Recheck evidence needed:
+   - focused diff, the same-source/different-location mapping test, and full-suite result
+
+NITS:
+- No new NIT requires action in this recheck.
+
+DEBT:
+- NONE added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- Recheck S6-GATE-A-BLOCK-002-R2 only after one consolidated fix.
+- Do not reopen BLOCK-001 or other passed Gate A scope.
+- Gate B is authorized only after this deterministic identity contract closes.

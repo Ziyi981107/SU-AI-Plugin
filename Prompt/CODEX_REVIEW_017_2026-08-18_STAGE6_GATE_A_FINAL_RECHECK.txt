@@ -1,0 +1,57 @@
+VERDICT:
+PASS
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: 8ddacda..7110229
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_gate_a_recheck2.txt
+- files: core/issue_enricher.rb and tests/test_issue_enricher.rb
+- tests/evidence: full suite independently rerun: 173/173 PASS; git show --check PASS
+- adversarial evidence: same Edge/PID with two endpoint locations remains location->issue_id stable after input reversal
+
+BLOCKS:
+- NONE.
+
+RESULT:
+- S6-GATE-A-BLOCK-002-R2: CLOSED.
+- The stable counter key now includes canonical source keys, quantized location and sorted
+  edge_ids before the counter. It does not use entity_id, object_id or input position.
+- The previously failing same-edge/two-endpoint case now maps location 0 -> |1 and location
+  10 -> |2 in both forward and reversed input.
+- Gate A is fully CLOSED. Gate B host-side integration is authorized.
+
+NITS:
+- NONE requiring action.
+
+DEBT:
+- NONE added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE. Do not ask the Product Owner to decide routine engineering details.
+
+REVIEW CADENCE — OWNER-LOCKED DIRECTIVE:
+- Effective immediately, formal Codex review is milestone-based, not edit-based.
+- Do NOT submit review packets for individual files, routine commits, internal substeps,
+  ordinary implementation choices, test additions, NITs or low-risk fixes.
+- Pi Agent owns routine technical decisions. When the locked contract already determines the
+  outcome, choose the safest simple implementation, test it, record material assumptions in
+  the eventual milestone packet, and continue without asking the Product Owner or Codex.
+- Batch related work and self-review locally. NIT/DEBT must not create a review loop.
+- The next planned formal review is only after Gate B is complete as one coherent,
+  independently testable host-side integration milestone: all Gate B files implemented,
+  required fake-host tests and lint/full suite passing, and the complete evidence packet ready.
+- A mid-milestone escalation is allowed only for a concrete high-risk issue that remains
+  unresolved after reasonable investigation and materially concerns source-model mutation or
+  corruption, unsafe irreversible behavior, recovery/undo, security/secrets/permissions,
+  a locked architecture/contract conflict, or a target-host runtime blocker.
+- For such an escalation, send one narrow packet containing the exact risk, evidence, options,
+  and recommended decision. Continue all independent work that is not blocked.
+- Ordinary uncertainty is not an escalation. Pi Agent decides it autonomously and proceeds.
+- Passed Gate A scope stays closed unless later code changes it or concrete runtime evidence
+  invalidates a passed assumption.
+
+NEXT REVIEW:
+- Review Gate B only after the complete Gate B milestone and its consolidated evidence packet.
+- After Gate B passes, proceed to Owner Verification Stage 6 as already planned.

@@ -1,0 +1,116 @@
+# BLOCK RECHECK REQUEST — Gate A Stage 6 (BLOCK-002 v2 — final narrow fix)
+
+Created:    2026-08-18
+Stage:      6 Gate A — BLOCK-002 v2 final narrow fix
+Source:     Prompt/CODEX_REVIEW_016_2026-08-18_STAGE6_GATE_A_BLOCK_RECHECK.txt
+Fix commit: 7110229 fix(stage6): Gate A BLOCK-002 v2 — location+edge_ids discriminators in stable sort key
+Tests:      173/173 PASS (was 171; +2 new from this commit; 0 regressions)
+
+PURPOSE
+=======
+
+Per CodeX Review 016 directive:
+  "Recheck S6-GATE-A-BLOCK-002-R2 only after one consolidated fix."
+  "Do not reopen BLOCK-001 or other passed Gate A scope."
+  "Gate B is authorized only after this deterministic identity contract
+   closes."
+
+This recheck packet addresses S6-GATE-A-BLOCK-002-R2 only. BLOCK-001
+remains closed. All 5 NITs from Round 015 were absorbed in the previous
+commit (8ddacda) and do not need separate evidence.
+
+ROOT CAUSE OF BLOCK-002-R2
+=========================
+
+Counter assignment in `enrich_all` sorted only by canonical_source_keys.
+When two logical Issues of the same type shared the same source keys
+(e.g., two open endpoints of one Edge with the same PID path) but
+differed in location, the counter was assigned in input order and
+was therefore unstable.
+
+CodeX reproduction (verbatim):
+  input [location 0, location 10]  -> location 10 gets |1; location 0 gets |2
+  input [location 10, location 0]  -> location 0 gets |1; location 10 gets |2
+
+FIX
+===
+
+core/issue_enricher.rb: enrich_all now sorts each type bucket by a
+COMPLETE deterministic issue key composed of:
+
+  1. canonical source keys (PID paths or geometry fallback)
+  2. quantized location (or "loc:none" when absent)
+  3. sorted edge_ids (or "edges:" empty when absent)
+
+Counter remains the FINAL tie-breaker only after the complete stable
+key. entity_id, object_id, traversal order, and input position are
+NOT used in the sort key.
+
+New private method:
+  stable_sort_key(issue, coord_epsilon: 1.0e-6) -> String
+
+The issue_id format itself is unchanged: "{type}|{source_keys}|{counter}".
+What changed is the COUNTER ASSIGNMENT; once the sort is stable, the
+counter is stable, and therefore the issue_id is stable.
+
+Files in this fix:
+  core/issue_enricher.rb          (M, +stable_sort_key)
+  tests/test_issue_enricher.rb    (M, +2 adversarial tests)
+
+NEW ADVERSARIAL TESTS (CodeX Round 016 directive)
+================================================
+
+test 'issue_enricher.enrich_all: same-PID + different-location get stable counters'
+  - Reproduces CodeX's exact case: two open endpoints of one Edge.
+  - forward = [loc 0, loc 10]
+  - reversed = [loc 10, loc 0]
+  - shuffled = [loc 10, loc 0, loc 5, loc 5]  (duplicates with same loc)
+  - Asserts: the same logical location gets the same issue_id across all
+    three input orderings. And distinct locations get distinct counters.
+
+test 'issue_enricher.enrich_all: 3 distinct locations -> 3 distinct counters'
+  - Verifies the discriminator produces distinct stable counters for
+    3 different locations on the same PID path + same edge_id.
+
+REGRESSION CHECK
+================
+
+Test pass count: 173/173 (was 171/171 after previous fix)
+  + 2 new adversarial tests
+  - 0 modifications to existing tests
+  - 0 regressions
+
+Full suite output (verbatim):
+  $ .vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+  ... 173 tests: 173 pass, 0 fail, 0 error ...
+
+NEXT REVIEW (CodeX Gate A)
+========================
+
+CodeX reviews:
+  1. stable_sort_key includes source_keys + location + edge_ids
+  2. enrich_all sorts by stable_sort_key before counter
+  3. Adversarial test reproduces CodeX's exact bug and passes
+  4. 173/173 tests pass; 0 regressions
+
+After this recheck is APPROVED:
+  - Gate A is fully CLOSED
+  - Gate B is authorized (Cicada 2026-08-18 section 四)
+  - Gate B must additionally prove:
+    1. structural_depth from REAL model.active_path entity count
+       (NOT filtered PID array length)
+    2. active-path completeness computed BEFORE nil PID filtering
+    3. missing any active-path container PID -> fail closed
+    4. incomplete nested source NEVER uses entityID fallback
+    5. two tests: complete active path + active path with one missing PID
+
+LONG-TERM-AUTONOMY BOUNDARY
+===========================
+
+This rework:
+  - Stays within locked R003-R005 Stage 6 scope
+  - Does NOT change product decisions
+  - Does NOT push / publish / release
+
+AGENT AWAITS CODEX ROUND 017 GATE A FINAL VERDICT
+================================================

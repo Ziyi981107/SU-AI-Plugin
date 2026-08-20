@@ -1,0 +1,63 @@
+VERDICT:
+PASS WITH NITS
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: 3117a1f..fc983c0
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_gate_b_v2.md
+- focused scope: S6-GATE-B-BLOCK-002-R2 and S6-GATE-B-BLOCK-006-R2 only
+- tests/evidence: full suite independently rerun: 247/247 PASS; standalone Node DOM
+  render test PASS; git diff --check PASS
+
+BLOCKS:
+- NONE.
+
+RESULT:
+- S6-GATE-B-BLOCK-002-R2: CLOSED for production code.
+  The development entrypoint boots dependencies, registers once, marks file_loaded only after
+  successful boot, and the faithful double-load/command test reaches the dialog boundary.
+- S6-GATE-B-BLOCK-006-R2: CLOSED.
+  The executed DOM test proves scalar counts plus all seven issue-type counts render in locked
+  order, zero counts are visible, selection is not duplicated, and `[object Object]` is absent.
+- All Gate A and Gate B implementation BLOCKs are now CLOSED.
+- This is not a release verdict and does not replace real SketchUp Owner Verification.
+
+NITS — FIX BEFORE DISPATCHING OWNER CHECKLIST, NO CODEX RECHECK REQUIRED:
+
+1. Review/OWNER_VERIFICATION_STAGE_6.txt J.3 uses `file_unloaded`, but SketchUp's documented
+   top-level load-guard API provides file_loaded? and file_loaded, not file_unloaded.
+   The real-host command would raise instead of proving idempotency.
+
+   Mechanical correction:
+   - Remove lines instructing Owner to call file_unloaded and reload for visual confirmation.
+   - State that idempotency is covered by the faithful automated double-load test.
+   - Owner should execute the supported development entrypoint once in J.1.
+
+2. The checklist still lists tests/_fake_instance_path.rb and requires loading
+   tests/test_no_overlay_lint.rb in N.6, but neither file exists in fc983c0.
+
+   Mechanical correction:
+   - Remove the nonexistent _fake_instance_path inventory entry.
+   - Preferred: add the already-planned no-overlay lint test, include it in run_all, and keep N.6
+     only if the exact command is runnable in SketchUp's Ruby Console.
+   - Otherwise remove every nonexistent-test claim and make N rely on the existing recursive
+     fingerprint plus direct real-host observation. Do not instruct Owner to load a missing file.
+
+   These are checklist/evidence hygiene corrections, not another architecture or code review.
+   If the diff is limited to the items above and the full suite remains green, Pi may proceed
+   directly to Owner Verification without creating a new Review packet.
+
+DEBT:
+- Packaging/RBZ and SU2017 minimum-host verification remain later release gates.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- NONE before Owner Verification Stage 6.
+- Pi first applies the two narrow checklist NIT corrections autonomously, reruns the full suite,
+  then gives Owner the corrected J..N checklist for SketchUp 2020.
+- After Owner evidence returns, review only if the real host exposes a failure or when the next
+  planned major-stage/final-release gate is reached.

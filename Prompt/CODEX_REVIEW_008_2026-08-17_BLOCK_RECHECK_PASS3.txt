@@ -1,0 +1,113 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: 09927ad..d30507a
+- implementation commit: 88ad609
+- review packet: Review/BLOCK_RECHECK_REQUEST_2026-08-17_pass3.md
+- owner evidence: Review/OWNER_VERIFICATION_STAGE_2.txt (17:08 update)
+- focused scope only: S2-BLOCK-002, S2-BLOCK-004, S2-BLOCK-005,
+  S2-BLOCK-006 version subpart
+- tests/evidence: isolated Ruby suite plus targeted API-shaped probes
+
+TEST EVIDENCE:
+- Existing suite rerun: 71 tests, 71 pass, 0 fail, 0 error.
+- Targeted probes:
+  - adjacent-bucket epsilon points: merged to 1 — PASS
+  - version '24.0.0': diagnostic='24.0.0', major=24 — PASS
+  - Array active_path + Model edit_transform: PID prefix [10] — PASS
+  - Array [10,20] serialized for String-only resolver: '10.20' — PASS
+  - Owner checklist H selection [group, erased_edge, valid_edge]:
+    produced 2 EdgeRecords for the same valid edge — FAIL
+
+BLOCKS:
+
+1. S2-BLOCK-005 — REMAINS OPEN (checklist input overlaps traversal)
+   Location:
+   - Review/OWNER_VERIFICATION_STAGE_2.txt:227-247, especially the
+     selection_array construction at lines 233-235
+
+   Problem:
+   The checklist passes all three of these as top-level selection items:
+
+     [inv_group, e1_invalid, e2_valid]
+
+   After e1 is erased, walking inv_group already discovers e2. The runner
+   then walks the explicitly supplied e2 again. Therefore the checklist's
+   expected result of exactly one EdgeRecord is false; the current adapter
+   produces two records for e2.
+
+   This was reproduced with the pass-3 FakeSU objects:
+
+     edge_count = 2
+     persistent IDs = [2, 2]
+
+   The current 71-test suite does not exercise the exact selection shape
+   written in the Owner checklist, so it does not detect this mismatch.
+
+   Why it matters:
+   The required real-host validation cannot be judged against an incorrect
+   expected count. It could produce a false failure and send the project
+   into unnecessary production-code rework.
+
+   Minimum acceptable fix:
+   - Change only the checklist/test input to avoid overlapping traversal.
+     Recommended shape after e1.erase!:
+
+       selection_array = [inv_group, e1]
+
+     inv_group supplies the one remaining valid e2; the explicit retained
+     e1 supplies the invalid reference. Expected EdgeRecord count is then 1.
+
+     Alternatively use [e1, e2] without inv_group.
+
+   - Add one automated test using the exact corrected checklist shape and
+     assert:
+       valid e2 contributes exactly one EdgeRecord;
+       invalid e1 contributes zero;
+       no exception escapes.
+
+   - Do not change production traversal merely to close this checklist
+     error. Parent-plus-descendant overlap deduplication is outside this
+     BLOCK unless the product contract explicitly requires arbitrary
+     overlapping input arrays.
+
+   Recheck evidence needed:
+   - Corrected OWNER_VERIFICATION_STAGE_2.txt H snippet.
+   - Matching automated regression passes.
+   - Full suite remains passing.
+
+NITS:
+- The pass-3 request says the test delta is +6, then lists 4 version + 1
+  boundary + 3 adapter tests, which totals 8. This is documentation-only;
+  the actual authoritative result is 71/71 PASS.
+- sketchup_version can simplify `v.is_a?(Integer) ? v.to_s : v.to_s` to
+  `v.to_s`; no behavior change is required now.
+
+DEBT:
+- None added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None.
+
+CLOSED IN THIS RECHECK:
+- S2-BLOCK-002 — CLOSED.
+  Real API-shaped active_path/edit_transform, entityID fallback policy,
+  dot-delimited resolver input, nested transforms, shared definitions, and
+  PID resolution evidence pass.
+- S2-BLOCK-004 — CLOSED.
+  Adjacent-bucket search fixes the boundary error and the 5,000-edge
+  performance test remains passing.
+- S2-BLOCK-006 version subpart — CLOSED.
+  Dotted diagnostic version is preserved; major baseline is derived without
+  calendar-year/version_number inference.
+- S2-BLOCK-001, S2-BLOCK-003, and S2-BLOCK-006 HtmlDialog remain CLOSED.
+
+NEXT REVIEW:
+- Recheck S2-BLOCK-005 checklist H correction and its one matching test only.
+- Do not reopen code/API areas closed above without new evidence.
+- Owner real-SketchUp verification remains paused until this local checklist
+  correction passes.

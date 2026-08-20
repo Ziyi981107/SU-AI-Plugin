@@ -1,0 +1,109 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: e755d8e..3117a1f
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_gate_b.md
+- original scope only: S6-GATE-B-BLOCK-001..006 fixes and direct tests
+- tests/evidence: full suite independently rerun: 244/244 PASS, 0 fail, 0 error
+- diff hygiene: production diff is clean; git diff --check flags the packet's bare `=======`
+  heading as a conflict-marker pattern
+
+RESULT:
+- S6-GATE-B-BLOCK-001: CLOSED. Empty active path is neutral-complete; adapter integration
+  tests cover root, nested and missing-active-PID cases.
+- S6-GATE-B-BLOCK-003: CLOSED. Ruby and JS consistently use window.SUAIP.
+- S6-GATE-B-BLOCK-004: CLOSED. Model/view propagation and locate selection are present.
+- S6-GATE-B-BLOCK-005: CLOSED. diagnostics is initialized before the analyzer loop and
+  failure-injection tests prove continued execution.
+- S6-GATE-B-BLOCK-002: REMAINS OPEN, narrowly.
+- S6-GATE-B-BLOCK-006: lifecycle portion CLOSED; required summary rendering REMAINS OPEN.
+
+BLOCKS:
+
+1. [S6-GATE-B-BLOCK-002-R2] Real verification boot/idempotency path is still not executable as documented
+
+   Location:
+   - extension/loader.rb
+   - extension/su_ai_plugin.rb
+   - Review/OWNER_VERIFICATION_STAGE_6.txt step J
+   - tests/_fake_ui.rb and tests/test_loader.rb
+
+   Problem:
+   The production code now has an entrypoint and a module sentinel, but the Owner checklist was
+   not rewritten as required. It still manually loads many files, loads loader.rb directly, and
+   later reloads loader.rb while expecting one menu entry. Direct `load loader.rb` executes
+   `@registered = false` again; a subsequent register can add another submenu/item. The real
+   Sketchup::Menu API does not provide create-or-return-by-name semantics.
+
+   The FakeMenu masks this: its add_submenu returns an existing same-name submenu, behavior not
+   guaranteed by the real API. The tests call register! repeatedly without reloading loader.rb;
+   the claimed boot/reload path is only source-string inspected. The menu-command test also does
+   not invoke the command handler.
+
+   In addition, extension/su_ai_plugin.rb marks file_loaded before dependency boot succeeds. A
+   transient boot failure is therefore recorded as loaded and cannot be retried in the same SU
+   session. The file is inside extension/, so current Owner verification must explicitly load
+   this entrypoint until later packaging supplies the standard root registration file.
+
+   Minimum acceptable fix:
+   - Rewrite Owner checklist J to load only the real development entrypoint and call the supported
+     boot path; remove the direct loader.rb reload procedure.
+   - Mark file_loaded only after successful dependency load + registration, or otherwise provide
+     a safe retry state on boot failure.
+   - Add a faithful boot test that actually evaluates/loads the entrypoint twice, asserts one menu
+     item, and invokes the created command handler through to the dialog boundary.
+   - Do not give FakeMenu nonstandard create-or-return behavior that hides a real duplicate.
+   - Packaging/root registration may remain a later gate, but the SU2020 Owner checklist must be
+     runnable now without undocumented manual calls.
+
+   Recheck evidence needed:
+   - focused boot/loader/checklist diff + faithful reload/command test + full suite
+
+2. [S6-GATE-B-BLOCK-006-R2] UI still does not render per-issue-type summary counts
+
+   Location:
+   - core/analysis_result.rb#summary
+   - extension/html/app.js#render
+   - tests/test_html_render.rb
+
+   Problem:
+   AnalysisResult correctly supplies per-type counts under summary['issues'], but app.js treats
+   every top-level summary value as a scalar. After rendering edges/vertices/Z/warnings, it emits
+   the nested `issues` Hash as:
+       Issues: [object Object]
+   It never renders `Duplicate candidates`, `Short edges`, `Open endpoints`, `Gap candidates`,
+   or the other locked counts from Stage 6 plan section 6.7. The new tests verify payload shape
+   and source-code tokens, not rendered output, so 244/244 does not cover this contract.
+
+   Minimum acceptable fix:
+   - Render summary.issues as individual, human-readable issue-type counters in the locked order.
+   - Do not render nested objects as `[object Object]` or duplicate the selection line.
+   - Add an executable render/DOM test (or an equivalent deterministic renderer test) asserting
+     concrete displayed labels and values, including at least Short edges: 1 and zero-count
+     required categories.
+   - Keep the already-closed dialog lifetime and namespace fixes unchanged.
+
+   Recheck evidence needed:
+   - focused summary-render diff + rendered-output test + full suite
+
+NITS:
+- Remove/replace the packet's bare `=======` Markdown underline or stop claiming git diff --check
+  PASS when the independent command reports a conflict-marker pattern.
+- Packet/test names overstate several proofs (for example “menu -> dialog” tests call
+  DialogRunner.show directly). Future evidence descriptions should match what executes.
+
+DEBT:
+- Packaging/RBZ and SU2017 release verification remain later gates.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- One consolidated recheck for BLOCK-002-R2 and BLOCK-006-R2 only.
+- Do not reopen BLOCK-001, -003, -004 or -005.
+- Do not dispatch Owner Verification Stage 6 until both remaining blocks close.
+- Pi owns the narrow implementation choices; do not ask Owner and do not create per-file reviews.

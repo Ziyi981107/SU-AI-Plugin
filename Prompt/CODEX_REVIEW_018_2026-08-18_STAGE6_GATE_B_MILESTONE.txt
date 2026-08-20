@@ -1,0 +1,172 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+STAGE
+
+SCOPE REVIEWED:
+- base/head: 7110229..e755d8e (Gate B only; passed Gate A remains closed)
+- packet: Review/GATE_B_MILESTONE_REVIEW_2026-08-18.md
+- subsystem: active-edit identity, analyzer pipeline, loader/menu, HtmlDialog lifecycle,
+  Ruby/JS bridge, locate action, summary contract and Owner checklist readiness
+- tests/evidence: full suite independently rerun: 207/207 PASS; git show --check PASS
+- API evidence: official SketchUp Ruby API for Sketchup::Menu, UI::HtmlDialog and
+  file_loaded?/file_loaded
+
+SUMMARY:
+- The milestone is appropriately batched, but Gate B is not ready for Owner Verification.
+- Six runtime/contract failures sit on the primary user flow. Most are not exercised by the
+  reported 207 tests because the planned loader/dialog/pipeline/HTML tests are absent.
+- Fix all BLOCKs in one consolidated Gate B rework. Do not submit per-file or per-BLOCK reviews.
+- Do not ask the Product Owner to choose implementation details. Pi owns the narrow fixes.
+
+BLOCKS:
+
+1. [S6-GATE-B-BLOCK-001] No-active-edit path poisons every source as PID-incomplete
+
+   Location:
+   - compatibility/su_capability.rb:233-252, default_empty_facts
+   - extension/preflight_runner.rb:78-105, 142-178
+
+   Problem:
+   active_edit_context_facts marks an empty/root active path as pid_path_complete=false.
+   build_snapshot passes that value as seed_path_complete. Path completeness is then ANDed
+   through every walked container and leaf, so without an active edit context:
+   - a root Edge with a valid PID is still marked incomplete;
+   - every nested Edge is marked incomplete and becomes non-locatable.
+   This breaks the normal root-model analysis path and the Owner fixtures.
+
+   Minimum acceptable fix:
+   - Treat an empty ancestor/edit path as the neutral complete state for snapshot traversal.
+   - Preserve fail-closed behavior when a real active_path or walked container has a missing PID.
+   - Add adapter integration tests using build_snapshot, not StructuralFacts alone:
+     root Edge valid PID -> complete/root; nested valid-PID chain -> complete/nested;
+     active path with a nil PID -> incomplete/nested.
+
+2. [S6-GATE-B-BLOCK-002] Loader cannot reliably create one real SketchUp menu entry
+
+   Location:
+   - extension/loader.rb: register!, find_or_create_plugin_menu, find_existing_command
+   - repository boot/entrypoint and Review/OWNER_VERIFICATION_STAGE_6.txt step J
+
+   Problem:
+   - No committed boot entrypoint loads Gate B dependencies and calls Loader.register!.
+   - Merely loading extension/loader.rb defines methods but does not register a menu.
+   - Loader does not require dialog_runner, yet later calls DialogRunner.show.
+   - Idempotency probes menu.submenus and menu.items. These are not methods in the official
+     Sketchup::Menu API; on the real host those probes cannot discover prior registrations,
+     so repeated register! calls add duplicate submenus/items.
+   - The packet/checklist claims tests/_fake_ui.rb and test_loader coverage, but those files
+     are not present in e755d8e.
+
+   Official API references:
+   - https://ruby.sketchup.com/Sketchup/Menu.html
+   - https://ruby.sketchup.com/top-level-namespace.html (file_loaded?/file_loaded guard)
+
+   Minimum acceptable fix:
+   - Add/complete the actual SketchUp boot path; require dependencies in a safe order and call
+     register! exactly once.
+   - Use a real-host-compatible load guard (file_loaded?/file_loaded or an equivalent module
+     sentinel), not nonexistent Menu introspection.
+   - Add a faithful FakeUI loader test proving first load registers once, repeated register/load
+     does not duplicate, and clicking the command reaches the dialog runner.
+   - Rewrite checklist J to load the real entrypoint, not a manual unordered file list.
+
+3. [S6-GATE-B-BLOCK-003] HtmlDialog render bridge calls a different JS namespace
+
+   Location:
+   - extension/html/app.js: window.SUAI
+   - extension/dialog_runner.rb: window.SUAIP.render / window.SUAIP.toast
+
+   Problem:
+   app.js exports render/toast on window.SUAI, while Ruby calls window.SUAIP. The ready callback
+   therefore executes a missing JS object and the result page cannot render; unresolved-source
+   toast also cannot render.
+
+   Minimum acceptable fix:
+   - Use one namespace consistently at both boundaries.
+   - Add a test that parses/executes the HTML JS contract sufficiently to prove the ready push
+     calls an exported render function and the unresolved path calls an exported toast function.
+
+4. [S6-GATE-B-BLOCK-004] Locate callbacks never receive the SketchUp model/view
+
+   Location:
+   - extension/loader.rb: show_dialog_for_selection
+   - extension/dialog_runner.rb: show and controller.bind(dialog)
+   - extension/dialog_controller.rb: bind, locate, view
+
+   Problem:
+   Loader passes model to AnalyzersRunner but calls DialogRunner.show(result) without model.
+   DialogRunner then binds only the dialog, leaving controller @model nil. Every UI Locate click
+   resolves against nil and returns unresolved even when sources are valid. In addition,
+   DialogController asks HtmlDialog#get_view; UI::HtmlDialog has no such API. The view belongs to
+   the model (model.active_view).
+
+   Minimum acceptable fix:
+   - Propagate the same model from Loader -> DialogRunner -> DialogController.
+   - Use model.active_view (capability-checked) for optional zoom.
+   - Add an end-to-end callback test: menu/action -> dialog -> locate(issue_id) -> selection of
+     the expected fake entity, plus unresolved toast control.
+
+5. [S6-GATE-B-BLOCK-005] Analyzer failure recovery raises a second exception
+
+   Location:
+   - extension/analyzers_runner.rb:40-76
+
+   Problem:
+   diagnostics is initialized after the analyzer loop. Ruby recognizes it as a local variable,
+   but its value is nil inside the rescue. If any analyzer raises, `diagnostics << {...}` raises
+   NoMethodError and aborts the entire command, contradicting the locked per-analyzer recovery
+   contract.
+
+   Minimum acceptable fix:
+   - Initialize diagnostics before any recoverable stage uses it and carry that same collection
+     through registry/result construction.
+   - Add a failing-analyzer injection test proving later analyzers still run and the original
+     failure appears in AnalysisResult.diagnostics.
+
+6. [S6-GATE-B-BLOCK-006] Delivered UI omits the locked summary and dialog lifecycle evidence
+
+   Location:
+   - core/analysis_result.rb#summary
+   - extension/ui_bridge.rb#as_html_data
+   - extension/html/app.js#render
+   - extension/dialog_runner.rb#show
+   - Stage 6 plan section 6.7 and Owner checklist K.2
+
+   Problem:
+   The locked header requires Edges, Vertices, issue counts, non-zero-Z vertices and warnings.
+   AnalysisResult.summary exposes only IssueRegistry counts, so the UI cannot display snapshot
+   Edge/Vertex facts; the checklist expects `Edges: 4` but the payload never contains it.
+   Separately, Loader discards the dialog returned by DialogRunner.show. Official HtmlDialog
+   guidance requires retaining a Ruby reference or the window may close under GC. No dialog
+   runner/lifecycle test exists despite the approved plan.
+
+   Minimum acceptable fix:
+   - Build the specified summary from preflight/snapshot plus registry counts and render it.
+   - Retain live dialog/controller state for the dialog lifetime; remove it on set_on_closed.
+   - Add dialog lifecycle tests for absolute set_file, callback registration before show, ready
+     handshake, persistent live reference, close cleanup and valid JSON execution.
+   - Add/restore the planned HTML/no-overlay/syntax tests actually referenced by the milestone
+     packet and Owner checklist, or remove unsupported claims and replace them with equivalent
+     credible evidence.
+
+NITS:
+- on_locate currently shows a toast but does not write the promised console diagnostic. Fix while
+  touching this path if small; it is not a separate review trigger.
+- The milestone packet lists nonexistent test files and says all Ruby files were syntax swept,
+  while the committed run_all suite does not prove several such claims. Future packets must list
+  committed evidence only.
+
+DEBT:
+- Packaging/RBZ and SU2017 release verification remain later gates; they do not excuse the Gate B
+  boot path needed for SU2020 Owner Verification.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- One consolidated Gate B BLOCK RECHECK after all six BLOCKs are fixed and the full primary-flow
+  test suite passes. Do not send micro-review packets.
+- Do not dispatch Owner Verification Stage 6 until this recheck passes.
+- Pi should decide routine implementation details autonomously and continue without asking Owner.

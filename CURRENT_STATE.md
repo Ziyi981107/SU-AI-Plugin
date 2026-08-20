@@ -1,14 +1,58 @@
 # CURRENT STATE
 
-Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
-                          `v1.1-layer-semantic-mapping` branch.
-                          V1.0 candidate frozen at
-                          `v1.0-candidate-2026-08-19` tag.
-                          Full suite 286/286 PASS, 0 fail, 0 error.
-                          Awaiting ChatGPT scope review on
-                          §11 questions, then CodeX plan review
-                          on §12 questions, before any V1.1
-                          implementation begins.)
+Last updated: 2026-08-20 (V1.1 implementation COMPLETE.
+All 5 commits landed on `v1.1-layer-semantic-mapping` branch
+(head = `823feab`). Full suite 372/372 PASS, 0 fail, 0 error.
+V1.1 Owner Gate 2 checklist drafted at
+Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt.
+Awaiting Owner real-SU2020 Gate 2 V1.1 verification, then
+CodeX end-of-stage review per plan §13. V1.0 candidate still
+FROZEN at tag `v1.0-candidate-2026-08-19` (commit `56ea611`).
+Gate 1 (SU2017) PENDING per R006 — deferred to formal release.)
+
+## Agent hand-off status (2026-08-20)
+
+The Agent has entered the **WAIT-FOR-OWNER-GATE-2-V1.1** phase.
+Implementation is COMPLETE on `v1.1-layer-semantic-mapping`
+(head = `823feab`, 372/372 PASS). No further code changes are
+scheduled unless Owner reports a real-SU2020 regression in the
+Gate 2 V1.1 verification.
+
+  - **Owner right now**: run
+    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
+    L1..L9 on real SU2020. Drop the report at
+    `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-XX.txt`.
+  - **Agent right now**: idle on Owner action. On Owner PASS,
+    Agent assembles ONE consolidated CodeX end-of-stage review
+    packet per V1.1 plan §13 (NOT before; NOT a re-review of
+    V1.0 / Stage 6 / CodeX 020 / RBZ / CodeX 024).
+  - **Out of scope until Owner reports**: CodeX end-of-stage
+    packet, formal release, Gate 1 (SU2017, deferred to formal
+    release per R006), and any V1.1 / V1.0 scope re-opening.
+
+Independent Agent-side finishing work (committed in this
+session, no behavior change):
+
+  - Whitespace / encoding audit on `CURRENT_STATE.md`: file is
+    clean (no trailing whitespace, no NBSP / ZWSP / BOM). The
+    pre-crash session's line-122 grep investigation did not find
+    a real defect; line 122 is just the natural markdown
+    soft-wrap of the surrounding paragraph.
+  - `data/_check_tmp/` audit: all WIP files are already isolated
+    (`data/_check_tmp/` is `.gitignore`d AND listed in
+    `scripts/build_rbz.rb EXCLUDED_TOP_LEVEL`). RBZ shipping is
+    confirmed WIP-free. Recent one-shot debug files
+    (`_check_whitespace.rb`, `debug_layer_groups.rb`) removed.
+    Older `_WIP_*` historical artifacts left in place as audit
+    trail (gitignored, no shipping risk).
+  - `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt` L5
+    title typo (`EMHASIS` → `EMPHASIS`) corrected so Owner can
+    read step titles without confusion.
+  - Full suite re-run: **372/372 PASS, 0 fail, 0 error**
+    (V1.0 baseline 286 + V1.1 additions 86 unchanged).
+  - Stable Git checkpoint committed: only documentation,
+    cleanup, and test-stabilization changes; no production
+    code, no API contract, no V1.0 / V1.1 scope.
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 
@@ -29,8 +73,15 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   warning (renderIssue click-handler gate). All 286 tests PASS,
   all evidence in the lower sections of this file.
 
-## V1.1 stage (in progress, branch = `v1.1-layer-semantic-mapping`)
+## V1.1 stage (IMPLEMENTATION COMPLETE on
+            `v1.1-layer-semantic-mapping` branch, head = `823feab`)
 
+- **Implementation status**: **ALL 5 commits landed**; full
+  suite 372/372 PASS, 0 fail, 0 error. V1.0 baseline (286
+  tests) UNCHANGED; 86 V1.1 additions (Layer role + config +
+  record + source ref, mapper, grouper, su_capability visibility,
+  AnalyzersRunner integration, UIBridge layerGroups, full UI
+  render for Layers section).
 - **Decision (Cicada 2026-08-19)**: V1.1 first stage is
   **Layer Semantic Mapping** — read-only classification of each
   layer into a role (:construction / :dimension / :annotation /
@@ -38,20 +89,26 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   the dialog. Visibility is a SEPARATE field, NOT a role
   (R007 / ChatGPT §11.3).
 - **Plan**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PLAN_2026-08-19.md`
-  (DRAFT, 750+ lines). Status = **all 10 ChatGPT scope/policy
-  questions answered** (Q1..Q10); awaiting implementation.
-- **Reviewer routing** (per Cicada 2026-08-19 routing rule:
-  "理论上只要chatgpt能做的就不给codex做"):
-  1. **ChatGPT** answers §11 — 10 plan-level policy / UX /
+  (FINAL, 864 lines).
+- **Progress report**: `Review/V1_1_LAYER_SEMANTIC_MAPPING_PROGRESS_2026-08-19.md`
+  (updated 2026-08-20 with all 5 commits + RBZ rebuild + L1..L9
+  checklist handoff).
+- **Owner checklist (Gate 2 V1.1)**:
+  `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`. Steps
+  L1..L9 cover V1.0 baseline + 8 V1.1-specific checks + a
+  byte-identical PRE/POST fingerprint.
+- **Reviewer routing** (per Cicada 2026-08-19 routing rule):
+  1. **ChatGPT** answered §11 — 10 plan-level policy / UX /
      fail-closed / sort-order questions. **ALL ANSWERED.**
-  2. **Agent self** decides §12 — 2 contained code-architecture
+  2. **Agent self** decided §12 — 2 contained code-architecture
      questions with documented defaults (SourceReference
-     extension, first-seen-wins dedup).
-  3. **Agent** implements per the answers + defaults.
+     extension; first-seen-wins dedup).
+  3. **Agent** implemented per the answers + defaults (5/5
+     commits landed).
   4. **CodeX** end-of-stage review of the full V1.1
-     implementation diff (§13), after tests + Gate 2 V1.1
-     Owner evidence.
-- **Locked V1.1 decisions** (all incorporated into the plan):
+     implementation diff (§13), awaiting Owner Gate 2 V1.1
+     evidence.
+- **Locked V1.1 decisions** (all incorporated into the implementation):
   - **R007** (ChatGPT §11.3): role and visibility are SEPARATE
     fields. The `OFFSCREEN` role Symbol is REMOVED. 5 name-based
     roles only.
@@ -86,20 +143,45 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
   - Per-layer `edge_count` + `issue_count` both shown,
     `issue_count` visually emphasized when > 0 (ChatGPT §11.4).
 - **Branch state**: `v1.1-layer-semantic-mapping` cut from
-  `v1.0-candidate-2026-08-19` at commit `56ea611`. No code
-  commits on the branch yet (only the plan doc + state
-  updates, kept in `Review/` / `CURRENT_STATE.md` per
-  message-bus convention).
+  `v1.0-candidate-2026-08-19` at commit `56ea611`. **5 code
+  commits landed** as of this report (head = `823feab`):
+  ```
+  823feab feat(v1.1): UI render for Layers section + locked L4 DOM/CSS/JS contract (commit 5)
+  ef9ae04 feat(v1.1): AnalyzersRunner.layer_groups + UIBridge.layerGroups (commit 4)
+  4e626d3 feat(v1.1): SUCapability.layer_visibility + preflight layer population (R007/R010/R011)
+  a2b05df feat(v1.1): LayerSemanticMapper + LayerIssueGrouper (pure Ruby)
+  460037c feat(v1.1): pure Ruby layer data layer + V1.1 extension to existing records
+  ```
+  `dist/SU-AI-Plugin.rbz` rebuilt locally at end of commit 5
+  (214,776 bytes, 41 entries; gitignored). `git diff --check`
+  clean on all 5 commits.
 - **Hard scope** (inherited from V1.0 + R006 = Gate 1 deferred):
   - Read-only analysis, no model mutation, no new SU API beyond
     `Layer#visible?`.
-  - V1.0 tests (286) MUST still pass unchanged.
+  - V1.0 tests (286) MUST still pass unchanged. **VERIFIED: all
+    286 V1.0 tests pass on the V1.1 branch head.**
   - Gate 1 (SU2017) remains PENDING per R006; not a V1.1 blocker.
   - Gate 2 V1.1: Owner re-runs the V1.0 checklist PLUS V1.1
     Layers-specific checks on real SU2020 before V1.1 is
-    considered ready.
-- **Next action**: Agent self implements per the plan + §12
-  defaults, then CodeX end-of-stage review.
+    considered ready. **Checklist drafted at
+    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`; awaiting
+    Owner run.**
+- **Next action** (post-implementation):
+  1. **Owner Gate 2 V1.1** — run
+     `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt` steps
+     L1..L9 on real SU2020. Owner drops report to
+     `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-XX.txt`. Once Owner
+     reports PASS, V1.1 stage is accepted on the verified host.
+  2. **CodeX end-of-stage review** — Agent dispatches ONE
+     consolidated packet per plan §13 (this branch's full diff
+     `56ea611`..`823feab` + 372/372 test results + Gate 2 V1.1
+     Owner report + §12 defaults + §8 known risks). CodeX engages
+     ONLY at this boundary; reopening V1.0 Stage 6 / CodeX 020
+     / RBZ / CodeX 024 is explicitly out of scope.
+  3. **Formal release** — Owner combines V1.0 + V1.1 in the
+     final .rbz artifact, reruns Gate 1 (SU2017) + Gate 2 V1.1
+     on the combined artifact, and ships. Per R006, Gate 1 is
+     deferred to formal release.
 
 ## Migration tail (commits 8814455, b0c16c8)
 
@@ -118,16 +200,31 @@ Last updated: 2026-08-19 17:05 (V1.1 plan DRAFT written on
 
 ## Open / pending (NOT in scope to act on now)
 
+- **Owner Gate 2 V1.1 verification** (current next action):
+  Cicada runs `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
+  L1..L9 on real SU2020. Per Q002=A, only Owner can run real-SU
+  verification. Once Owner drops the report at
+  `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-XX.txt`, the V1.1
+  stage moves to accepted-on-SU2020.
+- **CodeX end-of-stage review** (next code action after Owner
+  Gate 2 V1.1 PASS): one consolidated packet per V1.1 plan §13.
+  CodeX is reserved for: complete coherent stage (the V1.1
+  implementation IS that), high-risk blocker, BLOCK recheck,
+  final release review. Reopening V1.0 scope is explicitly out
+  of scope for this packet.
 - **Gate 1 (SU2017 minimum-host verification)**: PENDING. Cicada
   (2026-08-19) has chosen to defer this until formal release.
   Per R004 + R006 posture, this is a final release gate and
   MUST be repeated on whatever RBZ is shipped. Do not block
-  next-stage development on this; do not fake SU2020 evidence
-  as SU2017 evidence.
-- **V1.1 plan review** (current next action): ChatGPT §11
-  (10 policy questions) → Agent self §12 (2 contained code
-  decisions with documented defaults) → Agent implements →
-  CodeX end-of-stage review of the full diff.
+  V1.1 acceptance on this; do not fake SU2020 evidence as SU2017
+  evidence.
+- **V1.1 LayerIssueGrouper integration into the UI**: the
+  commit-2 pure-Ruby grouper (`core/layer_issue_grouper.rb`)
+  exists but is not yet consumed by any UI surface. It is a
+  forward-compatibility hook for a future V1.1.1 stage that
+  wants an "Issues by Layer" <details> block. Per plan §4.5
+  the API is locked; the UI integration is intentionally
+  deferred. NOT a V1.1 blocker.
 - **CodeX review cadence**: Pi's handoff is explicit — do NOT
   submit tiny edit packets, partial packets, or progress pings.
   Codex is reserved for: complete coherent stage, high-risk

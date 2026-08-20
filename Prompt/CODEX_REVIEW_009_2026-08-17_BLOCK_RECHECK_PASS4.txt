@@ -1,0 +1,65 @@
+VERDICT:
+PASS
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: d30507a..42251f1
+- fix commit: 9ff2e49
+- review packet: Review/BLOCK_RECHECK_REQUEST_2026-08-17_pass4.md
+- focused scope only: S2-BLOCK-005 Owner checklist H correction
+- files: Review/OWNER_VERIFICATION_STAGE_2.txt,
+  tests/test_preflight_runner.rb, compatibility/su_capability.rb
+- evidence: isolated full Ruby suite rerun
+
+TEST EVIDENCE:
+- 72 tests, 72 pass, 0 fail, 0 error.
+- New exact-shape regression passes:
+  S2-BLOCK-005 (r4): [inv_group, e1_invalid] produces exactly one
+  EdgeRecord, from e2 reached through inv_group; erased e1 contributes zero.
+- The checklist and automated test now use the same non-overlapping input.
+
+BLOCKS:
+- None.
+
+BLOCK CLOSURE:
+- S2-BLOCK-005 — CLOSED.
+  The checklist no longer includes e2 both through its parent group and as
+  an explicit top-level item. Its expected count is now credible and is
+  covered by a matching regression test.
+
+NITS:
+- None.
+
+DEBT:
+- None added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None before host verification.
+
+CLOSED SCOPE STATUS:
+- S2-BLOCK-001 — CLOSED.
+- S2-BLOCK-002 — CLOSED.
+- S2-BLOCK-003 — CLOSED.
+- S2-BLOCK-004 — CLOSED.
+- S2-BLOCK-005 — CLOSED.
+- S2-BLOCK-006 HtmlDialog — CLOSED.
+- S2-BLOCK-006 version — CLOSED.
+
+STAGE STATUS:
+- Stage 2 implementation and its reviewer BLOCK rechecks have passed.
+- This is not a release verdict and not a substitute for real-host evidence.
+
+NEXT REVIEW:
+- NONE for the current Stage 2 code before Owner verification.
+- Product Owner should now execute Review/OWNER_VERIFICATION_STAGE_2.txt
+  steps A through I in real SketchUp. Evidence must include SU2017 to close
+  the locked minimum-runtime/Ruby 2.2.4 caveat, plus the Owner's current
+  daily SketchUp version if different.
+- Record version/build, A-I results, before/after fingerprint, console
+  output, and any geometry drift in the requested Owner report.
+- If real-host verification fails, open a new focused Review item with the
+  exact step, host version, console error, and observed/expected result.
+- Previously passed code remains closed unless that evidence identifies a
+  concrete regression.

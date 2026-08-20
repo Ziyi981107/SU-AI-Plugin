@@ -1,0 +1,114 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+PRE-BUILD / BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: aeced98; no Stage 6 implementation exists
+- prior verdict: Prompt/CODEX_REVIEW_013_2026-08-18_STAGE6_PLAN_PASS3_RECHECK.txt
+- plan: Review/STAGE_6_PLAN_REVISED_2026_08_18_PASS4.md
+- verification: Review/OWNER_VERIFICATION_STAGE_6.txt (revised v2)
+- implementation truth: compatibility/su_capability.rb#active_edit_context /
+  #active_path_pids and all current SourceReference construction sites
+
+SUMMARY:
+- Full-path completeness now correctly includes every ancestor PID and the leaf PID.
+- Missing-leaf and missing-container locator policies now fail closed correctly.
+- S6-VERIFY-BLOCK-001: CLOSED. The dangling, outer_g, post-erase and duplicate-token
+  expectations are corrected.
+- One last S6-PLAN-BLOCK-001 defect remains in active-edit-context seeding.
+- Do NOT begin Gate A yet. No prewritten PASS template is needed.
+
+BLOCKS:
+
+1. [S6-PLAN-BLOCK-001] Active-edit PID filtering defeats the new completeness invariant
+
+   Location:
+   - STAGE_6_PLAN_REVISED_2026_08_18_PASS4.md §3.10 lines 237-243
+   - existing compatibility/su_capability.rb:
+       active_edit_context -> active_path_pids
+       active_path_pids appends a PID only when it is non-nil
+
+   Problem:
+   Pass 4 seeds:
+       seed_struct_depth = active_pids.length
+       seed_path_complete = active_pids.all? { |p| !p.nil? }
+
+   But the existing `active_path_pids` removes every nil PID before returning the Array.
+   Therefore:
+   - `active_pids.length` is the count of captured PIDs, not the structural active-path
+     depth;
+   - `active_pids.all? { !nil? }` is always true for the returned data;
+   - an active edit path containing a container with missing PID is under-counted and can
+     be misclassified as complete.
+
+   This contradicts the newly approved rule that structural identity is independent of
+   PID availability. The ordinary traversal was corrected, but the active-edit seed still
+   collapses the two facts back together.
+
+   Why it matters:
+   A leaf analyzed while editing a nested Group/Component can receive the wrong
+   structural_depth and pid_path_complete values. Its partial PID path may then be sent
+   to InstancePath resolution instead of failing closed, risking selection of the wrong
+   occurrence.
+
+   Minimum acceptable fix:
+   A. Derive active structural depth from the actual `model.active_path` entity count,
+      not from the filtered PID Array.
+
+   B. Derive active-path completeness before nil PIDs are discarded. Acceptable shapes:
+      - return a separate `{depth:, captured_pids:, complete:}` fact object; or
+      - return/preserve per-entry PID slots including nil for fact calculation, then filter
+        only when constructing the serializable PID path.
+
+   C. The seed invariants must be explicit:
+        seed_struct_depth == number of structural entities in active_path
+        seed_path_complete == every active-path entity supplied a PID
+        seed_pid_path contains only captured integer PIDs
+      At the leaf, full completeness still requires:
+        ancestry_complete && leaf_pid_present &&
+        pid_path.length == structural_depth + 1
+
+   D. Add a focused adapter test with an active path of two containers where one PID is
+      missing. Required result:
+        structural_depth includes both containers;
+        seed/path completeness is false;
+        the leaf SourceToken is nested + incomplete;
+        locator policy returns non-locatable and never entityID fallback.
+
+   E. Retain a complete active-path control case proving normal nested resolution still
+      returns the root occurrence.
+
+   Recheck evidence needed:
+   - revised §3.10 active-edit seed pseudocode
+   - modified-file/test inventory names the active-context fact change and two tests
+   - no code implementation is required for this final plan recheck
+
+NITS:
+
+- Making `SourceReference` structural arguments required will break existing callers in
+  core/synthetic_factory.rb and multiple current tests. Gate A's file/change inventory
+  must either include those mechanical caller updates or use backward-compatible defaults
+  that fail closed (`pid_path_complete` must never default true for an empty path).
+- Pass 4 summary says `test_source_reference.py`; this is a Ruby project and the planned
+  file should be `.rb`.
+- Owner checklist N.7 samples `m.entities.grep(Sketchup::Edge).first`, but the fixtures
+  place Edges inside Groups/ComponentDefinitions, so the result may be nil. Use a known
+  fixture Edge reference or a recursive/nil-safe property sampler.
+- The risk table case numbering does not match the six-case list. Correct labels only;
+  do not add more architecture.
+
+DEBT:
+- NONE added.
+
+QUESTIONS FOR PRODUCT OWNER:
+- NONE.
+
+NEXT REVIEW:
+- Recheck only active-edit-context depth/completeness seeding and the listed mechanical
+  caller/test inventory.
+- S6-VERIFY-BLOCK-001 remains CLOSED.
+- S6-PLAN-BLOCK-002, -003 and -004 remain CLOSED.
+- Once this single block closes: PASS TO IMPLEMENT Gate A immediately; no further full
+  plan rewrite or broad review is required.

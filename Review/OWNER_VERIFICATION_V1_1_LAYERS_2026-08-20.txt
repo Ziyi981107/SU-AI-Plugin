@@ -1,0 +1,478 @@
+============================================================
+OWNER VERIFICATION CHECKLIST - V1.1 LAYER SEMANTIC MAPPING
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20 (new V1.1 checklist; V1.0 baseline at
+          v1.0-candidate-2026-08-19 has been verified on
+          SU2020 already - see
+          Review/OWNER_VERIFICATION_STAGE_6.txt for full
+          V1.0 evidence)
+For:       Product Owner (real-SU verification, per Q002=A)
+Depends on: V1.1 commits (1..5) landed on
+          `v1.1-layer-semantic-mapping` branch; suite is
+          372/372 PASS on the dev host (Ruby 2.7.8).
+============================================================
+
+PURPOSE
+-------
+
+Per Q002=A, real-SketchUp verification is Owner's responsibility.
+This checklist is a FOCUSED addition to the V1.0 Stage 6
+checklist (Review/OWNER_VERIFICATION_STAGE_6.txt) and covers
+ONLY the V1.1 layer semantic mapping additions:
+
+  - Dialog Layers section visible (new `<details>` block)
+  - Layer roles classified (dimension / annotation / guide /
+    construction / unknown per LayerRoleConfig default rules)
+  - Role badge and Visibility badge are SEPARATE fields
+    (R007 / ChatGPT 11.3)
+  - Hidden layers render muted (`opacity: 0.6`) AND sort to
+    the bottom of their role bucket (R009 / ChatGPT 11.2)
+  - Visibility unknown surfaces "Visibility: unknown" badge
+    (R011 - fail-open, NOT a fake confirmed-hidden)
+  - Per-layer `edge_count` and `issue_count` both visible;
+    `issue_count > 0` rendered with emphasis
+  - NO role color hints (R008 / ChatGPT 11.7)
+  - Layers `<details>` default-closed; summary text
+    "Layers - N total (M with issues)" populated
+  - Layer rows have NO click handler (mirrors V1.0 L3
+    non-locatable pattern)
+  - V1.0 baseline behavior UNCHANGED (summary, groups,
+    Locate, fingerprint)
+
+This checklist re-runs the V1.0 base (Review/OWNER_VERIFICATION_RBZ_INSTALL_2026-08-19.txt
++ Review/OWNER_VERIFICATION_STAGE_6.txt) PLUS the V1.1-specific
+checks below. The V1.0 base does NOT need to be re-verified in
+full if Owner has already accepted the V1.0 candidate - this
+checklist focuses on the V1.1 delta. The Gate 2 V1.1 verification
+is the OWNER re-run of the V1.0 base PLUS these L1..L9 steps.
+
+SU2017 minimum-host verification remains a release Gate (per
+R004) and is NOT a V1.1 blocker - it will be re-run with the
+final RBZ at formal release.
+
+
+SCOPE OF V1.1 UI VERIFICATION
+==============================
+
+Files in scope (V1.1 commits 4 + 5):
+  extension/analyzers_runner.rb              (merge layer_groups)
+  extension/core/analysis_result.rb          (layer_groups kwarg)
+  extension/ui_bridge.rb                     (layerGroups top-level key)
+  extension/preflight_runner.rb              (entity-aware visibility probe)
+  extension/html/index.html                  (layers-section <details>)
+  extension/html/app.js                      (renderLayers + renderLayerRow)
+  extension/html/style.css                   (.layer-row neutral styles)
+  tests/_fake_su.rb                          (FakeSU::Layer.visible? for prod parity)
+  tests/test_analyzers_runner.rb            (8 new V1.1 tests)
+  tests/test_ui_bridge.rb                    (5 new V1.1 tests)
+  tests/test_html_render.rb                  (8 new V1.1 source-level guards)
+  tests/test_html_render_dom.js              (18 new L4 Node.js DOM tests)
+
+The V1.1 implementation does NOT introduce any new SU API call:
+all `entity.layer` / `layer.visible?` probes are guarded by
+`respond_to?` per V1.0 capability detection discipline. Per
+§8 of the V1.1 plan, V1.0 test suite (286 tests, plus the
+V1.1 added tests = 372) must still pass on the verified SU
+host with no behavior changes to the V1.0 surface.
+
+
+PRE-FLIGHT (ONE-TIME PER SESSION)
+=================================
+
+Open SketchUp 2020 (or SU2017+ if Owner prefers; SU2020 was the
+V1.0 verification host).
+
+Create a fresh empty model. Do NOT use production / source CAD.
+
+Use the SAME fixtures as V1.0 Owner Verification Stage 6
+Pre-Flight (test_group, occ_a+occ_b, outer_g, dangling). PLUS
+add V1.1-specific layer fixtures:
+
+Setup helper (Ruby Console, fresh empty model):
+
+  model = Sketchup.active_model
+  entities = model.active_entities
+  layers = model.layers
+
+  # Add a few V1.1-specific layer fixtures. SU locks the default
+  # 'Layer0' as the construction default (we will classify it
+  # automatically), so adding new named layers is fine.
+  layer_dim   = layers.add('DIM-WALLS')    # :dimension role
+  layer_anno  = layers.add('TXT-LABELS')    # :annotation role
+  layer_guide = layers.add('GUIDE-XLINES')  # :guide role
+  layer_oops  = layers.add('XYZ-9999')      # :unknown role (no rule match)
+
+  # A hidden layer (verify muted style + sort-bottom-in-bucket)
+  layer_hidden = layers.add('TXT-HIDDEN')
+  layer_hidden.visible = false  # OFF-SCREEN
+
+  # Fixture 1 (V1.0): a 4-edge closed square on Layer0.
+  test_group = entities.add_group
+  test_group.layer = layers['Layer0']
+  test_group.entities.add_line([0,0,0],      [10,0,0])
+  test_group.entities.add_line([10,0,0],     [10,5,0])
+  test_group.entities.add_line([10,5,0],     [0,5,0])
+  test_group.entities.add_line([0,5,0],      [0,0,0])
+
+  # Fixture 2 (V1.1): an edge on the DIM-WALLS layer (becomes a
+  # 'Dimension' role row in the Layers section).
+  dim_group = entities.add_group
+  dim_group.layer = layers['DIM-WALLS']
+  dim_group.entities.add_line([20,0,0], [40,0,0])
+
+  # Fixture 3 (V1.1): an edge on the TXT-LABELS layer (becomes an
+  # 'Annotation' role row) + the HIDDEN layer (hidden rows render
+  # with .layer-row[data-visible="false"] -> opacity 0.6).
+  txt_group_visible = entities.add_group
+  txt_group_visible.layer = layers['TXT-LABELS']
+  txt_group_visible.entities.add_line([60,0,0], [60,5,0])
+
+  txt_group_hidden = entities.add_group
+  txt_group_hidden.layer = layers['TXT-HIDDEN']   # hidden
+  txt_group_hidden.entities.add_line([80,0,0], [80,5,0])
+
+  # Fixture 4 (V1.1): an edge on the GUIDE-XLINES layer (becomes a
+  # 'Guide' role row).
+  guide_g = entities.add_group
+  guide_g.layer = layers['GUIDE-XLINES']
+  guide_g.entities.add_line([100,0,0], [110,0,0])
+
+  # Fixture 5 (V1.1): an edge on the XYZ-9999 layer (no rule match
+  # -> :unknown role).
+  unknown_g = entities.add_group
+  unknown_g.layer = layers['XYZ-9999']
+  unknown_g.entities.add_line([120,0,0], [130,0,0])
+
+Capture PRE-analysis Ruby fingerprint (paste once, then re-paste
+in any step that needs an after-state):
+
+  # -- Begin V1.1 fingerprint helper (extends V1.0 v6.2) --
+  def su_count_geometry_recursive(entities)
+    counts = { edges: 0, faces: 0, groups: 0,
+               components: 0, definitions: 0 }
+    entities.each do |e|
+      case e
+      when Sketchup::Edge
+        counts[:edges] += 1
+      when Sketchup::Face
+        counts[:faces] += 1
+      when Sketchup::Group
+        counts[:groups] += 1
+        counts.merge!(su_count_geometry_recursive(e.entities)) { |_, a, b| a + b }
+      when Sketchup::ComponentInstance
+        counts[:components] += 1
+        counts.merge!(su_count_geometry_recursive(e.definition.entities)) { |_, a, b| a + b }
+      end
+    end
+    counts
+  end
+
+  def su_active_path_size_safe(model)
+    return 0 unless model.respond_to?(:active_path)
+    ap = model.active_path
+    ap.nil? ? 0 : ap.length
+  end
+
+  def su_visible_layers(model)
+    model.layers.map { |l| [l.name, l.visible?] }
+  end
+
+  def su_fingerprint_v11(model)
+    {
+      edges:           su_count_geometry_recursive(model.entities)[:edges],
+      groups:          su_count_geometry_recursive(model.entities)[:groups],
+      layers_visible:  su_visible_layers(model),
+      active_path_size: su_active_path_size_safe(model)
+    }
+  end
+
+  fp_before = su_fingerprint_v11(Sketchup.active_model)
+  puts "PRE  = #{fp_before.inspect}"
+  # -- End fingerprint helper --
+
+
+HOW TO RUN THIS CHECKLIST
+=========================
+
+  1. Confirm you have the V1.1 entrypoint at:
+       D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb
+     (Same V1.0-supported entrypoint. V1.1 does NOT introduce a
+      new entrypoint.)
+  2. Load the entrypoint via the V1.0 RBZ install path or via
+       load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin.rb'
+  3. Run the L1..L9 steps below. Each step captures evidence
+     (screenshot, console log, or fingerprint comparison).
+  4. Owners without V1.0 Gate 2 SU2020 verification should also
+     re-run the J..N steps from
+     Review/OWNER_VERIFICATION_STAGE_6.txt FIRST.
+
+
+L1. V1.0 BASELINE UNCHANGED
+===========================
+
+Re-run steps J..K from Review/OWNER_VERIFICATION_STAGE_6.txt on
+the V1.1 branch install. Expected: V1.0 behavior is UNCHANGED.
+This is a fast smoke - all 286 V1.0 tests + all V1.1 tests are
+in the dev host test suite; the V1.1 owner check is only needed
+on real SU.
+
+   1. test_group selection produces:
+      - Selection: test_group
+      - Edges: 4 (from the closed square)
+      - Layers section: 1 layer row (Layer0), role
+        "Construction", visibility "Visible".
+      - No regressions in Duplicate/Short/Open/Gap/DeepNesting
+        counters (each = 0 for the closed square).
+   2. PRE/POST fingerprint:
+        fp_l1 = su_fingerprint_v11(Sketchup.active_model)
+        puts "AFTER L1 = #{fp_l1.inspect}"
+        puts "MATCH     = #{fp_l1 == fp_before}"
+      Expected: MATCH = true (no model mutation by the Analyze
+      command or any click).
+
+
+L2. LAYERS SECTION APPEARS
+==========================
+
+   1. Select test_group. Open the dialog.
+   2. Verify the dialog structure (top-to-bottom):
+      [Selection info]
+      [Summary scalar rows: Edges / Vertices / Non Zero Z
+       Vertices / Warnings]
+      [Summary per-issue-type counters in canonical order]
+      [Groups: per-issue-type <details> blocks]
+      [NEW: <details id="layers-section"> (closed)]   <-- V1.1
+   3. Click "Layers" to open the section.
+      Expected:
+      - The section header text reads EXACTLY:
+        "Layers - 1 total (0 with issues)"
+        (the closed square has 1 layer and 0 issues)
+      - The layer list shows 1 row.
+      - The row carries data-layer-name="Layer0",
+        data-role="construction", data-visible="true",
+        data-visibility-unknown="false".
+      - The row has a "Construction" role badge AND a separate
+        "Visible" badge (NOT fused).
+      - The row text includes "4 edges" and "0 issues".
+      - The "0 issues" cell does NOT carry the .has-issues class.
+   4. The row has cursor: default; clicking it does NOT change
+      the selection and does NOT display a toast.
+
+
+L3. MULTI-LAYER ROLE BUCKET ORDER (R009, R012)
+==============================================
+
+   1. Select all 5 fixtures (test_group + dim_group +
+      txt_group_visible + guide_g + unknown_g) at once (or
+      run them one by one and accumulate the layer section).
+      Use Shift-click in the model browser to select multiple
+      groups.
+   2. Open the dialog.
+   3. Open the Layers section.
+   4. Verify the layer rows appear in this EXACT order
+      (top to bottom):
+        1. DIM-WALLS           - role "Dimension"
+        2. TXT-LABELS          - role "Annotation"
+        3. GUIDE-XLINES        - role "Guide"
+        4. Layer0              - role "Construction"
+        5. XYZ-9999            - role "Unknown"
+      This is the locked role bucket order per R009 / R012.
+   5. (Optional) Verify the hidden TXT-HIDDEN layer would sort
+      to the bottom of its bucket - covered in L4 below.
+
+
+L4. HIDDEN LAYER MUTED + BUCKET-INTERIOR (R009 / ChatGPT 11.2)
+=============================================================
+
+   1. Select txt_group_hidden alone (single layer, hidden).
+   2. Open the dialog, open the Layers section.
+   3. Expected:
+      - Exactly 1 layer row, named "TXT-HIDDEN".
+      - The row carries data-visible="false".
+      - The row's role badge is "Annotation" (NOT a fused
+        "Annotation (off-screen)" label).
+      - The row's visibility badge is "Off-screen".
+      - Visually the row is rendered at ~60% opacity (CSS
+        `.layer-row[data-visible="false"] { opacity: 0.6; }`).
+        Click the row in the model browser to compare the
+        appearance side-by-side with a visible-layer row.
+   4. Open a dialog with BOTH txt_group_visible and
+      txt_group_hidden selected (two annotation layers, one
+      visible, one hidden).
+   5. Expected:
+      - Two rows in the Layers section, both with role
+        "Annotation".
+      - TXT-LABELS first (visible).
+      - TXT-HIDDEN second (hidden, muted opacity 0.6).
+      - The bucket-internal order is visible-before-hidden.
+      The role bucket order still holds overall (Dimension
+      first, ..., Construction, Unknown).
+
+
+L5. ISSUE_COUNT > 0 GETS EMPHASIS (ChatGPT 11.4)
+===============================================
+
+   1. Select txt_group_visible (1 layer, 1 edge, no issues
+      expected).
+      Open the dialog, open Layers.
+      The TXT-LABELS row's "issues" cell shows "0 issues"
+      with NO `.has-issues` class.
+
+   2. Select outer_g from the V1.0 fixtures (depth 3 nested
+      group, produces 1 deep_nesting preflight warning +
+      2 open_endpoint issues). Open dialog, open Layers.
+      Expected:
+      - The Layer0 row's issues cell shows
+        "3 issues" with the `.has-issues` class (CSS bold
+        emphasis).
+      - The visibility label "Visible", role "Construction".
+
+   3. Verify visually that the "3 issues" cell is bolder
+      than the other cells in the same row. (If the
+      bold weight is hard to see in your theme, inspect
+      via DevTools that the .has-issues class is applied.)
+
+
+L6. NO ROLE COLOR HINTS (R008 / ChatGPT 11.7)
+=============================================
+
+   1. Run a diff between any two adjacent layer rows of
+      different roles (Dimension vs Annotation, Construction
+      vs Unknown, etc.) using SU HTML Inspector / DevTools.
+   2. Expected: the .role-badge background color is the SAME
+      on every row (the neutral `--muted` gray). NO role
+      distinguishes by color.
+   3. Verify by inspecting the rendered `.role-badge`
+      `background` style on:
+        - a Dimension row
+        - a Guide row
+        - an Unknown row
+      All three should resolve to the SAME background color
+      (`var(--muted)` per style.css). If you see distinct
+      background colors per role, the V1.1 fix contract
+      (R008) is broken - DO NOT accept.
+
+
+L7. LAYERS DETAILS DEFAULT-CLOSED + SUMMARY PRE-POPULATED
+=========================================================
+
+   1. Select all 5 fixtures together again.
+   2. Open the dialog.
+   3. WITHOUT opening the Layers <details> manually, inspect
+      its `<summary>` child (`id="layers-summary"`).
+      Expected:
+      - The summary text reads EXACTLY:
+        "Layers - N total (M with issues)"
+        where N = the number of distinct layers you selected
+        and M = the number of those layers with at least one
+        issue. (For our 5 visible + 1 hidden = 6 fixtures,
+        N=6; M depends on the open-endpoint / duplicate
+        counts, but is usually 0 in this fixture.)
+      - The <details> is rendered CLOSED (no `open` attribute
+        on the element via DevTools).
+      - The summary text is populated BEFORE the user opens
+        the details (this is the ChatGPT 11.5 contract; the
+        user sees the count even when collapsed).
+   4. Click "Layers" to open it. The text does NOT change.
+
+
+L8. LAYER ROW NON-ACTIONABLE (L3 mirror)
+========================================
+
+   1. Open the dialog on the multi-layer selection.
+   2. Open Layers.
+   3. Click on ANY layer row.
+      Expected:
+      - NO selection change in the SU model.
+      - NO camera zoom.
+      - NO toast.
+      - NO Ruby error in the Ruby Console.
+   4. Visually inspect the row: cursor should be default
+      (not a pointer). The row should NOT show a hover
+      background change when mouse passes over it.
+
+
+L9. FINGERPRINT (NO MUTATION)
+=============================
+
+   1. Re-capture fingerprint after running steps L1..L8:
+        fp_l9 = su_fingerprint_v11(Sketchup.active_model)
+        puts "AFTER L9 = #{fp_l9.inspect}"
+        puts "MATCH     = #{fp_l9 == fp_before}"
+   2. Expected: MATCH = true.
+      The V1.1 implementation MUST NOT mutate:
+        - edge count (no entities.add_*, no entity.erase!)
+        - group count
+        - layer.visible? flags (no hidden -> visible flip)
+        - active_path (no model.active_path =)
+      All fields match PRE / AFTER byte-for-byte.
+
+   3. Property-only spot-check (V1.0 step N.6 mirror):
+        m = Sketchup.active_model
+        sample = m.entities.grep(Sketchup::Edge).first
+        puts "material=#{sample.material.name}, " \
+             "layer=#{sample.layer.name}, " \
+             "hidden=#{sample.hidden?}, " \
+             "soft=#{sample.soft?}"
+      Repeat before and after the L1..L8 flow. Expected:
+      byte-identical properties.
+
+
+OVERALL RESULT
+==============
+
+After steps L1..L9, report one of:
+
+  PASS ON SKETCHUP <version> (V1.1 LAYER SEMANTIC MAPPING)
+  - V1.0 baseline (steps L1): UNCHANGED.
+  - L2: Layers section visible with 1 layer for the closed
+        square; role + visibility badges are SEPARATE.
+  - L3: 5-layer role bucket order
+        [Dimension, Annotation, Guide, Construction, Unknown].
+  - L4: Hidden layer shows opacity 0.6 AND sorts after
+        visible rows in the same role bucket; role + visibility
+        remain separate.
+  - L5: issue_count > 0 renders bold (.has-issues); 0 does
+        not.
+  - L6: No role color hints (single neutral role badge
+        color across all roles).
+  - L7: Layers <details> default-closed + summary
+        "Layers - N total (M with issues)" populated BEFORE
+        opening.
+  - L8: Layer row clicks are inert (no selection change, no
+        toast, no Ruby error).
+  - L9: PRE / POST fingerprint byte-identical (no model
+        mutation).
+
+  PARTIAL PASS
+  - List which L steps passed and which failed.
+  - If any model mutation is suspected, capture the
+    fingerprint delta and the Ruby Console log verbatim.
+
+  BLOCKED
+  - If the Layers section does not appear at all, or any
+    layer row lacks the role / visibility / data-* attributes,
+    or the loader raises on Ruby reload, list the symptom and
+    the Ruby Console error verbatim.
+
+
+NEXT ACTION (AFTER V1.1 LAYER OWNER VERIFICATION)
+=================================================
+
+- If OVERALL = PASS on SU2020: SU-AI-Plugin V1.1 Layer
+  Semantic Mapping is accepted on the verified SU version.
+  Agent may dispatch the end-of-stage CodeX review packet
+  (per V1.1 plan 13). V1.1 stage is then complete on SU2020.
+
+- SU2017 minimum-host verification remains a release Gate
+  (per R004). Repeat L1..L9 on SU2017 before formal release.
+  This is NOT a V1.1 blocker; it is a release-blocker.
+
+- Gate 1 has been deferred to formal release (per R006 /
+  Cicada 2026-08-19 decision). V1.1 ships with Gate 1
+  PENDING; the formal release must rerun Gate 1 on the
+  final RBZ artifact.
+
+============================================================
+END OF OWNER VERIFICATION CHECKLIST - V1.1 LAYER MAPPING
+============================================================

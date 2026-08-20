@@ -1,0 +1,91 @@
+# CodeX Review 023 — RBZ Root Loader Recheck
+
+VERDICT:
+BLOCKED FOR RELEASE CANDIDATE
+
+REVIEW MODE:
+BLOCK RECHECK (BLOCK-022-001 packaging contract only)
+
+SCOPE REVIEWED:
+- Review/CODEX_BLOCK_RECHECK_022_2026-08-19_RBZ_PACKAGE.txt
+- dist/SU-AI-Plugin.rbz final archive listing
+- extension/su_ai_plugin.rb root registration loader
+- extension/su_ai_plugin/main.rb boot target
+- tests/test_rbz_smoke.rb and tests/test_loader.rb
+- full suite: 282/282 PASS; git diff --check clean
+
+BLOCK-023-001: root loader passes the extension load target as Array
+
+Evidence in `extension/su_ai_plugin.rb`:
+
+    SketchupExtension.new('SU-AI-Plugin', [main_path])
+
+Why it blocks:
+- `SketchupExtension.new` requires a String load path, not an Array.
+- The official registration pattern uses a String relative target such as
+  `su_ai_plugin/main` (without `.rb`), so SketchUp can resolve either `.rb`
+  or encrypted extension formats.
+- The fake test environment does not type-check this API call, so its green
+  suite cannot substitute for this real Extension Manager contract.
+
+BLOCK-023-002: root loader does not guard registration before registering
+
+Evidence:
+- It calls `Sketchup.register_extension(...)` unconditionally whenever the
+  file is evaluated, then calls `file_loaded(...)` only afterwards.
+- Merely mentioning `file_loaded?` in source/comments is not a load guard.
+- A root registration loader must avoid duplicate registration on re-evaluation.
+
+MINIMUM ACCEPTABLE FIX:
+1. Keep the already-correct archive shape exactly as it is:
+   - root `su_ai_plugin.rb`
+   - support folder `su_ai_plugin/` with `main.rb` and all runtime code.
+
+2. Make the root loader a conventional registration-only file. Its essential
+   behavior must be equivalent to:
+
+       require 'sketchup.rb'
+       require 'extensions.rb'
+       unless file_loaded?(__FILE__)
+         extension = SketchupExtension.new('SU-AI-Plugin', 'su_ai_plugin/main')
+         # metadata...
+         Sketchup.register_extension(extension, true)
+         file_loaded(__FILE__)
+       end
+
+   Use a unique namespace/constant as appropriate, but:
+   - second argument MUST be a String, never Array;
+   - use the relative no-extension target `su_ai_plugin/main`, not a dev-tree
+     absolute path;
+   - operational boot code remains only in `su_ai_plugin/main.rb`.
+
+3. Strengthen tests with a type-validating Fake SketchUp API:
+   - fail if `SketchupExtension.new` receives non-String target;
+   - assert target exactly equals `su_ai_plugin/main`;
+   - assert repeated root-loader evaluation registers exactly once;
+   - assert registration loader itself does not execute `Boot.boot!`.
+
+4. Correct the Owner checklist wording that says SketchUp must be closed before
+   installing but then instructs the Owner to open Extension Manager. The
+   Extension Manager install is performed in SketchUp; require a restart AFTER
+   installation for boot verification.
+
+5. Rebuild the RBZ, run the full suite, run diff check, and COMMIT the complete
+   coherent rework before submitting the next packet. Include the exact commit
+   ID and the final archive listing.
+
+REVIEW CADENCE:
+- This is one coherent root-loader correction. Pi owns all ordinary technical
+  decisions and must not submit partial packets, local test failures, or
+  incremental commits for review.
+- Submit one consolidated recheck only after every item above is complete.
+- Escalate only if the standard SketchUp registration contract cannot satisfy
+  the locked SU2017+ baseline or would require a product/safety change.
+
+NEXT REVIEW:
+- Recheck BLOCK-023-001 and BLOCK-023-002 together after the complete packet.
+- Do not ask Owner to install the RBZ or run SU2017 until this recheck passes.
+
+AUTHORITATIVE REFERENCES:
+- https://developer.sketchup.com/article-creating-a-sketchup-extension
+- https://developer.sketchup.com/tut-hello-cube-rb

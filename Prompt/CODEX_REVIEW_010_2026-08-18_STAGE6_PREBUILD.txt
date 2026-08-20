@@ -1,0 +1,289 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+PRE-BUILD
+
+SCOPE REVIEWED:
+- Review/EOD_HANDOFF_2026-08-17.md
+- Review/STAGE_6_PLAN_2026-08-18.md
+- CURRENT_STATE.md and Git state at aeced98
+- locked R002 / R003 / R005 decisions
+- current Stage 1/2 issue hashes, SourceReference, PreflightRunner,
+  PreflightReport, and SketchUp API contracts relevant to Stage 6
+- no Stage 6 source code exists yet; this is a plan review only
+
+SUMMARY:
+- The read-only UI direction is accepted: HtmlDialog, grouped issue sections,
+  selection/camera Locate only, no overlay, no source mutation.
+- The plan is blocked before implementation because its Issue/locator contract
+  does not match the current analyzer output, its runtime flow has no reusable
+  snapshot or actual launch entrypoint, and its HtmlDialog asset/data handshake
+  is incomplete.
+- Correct the plan only. Do not begin Stage 6 implementation until the four
+  BLOCKs below are incorporated.
+
+BLOCKS:
+
+1. S6-PLAN-BLOCK-001 — Unified Issue contract is not connected to current data
+   Location:
+   - plan sections 4.1, 5, 6.4, 6.5, 6.6
+   - current core/analyzers/*.rb
+   - current core/edge_record.rb and core/source_reference.rb
+
+   Problem:
+   The plan assumes an Issue has `issue_type`, one `source`, and a
+   `source.persistent_id_path`. Current analyzer hashes instead have:
+   - `kind`, not `issue_type`;
+   - severity Strings (`"low"`, `"medium"`), while the plan requires Symbols;
+   - `source_entity_ids` and `edge_ids`, but no SourceReference or PID path;
+   - duplicate and gap issues can refer to two Edges, not one source;
+   - GapCandidateDetector currently emits an empty source_entity_ids array.
+
+   The plan also lists three Preflight warning groups, but does not define how
+   PreflightReport warnings become registry Issues or whether they are
+   locatable. Their warning hashes do not carry Edge source paths.
+
+   The proposed ID algorithm cannot work from the current issue hashes without
+   an explicit enrichment join back to the GeometrySnapshot. The statement
+   that the analyzers already emit the planned canonical contract is false.
+
+   Why it matters:
+   Issue Registry construction, deterministic IDs, severity presentation, and
+   Issue -> SketchUp Entity location all depend on this seam. Implementing the
+   current plan would either fail registry validation or create unlocatable
+   rows.
+
+   Minimum acceptable plan correction:
+   - Define one normalized pure-Ruby `UIIssue`/registry Hash contract before
+     naming classes. It must include at least:
+       issue_id: String
+       issue_type: String
+       severity: one canonical value
+       confidence: one canonical value
+       source_paths: Array<Array<Integer>> (zero, one, or many)
+       source_entity_ids: Array<Integer>
+       edge_ids: Array<Integer>
+       location: JSON-safe coordinate or nil
+       message: String
+       metadata: JSON-safe Hash
+       locatable: Boolean
+   - Build a snapshot EdgeRecord index by edge.id, then enrich every analyzer
+     issue from its edge_ids. Preserve all unique occurrence-aware
+     SourceReference.persistent_id_path values. Do not collapse a duplicate or
+     gap Issue to one arbitrary source.
+   - Normalize `kind` -> `issue_type`, String/Symbol severity, and the R005
+     per-type mappings at one boundary. Required initial mapping:
+       duplicate medium; short low; open medium; gap medium;
+       significant_non_zero_z medium; abnormal_large_coord high;
+       deep_nesting low.
+   - Define Preflight-warning conversion explicitly. If a global warning has
+     no source path, set locatable=false and render it without a Locate action.
+     Do not fabricate a source entity.
+   - Registry validation may report/drop one malformed Issue and continue with
+     valid Issues; it must not abort the entire analysis/UI because one Issue
+     is malformed. Preserve a diagnostic for the final report.
+   - Define deterministic canonical source keys: sort source PID paths and
+     canonicalize geometry endpoints/pairs before assigning collision counters.
+     A counter is only the final tie-breaker after sorting the canonical keys.
+
+   Recheck evidence needed:
+   - Revised contract table and enrichment flow in the plan.
+   - Planned tests for one-source, two-source, no-source warning, same
+     definition/multiple occurrence, missing PID fallback, and malformed Issue.
+
+2. S6-PLAN-BLOCK-002 — Runtime flow cannot reuse the snapshot and has no launch entrypoint
+   Location:
+   - plan sections 2, 4.1, 5, 7
+   - current extension/preflight_runner.rb
+
+   Problem:
+   The proposed flow calls `PreflightRunner.run(selection)` and then calls the
+   four analyzers with `snapshot`, but `PreflightRunner.run` returns only a
+   PreflightReport and discards the snapshot. Rebuilding the snapshot would
+   duplicate host traversal and could create inconsistent report/Issue data.
+
+   The plan also says analysis is triggered by an existing menu item, but the
+   repository currently contains no UI.menu/UI::Command/toolbar registration.
+   No listed Stage 6 file owns plugin load registration or the user-visible
+   "Analyze selection" command.
+
+   Why it matters:
+   There is currently no coherent one-pass analysis pipeline and no actual
+   user entrypoint. The UI can be fully implemented yet remain unreachable.
+
+   Minimum acceptable plan correction:
+   - Build the GeometrySnapshot exactly once:
+       snapshot = PreflightRunner.build_snapshot(selection, model: model)
+       preflight = PreflightAnalyzer.run(snapshot)
+       analyzer issues = each detector.detect(snapshot)
+       registry = normalize/enrich issues using the same snapshot
+   - Return one immutable AnalysisResult containing snapshot-derived report,
+     registry, diagnostics, and only the host lookup map needed by DialogRunner.
+   - Add a narrow extension loader/command owner to the file inventory. It must
+     register one "Analyze selection" menu command once, validate empty or
+     unsupported selection, run analysis, then show the dialog.
+   - Define idempotent registration on Ruby reload so duplicate menu items are
+     not created.
+   - Keep Stage 2 PreflightRunner behavior backward compatible; do not reopen
+     its passed traversal logic.
+
+   Recheck evidence needed:
+   - Revised one-snapshot sequence and concrete entrypoint file/ownership.
+   - Planned tests proving one snapshot build per command and one menu
+     registration across repeated loads.
+
+3. S6-PLAN-BLOCK-003 — Locate policy is invalid for nested and multi-source Issues
+   Location:
+   - plan sections 2, 3 rule 6, 5, 6.3
+
+   Problem:
+   `Model#instance_path_from_pid_path` returns a Sketchup::InstancePath. The
+   plan then describes passing the result directly to `Selection#add` and
+   `View#zoom`, but those APIs accept Drawingelement/Entity objects or arrays,
+   not InstancePath objects.
+
+   Nested Edges inside shared ComponentDefinitions are occurrence-specific.
+   Selecting/zooming only `InstancePath#leaf` loses the occurrence context;
+   zooming the leaf's definition geometry can use the wrong coordinate space.
+   Duplicate and gap Issues may also need to locate two source occurrences.
+
+   The plan uses `selection.add` without clearing the prior Locate selection,
+   while also saying V1 has no multi-Issue multi-select. Repeated clicks would
+   accumulate unrelated prior entities.
+
+   Why it matters:
+   Issue -> Entity Locate is a required acceptance criterion. This failure is
+   most likely on the exact nested/component CAD cases Stage 2 worked hard to
+   preserve.
+
+   Minimum acceptable plan correction:
+   - Locator input is `source_paths` (plural).
+   - Resolve every path to InstancePath and validate it.
+   - Root-level leaf: select/zoom the leaf Entity.
+   - Nested occurrence: select/zoom the InstancePath root occurrence
+     (Group/ComponentInstance), not the definition leaf. This is less granular
+     but occurrence-correct and remains read-only. Do not change model.active_path.
+   - Deduplicate targets; `selection.clear` then `selection.add(targets)`;
+     `view.zoom(targets)` only when non-empty.
+   - If no path resolves, no-op at model level and show a non-blocking in-dialog
+     "source no longer available" status plus one console diagnostic.
+   - Non-locatable Preflight warnings must not expose an active Locate action.
+   - Real-host verification must include root Edge, nested Group Edge, shared
+     ComponentDefinition with two occurrences, two-source duplicate/gap, and
+     erased-after-analysis behavior.
+
+   Recheck evidence needed:
+   - Revised root/leaf/multi-source policy and FakeSU API shapes.
+   - Tests must reject passing InstancePath directly to Selection/View.
+
+4. S6-PLAN-BLOCK-004 — HtmlDialog asset, data, callback, and lifecycle handshake is incomplete
+   Location:
+   - plan sections 4.1, 5, 6.2, 6.9, open question 4
+
+   Problem:
+   The plan ships separate index.html/style.css/app.js, but its runtime flow
+   calls `set_html(index.html_as_string)`. That does not define a reliable base
+   path for the relative CSS/JS assets. The plan also never defines when or how
+   the Ruby Hash reaches JS.
+
+   The callback pseudocode uses
+   `add_action_callback("locate_issue", method(:locate_issue))`, while the real
+   HtmlDialog API registers a block yielding `|action_context, *args|`.
+   HtmlDialog callbacks are asynchronous and are cleared when the dialog is
+   closed. The plan does not define per-dialog registry/model state or a ready
+   handshake, so first-render races and stale callbacks are likely.
+
+   Production `SUCapability` is also proposed to gain `fake_ui?` and
+   `fake_html_dialog` test-only hooks. Test fakes do not belong in the
+   production compatibility shim.
+
+   Why it matters:
+   These defects can produce an unstyled/empty dialog or nonfunctional click
+   callbacks even though static HTML tests pass.
+
+   Minimum acceptable plan correction:
+   - Use `dialog.set_file(File.expand_path('html/index.html', __dir__))` (or
+     equivalent absolute path) so relative CSS/JS resolve. Do not embed the
+     assets in Ruby for V1.
+   - Register callbacks with blocks before `show`, for example:
+       add_action_callback('ready') { |_ctx| push_data }
+       add_action_callback('locate_issue') { |_ctx, issue_id| ... }
+   - JS calls `window.sketchup.ready()` after DOMContentLoaded. Ruby then uses
+     `JSON.generate` and `execute_script` to call one fixed render function.
+     Never interpolate unescaped user text into executable JavaScript.
+   - Store dialog, registry, model identity, and diagnostics in one per-dialog
+     controller instance. Release references in `set_on_closed`; recreate and
+     rebind callbacks after close.
+   - Validate callback issue_id is a String and belongs to the current registry.
+   - Keep FakeUI entirely under tests and inject a dialog factory/class into
+     DialogRunner tests. Do not add fake methods to production SUCapability.
+
+   Recheck evidence needed:
+   - Revised lifecycle sequence from set_file through ready/push/render/close.
+   - Planned tests for ready-before-data, close/reopen callback rebinding,
+     escaped JSON text, invalid ID, and missing asset file.
+
+NITS:
+- The no-overlay lint should scan executable tokens/AST-equivalent patterns or
+  carefully strip comments and strings. A literal wildcard such as
+  `.entities.add_*` is not a whole-token match.
+- Consolidate reviews into two meaningful gates rather than four tiny rounds:
+  (1) normalized Issue/AnalysisResult core contract; (2) complete runnable
+  HtmlDialog integration. Recheck only BLOCK fixes between them.
+- Remove the inaccurate statement that an Analyze menu item already exists.
+- Update stale historical sections of CURRENT_STATE only after this plan passes;
+  do not rewrite closed Stage 2 history.
+
+DEBT:
+- Rich leaf-level visual highlighting inside a closed nested component can be
+  deferred. V1 may select/zoom the root occurrence as specified above.
+
+DECISIONS ON PLAN QUESTIONS 1-6:
+1. Group default-open:
+   - Open every group containing a high Issue.
+   - If there is no high Issue, open the first non-empty group only.
+   This avoids an apparently blank result while keeping the page compact.
+
+2. Source resolve failure:
+   - Use an in-dialog non-blocking status/toast plus one console line.
+   - No modal messagebox and no exception to JS.
+
+3. Owner verification scope:
+   - Create a focused Stage 6 checklist. Do not rerun all Stage 2 A-I steps.
+   - Include plugin/load smoke, complete analysis command, grouped rendering,
+     root/nested/multi-source Locate, stale source behavior, and before/after
+     model fingerprint proving zero mutation.
+
+4. HtmlDialog assets:
+   - External local assets, loaded with absolute `set_file` path derived from
+     `__dir__`. Do not use heredoc embedding.
+
+5. Coordinate/length display:
+   - Preserve raw inch Floats in internal/JSON data if needed for tests.
+   - Add separate display strings formatted by `Sketchup.format_length` using
+     the current model units. Do not display unlabeled fixed-decimal inches.
+   - UI renders display strings; core stays unit-agnostic.
+
+6. Verification file:
+   - Create new `Review/OWNER_VERIFICATION_STAGE_6.txt` for clean audit history.
+   - Do not append J-N to the passed Stage 2 checklist.
+
+AUTHORITATIVE API REFERENCES:
+- UI::HtmlDialog callbacks/set_file/execute_script:
+  https://ruby.sketchup.com/UI/HtmlDialog.html
+- Model#instance_path_from_pid_path:
+  https://ruby.sketchup.com/Sketchup/Model.html
+- InstancePath root/leaf/to_a:
+  https://ruby.sketchup.com/Sketchup/InstancePath.html
+- Selection#add accepts Drawingelements, not InstancePath:
+  https://ruby.sketchup.com/Sketchup/Selection.html
+- View#zoom accepts Entity/Array/Selection, not InstancePath:
+  https://ruby.sketchup.com/Sketchup/View.html
+- Model-unit display formatting:
+  https://ruby.sketchup.com/Sketchup.html#format_length-class_method
+
+NEXT REVIEW:
+- Revised Stage 6 plan only, addressing S6-PLAN-BLOCK-001..004.
+- Do not implement Stage 6 code yet.
+- Previously passed Stage 2 code remains closed.

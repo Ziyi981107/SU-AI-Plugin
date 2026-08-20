@@ -1,0 +1,160 @@
+# BLOCK RECHECK REQUEST — Gate A Stage 6 Core contract (Round 015 rework)
+
+Created:    2026-08-18
+Stage:      6 Gate A — BLOCK-001 + BLOCK-002 rework
+Source:     Prompt/CODEX_REVIEW_015_2026-08-18_STAGE6_GATE_A_IMPLEMENTATION.txt
+Fix commit: 8ddacda fix(stage6): Gate A BLOCK-001..002 rework per CodeX Round 015
+Tests:      171/171 PASS (was 161; +10 new from this commit; 0 regressions on Gate A)
+
+PURPOSE
+=======
+
+Per CodeX Review 015 directive:
+  "Fix both in one consolidated commit/recheck packet. Do not split
+   into micro reviews."
+  "Review only the fix diff, direct dependencies and adversarial tests;
+   do not reopen the passed Gate A modules."
+  "NITs do not require a separate review cycle."
+
+This packet addresses S6-GATE-A-BLOCK-001, S6-GATE-A-BLOCK-002, and
+five NITs in one consolidated commit.
+
+CONTEXT
+=======
+
+Current base/head: 8ddacda (aeced98 + 2 commits)
+Previous commit:    f68f4bd Gate A implementation
+Fix commit:         8ddacda BLOCK-001 + BLOCK-002 recheck
+
+Both BLOCKs closed in one commit. NITs absorbed.
+
+BLOCK-001 — Leaf was incorrectly counted as structural nesting
+=========================================================
+
+Problem: structural_depth = active_path_count + ancestry_count + 1
+counted the leaf itself as a structural level. This contradicted the
+locked contract that root leaf has depth 0.
+
+Fix (CodeX Review 015 BLOCK-001 v3):
+  - structural_depth = active_path_count + ancestry_count (leaf EXCLUDED)
+  - expected_pid_count = structural_depth + 1 (the leaf is +1)
+  - Root leaf: depth 0; one enclosing container: depth 1
+  - Active edit context entities counted normally
+  - updates affect: core/structural_facts.rb, tests/test_structural_facts.rb
+
+Files in this fix:
+  core/structural_facts.rb          (M)
+  tests/test_structural_facts.rb    (M, rewritten)
+  tests/test_issue_locator_policy.rb (M, +2 integration tests)
+
+Integration tests added (CodeX Round 014 directive):
+  - complete root -> :inst_path_leaf
+  - incomplete root + entityID -> :entity_id
+  Both pipe StructuralFacts -> SourceReference -> IssueEnricher ->
+  IssueLocatorPolicy to verify the contract end-to-end.
+
+BLOCK-002 — Issue IDs still used transient identity and unstable counter
+====================================================================
+
+Problem A: geometry_signature fallback to entity_id and object_id.
+  - Removed. The fallback chain now uses ONLY deterministic analysis
+    data:
+      1. quantized coordinates (when location is provided)
+      2. sorted edge_ids (when edge_ids are present)
+      3. constant NO_SOURCE_KEY (last-resort; shared by all sources)
+
+Problem B: counter assigned in input order without sorting.
+  - enrich_all now sorts each type bucket by
+    IssueIdAssigner.canonical_source_keys BEFORE assigning counter.
+  - Reversed/shuffled input produces the same issue_id for the same
+    logical Issue.
+
+  - updates affect: core/issue_id_assigner.rb, core/issue_enricher.rb
+
+Files in this fix:
+  core/issue_id_assigner.rb          (M)
+  core/issue_enricher.rb            (M)
+  tests/test_issue_id_assigner.rb   (M, +3 adversarial tests)
+  tests/test_issue_enricher.rb      (M, +2 permutation tests)
+
+Adversarial tests added:
+  - no-PID + no-location -> no-source key (no entity_id/object_id)
+  - no-PID + sorted edge_ids -> deterministic edges key
+  - location fallback ignores entity_id
+  - counter is order-independent (reversed input)
+  - counter is order-independent (shuffled input)
+
+NITs absorbed (no separate review cycle)
+=====================================
+
+NIT 1 (IssueRegistry unknown issue_type rendering):
+  - core/issue_registry.rb: groups now appends unknown types AFTER
+    canonical order, in lex order of the type itself.
+  - tests/test_issue_registry.rb: 1 new test verifies the order.
+
+NIT 2 (shallow vs deep immutability):
+  - Contract: "no public setters + frozen top-level". Nested fields
+    immutable by design (IssueRegistry's frozen contract + Hash#freeze
+    in display_data). Kept as-is; documented.
+
+NIT 3 (IssueEnricher.enrich_one unused canonical_keys):
+  - Removed.
+
+NIT 4 (missing edge IDs in metadata):
+  - core/issue_enricher.rb: build_source_tokens now records missing
+    edge_ids in normalized[:metadata][:no_source_marker] (sorted,
+    comma-separated). The metadata is a copy; the input is not
+    mutated.
+
+NIT 5 (monitor scripts in separate commit):
+  - Deferred to a future separate commit. No action in this commit.
+
+REGRESSION CHECK
+================
+
+Test pass count: 171/171 (was 161/161 after Gate A implementation)
+New tests: 10 (5 issue_id_assigner, 2 issue_enricher, 2 integration,
+1 issue_registry, 1 invariant, 1 active-edit canonical)
+Failures: 0
+Errors: 0
+Existing tests: 0 regressions
+
+Full suite output (verbatim):
+  $ .vendor/ruby/.../ruby.exe tests/run_all.rb
+  ... 171 tests: 171 pass, 0 fail, 0 error ...
+
+NEXT REVIEW (CodeX Gate A recheck)
+=================================
+
+CodeX reviews:
+  1. structural_depth excludes leaf (revised formula in
+     core/structural_facts.rb); integration tests pass
+  2. IssueIdAssigner fallback no longer uses entity_id or object_id
+  3. enrich_all sorts by canonical_source_keys before counter
+  4. NITs absorbed: unknown issue_type, enrich_one unused code,
+     missing-edge-id metadata marker
+  5. 171/171 tests pass; 0 regressions on existing tests
+
+After this recheck is APPROVED:
+  - Gate A is fully CLOSED
+  - Gate B is authorized (Cicada 2026-08-18 section 四)
+  - Gate B must additionally prove:
+    1. structural_depth from REAL model.active_path entity count
+       (NOT filtered PID array length)
+    2. active-path completeness computed BEFORE nil PID filtering
+    3. missing any active-path container PID -> fail closed
+    4. incomplete nested source NEVER uses entityID fallback
+    5. two tests required: complete active path + active path with one
+       missing PID
+
+LONG-TERM-AUTONOMY BOUNDARY
+===========================
+
+This rework:
+  - Stays within locked R003-R005 Stage 6 scope
+  - Does NOT change product decisions
+  - Does NOT add overlay / repair / source-model mutation
+  - Does NOT push / publish / release
+
+AGENT AWAITS CODEX ROUND 016 GATE A RECHECK VERDICT
+==================================================

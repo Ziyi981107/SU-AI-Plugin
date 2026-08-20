@@ -1,0 +1,146 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+PRE-BUILD / BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: aeced98; no Stage 6 implementation exists
+- prior verdict: Prompt/CODEX_REVIEW_012_2026-08-18_STAGE6_PLAN_PASS2_RECHECK.txt
+- plan: Review/STAGE_6_PLAN_REVISED_2026_08_18_PASS3.md
+- verification: Review/OWNER_VERIFICATION_STAGE_6.txt
+- packet: Review/BLOCK_RECHECK_REQUEST_2026-08-18_stage6_plan_pass3.md
+- implementation truth: existing SourceReference, PreflightRunner, analyzers and tolerance
+
+SUMMARY:
+- Pass 3 correctly separates structural nesting from PID-path length.
+- The incomplete-nested and incomplete-nested-partial policies are correct: both must
+  fail closed and must never use entityID fallback.
+- SUCapability is an acceptable owner for the safe find_entity_by_id wrapper.
+- Active edit context should contribute to structural depth and completeness.
+- However, S6-PLAN-BLOCK-001 remains open by one precise contract defect:
+  pid_path_complete excludes the leaf Entity PID.
+- S6-VERIFY-BLOCK-001 also remains open by three concrete checklist contradictions.
+- Do NOT begin Gate A yet.
+
+BLOCKS:
+
+1. [S6-PLAN-BLOCK-001] `pid_path_complete` must cover the entire path, including leaf PID
+
+   Location:
+   - STAGE_6_PLAN_REVISED_2026_08_18_PASS3.md §3.2 lines 163-166
+   - §3.10 lines 327-343
+   - §6.3 complete-root/incomplete-root profiles
+   - BLOCK_RECHECK_REQUEST pass3, BLOCK-001 items A/E
+
+   Problem:
+   Pass 3 defines `pid_path_complete` as true iff every CONTAINER PID was captured.
+   That is insufficient. A root-level Edge has no container, so this definition makes
+   `pid_path_complete == true` even when the leaf Edge PID is nil and its path is `[]`.
+   The locator will classify it as complete-root, attempt empty-path resolution, and
+   never reach the required root entityID fallback.
+
+   The same defect exists for nested sources: all container PIDs may exist while the leaf
+   PID is missing. The path is still incomplete and must not be sent to
+   instance_path_from_pid_path. The pseudocode variable `yield_pid_complete` is not
+   defined precisely enough to repair the written contract.
+
+   Why it matters:
+   This breaks mandatory test case 3 (root missing leaf PID + entityID fallback) and can
+   mislabel incomplete nested paths as safe. This is the last material locator-contract
+   gap before implementation.
+
+   Minimum acceptable fix:
+   A. Define `pid_path_complete` as:
+        every structural ancestor PID AND the leaf Entity PID were captured.
+
+   B. Compute it at the leaf yield/build_source_reference point, not only while visiting
+      containers. A clear invariant is:
+        expected_pid_count = structural_depth + 1
+        pid_path_complete = ancestry_complete && !leaf_pid.nil? &&
+                            pid_path.length == expected_pid_count
+      If active edit context contributes to structural_depth, its PIDs must be included
+      in the same expected count.
+
+   C. Fail closed when the invariants disagree. A non-empty but incomplete path must never
+      be treated as complete-root or complete-nested.
+
+   D. Make SourceReference wording, SourceToken wording, locatable derivation and the
+      five mandatory tests use this full-path definition consistently.
+
+   E. Add/retain explicit cases for:
+        - root leaf PID missing, path [], entityID present -> entityID fallback
+        - nested container PIDs present but leaf PID missing -> non-locatable
+      The second case is distinct from “container PID missing, leaf PID present”.
+
+   Recheck evidence needed:
+   - revised §3.2/§3.10/§6.3 and packet wording only
+   - test matrix includes both missing-leaf and missing-container shapes
+
+2. [S6-VERIFY-BLOCK-001] Revised Owner checklist still contains false expectations
+
+   Location:
+   - OWNER_VERIFICATION_STAGE_6.txt K.6/K.7, L.1, M.8, N
+
+   Problem:
+   The major procedure fixes landed, but these remaining statements contradict the
+   fixtures/analyzers:
+
+   A. `dangling` is a Group containing an Edge. Its Edge is structurally nested
+      (`structural_depth > 0`), not root-level as K.7 states. With a complete PID path,
+      Locate targets the Group/root occurrence, not a root Edge leaf.
+
+   B. `outer_g` contains two connected edges in an L shape. Its two end vertices have
+      degree 1, so OpenEndpointDetector also emits two open-endpoint Issues. K.6 cannot
+      expect all sections except deep-nesting to be zero/not applicable.
+
+   C. M erases the only Edge in `dangling`. Both open-endpoint Issues refer to that same
+      Edge. The next analysis cannot show “1 remaining Open endpoint row”; it should show
+      zero analyzable edges / the product's unsupported-empty-geometry behavior.
+
+   These are not cosmetic: each can make the Owner report a failure against correct code.
+
+   Minimum acceptable fix:
+   - Correct K.7 to `nested == true`; explain that both endpoint Issues share one source
+     Edge and Locate selects the root Group occurrence.
+   - Correct outer_g expected counts to include two open endpoints, or close its geometry
+     if the intended fixture is deep-nesting-only.
+   - Correct M.8 to the actual post-erase behavior: no stale Issue remains after a fresh
+     analysis; accept the defined “no analyzable geometry” fallback instead of expecting
+     one Issue.
+   - In L.1 say both tokens are nested definition-edge occurrences; remove “root + nested
+     leaf” wording.
+
+   Recheck evidence needed:
+   - corrected OWNER_VERIFICATION_STAGE_6.txt only; no real SU run at plan stage
+
+NITS:
+
+- The recursive fingerprint detects count changes but not property-only mutations such
+  as material/layer/hidden/soft changes. Call it a geometry/count fingerprint, not the
+  sole “ground truth” for every mutation; keep the explicit forbidden-operation lint and
+  later real-host behavior evidence alongside it.
+- `structural_depth_facts` does not belong in SUCapability if it is pure arithmetic; keep
+  the capability module focused on host probes. This is non-blocking if the dependency
+  boundary remains one-way and tested.
+- SourceReference defaults (`structural_depth: 0`, `pid_path_complete: true`) must not make
+  an empty-path production source appear complete. Prefer explicit construction for
+  snapshot sources or a safe derived default.
+
+DEBT:
+- NONE added.
+
+QUESTIONS ANSWERED:
+- Q1: Yes. Both incomplete nested profiles are non-locatable; no entityID fallback.
+- Q2: SUCapability is acceptable for safe `find_entity_by_id`; a private extension helper
+  would also satisfy the boundary. Keep one owner only.
+- Q3: Yes. Active edit-path entities contribute to structural depth and path completeness;
+  leaf PID must additionally be included.
+- Q4: Yes. FakeSU may simulate a missing intermediate/container PID. Also add the inverse
+  missing-leaf case because it is not covered by that fixture.
+
+NEXT REVIEW:
+- Recheck only the full-path completeness definition and the three Owner-checklist
+  expectations above.
+- S6-PLAN-BLOCK-002, -003 and -004 remain CLOSED.
+- After these two narrow blocks close: PASS TO IMPLEMENT Gate A.

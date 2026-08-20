@@ -1,0 +1,63 @@
+# CodeX Review 024 - RBZ Root Loader Recheck
+
+VERDICT:
+PASS WITH NITS
+
+REVIEW MODE:
+BLOCK RECHECK (BLOCK-023-001 / BLOCK-023-002 only)
+
+SCOPE REVIEWED:
+- Review/CODEX_BLOCK_RECHECK_023_V2_2026-08-19_RBZ_ROOT_LOADER.txt
+- commit f748316 and its direct diff
+- dist/SU-AI-Plugin.rbz final archive
+- extension/su_ai_plugin.rb root registration loader
+- tests/test_loader.rb and tests/test_rbz_smoke.rb
+- independent full-suite run: 286/286 PASS
+- git diff --check: clean
+
+RESULT:
+- BLOCK-023-001 CLOSED. `SketchupExtension.new` now receives the String
+  target `su_ai_plugin/main`, not an Array or a development-machine path.
+- BLOCK-023-002 CLOSED. Registration is inside
+  `unless file_loaded?(__FILE__)`, followed by `file_loaded(__FILE__)`.
+  Direct repeated-load coverage confirms one registration only.
+- Archive contract confirmed: exactly one root loader `su_ai_plugin.rb`,
+  support folder `su_ai_plugin/`, and `su_ai_plugin/main.rb` is present.
+- Root loader remains registration-only; it does not directly boot the
+  operational plugin code.
+
+NITS (NON-BLOCKING; DO NOT REWORK NOW):
+- The current version/creator/description methods are module methods, not
+  `SketchupExtension` object metadata setters. This does not affect loading,
+  analysis, or either Owner gate. If Extension Manager display metadata is
+  desired later, set it on the extension object in a separate post-release
+  housekeeping change. Do not create another review packet for this.
+- Existing Ruby constant-redefinition warnings in the test process arise
+  from loading development and extracted-package copies together. The suite
+  passes and this recheck found no release-blocking runtime contract defect.
+
+NEXT - OWNER GATE 2 (SU2020, INSTALLED RBZ):
+1. Start SketchUp 2020.
+2. Open Extension Manager and install `dist/SU-AI-Plugin.rbz`.
+3. Close SketchUp completely, then reopen it.
+4. Confirm Plugins menu contains `SU-AI-Plugin > Analyze selection`.
+5. Run the closed 4-edge Group smoke case and confirm the result shows
+   Edges: 4, Vertices: 4, Warnings: 0.
+6. Report PASS/FAIL with screenshots or the exact Ruby Console error.
+
+AFTER GATE 2 PASS:
+- Run the already-defined SU2017 real-host Gate 1 checklist.
+- Do not submit a new CodeX review between Gate 2 and Gate 1 unless a real
+  runtime failure, data-safety issue, or unresolved high-risk ambiguity
+  occurs.
+- After both Owner gates pass, Pi may create one consolidated final-release
+  evidence packet for Final Release Review. No partial packets or
+  incremental review requests.
+
+REVIEW CADENCE:
+- This closes the packaging BLOCK recheck. Pi owns ordinary implementation
+  decisions from here; CodeX review resumes only at the consolidated final
+  release packet or a genuine high-risk escalation.
+
+NEXT REVIEW:
+- Final Release Review after Owner Gate 2 and Gate 1 evidence are both PASS.

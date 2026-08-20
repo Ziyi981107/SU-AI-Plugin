@@ -1,0 +1,104 @@
+OWNER VERIFICATION REPORT — STAGE 2 SU ADAPTER
+
+Date: 2026-08-17
+Project: D:\Projects\SU-AI-Plugin
+Executed by: Product Owner in real SketchUp
+Report transcribed by: Codex from Owner-provided Ruby Console evidence
+
+OVERALL RESULT:
+PASS ON SKETCHUP 2020
+
+DEVELOPMENT DECISION:
+- Stage 2 real-host verification on SketchUp 2020 is accepted.
+- Pi Agent may continue to Stage 6 UI work under the existing R003/R005
+  decisions.
+- This is not a release verdict.
+
+HOST EVIDENCE:
+- SketchUp version string: 20.0.363
+- SketchUp major version: 20
+- UI::HtmlDialog capability: true
+- Host used: SketchUp 2020
+- SU2017 host verification: PENDING (not currently installed)
+
+A. PLUGIN LOAD — PASS
+- All required Stage 2 core, compatibility, and extension Ruby files loaded
+  through the real SketchUp Ruby Console.
+- No load error was observed.
+
+B. CAPABILITY DETECTION — PASS
+- sketchup_version => "20.0.363"
+- sketchup_major_version => 20
+- html_dialog? => true
+
+C. SINGLE DISPOSABLE GROUP PREFLIGHT — PASS
+- selection_type => "Group"
+- edge_count => 4
+- bounding_box => min [0.0, 0.0, 0.0], max [10.0, 5.0, 0.0]
+- non_zero_z_vertex_count => 0
+- non_zero_z_edge_count => 0
+- significant_z_extrema_count => 0
+- warnings => []
+
+D. NON-ZERO-Z DETECTION — PASS
+- non_zero_z_vertex_count => 1
+- non_zero_z_edge_count => 1
+- significant_z_extrema_count => 1
+- warning code => significant_non_zero_z
+- severity => medium
+
+E. ABNORMAL LARGE COORDINATE — PASS
+- large_coordinate_extrema_count => 1
+- warning code => abnormal_large_coord
+- severity => high
+
+F. NESTED GROUP / COMPONENT — PASS
+- group_count => 2
+- component_count => 1
+- deepest_nesting => 3
+- edge_count => 1
+- warning code => deep_nesting
+- severity => low
+
+G. SOURCE INTEGRITY FINGERPRINT — PASS
+- A disposable four-edge test group was fingerprinted before and after
+  Preflight.
+- fp_before == fp_after => true
+- Fingerprinted evidence included group PID, transformation, layer, entity
+  counts, Edge PIDs, endpoint coordinates, and Edge layers.
+- No source geometry drift was observed.
+
+H. INVALID / ERASED ENTITY HANDLING — PASS
+- Corrected selection shape used: [inv_group, e1_invalid].
+- report_created => true
+- selection_type => "mixed"
+- edge_count => 1
+- The retained invalid Edge contributed zero records; the valid sibling Edge
+  remained analyzable.
+- No fatal exception escaped.
+
+I. TRANSLATED COMPONENTINSTANCE — PASS
+- selection_type => "ComponentInstance"
+- edge_count => 1
+- bounding_box => min [100.0, 200.0, 0.0], max [110.0, 200.0, 0.0]
+- instance_path contained ComponentInstance:SU_AI_Translated_Test
+- persistent_id_path was non-empty: [16072, 16069]
+
+UNEXPECTED CONSOLE OUTPUT:
+- No fatal or outcome-changing unexpected output was observed in the
+  submitted evidence.
+
+GEOMETRY DRIFT:
+- None observed. Step G fingerprint comparison returned true.
+
+OPEN COMPATIBILITY GATE:
+- SU2017 minimum-host verification remains PENDING because SU2017 is not
+  currently available to the Owner.
+- The current evidence must not be described as SU2017 compatibility proof.
+- Before formal release, repeat the required host/load and critical A-I
+  verification in SU2017 to close the Ruby 2.2.4 / minimum-version Gate.
+
+NEXT ACTION:
+- Pi Agent may proceed with Stage 6 UI implementation.
+- Preserve the SU2017 verification item as a release BLOCK/Gate, not as a
+  blocker to the next development stage.

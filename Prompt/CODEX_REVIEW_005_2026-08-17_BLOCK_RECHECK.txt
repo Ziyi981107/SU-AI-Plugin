@@ -1,0 +1,331 @@
+============================================================
+CODEX REVIEW 005 — STAGE 2 BLOCK RECHECK
+Project: D:\Projects\SU-AI-Plugin
+Date: 2026-08-17
+Recheck target: S2-BLOCK-001..005
+Fix commit: eb3cd41
+Evidence packet: Review/BLOCK_RECHECK_REQUEST_2026-08-17.md
+============================================================
+
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- original BLOCKS S2-BLOCK-001..005
+- fix diff 6eb33e8..eb3cd41 and direct dependencies
+- Review/OWNER_VERIFICATION_STAGE_2.txt
+- tests/_fake_su.rb, tests/test_preflight_runner.rb,
+  tests/test_preflight.rb
+- isolated Ruby 2.7.8 test execution
+
+TEST EVIDENCE:
+- Codex re-ran tests/run_all.rb.
+- Result: 50 tests, 50 pass, 0 fail, 0 error.
+- Additional Codex benchmark: PreflightAnalyzer on 5000 disconnected
+  Edges took approximately 4.41 seconds on the current isolated runtime.
+
+The 50/50 result is real for the implemented tests. It does not close
+all BLOCKS because several test doubles do not reproduce the relevant
+real SketchUp API behavior and some assertions are too weak.
+
+============================================================
+BLOCK STATUS
+============================================================
+
+S2-BLOCK-001 — CLOSED
+
+Evidence accepted:
+- One SketchUp/FakeSU Edge now emits exactly one EdgeRecord.
+- Rectangle adapter test returns 4 records, not 8.
+- The old directed half-record loop is removed.
+
+This scope remains closed unless later code changes it.
+
+------------------------------------------------------------
+
+S2-BLOCK-002 — REMAINS OPEN
+
+What is fixed:
+- Group children and ComponentInstance.definition.entities use separate
+  traversal paths.
+- Parent * child transform accumulation is implemented.
+- Basic translation and direct scale tests pass.
+
+Remaining material problems:
+
+1. instance_path is not a source mapping.
+
+   Current SourceReference stores display strings containing names and
+   Ruby object_id values. These strings distinguish two in-memory objects
+   in a test, but they cannot reliably reconstruct the correct SketchUp
+   instance path or locate the correct occurrence later. object_id is not
+   a SketchUp entity identifier and is not stable across reload/session.
+
+   SketchUp 2017 already provides Sketchup::InstancePath,
+   InstancePath#persistent_id_path and
+   Model#instance_path_from_pid_path. The V1 source reference should carry
+   a machine-resolvable path, not only a label.
+
+2. active edit-context transform is missing.
+
+   walk_selection_world always starts from identity_transform. If the user
+   selects Edges or a nested container while editing inside a Group or
+   Component, those coordinates are local to the active edit context.
+   The Snapshot will label them as world coordinates without applying the
+   model's active edit transform/path.
+
+3. required transform evidence is incomplete.
+
+   The nested test uses translations only. Translation matrices commute,
+   so it does not prove multiplication order. No nested rotation + scale +
+   translation test exists.
+
+Minimum acceptable fix:
+- Store a serializable, machine-resolvable instance PID path that includes
+  every container occurrence plus the leaf Edge PID. A display label may
+  exist separately.
+- Use entity.entityID as transient entity id when available; object_id may
+  only be a final fallback.
+- Prove the stored PID path can be resolved back through
+  model.instance_path_from_pid_path in real SU2017+.
+- Seed traversal with the active edit-context transform/path, or explicitly
+  reject nested edit-context selection with a clear user error. Case C
+  (selected Edges) must not silently mix local and world coordinates.
+- Add non-commutative nested transform coverage: rotation + non-uniform or
+  uniform scale + translation, plus direct selected Edge inside an active
+  nested edit context.
+- Add two instances sharing one definition inside the SAME selected parent
+  container, not only as two separate selection roots.
+
+Official API references:
+- https://ruby.sketchup.com/Sketchup/InstancePath.html
+- https://ruby.sketchup.com/Sketchup/Model.html#instance_path_from_pid_path-instance_method
+
+Recheck evidence needed:
+- serialized PID path is distinct for shared-definition occurrences;
+- both paths resolve to valid, correct InstancePath leaves;
+- nested non-commutative transform coordinates are correct;
+- active-context selected Edge coordinates are correct or safely rejected.
+
+------------------------------------------------------------
+
+S2-BLOCK-003 — CLOSED FOR THIS RECHECK
+
+Evidence accepted:
+- The concrete &. Ruby 2.3+ syntax violation is removed.
+- The changed production path contains no detected &. usage.
+
+Important boundary:
+This does not close R004 final-gate evidence. Complete production loading
+on real SU2017/Ruby 2.2.4 is still required before the final Gate.
+
+This BLOCK remains closed unless post-2.2 syntax is reintroduced.
+
+------------------------------------------------------------
+
+S2-BLOCK-004 — REMAINS OPEN
+
+What is fixed:
+- Vertex and Edge Z counts are now separate fields.
+- big_z is separated from non-zero awareness.
+- mixed selection and nesting threshold semantics are improved.
+- severity vocabulary is normalized.
+
+Remaining material problems:
+
+1. non_zero_z_edge_count uses the wrong predicate.
+
+   Current code counts an Edge only when BOTH endpoints are non-zero-Z.
+   An Edge with one endpoint on Z=0 and the other off-plane is a non-zero-Z
+   Edge and must be counted. Use OR / any-endpoint semantics.
+
+2. configured epsilon is not used for vertex deduplication.
+
+   run computes coord_eps from AnalysisConfig, but calls
+   collect_distinct_vertices(edges) without passing it. The helper silently
+   falls back to hard-coded 1e-6, so Company Profile overrides do not control
+   the result.
+
+3. vertex deduplication is O(V^2).
+
+   collect_distinct_vertices uses result.any? for every endpoint. This
+   contradicts the task's performance architecture and duplicates the
+   existing O(E)-amortized VertexIndex already built by GeometrySnapshot.
+   Codex measured about 4.41 seconds for Preflight alone on 5000 disconnected
+   Edges, before real SketchUp traversal/UI overhead. The Owner checklist
+   expected the complete Preflight path to finish in under 2 seconds.
+
+Minimum acceptable fix:
+- Count a non-zero-Z Edge when either endpoint exceeds coordinate_epsilon.
+- Reuse snapshot.vertex_records / VertexIndex for distinct vertex metrics,
+  or use an equivalent spatial hash. Do not perform result.any? full scans.
+- Use the actual config.tolerance.coordinate_epsilon consistently.
+- Add a custom-epsilon test proving profile/config override changes counts.
+- Add a one-endpoint-off-plane test proving Edge count = 1.
+- Add a performance regression test that exercises Preflight itself on
+  5000 disconnected Edges, not only the Stage 1 analyzers.
+
+Recheck evidence needed:
+- one endpoint Z=0, one endpoint Z>epsilon -> one non-zero-Z Edge;
+- custom epsilon controls vertex merge and Z counts;
+- 5000-Edge Preflight no longer performs quadratic deduplication and meets
+  the existing target with reasonable margin.
+
+------------------------------------------------------------
+
+S2-BLOCK-005 — REMAINS OPEN
+
+The revised checklist and invalid-entity test still do not reproduce the
+real API correctly.
+
+1. Invalid Vertex mutation calls remain.
+
+   OWNER_VERIFICATION_STAGE_2.txt still uses:
+     v.position = Geom::Point3d.new(...)
+
+   Sketchup::Vertex exposes #position but no #position= setter. The Owner
+   will receive NoMethodError before testing the Analyzer.
+
+2. Source fingerprint remains a placeholder.
+
+   The example only fingerprints top-level active_entities and literally
+   contains “# ... endpoint coords, layer names, etc.”. It does not provide
+   the promised executable recursive fingerprint for selected nested CAD,
+   transforms and layer/tag assignments.
+
+3. The erased-entity automated test is false evidence.
+
+   FakeSU::Edge#erase! only sets @erased. Its start/end/vertices methods keep
+   working, and production code never checks erased?/valid?. The test merely
+   asserts that at least one good Edge exists; it does not assert that the
+   erased Edge was skipped. In real SketchUp, erasing an Edge removes it from
+   its Entities collection, so “erase then analyze parent Group” normally
+   does not test an invalid reference at all.
+
+4. Invalid geometry is silently converted to the origin.
+
+   vertex_point_world returns [0,0,0] when a Vertex/position is nil or raises.
+   That creates fabricated geometry and can cause false duplicates/gaps.
+   Invalid Edges must be skipped and reported, never synthesized at origin.
+
+5. Traversal error handling is incomplete.
+
+   safe_each returns a collection without safely enumerating it; later
+   children.each and container label/definition calls can still raise outside
+   the per-Edge rescue.
+
+Minimum acceptable fix:
+- Build separate disposable fixtures directly at the desired coordinates
+  with supported Entities#add_line/add_edges calls. Do not assign Vertex
+  position.
+- Provide an executable recursive fingerprint helper in the checklist. It
+  must include selected-container descendants, PID/entity counts, endpoint
+  coordinates, transforms and layer/tag names.
+- Add valid_entity? capability handling (valid?/deleted?/erased? as actually
+  available) and ensure invalid references are skipped with a warning.
+- Make endpoint extraction fail/skip the entire Edge; never substitute
+  [0,0,0].
+- Make container access/enumeration safe per entity and continue siblings
+  after one invalid object.
+- Strengthen the fake: after erase!, access should behave like an invalid
+  entity or explicitly report invalid; assert the erased Edge is absent from
+  the Snapshot and the valid Edge remains.
+- For real-SU invalid-reference testing, pass an explicit array containing a
+  retained erased reference plus a valid Edge, rather than erasing an Edge
+  and then enumerating only its parent collection.
+
+Official Vertex API reference:
+- https://ruby.sketchup.com/Sketchup/Vertex.html
+
+Recheck evidence needed:
+- checklist setup commands are valid SketchUp API;
+- complete recursive fingerprint helper is present;
+- invalid Edge count is exactly skipped (not “>= 1”);
+- no invalid endpoint can create an origin EdgeRecord;
+- sibling traversal continues after an invalid container/entity.
+
+============================================================
+NEW BLOCK INTRODUCED BY THE REWORK
+============================================================
+
+1. [S2-BLOCK-006] Capability/version probes use incorrect real-SU API
+
+Location:
+- compatibility/su_capability.rb:35-53
+- Review/OWNER_VERIFICATION_STAGE_2.txt:91-96
+
+Problem:
+- HtmlDialog is UI::HtmlDialog, not Sketchup::HtmlDialog. The current
+  html_dialog? probe will return false in real SketchUp even though the
+  capability exists.
+- Sketchup.version returns a dotted version String such as a major version;
+  calling to_i does not yield the calendar year required by the checklist's
+  “Integer >= 2017” assertion. The current method/comment/checklist disagree.
+- The only HtmlDialog test asserts false outside SU. There is no positive
+  test using the correct UI namespace, so the wrong implementation passes.
+
+Why it matters:
+Stage 6 can incorrectly reject HtmlDialog on every supported host, and the
+Owner checklist can fail even on a valid SU2017+ installation.
+
+Minimum acceptable fix:
+- Probe defined?(UI::HtmlDialog), with safe handling when UI is absent.
+- Add positive and negative capability tests using realistic namespace
+  stubs.
+- Separate raw display version from comparison semantics. Prefer capability
+  detection for features. If a normalized product year is required, derive
+  and test it explicitly; do not claim Sketchup.version.to_i returns 2017.
+- Update the Owner checklist expected values accordingly.
+
+Official API references:
+- https://ruby.sketchup.com/UI/HtmlDialog.html
+- https://ruby.sketchup.com/Sketchup.html
+
+Recheck evidence needed:
+- fake UI::HtmlDialog present -> true;
+- UI::HtmlDialog absent -> false;
+- real SU2017 checklist expectation matches the actual version API result.
+
+============================================================
+NITS
+============================================================
+
+- SourceReference's default empty instance_path is mutable while the
+  non-empty path is frozen. Freeze both or expose a defensive copy.
+- CURRENT_STATE.md is stale: it still says BLOCK rework is queued even though
+  eb3cd41 and the recheck request already exist. Update it after this result;
+  do not rewrite prior commits.
+- The recheck packet's NEXT STEPS starts Owner real-SU verification before
+  receiving recheck PASS. Keep Owner verification paused until remaining
+  BLOCKS close.
+
+DEBT:
+- None added. These are current correctness/verification issues, not future
+  polish.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None. Pi can fix the remaining technical BLOCKS without another Owner
+  decision.
+
+============================================================
+NEXT REVIEW
+============================================================
+
+Recheck only:
+- S2-BLOCK-002
+- S2-BLOCK-004
+- S2-BLOCK-005
+- S2-BLOCK-006
+
+S2-BLOCK-001 and S2-BLOCK-003 are closed and must not be reopened unless
+later edits change those paths.
+
+Do not begin Owner real-SketchUp verification or Stage 6 UI implementation
+until this focused recheck passes.
+
+============================================================
+END
+============================================================

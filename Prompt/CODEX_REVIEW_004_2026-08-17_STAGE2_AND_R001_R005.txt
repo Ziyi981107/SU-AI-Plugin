@@ -1,0 +1,356 @@
+============================================================
+CODEX REVIEW 004 — STAGE 2 + R001-R005 DECISIONS
+Project: D:\Projects\SU-AI-Plugin
+Date: 2026-08-17
+Applies to: PI_TASK_001 — V1.0 Read-only CAD Analyzer
+============================================================
+
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+STAGE REVIEW + OWNER DECISION RESOLUTION
+
+SCOPE REVIEWED:
+- base/head: 5e32ab1..48bad47 (Stage 2 implementation at 6eb33e8;
+  later commits are Review/Prompt workflow documentation)
+- files/subsystem:
+  core/tolerance.rb
+  core/analysis_config.rb
+  core/preflight.rb
+  compatibility/su_capability.rb
+  extension/preflight_runner.rb
+  core/source_reference.rb
+  tests/test_preflight.rb
+  Review files added/updated on 2026-08-17
+- tests/evidence:
+  Existing isolated Ruby 2.7.8 suite re-run by Codex:
+  33 tests, 33 pass, 0 fail, 0 error.
+  No real SketchUp verification exists yet.
+
+The 33/33 result is valid evidence for the pure-Ruby paths it exercises.
+It does not cover the SketchUp traversal/snapshot adapter where the BLOCKS
+below exist.
+
+============================================================
+BLOCKS
+============================================================
+
+1. [S2-BLOCK-001] Every SketchUp Edge becomes two EdgeRecords
+
+Location:
+- extension/preflight_runner.rb:55
+
+Problem:
+The code iterates entity.vertices.each_with_index and emits an EdgeRecord
+for each vertex. A normal SketchUp Edge has two vertices, so it emits both
+A->B and B->A as two records for the same source Edge.
+
+Why it matters:
+- edge_count is doubled;
+- every real edge can become a false duplicate candidate;
+- endpoint degree/open-endpoint/gap analysis is corrupted;
+- layer distribution and later Issue counts are wrong.
+
+Minimum acceptable fix:
+- Emit exactly one EdgeRecord per source Edge per analyzed instance.
+- Read the two endpoints once; do not create directed half-records.
+- Preserve orientation-insensitive duplicate detection inside the analyzer,
+  not by duplicating Snapshot records.
+
+Recheck evidence needed:
+- Adapter/stub test: one Edge -> one EdgeRecord.
+- Rectangle in a Group -> 4 EdgeRecords, not 8.
+- Normal rectangle through the adapter -> no duplicate candidates and no
+  open endpoints.
+
+------------------------------------------------------------
+
+2. [S2-BLOCK-002] Component traversal, accumulated transforms, and
+instance-aware identity are missing
+
+Location:
+- extension/preflight_runner.rb:98-113, 119-122, 164-181
+- core/source_reference.rb:27-45
+
+Problem:
+- ComponentInstance geometry lives under entity.definition.entities;
+  ComponentInstance does not expose its child collection as entity.entities.
+- Group/Component local coordinates are copied without applying each
+  instance transformation.
+- Nested transforms are not accumulated into model/world coordinates.
+- SourceReference only carries the definition Edge PID/object_id. Two
+  instances sharing one definition therefore lack an instance path/composite
+  identity for correct Issue mapping.
+
+Why it matters:
+- ComponentInstance input can produce zero edges.
+- Translated/rotated/scaled groups/components are analyzed in the wrong place.
+- Different instances of one definition can be merged or located incorrectly.
+- Gap/duplicate results and Issue -> Entity locate become unreliable.
+
+Minimum acceptable fix:
+- Traverse Group children from group.entities.
+- Traverse ComponentInstance children from instance.definition.entities.
+- Carry an accumulated transformation through recursion and transform every
+  endpoint into one documented analysis coordinate space (model/world space).
+- Use the correct transform multiplication order and cover nested transforms.
+- Carry an instance path or equivalent composite source identity so the same
+  definition Edge in two instances remains two analysis occurrences and can
+  be located in the correct instance.
+- Do not mutate definitions or source entities.
+
+Recheck evidence needed:
+- Stub/integration tests for translated, rotated and scaled Group.
+- Nested Group -> Component -> Group transform test.
+- Two ComponentInstances sharing one definition at different transforms:
+  both occurrences preserved, world coordinates differ, identities do not
+  collide.
+- Direct selected Edges still work.
+
+Official API references:
+- https://ruby.sketchup.com/Sketchup/ComponentInstance.html
+- https://ruby.sketchup.com/Sketchup/ComponentDefinition.html
+- https://ruby.sketchup.com/Geom/Transformation.html
+
+------------------------------------------------------------
+
+3. [S2-BLOCK-003] Ruby 2.2.4 syntax baseline is violated
+
+Location:
+- extension/preflight_runner.rb:153
+
+Problem:
+The safe-navigation operator &. is used. It was added after Ruby 2.2 and
+cannot be parsed by the SU2017 Ruby 2.2.4 baseline.
+
+Why it matters:
+The target host can fail while loading the file, before any capability
+fallback or test can run.
+
+Minimum acceptable fix:
+- Replace &. with Ruby 2.2-compatible explicit nil handling.
+- Search all production/test Ruby files for post-2.2 syntax after the fix.
+
+Recheck evidence needed:
+- No &. or other post-2.2 syntax remains.
+- Production entry path loads under actual SU2017/Ruby 2.2.4 before final
+  Gate, per R004 decision below.
+
+------------------------------------------------------------
+
+4. [S2-BLOCK-004] Preflight metrics do not match the Task contract
+
+Location:
+- core/preflight.rb:118-127, 189
+- extension/preflight_runner.rb:128-184
+- Review/R001_preflight_threshold_defaults.md
+
+Problem:
+- non_zero_z_count currently counts endpoint occurrences above big_z. It is
+  neither a unique non-zero-Z Vertex count nor a non-zero-Z Edge count.
+- Values between coordinate epsilon and big_z disappear from the required
+  non-zero-Z awareness.
+- Mixed selection type is inferred from only the first selected entity.
+- Nesting level semantics are inconsistent: the checklist says 3 levels
+  should warn, while code starts the root at 0 and warns only when depth > 3.
+- Component counts/depth are also affected by BLOCK-002 traversal.
+
+Why it matters:
+PI_TASK_001 §6 explicitly requires Edge/Vertex counts, selection type,
+non-zero-Z Edge/Vertex awareness, and nested Group/Component awareness.
+The current report can claim compliant fields while returning different
+semantics.
+
+Minimum acceptable fix:
+- Report separate non_zero_z_vertex_count and non_zero_z_edge_count.
+- Deduplicate vertices in analysis/world coordinates using the configured
+  coordinate epsilon.
+- Keep big_z as a separate significant off-plane warning threshold; it must
+  not redefine what “non-zero Z” means.
+- Describe mixed selections as mixed and retain type counts.
+- Define root selected container as nesting level 1; warning fires at
+  deepest_nesting >= 3.
+- Update field names, messages and tests so semantics are explicit.
+
+Recheck evidence needed:
+- Shared endpoint counted once as a Vertex but contributing Edges counted
+  correctly.
+- Small Z above epsilon but below big_z appears in non-zero counts without a
+  significant-Z warning.
+- Z above big_z appears in counts and warning.
+- Mixed selection and exactly-three-level nesting tests.
+
+------------------------------------------------------------
+
+5. [S2-BLOCK-005] Owner verification checklist is not executable/reliable
+
+Location:
+- Review/OWNER_VERIFICATION_STAGE_2.txt:86, 96, 117
+
+Problem:
+- entity.positions[0].z = 5 and edge.vertices[0].position = ... are not valid
+  SketchUp Ruby API setup paths.
+- “object_id unchanged” does not prove geometry, transforms, layer/tag or
+  other source state remained unchanged.
+- The invalid-entity scenario is underspecified and may not produce a real
+  invalid entity in the analyzed input.
+
+Why it matters:
+The Owner can spend time following a checklist that fails for test-fixture
+reasons, and the current source-integrity check can miss actual mutation.
+
+Minimum acceptable fix:
+- Rewrite setup steps to create disposable test geometry with supported
+  SketchUp APIs (for example Entities#add_line inside a dedicated test model
+  or disposable Group), before taking the read-only baseline.
+- Never ask Owner to edit production/source CAD for test setup.
+- For source integrity, capture and compare a deterministic fingerprint:
+  entity counts/PIDs, endpoint coordinates, container transformations and
+  layer/tag assignments before vs after analysis.
+- Make cleanup a separate explicit undo/removal of only the disposable test
+  fixture, not part of Analyzer behavior.
+- Define a reproducible invalid/erased entity test that also includes one
+  valid entity and proves analysis continues.
+
+Recheck evidence needed:
+- Updated checklist reviewed against official API calls.
+- Owner verification must not start until S2-BLOCK-001..005 are fixed.
+
+============================================================
+NITS
+============================================================
+
+- R004 says “Q004=A”; the accepted prior decision was Q004=C. Correct the
+  label without changing the substantive caveat.
+- CURRENT_STATE says Stage 2 “DESIGN PASS”. Until the above BLOCKS close,
+  change this to “pure-Ruby Preflight tests pass; SU adapter blocked/rework
+  required”. Do not rewrite prior commits.
+- large_coordinate_count currently counts bbox axis extrema, not entities or
+  vertices. Rename it to describe what is counted, or return the actual
+  offending locations.
+
+DEBT:
+
+- A richer transient view-drawing highlighter may be considered after V1,
+  but it is not needed for Task 001.
+
+QUESTIONS FOR PRODUCT OWNER:
+
+- None required for this round. Decisions are fixed below.
+
+============================================================
+R001-R005 OWNER/CODEX DECISIONS
+============================================================
+
+R001 — PREFLIGHT THRESHOLDS
+
+Decision:
+- big_z: keep 0.01 inch, but only as the “significant off-plane warning”
+  threshold. It must not be used for the required non-zero-Z counts.
+- large_coordinate: keep 1.0e6 inches as the conservative V1 fallback.
+- deepest_nesting_warning: keep 3, with root container = level 1 and warning
+  condition deepest_nesting >= 3.
+- Z presentation: any Z above coordinate epsilon is counted; only Z above
+  big_z raises the visible significant-Z warning.
+
+R002 — STAGE 5 CAPABILITY PROBE SCOPE
+
+Decision: C, with a narrow amendment.
+
+Do not create a second SUVersionProbe wrapper around SUCapability and do not
+build a YAML capability matrix. compatibility/su_capability.rb is already the
+single capability entry point. Add only capabilities that Stage 6 actually
+uses (for example HtmlDialog availability), with outside-SU stub tests.
+Close the artificial standalone Stage 5 after this minimal work is folded
+into the integration fix.
+
+R003 — STAGE 6 UI DESIGN
+
+Decision:
+- Q3.1: B — selection + camera zoom only for V1.
+- Q3.2: A — HtmlDialog with capability check/fallback error message.
+- Q3.3: A — single page summary, followed by the grouped issue sections
+  selected in R005.
+- Q3.4: use one consistent severity language defined under R005; simple text
+  labels/badges, no dependency on icon fonts.
+- Q3.5: A — click performs Locate only.
+- Q3.6: confirmed — no fix/edit/repair controls.
+
+Hard prohibition:
+Do not implement highlight by adding construction lines, boxes, materials,
+layers/tags or any other entities/properties to the model, even temporarily.
+Creating and later erasing overlay geometry still modifies the model and
+violates Task 001’s 100% read-only constraint. Selection/camera state may be
+used for locating because it does not change source entity geometry or
+properties. No Alt-click overlay in V1.
+
+R004 — RUBY 2.2.4 CAVEAT CLOSURE
+
+Decision: B, conditional; C is rejected.
+
+The caveat closes when the complete production extension entry path loads
+and the core user flow runs on real SketchUp 2017, whose embedded interpreter
+is the target Ruby 2.2.4 environment. This must exercise/load every production
+Ruby file shipped for Task 001, not only preflight_runner.rb.
+
+If SU2017 is unavailable, posture A becomes required: obtain actual Ruby
+2.2.4-compatible runtime/parser evidence by another authorized route. The
+project may continue development meanwhile, but the final Gate remains open.
+Do not ship under posture C with the caveat merely documented.
+
+R005 — ISSUE REGISTRY PRESENTATION
+
+Decision:
+- Presentation: option 2, grouped by issue_type with collapsible groups and
+  count in each heading.
+- Within-group order: deterministic issue_id, not raw Ruby object_id.
+- Canonical severity values: low / medium / high only.
+- Canonical confidence values: low / medium / high, kept separate from
+  severity.
+- UI treatment: low = neutral, medium = orange, high = red. Do not mix
+  :info/:warning with :low/:medium in the same severity field.
+- Click = Locate (selection + zoom). No overlay and no automatic Entity Info.
+- No filterable/sortable table in V1.
+
+Suggested initial severity mapping (centralized in Issue Registry, not UI):
+- duplicate_edge_candidate: medium
+- short_edge: low
+- open_endpoint: medium
+- gap_candidate: medium
+- significant non-zero-Z geometry: medium
+- abnormal large coordinate: high
+- deep nesting: low
+
+Preflight facts that do not cross a warning threshold remain summary metrics,
+not separate warning Issues.
+
+============================================================
+REQUIRED EXECUTION ORDER
+============================================================
+
+1. Update R001-R005 to ANSWERED using this Prompt and update CURRENT_STATE.
+2. Fix S2-BLOCK-001 through S2-BLOCK-005 as one focused Stage 2 correction.
+3. Add adapter-level stub tests covering traversal, transforms, shared
+   definitions, counts and source identity. Pure-core tests alone are not
+   sufficient.
+4. Re-run the full isolated Ruby suite.
+5. Request Codex BLOCK RECHECK for S2-BLOCK-001..005 only.
+6. Only after the BLOCK recheck passes, give the revised checklist to Owner
+   for real SketchUp verification.
+7. Then implement the minimal UI according to R003/R005.
+
+Do not treat this document as permission to implement any Repair feature.
+Source CAD remains read-only.
+
+============================================================
+NEXT REVIEW
+============================================================
+
+Recheck S2-BLOCK-001 through S2-BLOCK-005 only, including their direct tests
+and the revised Owner checklist. Previously passed pure-Ruby Stage 1 scope
+remains closed unless the fix changes it.
+
+============================================================
+END
+============================================================

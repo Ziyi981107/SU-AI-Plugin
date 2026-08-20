@@ -1,0 +1,215 @@
+VERDICT:
+BLOCKED
+
+REVIEW MODE:
+BLOCK RECHECK
+
+SCOPE REVIEWED:
+- base/head: fd0a0ab..8d177c1 (implementation commit d7ac371)
+- review packet: Review/BLOCK_RECHECK_REQUEST_2026-08-17_pass2.md
+- owner evidence: Review/OWNER_VERIFICATION_STAGE_2.txt (updated 2026-08-17)
+- code: compatibility/su_capability.rb, core/preflight.rb,
+  extension/preflight_runner.rb, relevant tests/fakes
+- evidence: project isolated Ruby test suite; four targeted contract probes
+
+TEST EVIDENCE:
+- Existing suite: 65 tests, 65 pass, 0 fail, 0 error.
+- The passing suite is not sufficient to close the remaining BLOCKs because
+  several fakes model a different API contract from real SketchUp.
+- Targeted probes against real API-shaped inputs produced:
+  - epsilon-near points across adjacent buckets: distinct count = 2 (expected 1)
+  - Sketchup.version='24.0.0', version_number=2400000000:
+    sketchup_version=nil, product_year=nil
+  - Model#active_path as Array plus Model#edit_transform:
+    returned [nil, []], losing both transform and path
+  - resolver accepting only a dot-delimited String:
+    resolve_pid_path([10,20]) returned nil
+
+BLOCKS:
+
+1. S2-BLOCK-002 — REMAINS OPEN
+   Location:
+   - compatibility/su_capability.rb:198-213, 231-273
+   - extension/preflight_runner.rb:64-92
+   - tests/fake model and round-2 PID/edit-context tests
+
+   Problem:
+   The implementation and fakes use a non-real active-path/PID contract.
+   Real Model#active_path is an Array of drawing elements, not an
+   InstancePath-like object. Therefore it does not provide
+   persistent_id_path or transformation. The current code consequently
+   returns an identity/nil transform and an empty PID prefix during a real
+   nested edit session.
+
+   Model#instance_path_from_pid_path expects a dot-delimited persistent-ID
+   path String. Current resolve_pid_path passes Array<Integer> directly.
+   The fake model accepts that array and therefore masks the production
+   failure.
+
+   build_source_reference also still writes entity.object_id as entity_id
+   unconditionally. Use entity.entityID when available; object_id may only
+   be the final outside-SU/test fallback.
+
+   Why it matters:
+   Nested edit-context world coordinates and machine-resolvable source
+   references are core Stage-2 requirements. The current implementation can
+   pass unit tests while producing incorrect coordinates and unresolvable
+   references in SketchUp.
+
+   Minimum acceptable fix:
+   - Get the edit transform from model.edit_transform.
+   - Treat model.active_path as Array; obtain each element's safe persistent
+     ID to seed the container path.
+   - Define one canonical PID-path representation. For the SketchUp resolver,
+     pass a dot-delimited String such as "10.20".
+   - If an InstancePath is constructed, validate it with the real documented
+     shape and serialize InstancePath#persistent_id_path as String.
+   - Use entity.entityID when supported; object_id only as fallback.
+   - Correct the fakes so active_path is Array, edit_transform belongs to
+     Model, persistent_id_path is String, and resolver rejects arrays.
+
+   Recheck evidence needed:
+   - Tests using the corrected real API-shaped fakes.
+   - Active nested edit-context test proving exact world coordinates.
+   - PID path emitted by a snapshot resolves through a String-only resolver.
+   - Shared-definition multi-occurrence tests remain passing.
+
+2. S2-BLOCK-004 — REMAINS OPEN
+   Location:
+   - core/preflight.rb:226-251
+   - tests/test_preflight.rb:311-324
+
+   Problem:
+   OR semantics, configured coordinate_epsilon propagation, and nominal
+   performance are fixed. However, distinct-vertex collection searches only
+   the point's exact quantized bucket. Two points within epsilon but on
+   opposite sides of a bucket boundary are not compared.
+
+   Reproduction:
+   With coordinate_epsilon=1.0, points [0.99,0,0] and [1.01,0,0] are only
+   0.02 apart but the current result contains two distinct vertices.
+
+   Why it matters:
+   Preflight counts depend on coordinate_epsilon. Boundary-dependent counts
+   violate the configured tolerance contract and can change warnings for
+   geometrically equivalent data.
+
+   Minimum acceptable fix:
+   - Prefer reusing the already-built snapshot VertexIndex/source of truth; or
+   - search the current bucket plus all adjacent buckets and retain the
+     explicit epsilon comparison before accepting a new point.
+   - Preserve near-linear behavior for the 5,000-edge case.
+
+   Recheck evidence needed:
+   - Regression with points straddling a bucket boundary.
+   - Existing custom-epsilon, correctness, and performance tests pass.
+
+3. S2-BLOCK-005 — REMAINS OPEN
+   Location:
+   - Review/OWNER_VERIFICATION_STAGE_2.txt:149-205
+   - extension/preflight_runner.rb invalid-entity handling
+
+   Problem:
+   Production invalid-entity handling is materially improved, and unit tests
+   now prove invalid geometry is skipped rather than synthesized at origin.
+   The required real-SketchUp verification checklist is still not executable
+   and complete:
+
+   - Entities#add_line returns one Sketchup::Edge, not an array. The checklist
+     uses add_line(...)[0], so e1 is not the intended Edge.
+   - Erasing an edge and then analyzing only its parent entities collection
+     does not retain that erased reference; it weakly tests a different path.
+   - The fingerprint directly calls definition.persistent_id, which is not a
+     safe SU2017-baseline assumption for ComponentDefinition.
+   - The fingerprint does not fully recurse component-definition contents and
+     occurrence transforms, so it can miss source changes inside components.
+
+   Why it matters:
+   S2-BLOCK-005 explicitly requires credible real-host evidence that analysis
+   survives invalid references and does not mutate source geometry. The
+   current checklist can fail for the wrong reason or report a false pass.
+
+   Minimum acceptable fix:
+   - Assign e1 = entities.add_line(...) directly.
+   - Exercise a retained erased/invalid reference together with a valid edge,
+     then prove the valid edge is analyzed and the invalid one contributes
+     zero records. If SketchUp prevents this exact selection shape, record the
+     actual host behavior and use the closest reproducible invalidation path.
+   - Make fingerprint PID access capability-safe for SU2017.
+   - Recursively fingerprint group and component contents plus occurrence
+     transforms/counts required to detect source mutation.
+   - Keep before/after fingerprinting around analysis only.
+
+   Recheck evidence needed:
+   - Corrected, paste-runnable SU2017+ checklist.
+   - Recorded real SketchUp results for source fingerprint and invalid entity
+     behavior.
+
+4. S2-BLOCK-006 — REMAINS OPEN
+   Location:
+   - compatibility/su_capability.rb:35-80
+   - tests/test_preflight.rb:383-397
+
+   Problem:
+   UI::HtmlDialog detection is corrected and that subpart is closed.
+   Version handling remains incorrect:
+
+   - sketchup_version discards the normal dotted String and returns nil.
+   - version_number is an encoded comparison integer, not the small major
+     number 17..26 assumed by the lookup table.
+   - The test stub version_number=24 is not shaped like real SketchUp and
+     masks this failure.
+
+   Why it matters:
+   Real-host capability reporting and the Owner baseline check can return nil
+   on supported SketchUp releases, so target-version evidence is unreliable.
+
+   Minimum acceptable fix:
+   - Preserve Sketchup.version.to_s for diagnostic display.
+   - For the SU2017 minimum baseline, use Sketchup.version.to_i >= 17, or
+     preferably probe the concrete required capabilities.
+   - Do not infer a calendar year from version_number unless a separately
+     documented conversion is implemented and tested with real encoded
+     values. A calendar-year field is not required for this stage.
+   - Replace the unrealistic stub with dotted version strings and encoded
+     version_number values matching the real API shape.
+
+   Recheck evidence needed:
+   - Dotted-string tests for SU2017 and a current release.
+   - Encoded version_number test proving it is not treated as 17..26.
+   - Owner checklist baseline assertion passes in real SketchUp.
+
+NITS:
+- Update stale comments that still describe BOTH-endpoint Z semantics or
+  version_number as a calendar release year after the fixes.
+
+DEBT:
+- None added in this recheck.
+
+QUESTIONS FOR PRODUCT OWNER:
+- None. These are implementation/API contract corrections and do not require
+  a product decision.
+
+CLOSED SCOPE:
+- S2-BLOCK-001 remains CLOSED.
+- S2-BLOCK-003 remains CLOSED.
+- S2-BLOCK-006 HtmlDialog namespace subpart is CLOSED.
+- Do not reopen those areas without new evidence.
+
+AUTHORITATIVE API REFERENCES:
+- UI::HtmlDialog: https://ruby.sketchup.com/UI/HtmlDialog.html
+- Model active_path/edit_transform/instance_path_from_pid_path:
+  https://ruby.sketchup.com/Sketchup/Model.html
+- InstancePath persistent_id_path:
+  https://ruby.sketchup.com/Sketchup/InstancePath.html
+- Entities#add_line:
+  https://ruby.sketchup.com/Sketchup/Entities.html#add_line-instance_method
+- Sketchup version/version_number:
+  https://ruby.sketchup.com/Sketchup.html
+
+NEXT REVIEW:
+- Recheck S2-BLOCK-002, S2-BLOCK-004, S2-BLOCK-005, and the version subpart
+  of S2-BLOCK-006 only, after Pi incorporates
+  Prompt/CODEX_GUIDANCE_006_2026-08-17_REWORK_PLAN_CORRECTIONS.txt and this
+  review.
+- No full repository review is requested.
