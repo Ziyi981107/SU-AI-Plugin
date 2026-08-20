@@ -3,18 +3,68 @@
 Last updated: 2026-08-20 (V1.1 stage **CLOSED on
 SketchUp 2020** per CodeX end-of-stage review
 `Prompt/CODEX_REVIEW_025_2026-08-20_V1_1_LAYER_SEMANTIC_MAPPING_STAGE.txt`
-**PASS WITH NITS**, 0 BLOCKs. Three V1.1 NITs (1 code/UI,
-2 fixture/doc) all fixed in 2 follow-up commits; three
-CodeX DOC NITs all fixed in this session's CodeX-025
-follow-up. Full suite 372/372 PASS, 0 fail, 0 error.
-Branch `v1.1-layer-semantic-mapping` is ready for
-**formal release** once the Owner combines the V1.0 + V1.1
-artifacts and re-runs Gate 1 (SU2017) + Gate 2 on the
-final RBZ per R006. V1.0 candidate still FROZEN at tag
+**PASS WITH NITS**, 0 BLOCKs. V1.2 implementation in
+progress on `v1.2-issues-by-layer` branch per directive
+`Prompt/CODEX_GUIDANCE_026_2026-08-20_V1_2_ISSUES_BY_LAYER_START.txt`;
+implementation COMPLETE (4 commits: 035e306 data layer,
+ea81aaa UIBridge, 03c2dd9 HTML/JS/CSS render); full suite
+395/395 PASS, 0 fail, 0 error; awaiting Owner SU2020 Gate 2
+V1.2 verification before dispatching the consolidated CodeX
+end-of-stage packet. V1.0 candidate still FROZEN at tag
 `v1.0-candidate-2026-08-19` (commit `56ea611`). Gate 1
 (SU2017) PENDING per R006 — deferred to formal release.)
 
-## V1.1 stage (CLOSED on SU2020 per CodeX 025, 2026-08-20)
+## V1.2 stage (IMPLEMENTATION COMPLETE on `v1.2-issues-by-layer`, awaiting Owner SU2020 Gate 2 V1.2)
+
+- **CodeX verdict (gate to start)**: PASS WITH NITS,
+  0 BLOCKs per CodeX 025. V1.1 stage is CLOSED on
+  SU2020; the V1.1 LayerIssueGrouper was the locked
+  forward-compatibility hook for V1.2.
+- **V1.2 directive**: `Prompt/CODEX_GUIDANCE_026_2026-08-20_V1_2_ISSUES_BY_LAYER_START.txt`
+  (Issues by Layer; reuse LayerIssueGrouper; read-only;
+  SU2017 Gate 1 deferred to formal release).
+- **Implementation status**: COMPLETE on
+  `v1.2-issues-by-layer` branch.
+  - Commit `035e306`: data layer (AnalysisResult
+    `layer_issue_groups`, AnalyzersRunner wiring,
+    LayerIssueGrouper Hash-shape input compat).
+  - Commit `ea81aaa`: UIBridge `layerIssueGroups`
+    top-level key.
+  - Commit `03c2dd9`: HTML/JS/CSS render
+    (`<details id="layer-issues-section">`,
+    `renderLayerIssues()` + `renderLayerIssueBucket()`,
+    `.layer-issue-bucket` neutral styles).
+- **Locked contracts preserved**:
+  - R007..R012 (role vs visibility separation, no
+    OFFSCREEN, role order, hidden-bottom, first-match-
+    wins, :unknown visibility preservation, role order
+    independent of issue order).
+  - V1.2 directive 026 items 1-12: new section position,
+    default-closed, summary format, bucket-per-non-empty-
+    layer, bucket summary singular/plural, issue-row
+    reuse + locate carry-through + non-locatable inert,
+    existing Layers rows remain inert, textContent only,
+    no new role colors, read-only analysis.
+- **Owner SU2020 verification packet**:
+  `Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
+  (V12-1..V12-7). Awaiting Owner run on real SU2020.
+- **Test evidence (full suite)**:
+  - Ruby: 395/395 PASS, 0 fail, 0 error.
+  - Node.js DOM: 86 assertions (67 V1.1 + 19 V1.2),
+    all PASS.
+  - `git diff --check` clean for `extension/` and
+  `tests/`.
+  - `dist/SU-AI-Plugin.rbz` rebuilt locally
+    (225958 bytes, 41 entries; gitignored).
+- **Out of scope until Owner SU2020 PASS**:
+  - CodeX end-of-stage packet (one consolidated
+    submission, after Owner reports V1.2 Gate 2 PASS).
+  - Formal release.
+  - Gate 1 (SU2017), deferred per R006.
+  - Re-opening V1.0 / V1.1 / Stage 6 / CodeX 020 / RBZ
+    / CodeX 024 / CodeX 025 closed scope.
+
+## V1.1 stage (CLOSED on SU2020 per CodeX 025, 2026-08-20; historical context)
 
 - **CodeX verdict**: PASS WITH NITS. 0 BLOCKs. V1.1 stage
   may be marked CLOSED on the verified SU2020 host.
@@ -22,53 +72,41 @@ final RBZ per R006. V1.0 candidate still FROZEN at tag
   (Owner Gate 2 V1.1 PASS WITH NIT on real SU2020).
 - **CodeX packet**: `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
 - **CodeX review file**: `Prompt/CODEX_REVIEW_025_2026-08-20_V1_1_LAYER_SEMANTIC_MAPPING_STAGE.txt`.
-- **NITs closed in this session**:
+- **NITs closed**:
   - V1.1 NIT 1 (visual spacing + plural): commit `33b601a`.
   - V1.1 NIT 2a/2b/2c (fixtures): commit `0a1f2af`.
   - CodeX DOC-025-001 (OWNER_VERIFICATION loader path +
-    L7 fixture count + L2 duplicate): in the CodeX-025
-    follow-up commit. Also converted
-    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
-    to LF line endings (CRLF was introduced by a recent
-    editor session and triggered false-positive
-    `git diff --check` trailing-whitespace complaints).
+    L7 fixture count + L2 duplicate + CRLF normalization):
+    in the CodeX-025 follow-up commit.
   - CodeX DOC-025-002 (qualify the packet's
     `git diff --check` statement to scope to `extension/`
     and `tests/`): in the same follow-up commit.
   - CodeX EVIDENCE-025-003 (visual re-verification of
     separator/plural NIT fix on post-fix SU2020): no
-    action required per CodeX; Owner may confirm on the
-    next SU2020 session.
+    action required per CodeX.
 - **Debt** (per CodeX 025, kept parked):
-  - LayerIssueGrouper is intentionally unconnected to
-    the V1.1 UI; do NOT reopen V1.1 for that work.
+  - LayerIssueGrouper was unconnected to the V1.1 UI;
+    V1.2 closes that hook (see the V1.2 section above).
   - No git remote configured; backup / push separately.
-    Not a V1.1 blocker.
-- **Out of scope until formal release**:
-  - CodeX next review only after the next complete
-    meaningful technical stage, a high-risk BLOCK, a
-    complete BLOCK fix, or final-release readiness.
-  - Gate 1 (SU2017) is a formal-release gate, not a
-    V1.1 blocker.
-  - Any V1.1 / V1.0 scope re-opening requires Owner
-    approval.
+    Not a V1.1 / V1.2 blocker.
 
-## Next action (post-V1.1-stage-CLOSED)
+## Next action (post-V1.2-implementation, awaiting Owner Gate 2 V1.2)
 
-1. **Owner**: combine V1.0 + V1.1 in the final `.rbz`
-   (one entry-point `su_ai_plugin.rb` at the package
-   root; one support folder `su_ai_plugin/` with
-   `main.rb`, `core/`, `compatibility/`, `html/`).
-   Re-run Gate 1 (SU2017) + Gate 2 V1.1 (Owner
-   verification checklist) on the combined artifact.
-2. **Agent**: idle until formal release evidence or a
-   new Owner task lands. Reopening V1.1 for the
-   parked LayerIssueGrouper UI integration or any
-   other V1.1.1 surface is Owner-approved work, NOT
-   automatic.
-3. **CodeX**: next engagement is the formal-release
-   review packet (final RBZ + SU2017 Gate 1 + SU2020
-   Gate 2 + no-mutation evidence).
+1. **Owner**: run `Review/OWNER_VERIFICATION_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`
+   V12-1..V12-7 on real SU2020. Drop the report at
+   `Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-XX.txt`.
+2. **Agent** (on Owner PASS): assemble ONE consolidated
+   CodeX end-of-stage review packet at
+   `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_2_ISSUES_BY_LAYER_2026-08-20.md`
+   per V1.2 directive 026 COMPLETION CONDITION. NO
+   per-NIT or per-commit CodeX submissions.
+3. **CodeX**: ONE consolidated end-of-stage verdict on
+   the V1.2 implementation. Reopening V1.0 / V1.1 / Stage
+   6 / CodeX 020 / RBZ / CodeX 024 / CodeX 025 scope is
+   explicitly out of scope.
+4. **Formal release**: combine V1.0 + V1.1 + V1.2 in the
+   final `.rbz`, rerun Gate 1 (SU2017) + Gate 2 V1.1 +
+   Gate 2 V1.2 on the final artifact, ship.
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 

@@ -1,0 +1,387 @@
+============================================================
+OWNER VERIFICATION CHECKLIST - V1.2 ISSUES BY LAYER
+Project:   D:\Projects\SU-AI-Plugin
+Date:      2026-08-20 (new V1.2 checklist; V1.0 + V1.1
+          baselines already verified on SU2020)
+For:       Product Owner (real-SU verification, per Q002=A)
+Depends on: V1.1 commits (1..5) + V1.2 commits landed
+          on `v1.2-issues-by-layer` branch; suite is
+          395/395 PASS on the dev host (Ruby 2.7.8).
+============================================================
+
+PURPOSE
+-------
+
+Per Q002=A, real-SketchUp verification is Owner's responsibility.
+This checklist is a FOCUSED addition to the V1.0 Stage 6 and
+V1.1 Gate 2 checklists. It covers ONLY the V1.2 "Issues by
+Layer" surface — the new `<details id="layer-issues-section">`
+in the dialog.
+
+  - Dialog renders a new top-level section 'Issues by Layer'.
+  - Section is BELOW the per-issue-type groups block and ABOVE
+    the V1.1 Layers section.
+  - Section is CLOSED by default; summary pre-populated.
+  - Bucket per non-empty layer, in canonical role order
+    (Dimension -> Annotation -> Guide -> Construction -> Unknown),
+    visible-before-hidden within a role, then name ASC.
+  - Bucket header: 'LayerName (N issue(s))' with correct
+    singular/plural wording.
+  - Issues inside buckets reuse the existing issue-row renderer;
+    locatable issues still call Locate; non-locatable issues
+    still register no click handler.
+  - Existing V1.1 Layers rows remain inert (no click handler).
+  - Analysis remains read-only. No model mutation, no layer
+    visibility flip, no entity creation / deletion.
+
+This checklist re-uses the same dev-tree / RBZ load path
+convention established in the V1.1 Gate 2 checklist. The V1.0
++ V1.1 baselines do NOT need to be re-verified in full if
+Owner has already accepted them — this checklist focuses on
+the V1.2 delta.
+
+
+HOW TO RUN THIS CHECKLIST
+=========================
+
+  1. Confirm you have the V1.2 source tree at:
+       D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/
+
+  2. Pick the load path that matches your scenario:
+
+     a. **Development-tree testing** (iterating on V1.2 logic
+        without re-installing the .rbz each round):
+          load 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/main.rb'
+        This is the BOOT file; it calls
+        `SUAnalysis::Boot.boot!` which `require_relative`s every
+        operational file and registers the loader.
+
+        The sibling `extension/su_ai_plugin.rb` is the ROOT LOADER
+        (calls `Sketchup.register_extension`). It ONLY runs under
+        real SketchUp with an installed extension; loading it in
+        the Ruby Console against a dev-tree copy is the wrong path.
+
+     b. **Release / installed-RBZ testing**: install
+        `dist/SU-AI-Plugin.rbz` via `Window > Extension Manager`
+        and let SketchUp's own loader run `su_ai_plugin/main`
+        from the installed copy.
+
+  3. Run the V12-1..V12-7 steps below. Each step captures
+     evidence (screenshot, console log, or fingerprint
+     comparison).
+  4. Owners without V1.0 / V1.1 verification should also re-run
+     the J..K steps from
+     `Review/OWNER_VERIFICATION_STAGE_6.txt` and the L1..L9
+     steps from `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
+     FIRST.
+
+
+SETUP HELPER (V1.2 SU2020)
+==========================
+
+Use a fresh empty model. Do NOT reuse a V1.1 verification
+model. Run this Ruby helper in the Ruby Console BEFORE
+running V12-1..V12-7.
+
+  model = Sketchup.active_model
+  entities = model.active_entities
+  layers = model.layers
+
+  # Three named-layer fixtures + the V1.0 default Layer0.
+  # Per Owner Gate 2 V1.1 NIT fix: assign the layer to EACH Edge
+  # explicitly (do NOT rely on group inheritance).
+  def make_edge(parent_entities, layer_obj, x1, y1, x2, y2)
+    e = parent_entities.add_line([x1, y1, 0], [x2, y2, 0])
+    e.layer = layer_obj
+    e
+  end
+
+  # V1.2 fixture 1: closed rectangle on Layer0 (0 issues).
+  layer_l0 = layers['Layer0']
+  test_group = entities.add_group
+  test_group.layer = layer_l0
+  4.times {} # placeholder; replaced below
+  make_edge(test_group.entities, layer_l0,   0,  0, 10,  0)
+  make_edge(test_group.entities, layer_l0,  10,  0, 10,  5)
+  make_edge(test_group.entities, layer_l0,  10,  5,  0,  5)
+  make_edge(test_group.entities, layer_l0,   0,  5,  0,  0)
+
+  # V1.2 fixture 2: a single edge on DIM-WALLS (2 Open Endpoint
+  # issues; named layer classifies as :dimension).
+  layer_dim = layers.add('DIM-WALLS')
+  dim_group = entities.add_group
+  dim_group.layer = layer_dim
+  make_edge(dim_group.entities, layer_dim,  20,  0,  40,  0)
+
+  # V1.2 fixture 3: a single edge on TXT-LABELS (2 Open Endpoint
+  # issues; named layer classifies as :annotation).
+  layer_txt = layers.add('TXT-LABELS')
+  txt_group = entities.add_group
+  txt_group.layer = layer_txt
+  make_edge(txt_group.entities, layer_txt,  60,  0,  60,  5)
+
+  # V12-5 requires a deeply nested group (deep_nesting warning,
+  # non-locatable). Use the V1.0 outer_g helper.
+  outer_g = entities.add_group
+  outer_g.layer = layer_l0
+  outer_g.entities.add_group.layer = layer_l0
+  outer_g.entities.add_group.entities.add_group.layer = layer_l0
+
+  # PRE-analysis fingerprint (mirror V1.1 v11 helper):
+  # -- Begin V1.2 fingerprint helper --
+  def v12_count_geometry_recursive(entities)
+    counts = { edges: 0, faces: 0, groups: 0,
+               components: 0, definitions: 0 }
+    entities.each do |e|
+      case e
+      when Sketchup::Edge
+        counts[:edges] += 1
+      when Sketchup::Face
+        counts[:faces] += 1
+      when Sketchup::Group
+        counts[:groups] += 1
+        counts.merge!(v12_count_geometry_recursive(e.entities)) { |_, a, b| a + b }
+      when Sketchup::ComponentInstance
+        counts[:components] += 1
+        counts.merge!(v12_count_geometry_recursive(e.definition.entities)) { |_, a, b| a + b }
+      end
+    end
+    counts
+  end
+
+  def v12_fingerprint(model)
+    {
+      edges:           v12_count_geometry_recursive(model.entities)[:edges],
+      groups:          v12_count_geometry_recursive(model.entities)[:groups],
+      layers_visible:  model.layers.map { |l| [l.name, l.visible?] }
+    }
+  end
+
+  fp_before = v12_fingerprint(Sketchup.active_model)
+  puts "PRE = #{fp_before.inspect}"
+  # -- End fingerprint helper --
+
+
+V12-1: CLOSED LAYER0 RECTANGLE -> EMPTY 'Issues by Layer'
+============================================================
+
+  1. Select test_group (the closed Layer0 rectangle).
+  2. Open the dialog.
+  3. Verify the dialog structure top-to-bottom:
+       [Selection info]
+       [Summary scalar rows]
+       [Per-issue-type counters]
+       [Per-issue-type groups: <details> blocks]
+       [NEW: <details id="layer-issues-section"> (closed)]
+       [V1.1: <details id="layers-section"> (closed)]
+  4. Inspect the V12 section's `<summary id="layer-issues-summary">`.
+     Expected: EXACTLY
+       'Issues by Layer — 0 layers (0 issues)'
+     (the closed square has 0 issues on Layer0).
+  5. Click 'Issues by Layer' to open the section.
+     Expected:
+     - The `<details>` element carries NO `open` attribute
+       until the user opens it (verified via DevTools
+       BEFORE clicking).
+     - After opening, the body is empty (no buckets; Layer0
+       has 0 issues).
+  6. Verify the V1.1 Layers section is STILL below the V1.2
+     section and still shows the Layer0 row.
+  7. PRE/POST fingerprint:
+       fp_v12_1 = v12_fingerprint(Sketchup.active_model)
+       puts "AFTER V12-1 = #{fp_v12_1.inspect}"
+       puts "MATCH = #{fp_v12_1 == fp_before}"
+     Expected: MATCH = true (no model mutation).
+
+PASS criteria for V12-1:
+  - Section exists with the locked structure.
+  - Summary text reads EXACTLY
+    'Issues by Layer — 0 layers (0 issues)'.
+  - No buckets rendered (empty body).
+  - Fingerprint byte-identical (no model mutation).
+
+
+V12-2: ONE EDGE ON DIM-WALLS -> DIM-WALLS BUCKET WITH 2 OPEN ENDPOINTS
+======================================================================
+
+  1. Select dim_group (the single edge on DIM-WALLS).
+  2. Open the dialog.
+  3. Open the V12 section.
+  4. Verify:
+     - Exactly ONE bucket: 'DIM-WALLS'.
+     - Bucket header: EXACTLY 'DIM-WALLS (2 issues)'.
+     - Bucket body: TWO issue rows, both of issue_type
+       'open_endpoint', each with the locked issue-row
+       renderer (severity badge + issue_id + message).
+  5. Verify NO other buckets appear (no Layer0 fallback
+     bucket; the issue's source[:layer_name] IS 'DIM-WALLS').
+  6. PRE/POST fingerprint:
+       fp_v12_2 = v12_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v12_2 == fp_before}"
+     Expected: MATCH = true.
+
+
+V12-3: EDGES ON DIM-WALLS + TXT-LABELS -> TWO BUCKETS IN ROLE ORDER
+====================================================================
+
+  1. Select both dim_group AND txt_group_visible (Shift-click
+     in the model browser, or accumulate the layer section
+     by selecting them one at a time across re-renders).
+  2. Open the dialog.
+  3. Open the V12 section.
+  4. Verify the buckets appear in this EXACT order:
+       1. DIM-WALLS  (2 open_endpoint issues)
+       2. TXT-LABELS (2 open_endpoint issues)
+     This is the canonical role bucket order (Dimension before
+     Annotation per R009 / R012).
+  5. Verify both buckets carry 2 issues each (2 + 2 = 4 total
+     issues across both buckets).
+  6. The top-level summary reads:
+       'Issues by Layer — 2 layers (4 issues)'.
+
+
+V12-4: LOCATABLE OPEN ENDPOINT -> NORMAL LOCATE BEHAVIOR
+========================================================
+
+  1. From the V12-3 dialog (dim_group + txt_group_visible
+     selected), click one of the open_endpoint issues inside
+     the DIM-WALLS bucket.
+  2. Expected: the existing Locate behavior runs (selection
+     change to the open endpoint's edges, camera zoom,
+     Ruby Console log shows the locate call).
+  3. PRE/AFTER-fingerprint check:
+       fp_v12_4 = v12_fingerprint(Sketchup.active_model)
+       puts "MATCH (geom) = #{fp_v12_4[:edges] == fp_before[:edges]}"
+       puts "MATCH (groups) = #{fp_v12_4[:groups] == fp_before[:groups]}"
+       puts "MATCH (layers) = #{fp_v12_4[:layers_visible] == fp_before[:layers_visible]}"
+     Expected: edge count, group count, and layer visibility
+     are byte-identical PRE / AFTER. (Selection / camera
+     change is expected; the fingerprint covers the rest.)
+
+
+V12-5: DEEP NESTING WARNING REMAINS NON-LOCATABLE + INERT
+=========================================================
+
+  1. Select outer_g (the deeply nested group from the V1.0
+     fixture). It produces a deep_nesting preflight warning.
+  2. Open the dialog, open the V12 section.
+  3. Expected:
+     - One bucket for 'Layer0' (the source layer for
+       outer_g's edges).
+     - Inside the bucket: ONE issue row for the
+       deep_nesting warning, rendered with the
+       locked non-locatable contract:
+         * The row carries the .no-action CSS class.
+         * The row has cursor: default; no hover affordance.
+         * The row has NO addEventListener('click', ...) registered.
+         * Clicking the row does NOTHING (no toast, no
+           selection change, no camera move, no Ruby error).
+     - The row's issue_count badge (if any) is NOT the
+       .has-issues class — deep_nesting is a preflight warning,
+       not a high-severity issue.
+  4. PRE/POST fingerprint:
+       fp_v12_5 = v12_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v12_5 == fp_before}"
+     Expected: MATCH = true (the click was inert).
+
+
+V12-6: EXISTING V1.1 LAYERS SECTION REMAINS CORRECT + INERT
+============================================================
+
+  1. With outer_g still selected (or with dim_group), open
+     the V1.1 Layers section.
+  2. Verify:
+     - The Layers section still renders one row per layer
+       (Layer0, DIM-WALLS, TXT-LABELS as applicable).
+     - Each Layers row carries the data-role / data-visible /
+       data-visibility-unknown / data-layer-name attributes
+       per V1.1 plan §4.12.
+     - Each Layers row has cursor: default; clicking does
+       NOT change selection; no toast; no Ruby error.
+  3. PRE/POST fingerprint:
+       fp_v12_6 = v12_fingerprint(Sketchup.active_model)
+       puts "MATCH = #{fp_v12_6 == fp_before}"
+     Expected: MATCH = true.
+
+
+V12-7: PRE/POST FINGERPRINT BYTE-IDENTICAL
+==========================================
+
+  1. After running V12-1..V12-6 (including the explicit
+     Locate in V12-4), re-capture fingerprint:
+       fp_v12_7 = v12_fingerprint(Sketchup.active_model)
+       puts "AFTER V12-7 = #{fp_v12_7.inspect}"
+       puts "MATCH = #{fp_v12_7 == fp_before}"
+  2. Expected: MATCH = true across all fields.
+     The V1.2 implementation MUST NOT mutate:
+       - edge count (no entities.add_*, no entity.erase!)
+       - group count
+       - layer.visible? flags (no hidden -> visible flip)
+     Per V12-4 note: selection / camera movement is expected
+     on the explicit Locate click, but the fingerprint covers
+     only the structural fields (edges, groups, layer
+     visibility), so MATCH = true is the right outcome.
+  3. Property-only spot-check (mirror of V1.0 step N.6):
+       m = Sketchup.active_model
+       sample = m.entities.grep(Sketchup::Edge).first
+       puts "material=#{sample.material.name}, " \
+            "layer=#{sample.layer.name}, " \
+            "hidden=#{sample.hidden?}, " \
+            "soft=#{sample.soft?}"
+     Repeat before and after the V12-1..V12-6 flow. Expected:
+     byte-identical properties.
+
+
+OVERALL RESULT
+==============
+
+After V12-1..V12-7, report one of:
+
+  PASS ON SKETCHUP <version> (V1.2 ISSUES BY LAYER)
+  - V12-1: Closed rectangle -> 'Issues by Layer — 0 layers
+        (0 issues)'; section closed by default.
+  - V12-2: One edge on DIM-WALLS -> DIM-WALLS bucket with
+        2 open_endpoint issues.
+  - V12-3: DIM-WALLS + TXT-LABELS -> two buckets in
+        canonical role order; total issue count correct.
+  - V12-4: Locatable open_endpoint -> normal existing
+        Locate behavior; non-geom fingerprint unchanged.
+  - V12-5: deep_nesting warning -> non-locatable inert
+        row; no misleading toast.
+  - V12-6: V1.1 Layers section remains correct + inert.
+  - V12-7: PRE / POST fingerprint byte-identical
+        (no model mutation).
+
+  PARTIAL PASS
+  - List which V12 steps passed and which failed.
+  - If any model mutation is suspected, capture the
+    fingerprint delta and the Ruby Console log verbatim.
+
+  BLOCKED
+  - If the V12 section does not appear at all, or any
+    bucket lacks the name / count / issue rows, or the
+    loader raises on Ruby reload, list the symptom and the
+    Ruby Console error verbatim.
+
+
+NEXT ACTION (AFTER V1.2 OWNER VERIFICATION)
+==========================================
+
+- If OVERALL = PASS on SU2020: SU-AI-Plugin V1.2 Issues by
+  Layer is accepted on the verified SU version. Agent may
+  dispatch the consolidated CodeX end-of-stage review packet
+  (per V1.2 directive 026 COMPLETION CONDITION). V1.2 stage
+  is then complete on SU2020.
+
+- SU2017 minimum-host verification remains a release Gate
+  (per R004). Repeat V12-1..V12-7 on SU2017 before formal
+  release. This is NOT a V1.2 blocker; it is a release-blocker.
+
+- Gate 1 has been deferred to formal release (per R006 /
+  Cicada 2026-08-19 decision). V1.2 ships with Gate 1
+  PENDING; the formal release must rerun Gate 1 on the
+  final RBZ artifact.
+
+============================================================
+END OF OWNER VERIFICATION CHECKLIST - V1.2 ISSUES BY LAYER
+============================================================
