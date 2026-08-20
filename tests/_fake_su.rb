@@ -344,6 +344,78 @@ module FakeSU
   # round 2: callers (build_snapshot walk) treat this as skip-not-fail.
   class InvalidEntityError < StandardError; end
 
+  # V1.3 (per directive 027): Fake Face stand-in for tests.
+  #
+  # Mirrors the surface that V1.3's PreflightRunner + SUCapability
+  # probe: `loops`, `outer_loop`, `vertices`, `layer`,
+  # `persistent_id`, `valid?`, `deleted?`, `erased?`, `entityID`.
+  #
+  # `outer_loop` is a Loop stand-in (see Loop class below).
+  # `inner_loops` is an Array<Loop>. `loops` = outer_loop + inner_loops
+  # (matching real SU's API).
+  #
+  # The Face ctor accepts either `outer_loop_vertices:` (Integer
+  # count) or `outer_loop:` (a Loop instance). Tests typically pass
+  # `outer_loop_vertices:` for ergonomics.
+  class Loop
+    attr_reader :vertices
+    def initialize(vertices: [])
+      @vertices = vertices.is_a?(Array) ? vertices : []
+    end
+  end
+
+  class Face
+    attr_reader :layer, :persistent_id_value, :entityID, :inner_loops
+    def initialize(layer: nil, persistent_id: nil, entityID: nil,
+                   outer_loop_vertices: 4, inner_loop_vertices: [],
+                   invalid: false)
+      @layer = layer || Layer.new('Layer0')
+      @persistent_id_value = persistent_id
+      @entityID = entityID.nil? ? fake_entity_id : entityID
+      # Build the outer loop + inner loops from the supplied data.
+      @outer_loop = Loop.new(vertices: outer_loop_vertices.is_a?(Integer) ? (1..outer_loop_vertices).to_a : outer_loop_vertices)
+      @inner_loops = inner_loop_vertices.map { |n| Loop.new(vertices: (1..n).to_a) }
+      @erased = false
+      @invalid = invalid
+    end
+
+    def loops
+      raise InvalidEntityError, 'face is invalid' if @invalid || @erased
+      [@outer_loop] + @inner_loops
+    end
+
+    def outer_loop
+      raise InvalidEntityError, 'face is invalid' if @invalid || @erased
+      @outer_loop
+    end
+
+    def persistent_id
+      raise InvalidEntityError, 'face is erased' if @erased
+      @persistent_id_value
+    end
+
+    def valid?
+      return false if @invalid || @erased
+      true
+    end
+
+    def deleted?
+      @erased
+    end
+
+    def erased!
+      @erased = true
+    end
+
+    def fake_entity_id
+      [@persistent_id_value, @layer.name].hash
+    end
+
+    def typename
+      'Face'
+    end
+  end
+
   # Fake InstancePath (used to test active edit-context + PID path
   # resolution back). Per CODEX_GUIDANCE_006: persistent_id_path is
   # String (dot-delimited) on the API surface. We keep a String +

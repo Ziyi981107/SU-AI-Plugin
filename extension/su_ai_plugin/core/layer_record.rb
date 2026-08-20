@@ -1,6 +1,6 @@
 
 #
-# core/layer_record.rb — V1.0+V1.1: per-layer aggregate in a snapshot.
+# core/layer_record.rb — V1.0+V1.1+V1.3: per-layer aggregate in a snapshot.
 #
 # V1.0 (pre-V1.1): name + id + edge_count.
 #
@@ -13,10 +13,17 @@
 #     missing (R011). Operational fallback is `visible: true`, but
 #     the uncertainty is preserved in the data model.
 #
-# Backward compat: V1.0 callers may construct LayerRecord without
+# V1.3 additions (per directive 027):
+#   - face_count (Integer, default 0) — total face occurrences on
+#     this layer in the selection tree.
+#   - faces_with_holes_count (Integer, default 0) — subset of
+#     face_count whose FaceRecord.has_holes == true.
+#
+# Backward compat: V1.0/V1.1 callers may construct LayerRecord without
 # the new kwargs; defaults fill in. The new fields are all
 # deterministic (role=UNKNOWN, visible=true, visibility_unknown=
-# false) so V1.0 tests continue to pass unchanged.
+# false, face_count=0, faces_with_holes_count=0) so V1.0/V1.1 tests
+# continue to pass unchanged.
 #
 
 require_relative 'layer_role'
@@ -24,15 +31,18 @@ require_relative 'layer_role'
 module SUAnalysis
   module Core
     class LayerRecord
-      attr_reader :name, :id, :edge_count,
+      attr_reader :name, :id, :edge_count, :face_count, :faces_with_holes_count,
                   :role, :role_rule, :visible, :visibility_unknown
 
       def initialize(name:, id: nil, edge_count: 0,
                      role: LayerRole::UNKNOWN, role_rule: nil,
-                     visible: true, visibility_unknown: false)
+                     visible: true, visibility_unknown: false,
+                     face_count: 0, faces_with_holes_count: 0)
         @name              = name.to_s
         @id                = id
         @edge_count        = edge_count.to_i
+        @face_count        = face_count.to_i
+        @faces_with_holes_count = faces_with_holes_count.to_i
         @role              = role
         @role_rule         = role_rule
         @visible           = visible ? true : false
@@ -43,11 +53,18 @@ module SUAnalysis
         @edge_count += 1
       end
 
+      def increment_face_count!(has_holes: false)
+        @face_count += 1
+        @faces_with_holes_count += 1 if has_holes
+      end
+
       def to_h
         {
           name:               @name,
           id:                 @id,
           edge_count:         @edge_count,
+          face_count:         @face_count,
+          faces_with_holes_count: @faces_with_holes_count,
           role:               @role,
           role_rule:          @role_rule,
           visible:            @visible,

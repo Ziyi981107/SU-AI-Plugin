@@ -103,6 +103,12 @@ module SUAnalysis
         # calls (a module-level @hash would persist).
         layer_aggregates = {}
 
+        # V1.3 (per directive 027): per-face occurrences parallel
+        # to per-edge occurrences. Same defensive per-leaf rescue
+        # pattern; faces with no `loops` / `outer_loop` capability
+        # are skipped via the `face?` predicate below.
+        faces = []
+
         walk_selection_world(
           selection,
           seed_t:               seed_t,
@@ -110,53 +116,97 @@ module SUAnalysis
           seed_struct_depth:    active_facts[:structural_depth],
           seed_path_complete:    active_facts[:pid_path_complete]
         ) do |entity, world_points, pid_path, label_path, struct_depth, path_complete|
-          next unless SUAnalysis::Compatibility::SUCapability.edge?(entity)
-          next if world_points.nil? || world_points.size < 2
-          begin
-            # pid_path_complete for the leaf: AND of parent completeness
-            # AND leaf PID non-nil.
-            leaf_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
-            leaf_complete = !leaf_pid.nil?
-            full_complete = path_complete && leaf_complete
-            layer_name = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
-            layer_name = 'Layer0' if layer_name.nil? || layer_name.empty?
-            src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
-              entity,
-              kind:               'edge',
-              persistent_id_path: pid_path,
-              instance_path:      label_path,
-              structural_depth:   struct_depth,
-              pid_path_complete:  full_complete,
-              layer_name:         layer_name
-            )
-            edges << SUAnalysis::Core::EdgeRecord.new(
-              id:          edges.size,
-              source:      src,
-              start_point: world_points[0],
-              end_point:   world_points[1],
-              layer:       layer_name
-            )
-            # V1.1 (per plan §4.6): accumulate per-layer aggregate.
-            # Track the first entity reference for each layer so the
-            # post-walk layer_visibility probe has a real Entity (not
-            # just a Layer object) to pass to SUCapability.layer_visibility
-            # — which is the entity-as-input adapter that drills
-            # `entity.layer` and probes `layer.visible?`. Passing the
-            # raw Layer object would force SUCapability to call
-            # `entity.layer` on the Layer itself, which always returns
-            # :unknown (real Layers / our FakeLayer don't expose a
-            # `.layer` method). The stored entity MAY be nil if the
-            # edge lacked `respond_to?(:layer)` — handled gracefully
-            # in build_layer_records (R011 :unknown fallback).
-            layer_aggregates[layer_name] ||= {
-              name:        layer_name,
-              edge_count:  0,
-              entity:      entity
-            }
-            layer_aggregates[layer_name][:edge_count] += 1
-          rescue StandardError => e
-            # PI_TASK_001 §18: skip safely, continue. We do NOT raise.
-            warn "[SU-AI-Plugin] skipped invalid edge: #{e.class}: #{e.message}"
+          if SUAnalysis::Compatibility::SUCapability.edge?(entity)
+            next if world_points.nil? || world_points.size < 2
+            begin
+              # pid_path_complete for the leaf: AND of parent completeness
+              # AND leaf PID non-nil.
+              leaf_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
+              leaf_complete = !leaf_pid.nil?
+              full_complete = path_complete && leaf_complete
+              layer_name = SUAnalysis::Compatibility::SUCapability.layer_name(entity)
+              layer_name = 'Layer0' if layer_name.nil? || layer_name.empty?
+              src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
+                entity,
+                kind:               'edge',
+                persistent_id_path: pid_path,
+                instance_path:      label_path,
+                structural_depth:   struct_depth,
+                pid_path_complete:  full_complete,
+                layer_name:         layer_name
+              )
+              edges << SUAnalysis::Core::EdgeRecord.new(
+                id:          edges.size,
+                source:      src,
+                start_point: world_points[0],
+                end_point:   world_points[1],
+                layer:       layer_name
+              )
+              # V1.1 (per plan §4.6): accumulate per-layer aggregate.
+              # Track the first entity reference for each layer so the
+              # post-walk layer_visibility probe has a real Entity (not
+              # just a Layer object) to pass to SUCapability.layer_visibility
+              # — which is the entity-as-input adapter that drills
+              # `entity.layer` and probes `layer.visible?`. Passing the
+              # raw Layer object would force SUCapability to call
+              # `entity.layer` on the Layer itself, which always returns
+              # :unknown (real Layers / our FakeLayer don't expose a
+              # `.layer` method). The stored entity MAY be nil if the
+              # edge lacked `respond_to?(:layer)` — handled gracefully
+              # in build_layer_records (R011 :unknown fallback).
+              layer_aggregates[layer_name] ||= {
+                name:        layer_name,
+                edge_count:  0,
+                entity:      entity
+              }
+              layer_aggregates[layer_name][:edge_count] += 1
+            rescue StandardError => e
+              # PI_TASK_001 §18: skip safely, continue. We do NOT raise.
+              warn "[SU-AI-Plugin] skipped invalid edge: #{e.class}: #{e.message}"
+            end
+          elsif SUAnalysis::Compatibility::SUCapability.face?(entity)
+            # V1.3 (per directive 027): one FaceRecord per face
+            # occurrence in the selection tree. Per directive item
+            # "Invalid/erased/malformed Face objects must be skipped
+            # per entity without aborting sibling geometry", the
+            # face? predicate already returned true above; if any
+            # face-specific probe raises (e.g. invalid Face raised
+            # on `outer_loop` / `loops`), we rescue and skip cleanly.
+            begin
+              leaf_pid = SUAnalysis::Compatibility::SUCapability.safe_persistent_id(entity)
+              leaf_complete = !leaf_pid.nil?
+              full_complete = path_complete && leaf_complete
+              layer_name = SUAnalysis::Compatibility::SUCapability.face_layer_name(entity)
+              outer_v = SUAnalysis::Compatibility::SUCapability.face_outer_loop_vertex_count(entity)
+              inner_n = SUAnalysis::Compatibility::SUCapability.face_inner_loop_count(entity)
+              src = SUAnalysis::Compatibility::SUCapability.build_source_reference(
+                entity,
+                kind:               'face',
+                persistent_id_path: pid_path,
+                instance_path:      label_path,
+                structural_depth:   struct_depth,
+                pid_path_complete:  full_complete,
+                layer_name:         layer_name
+              )
+              faces << SUAnalysis::Core::FaceRecord.new(
+                id:                       faces.size,
+                source:                   src,
+                layer:                    layer_name,
+                outer_loop_vertex_count:  outer_v,
+                inner_loop_count:         inner_n
+              )
+              layer_aggregates[layer_name] ||= {
+                name:        layer_name,
+                edge_count:  0,
+                entity:      entity
+              }
+              has_holes = inner_n > 0
+              layer_aggregates[layer_name][:face_count] = (layer_aggregates[layer_name][:face_count] || 0) + 1
+              layer_aggregates[layer_name][:faces_with_holes_count] = (layer_aggregates[layer_name][:faces_with_holes_count] || 0) + (has_holes ? 1 : 0)
+              layer_aggregates[layer_name][:entity] ||= entity  # keep first entity seen (Edge preferred over Face for visibility probe)
+            rescue StandardError => e
+              warn "[SU-AI-Plugin] skipped invalid face: #{e.class}: #{e.message}"
+            end
           end
         end
 
@@ -169,7 +219,8 @@ module SUAnalysis
         SUAnalysis::Core::GeometrySnapshot.new(
           edges:     edges,
           layers:    layer_records,
-          preflight: preflight
+          preflight: preflight,
+          faces:     faces
         )
       end
 
@@ -224,7 +275,9 @@ module SUAnalysis
             role:               role,
             role_rule:          rule_id,
             visible:            visible,
-            visibility_unknown: vis_unknown
+            visibility_unknown: vis_unknown,
+            face_count:         agg[:face_count] || 0,
+            faces_with_holes_count: agg[:faces_with_holes_count] || 0
           )
         end
         # Sort by name for determinism (mapper re-sorts by role bucket).
@@ -373,6 +426,17 @@ module SUAnalysis
           # is ANDed in by the caller (build_snapshot) so non-leaf
           # callers like tests can inspect it separately.
           yield entity, endpoints, new_pid_path, parent_label_path,
+                parent_struct_depth, parent_path_complete
+        elsif SUAnalysis::Compatibility::SUCapability.face?(entity)
+          # V1.3 (per directive 027): yield one event per Face
+          # occurrence. Faces have no endpoints (they are
+          # 2-D topology, not 1-line geometry), so we yield
+          # `nil` as the world-points placeholder; the caller's
+          # `case leaf_kind` switch treats the Face branch
+          # specially and does not read world_points.
+          # structural_depth / pid_path_complete follow the same
+          # Edge-leaf discipline (depth excludes the leaf itself).
+          yield entity, nil, new_pid_path, parent_label_path,
                 parent_struct_depth, parent_path_complete
         end
       end

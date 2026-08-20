@@ -1,5 +1,6 @@
 
 require_relative 'edge_record'
+require_relative 'face_record'
 require_relative 'vertex_record'
 require_relative 'layer_record'
 require_relative 'source_reference'
@@ -9,10 +10,16 @@ require_relative 'vertex_index'
 module SUAnalysis
   module Core
     #
-    # GeometrySnapshot — aggregates edges, layers, preflight data, and a
-    # VertexIndex. Built once per analysis, then handed read-only to all
-    # analyzers. Stage 1 builds it by hand from SyntheticFactory; Stage 5
-    # will build it from a SU selection via a Snapshot Builder.
+    # GeometrySnapshot — aggregates edges, faces, layers, preflight
+    # data, and a VertexIndex. Built once per analysis, then handed
+    # read-only to all analyzers. Stage 1 builds it by hand from
+    # SyntheticFactory; Stage 5 will build it from a SU selection
+    # via a Snapshot Builder.
+    #
+    # V1.3 (per directive 027): adds `faces` keyword (defaulting to
+    # `[]` for V1.0/V1.1/V1.2 callers) so the Face Inventory stage
+    # has access to face occurrences without disturbing existing
+    # snapshot contracts.
     #
     # All read-only mutators below either:
     #   - return plain values (immutable), or
@@ -23,15 +30,20 @@ module SUAnalysis
     # 留 Normalize 阶段处理 (PI_TASK_001 §8).
     #
     class GeometrySnapshot
-      attr_reader :edges, :layers, :config, :preflight
+      attr_reader :edges, :faces, :layers, :config, :preflight
 
-      def initialize(edges:, layers: [], preflight: {}, config: AnalysisConfig.new, vertex_index: nil)
+      def initialize(edges:, layers: [], preflight: {}, config: AnalysisConfig.new, vertex_index: nil, faces: [])
         @edges    = edges.freeze
         @layers   = layers.freeze
         @preflight = preflight.dup
         @config   = config
         @vertex_index = vertex_index || build_vertex_index(config)
         edges.each { |e| @vertex_index.add_edge(e) }
+        # V1.3: faces defaults to []. V1.0/V1.1/V1.2 callers that
+        # don't supply `faces:` still get a snapshot that exposes
+        # the new attr_reader returning []; the Face Inventory UI
+        # gracefully renders zero buckets + zero counters.
+        @faces = (faces || []).freeze
       end
 
       def vertex_records
@@ -44,6 +56,10 @@ module SUAnalysis
 
       def edge_count
         @edges.size
+      end
+
+      def face_count
+        @faces.size
       end
 
       def vertex_count

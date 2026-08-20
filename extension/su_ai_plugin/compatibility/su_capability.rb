@@ -112,6 +112,75 @@ module SUAnalysis
         obj.respond_to?(:start) && obj.respond_to?(:end) && obj.respond_to?(:vertices)
       end
 
+      # ---- V1.3: face probing ----------------------------------------------
+      #
+      # All face probing is defensive: a host without Face methods
+      # (e.g. older SketchUp builds, edge-only fakes) returns safe
+      # defaults rather than raising. Per directive 027: "Use
+      # capability checks for Face, loops, outer_loop, vertices,
+      # layer, visibility, validity, and persistent ID."
+
+      # True if the object responds like a SketchUp Face: exposes
+      # `loops` (Array) and `outer_loop` (Loop). Real SU faces do;
+      # FakeSU::Face fakes do; non-face entities (Edge, Vertex, etc.)
+      # do not.
+      def face?(obj)
+        return false unless obj
+        obj.respond_to?(:loops) && obj.respond_to?(:outer_loop)
+      end
+
+      # Returns the outer-loop vertex count for a Face. Defaults
+      # to 0 if the host lacks `outer_loop` capability (defensive
+      # fallback per directive: "Determine inner loops from the
+      # host face-loop structure, with defensive fallback when
+      # capabilities are absent").
+      def face_outer_loop_vertex_count(face)
+        return 0 unless face?(face)
+        outer = begin
+          face.outer_loop
+        rescue StandardError
+          nil
+        end
+        return 0 unless outer && outer.respond_to?(:vertices)
+        verts = begin
+          outer.vertices
+        rescue StandardError
+          []
+        end
+        verts.is_a?(Array) ? verts.length : 0
+      end
+
+      # Returns the inner-loop count for a Face (count of loops
+      # minus 1, since the outer loop is always present). Returns
+      # 0 if the host lacks `loops` capability.
+      def face_inner_loop_count(face)
+        return 0 unless face?(face)
+        loops = begin
+          face.loops
+        rescue StandardError
+          nil
+        end
+        return 0 unless loops.is_a?(Array)
+        # loops.length includes the outer loop. We define
+        # "inner loop count" = loops.length - 1.
+        # Defensive: never negative (an outer-loop-only face has 0).
+        [loops.length - 1, 0].max
+      end
+
+      # Layer name for a Face. Falls back to 'Layer0' (the
+      # established V1.0 fallback per directive) when the host
+      # cannot report a layer (no `.layer` accessor, or layer
+      # is nil / empty).
+      def face_layer_name(face)
+        return 'Layer0' unless face?(face) || face.respond_to?(:layer)
+        raw = begin
+          face.layer.name
+        rescue StandardError
+          nil
+        end
+        raw.nil? || raw.to_s.empty? ? 'Layer0' : raw.to_s
+      end
+
       def group?(obj)
         return false unless obj
         if defined?(Sketchup::Group)
