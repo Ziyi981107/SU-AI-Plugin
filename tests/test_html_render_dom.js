@@ -493,16 +493,56 @@ assert('L4.3: role-badge textContent matches role_label',
        dimRoleBadge && dimRoleBadge.textContent === 'Dimension');
 assert('L4.3: visibility-badge textContent matches visibility_label',
        dimVisBadge && dimVisBadge.textContent === 'Visible');
-assert('L4.3: edge-count renders the layer edge count',
-       dimEdgesCell && dimEdgesCell.textContent.indexOf('4') !== -1 &&
-       dimEdgesCell.textContent.indexOf('edges') !== -1);
-assert('L4.3: issue-count renders the layer issue count',
-       dimIssuesCell && dimIssuesCell.textContent.indexOf('1') !== -1 &&
-       dimIssuesCell.textContent.indexOf('issues') !== -1);
+assert('L4.3: edge-count renders the layer edge count (plural form for n=4)',
+       dimEdgesCell && dimEdgesCell.textContent === '4 edges');
+assert('L4.3: issue-count renders the layer issue count (singular form for n=1)',
+       dimIssuesCell && dimIssuesCell.textContent === '1 issue');
+// L4.3.1 — Per Owner Gate 2 V1.1 NIT: a visible separator between
+// the edge count and the issue count. The separator is a real DOM
+// node carrying class "layer-count-sep" and textContent "·" so that
+// both real host dialogs and the mock test harness surface it.
+var dimSepCell = findChildByClass(dimRow, 'layer-count-sep');
+assert('L4.3.1: a layer-count-sep separator sits between edge-count and issue-count',
+       dimSepCell && dimSepCell.textContent === '\u00B7');
+// The mock MockElement does not auto-aggregate child textContent
+// into the parent, so we walk the row's direct children and
+// concatenate their textContents ourselves. This proves the row
+// will render as "4 edges · 1 issue" in a real DOM where
+// textContent IS auto-aggregated.
+function joinChildTexts(el) {
+  if (!el || !el.children) return '';
+  return el.children.map(function (c) { return c.textContent || ''; }).join('');
+}
+// The MockElement does NOT auto-aggregate textContent into the
+// parent (just like a real DOM the textContent of a parent is the
+// concatenation of its descendants' text nodes, with no spaces).
+// The visual spacing in the real host comes from the row's flexbox
+// `gap: 8px`, NOT from textContent. So the joined direct-children
+// text is "DIM-XXDimensionVisible4 edges·1 issue" — the middle
+// dot between edge-count and issue-count is what makes the
+// separator visible to Owners and to the L4.10 "no object-
+// stringification" guard.
+assert('L4.3.1: row direct-children text concatenates with the middle-dot separator',
+       dimRow && joinChildTexts(dimRow) === 'DIM-XXDimensionVisible4 edges\u00B71 issue');
+assert('L4.3.1: middle-dot separator is a real DOM node carrying class layer-count-sep',
+       dimSepCell && dimSepCell.textContent === '\u00B7');
 
 // L4.4 — issue_count > 0 gets the .has-issues class for emphasis.
 assert('L4.4: issue_count > 0 gets the has-issues class',
        dimIssuesCell && dimIssuesCell.classes.indexOf('has-issues') !== -1);
+
+// L4.4.1 — Per Owner Gate 2 V1.1 NIT: pluralization correctness.
+// n=0 -> plural, n=1 -> singular, n=2+ -> plural. The hidden
+// layer row in the same layersPayload carries edge_count=2 /
+// issue_count=0; check those here.
+var l0EdgesCell  = findChildByClass(l0Row, 'edge-count');
+var l0IssuesCell = findChildByClass(l0Row, 'issue-count');
+assert('L4.4.1: edge_count=2 pluralizes to "2 edges"',
+       l0EdgesCell && l0EdgesCell.textContent === '2 edges');
+assert('L4.4.1: issue_count=0 pluralizes to "0 issues"',
+       l0IssuesCell && l0IssuesCell.textContent === '0 issues');
+assert('L4.4.1: issue_count=0 has NO .has-issues class',
+       l0IssuesCell && l0IssuesCell.classes.indexOf('has-issues') === -1);
 
 // L4.5 — hidden layer has data-visible="false" AND a separate
 // visibility badge "Off-screen" (NOT a fused role label).

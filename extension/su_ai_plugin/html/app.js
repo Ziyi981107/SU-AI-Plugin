@@ -147,6 +147,17 @@
     }).join(' ');
   }
 
+  // Per Owner Gate 2 V1.1 NIT (1-2): edge / issue counters must
+  // (a) pluralize correctly (1 edge vs 4 edges, 1 issue vs 2 issues)
+  // and (b) be visually separated so the row does not collapse to
+  // "1 edge3 issues" when the flexbox gap is 0 in the host
+  // dialog. We centralize the formatter here so both the layer
+  // row and any future caller use the same rule.
+  function formatCount(n, noun) {
+    var count = (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 0;
+    return count + ' ' + noun + (count === 1 ? '' : 's');
+  }
+
   function renderIssue(issue) {
     var div = document.createElement('div');
     div.setAttribute('data-issue-id', issue.issue_id || '');
@@ -295,17 +306,30 @@
     var edgesCell = document.createElement('span');
     edgesCell.className = 'edge-count';
     var edgeCount = (g && g.edge_count != null) ? g.edge_count : 0;
-    edgesCell.textContent = edgeCount + ' edges';
+    edgesCell.textContent = formatCount(edgeCount, 'edge');
+
+    // Visible separator between the edge and issue counts. The
+    // separator is a real DOM node (not just whitespace) so the
+    // mock test harness and any future SR / a11y reader both pick
+    // it up reliably. Per Owner Gate 2 V1.1 NIT: prior rendering
+    // produced visually-joined text like "1 edge3 issues" when the
+    // flexbox gap was 0; this separator makes the join explicit
+    // in BOTH the CSS and the textContent.
+    var countSep = document.createElement('span');
+    countSep.className = 'layer-count-sep';
+    countSep.setAttribute('aria-hidden', 'true');
+    countSep.textContent = '\u00B7'; // middle dot "·"
 
     var issuesCell = document.createElement('span');
     var issueCount = (g && g.issue_count != null) ? g.issue_count : 0;
     issuesCell.className = 'issue-count' + (issueCount > 0 ? ' has-issues' : '');
-    issuesCell.textContent = issueCount + ' issues';
+    issuesCell.textContent = formatCount(issueCount, 'issue');
 
     div.appendChild(name);
     div.appendChild(roleBadge);
     div.appendChild(visBadge);
     div.appendChild(edgesCell);
+    div.appendChild(countSep);
     div.appendChild(issuesCell);
     // No click handler — layers are intentionally non-actionable.
     // There is no path to window.sketchup.locate from this row.

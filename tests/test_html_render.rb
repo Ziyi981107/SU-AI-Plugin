@@ -435,6 +435,10 @@ test 'html_render (L4): style.css defines .layer-row + role-badge + visibility-b
                'style.css must define .layer-row .visibility-badge for the separate visibility badge')
   assert_match(/\.layer-row\s+\.issue-count\.has-issues/, src,
                'style.css must define .layer-row .issue-count.has-issues for the locked issue-count emphasis')
+  # Per Owner Gate 2 V1.1 NIT: explicit visible separator between
+  # the edge count and the issue count. Must be a real CSS rule.
+  assert_match(/\.layer-row\s+\.layer-count-sep/, src,
+               'style.css must define .layer-row .layer-count-sep for the visible separator')
   # The muted style for hidden layers (data-visible="false"). This
   # is the ONLY data-attribute-driven style on layer rows.
   assert_match(/\.layer-row\[data-visible="false"\]/, src,

@@ -164,6 +164,19 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-size: 11px;
   color: var(--muted);
 }
+.layer-row .layer-count-sep {
+  /* Per Owner Gate 2 V1.1 NIT: a real visual separator between the
+     edge count and the issue count. We center the dot between the
+     two text spans and give it a tiny right margin so it does not
+     visually collide with either neighbor (the existing flex
+     `gap: 8px` on the row is enough; this element just makes the
+     separator DOM-visible for mock tests + screen readers, marked
+     aria-hidden because it is purely decorative). */
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+}
 .layer-row .issue-count {
   font-size: 11px;
   color: var(--muted);
