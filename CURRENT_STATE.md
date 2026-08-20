@@ -1,58 +1,79 @@
 # CURRENT STATE
 
-Last updated: 2026-08-20 (V1.1 implementation COMPLETE.
-All 5 commits landed on `v1.1-layer-semantic-mapping` branch
-(head = `823feab`). Full suite 372/372 PASS, 0 fail, 0 error.
-V1.1 Owner Gate 2 checklist drafted at
-Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt.
-Awaiting Owner real-SU2020 Gate 2 V1.1 verification, then
-CodeX end-of-stage review per plan §13. V1.0 candidate still
-FROZEN at tag `v1.0-candidate-2026-08-19` (commit `56ea611`).
-Gate 1 (SU2017) PENDING per R006 — deferred to formal release.)
+Last updated: 2026-08-20 (V1.1 implementation COMPLETE
+on `v1.1-layer-semantic-mapping` branch; 5 implementation
+commits landed at head `823feab`. Owner Gate 2 V1.1 PASS
+WITH NIT on real SU2020; all three NITs fixed in 2 follow-up
+commits `33b601a` (NIT 1: separator + plural) and `0a1f2af`
+(NIT 2: fixtures). Consolidated CodeX end-of-stage review
+packet drafted at
+`Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
+Full suite 372/372 PASS, 0 fail, 0 error. V1.0 candidate
+still FROZEN at tag `v1.0-candidate-2026-08-19` (commit
+`56ea611`). Gate 1 (SU2017) PENDING per R006 — deferred to
+formal release.)
 
 ## Agent hand-off status (2026-08-20)
 
-The Agent has entered the **WAIT-FOR-OWNER-GATE-2-V1.1** phase.
-Implementation is COMPLETE on `v1.1-layer-semantic-mapping`
-(head = `823feab`, 372/372 PASS). No further code changes are
-scheduled unless Owner reports a real-SU2020 regression in the
-Gate 2 V1.1 verification.
+The Agent has entered the **WAIT-FOR-CODEX-END-OF-STAGE-REVIEW**
+phase. V1.1 implementation COMPLETE on
+`v1.1-layer-semantic-mapping` (5 commits, head `823feab`),
+Owner Gate 2 V1.1 PASS WITH NIT collected on real SU2020,
+all three NITs fixed in 2 follow-up commits, and ONE
+consolidated CodeX end-of-stage review packet staged at
+`Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`.
+The branch `HEAD` is ready for the one-shot Codex submission.
 
-  - **Owner right now**: run
-    `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt`
-    L1..L9 on real SU2020. Drop the report at
-    `Prompt/OWNER_REPORT_V1_1_LAYERS_2026-08-XX.txt`.
-  - **Agent right now**: idle on Owner action. On Owner PASS,
-    Agent assembles ONE consolidated CodeX end-of-stage review
-    packet per V1.1 plan §13 (NOT before; NOT a re-review of
-    V1.0 / Stage 6 / CodeX 020 / RBZ / CodeX 024).
-  - **Out of scope until Owner reports**: CodeX end-of-stage
-    packet, formal release, Gate 1 (SU2017, deferred to formal
-    release per R006), and any V1.1 / V1.0 scope re-opening.
+  - **Owner right now**: route the CodeX packet from
+    `Review/CODEX_END_OF_STAGE_REVIEW_REQUEST_V1_1_LAYERS_2026-08-20.md`
+    to Codex (one-shot submission, NOT per-NIT or per-commit).
+    Optional: re-run L4..L9 on top of the NIT-fix head and
+    drop a brief re-verification record at
+    `Prompt/OWNER_REVERIFICATION_V1_1_LAYERS_2026-08-XX.txt`.
+    The automated L4 source-level guard tests already cover
+    the NIT 1 fix; the fixture rewrite in commit `0a1f2af` is
+    self-evidencing in the checklist itself.
+  - **Agent right now**: idle on CodeX verdict. On CodeX PASS,
+    Agent closes the V1.1 stage on the verified host. On CodeX
+    PASS WITH NIT, Agent fixes the NITs in a follow-up commit
+    without dispatching a new packet. On CodeX BLOCK, Agent
+    addresses each BLOCK in a follow-up commit and dispatches a
+    follow-up packet.
+  - **Out of scope until CodeX verdict**: formal release,
+    Gate 1 (SU2017, deferred to formal release per R006), and
+    any V1.1 / V1.0 scope re-opening.
 
-Independent Agent-side finishing work (committed in this
-session, no behavior change):
+Independent Agent-side work already committed (no behavior
+change beyond the three NIT fixes Owner reported):
 
   - Whitespace / encoding audit on `CURRENT_STATE.md`: file is
-    clean (no trailing whitespace, no NBSP / ZWSP / BOM). The
-    pre-crash session's line-122 grep investigation did not find
-    a real defect; line 122 is just the natural markdown
-    soft-wrap of the surrounding paragraph.
-  - `data/_check_tmp/` audit: all WIP files are already isolated
-    (`data/_check_tmp/` is `.gitignore`d AND listed in
-    `scripts/build_rbz.rb EXCLUDED_TOP_LEVEL`). RBZ shipping is
-    confirmed WIP-free. Recent one-shot debug files
-    (`_check_whitespace.rb`, `debug_layer_groups.rb`) removed.
-    Older `_WIP_*` historical artifacts left in place as audit
-    trail (gitignored, no shipping risk).
+    clean (no trailing whitespace, no NBSP / ZWSP / BOM).
+  - `data/_check_tmp/` audit: all WIP files are already
+    isolated (`data/_check_tmp/` is `.gitignore`d AND listed
+    in `scripts/build_rbz.rb EXCLUDED_TOP_LEVEL`). RBZ
+    shipping is confirmed WIP-free.
   - `Review/OWNER_VERIFICATION_V1_1_LAYERS_2026-08-20.txt` L5
-    title typo (`EMHASIS` → `EMPHASIS`) corrected so Owner can
-    read step titles without confusion.
+    title typo (`EMHASIS` → `EMPHASIS`) corrected.
+  - **NIT 1 fix** (commit `33b601a`): layer-row separator +
+    plural form. Rendered text now reads `4 edges · 0 issues`
+    with visible middle-dot separator; `formatCount` helper
+    centralizes the plural rule. Tests:
+    `tests/test_html_render.rb` (CSS guard for
+    `.layer-row .layer-count-sep`),
+    `tests/test_html_render_dom.js` (L4.3 exact-match +
+    L4.3.1 separator + L4.4.1 plural correctness).
+  - **NIT 2 fix** (commit `0a1f2af`): OWNER_VERIFICATION
+    fixture rewrite. New `make_rect(entities, layer, x, y)`
+    helper builds a 4-edge closed rectangle and explicitly
+    assigns the named layer to each Edge. Hidden layer
+    renamed `TXT-HIDDEN` → `TXT-LABEL-HIDDEN` (matches
+    Annotation via `label`). L3 / L4 / L5 step descriptions
+    updated.
   - Full suite re-run: **372/372 PASS, 0 fail, 0 error**
     (V1.0 baseline 286 + V1.1 additions 86 unchanged).
-  - Stable Git checkpoint committed: only documentation,
-    cleanup, and test-stabilization changes; no production
-    code, no API contract, no V1.0 / V1.1 scope.
+  - All commit messages reference the locked contracts
+    (R007..R012) and explicitly state no V1.0 / Stage 6 /
+    CodeX 020 / RBZ / CodeX 024 re-opening.
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 
