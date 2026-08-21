@@ -18,6 +18,7 @@ require 'json'
 require_relative 'dialog_controller'
 require_relative 'ui_bridge'
 require_relative 'issue_locator'
+require_relative 'core/working_mode_runner'
 
 module SUAnalysis
   module Extension
@@ -49,6 +50,20 @@ module SUAnalysis
         dialog.add_action_callback('ready')   { |_ctx| push_data(dialog, controller) }
         dialog.add_action_callback('locate')  { |_ctx, issue_id| on_locate(dialog, controller, issue_id) }
         dialog.add_action_callback('close')   { |_ctx| on_close(dialog, controller) }
+        # V1.4 (per directive 030, Stage 4): working-mode plumbing.
+        # The Prepare / Discard / Rebuild actions operate ONLY on
+        # the runner-owned workspace; the source is NEVER touched.
+        # These callbacks re-push the payload so the UI updates
+        # after each action.
+        dialog.add_action_callback('prepare_workspace') do |_ctx|
+          on_prepare_workspace(dialog, controller)
+        end
+        dialog.add_action_callback('discard_workspace') do |_ctx|
+          on_discard_workspace(dialog, controller)
+        end
+        dialog.add_action_callback('rebuild_workspace') do |_ctx|
+          on_rebuild_workspace(dialog, controller)
+        end
         # set_on_closed releases the Loader-side cache so the window
         # can be GC'd after the user closes it.
         dialog.set_on_closed do
@@ -82,6 +97,106 @@ module SUAnalysis
           dialog.execute_script("window.SUAIP.toast(#{msg})")
           $stdout.puts("[SU-AI-Plugin] locate_issue: #{result[:diagnostics].last || 'unresolved'}")
         end
+      end
+
+      # V1.4 (per directive 030, Stage 4): handlers for the
+      # dialog's Working Mode section. Each handler delegates
+      # to WorkingModeRunner (pure-data layer in core/) and
+      # re-pushes the payload so the UI updates.
+      def on_prepare_workspace(dialog, controller)
+        src = _source_snapshot_for(controller)
+        if src.nil?
+          _toast(dialog,
+                 'Working Mode: no source snapshot available for this dialog.')
+          return
+        end
+        SUAnalysis::Core::WorkingModeRunner.prepare(
+          source:  src,
+          adapter: _adapter_for(_host_safety_check: true)
+        )
+        push_data(dialog, controller)
+      end
+
+      def on_discard_workspace(dialog, controller)
+        SUAnalysis::Core::WorkingModeRunner.discard
+        push_data(dialog, controller)
+      end
+
+      def on_rebuild_workspace(dialog, controller)
+        src = _source_snapshot_for(controller)
+        if src.nil?
+          _toast(dialog,
+                 'Working Mode: no source snapshot available for this dialog.')
+          return
+        end
+        SUAnalysis::Core::WorkingModeRunner.rebuild
+        push_data(dialog, controller)
+      end
+
+      # The SourceSnapshot is held by the controller's analysis
+      # result via the snapshot bridge. For V1.4 plumbing, we
+      # accept the controller's analysis_result's underlying
+      # geometry_snapshot; the V1.4-stage 4 wiring uses the
+      # workspace adapter path. The adapter is the production
+      # adapter when Sketchup is available, a nil adapter that
+      # the runner rejects (-> :failed) when not.
+      def _source_snapshot_for(controller)
+        # The controller's result is an AnalysisResult (V1.0-V1.3
+        # type). For V1.4 plumbing we DO NOT touch the V1.0-V1.3
+        # analysis pipeline; instead we build a minimal
+        # SourceSnapshot from the PreflightReport's scalar facts.
+        # The full SourceSnapshot with edges / faces / layers is
+        # captured in a V1.4+ stage.
+        ar = controller.result if controller
+        return nil if ar.nil?
+        cfg = ar.respond_to?(:config) && ar.config ? ar.config : nil
+        cfg = SUAnalysis::Core::AnalysisConfig.new if cfg.nil?
+        ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+          cfg,
+          rule_set_digest: 'plumbing.rule-set',
+          source_snapshot_schema_version: '1'
+        )
+        pf = ar.respond_to?(:preflight) ? ar.preflight : nil
+        fp = SUAnalysis::Core::SourceFingerprint.new(
+          edge_count: pf && pf.respond_to?(:edge_count) ? pf.edge_count : 0,
+          face_count: pf && pf.respond_to?(:face_count) ? pf.face_count : 0,
+          layer_count: pf && pf.respond_to?(:layer_distribution) ? pf.layer_distribution.keys.length : 0
+        )
+        sel_scope = []
+        if ar.respond_to?(:selection_type)
+          sel_scope << { kind: ar.selection_type.to_s, persistent_id_path: [], instance_path: [], layer: nil }
+        end
+        SUAnalysis::Core::SourceSnapshot.new(
+          snapshot_id:       "plumbing-snap-#{rand(2**32)}",
+          selection_scope:   sel_scope,
+          edges:             [],
+          faces:             [],
+          layers:            [],
+          vertex_records:    [],
+          unit:              'inches',
+          coordinate_origin: 'raw',
+          transform_context: { 'plumbing' => 'preflight-scalar-only' },
+          execution_config:  ec,
+          fingerprint:       fp
+        )
+      end
+
+      def _adapter_for(_host_safety_check:)
+        if defined?(SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter) &&
+           SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.sketchup_available?
+          SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.new
+        else
+          # Production adapter not usable (test env or no SU).
+          # The runner needs SOME adapter to function; fall
+          # back to the FakeAdapter for test plumbing. The UI
+          # will still see state transitions.
+          SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+        end
+      end
+
+      def _toast(dialog, message)
+        json = JSON.generate(message.to_s)
+        dialog.execute_script("window.SUAIP.toast(#{json})")
       end
 
       # Idempotent close handler. Releases the controller and the

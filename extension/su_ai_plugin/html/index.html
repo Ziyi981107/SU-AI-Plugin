@@ -65,6 +65,27 @@
       <summary id="face-inventory-summary">Face Inventory</summary>
       <div id="face-inventory-list"></div>
     </details>
+    <!--
+      V1.4 (per directive 030, Stage 4): the "Working Mode" section
+      sits AFTER the V1.3 Face Inventory section. It is a `<details>`
+      block with an explicit `<summary id="working-mode-summary">`
+      first child. JS renders the working-mode state at render time:
+        - "No working copy" when payload.derivedWorkspace.state === 'none'
+        - Otherwise shows the current workspace state (building / ready
+          / discarded / failed), the captured source snapshot id, the
+          captured source fingerprint digest, the captured execution
+          config digest, and (when failed) the last_error.
+      Action buttons (Prepare / Discard / Rebuild) wire to
+      window.SUAIP callbacks exposed by DialogRunner. The actions
+      are NON-DESTRUCTIVE for source: per directive stage 4
+      gate, the source is NEVER modified by the working-mode UI.
+      No source recolor / re-layer / erase / hide.
+    -->
+    <details id="working-mode-section">
+      <summary id="working-mode-summary">Working Mode (V1.4)</summary>
+      <div id="working-mode-list"></div>
+      <div id="working-mode-actions"></div>
+    </details>
   </main>
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>

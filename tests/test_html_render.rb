@@ -266,12 +266,25 @@ test 'html_render (L3): renderIssue branches on issue.locatable before adding cl
   assert_match(/if\s*\(\s*locatable\s*\)\s*\{/, src,
                'renderIssue must gate the click handler on locatable === true')
   # And the addEventListener('click', ...) call must appear INSIDE
-  # that if-block (not before it). The simplest check: count the
-  # addEventListener('click', ...) occurrences and ensure they're
-  # inside the if.
-  click_listeners = src.scan(/addEventListener\(['"]click['"]/).length
-  assert_equal 1, click_listeners,
-               'there must be exactly ONE addEventListener("click", ...) call (the locatable one)'
+  # that if-block (not before it). The most precise check:
+  # scope the count to renderIssue only (V1.4 working-mode
+  # buttons ALSO have addEventListener('click', ...), so the
+  # whole-file count is no longer exactly 1; the per-function
+  # count inside renderIssue is the L3 invariant).
+  render_issue_block = src[/function\s+renderIssue[\s\S]+?\n\s\s}\n/, 0] || src[/function\s+renderIssue[\s\S]+?\n  \}/m, 0]
+  if render_issue_block.nil?
+    # Fallback for the case where the closing brace shape differs:
+    # find the renderIssue function and capture up to the next
+    # `function ` or end-of-script.
+    start = src.index('function renderIssue')
+    raise 'renderIssue not found' if start.nil?
+    rest = src[start..-1]
+    next_fn = rest.index("\n  function ")
+    render_issue_block = next_fn ? rest[0..next_fn] : rest
+  end
+  ri_click_listeners = render_issue_block.scan(/addEventListener\(['"]click['"]/).length
+  assert_equal 1, ri_click_listeners,
+               'renderIssue must contain exactly ONE addEventListener("click", ...) call (the locatable one)'
 
   # The CSS `no-action` class must be defined for the visual
   # non-action state (default cursor, no hover affordance).
@@ -677,4 +690,151 @@ test 'html_render (V1.3): app.js render() summary block includes faces + faces_w
   list = scalar_match[1]
   assert list.include?("'faces'"),            "scalarKeys must include 'faces'"
   assert list.include?("'faces_with_holes'"), "scalarKeys must include 'faces_with_holes'"
+end
+
+# --------------------------------------------------------------------------
+# CodeX 030 PRE-BUILD TECHNICAL PREVIEW V1.4 Stage 4: the dialog's
+# "Working Mode" section. Per directive 030:
+#   - Enter working mode by clicking "Prepare".
+#   - Discard / Rebuild operate only on the runner-owned workspace.
+#   - Source CAD is NEVER touched.
+#   - Action buttons wire to window.SUAIP callbacks (no eval).
+#   - User-facing text via textContent only (no innerHTML).
+# --------------------------------------------------------------------------
+
+HR_HTML_INDEX_V14 = HR_HTML_INDEX
+HR_HTML_APPJS_V14 = HR_HTML_APPJS
+HR_HTML_CSS_V14   = HR_HTML_CSS
+HR_RUNNER_RB_V14  = HR_RUNNER_RB
+HR_UIBRIDGE_RB_V14 = File.expand_path('../extension/su_ai_plugin/ui_bridge.rb', __dir__).freeze
+
+test 'html_render (V1.4): index.html has <details id="working-mode-section"> with <summary id="working-mode-summary"> first child' do
+  src = File.read(HR_HTML_INDEX_V14)
+  m = src.match(/<details\s+id="working-mode-section">[^<]*<summary[^>]*id="working-mode-summary"[^>]*>[^<]*<\/summary>/m)
+  refute_nil m,
+           'index.html must define <details id="working-mode-section"> with <summary id="working-mode-summary"> as first child (per directive 030 Stage 4)'
+end
+
+test 'html_render (V1.4): working-mode-section is rendered closed by default (no open attribute)' do
+  src = File.read(HR_HTML_INDEX_V14)
+  m = src.match(/<details\s+id="working-mode-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
+  refute_nil m, 'failed to extract <details id="working-mode-section"> block'
+  block = m[0]
+  refute_match(/\bopen\b/, block,
+               '<details id="working-mode-section"> must NOT carry the `open` attribute (closed by default per directive 030 Stage 4)')
+end
+
+test 'html_render (V1.4): working-mode-section is positioned AFTER face-inventory-section' do
+  src = File.read(HR_HTML_INDEX_V14)
+  pos_fi  = src.index('id="face-inventory-section"')
+  pos_wm  = src.index('id="working-mode-section"')
+  refute_nil pos_fi, '#face-inventory-section element must exist'
+  refute_nil pos_wm, '#working-mode-section element must exist'
+  assert pos_fi < pos_wm,
+         '#working-mode-section must come AFTER #face-inventory-section (per directive 030 Stage 4)'
+end
+
+test 'html_render (V1.4): app.js exposes renderWorkingMode on ROOT' do
+  src = File.read(HR_HTML_APPJS_V14)
+  assert_match(/function\s+renderWorkingMode\s*\(/, src,
+               'app.js must define renderWorkingMode function')
+  assert_match(/ROOT\.renderWorkingMode\s*=\s*renderWorkingMode/, src,
+               'app.js must expose ROOT.renderWorkingMode for harness + future callers')
+end
+
+test 'html_render (V1.4): renderWorkingMode uses textContent only (no innerHTML for user strings)' do
+  src = File.read(HR_HTML_APPJS_V14)
+  m = src.match(/function\s+renderWorkingMode\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s}\n/m)
+  if m.nil?
+    # Fallback: find the function and capture up to the next `function ` or end-of-script.
+    start = src.index('function renderWorkingMode')
+    refute_nil start, 'renderWorkingMode function not found'
+    rest = src[start..-1]
+    next_fn = rest.index("\n  function ")
+    body = next_fn ? rest[0..next_fn] : rest
+  else
+    body = m[0]
+  end
+  refute_match(/\.innerHTML\s*=/, body,
+               'renderWorkingMode must NOT assign .innerHTML for user strings (locked contract)')
+  assert_match(/\.textContent\s*=/, body,
+               'renderWorkingMode must use .textContent for user strings (locked contract)')
+end
+
+test 'html_render (V1.4): renderWorkingMode helper (addAction) locates callback via brackets, NOT eval' do
+  src = File.read(HR_HTML_APPJS_V14)
+  # Per the locked no-eval contract, the click handler must look up
+  # the callback on window.SUAIP via bracket notation (root[callback]),
+  # NOT via eval(...).
+  assert_match(/var\s+fn\s*=\s*root\[callback\]/, src,
+               'renderWorkingMode action click handler must use root[callback] lookup (no eval)')
+  refute_match(/eval\s*\(\s*['"`]?\s*(?:root|window)/, src,
+               'renderWorkingMode must NOT eval the callback string')
+end
+
+test 'html_render (V1.4): style.css defines .working-mode-row + .working-mode-actions neutral styles' do
+  src = File.read(HR_HTML_CSS_V14)
+  assert_match(/\.working-mode-row/, src,
+               'style.css must define .working-mode-row (V1.4 directive 030 Stage 4)')
+  assert_match(/\.working-mode-actions/, src,
+               'style.css must define .working-mode-actions (V1.4 directive 030 Stage 4)')
+  # Strip comments to find the actual blocks.
+  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
+  blocks = stripped.scan(/[^{}]*\.working-mode-row[^{}]*\{[^}]*\}/m)
+  assert blocks.length > 0, 'failed to extract any .working-mode-row CSS block'
+  blocks.each do |b|
+    refute_match(/data-role\s*=/, b,
+                 ".working-mode-row CSS block must NOT use a [data-role=\"...\"] color selector (R008): #{b.inspect}")
+    # No new color selectors for data-state (per directive 030 Stage 4
+    # 'no new role / state color selectors'). The neutral var(--*)
+    # variables (--text, --muted, --border) are EXISTING palette
+    # tokens, not new colors. NEW colors are hex/rgb/named values
+    # OR new --* variables introduced in this rule block.
+    if b =~ /\[data-state=/
+      # Reject any hard-coded color literal in a [data-state=...] block.
+      %w[# rgb rgba hsl hsla].each do |prefix|
+        if b =~ /(?:color|background|background-color|border-color)\s*:\s*#{Regexp.escape(prefix)}/i
+          flunk(".working-mode-row [data-state=...] block must NOT use a literal #{prefix} color (no new state colors): #{b.inspect}")
+        end
+      end
+    end
+  end
+end
+
+test 'html_render (V1.4): dialog_runner wires the 3 working-mode callbacks as BLOCKs (not method(:name))' do
+  src = File.read(HR_RUNNER_RB_V14)
+  %w[prepare_workspace discard_workspace rebuild_workspace].each do |cb|
+    assert_match(/add_action_callback\s*\(\s*['"]#{cb}['"]\s*\)\s+do/, src,
+                 "dialog_runner.rb must register '#{cb}' as a BLOCK callback (do/end), per the locked contract")
+    # No method(:...) form for these.
+    refute_match(/add_action_callback\s*\(\s*['"]#{cb}['"]\s*,\s*method/, src,
+                 "dialog_runner.rb must NOT register '#{cb}' as a method(:...) callback")
+  end
+end
+
+test 'html_render (V1.4): ui_bridge exposes derivedWorkspace top-level key (String-typed)' do
+  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+  # The UIBridge payload must include 'derivedWorkspace' (String key)
+  # sourced from WorkingModeRunner.snapshot.
+  result = hr_make_result
+  payload = UIBridge.as_html_data(result)
+  assert payload.key?('derivedWorkspace'),
+         "UIBridge.as_html_data payload must include 'derivedWorkspace' top-level key (V1.4 directive 030 Stage 4)"
+  assert_kind_of Hash, payload['derivedWorkspace']
+  assert payload['derivedWorkspace'].key?('state'),
+         "payload['derivedWorkspace'] must be a Hash with a 'state' key (per WorkingModeRunner.snapshot shape)"
+  assert_kind_of String, payload['derivedWorkspace']['state']
+end
+
+test 'html_render (V1.4): UIBridge.to_json round-trips derivedWorkspace (JSON-safe)' do
+  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = hr_make_result
+  payload = UIBridge.as_html_data(result)
+  require 'json'
+  json = JSON.generate(payload)
+  parsed = JSON.parse(json)
+  assert parsed.key?('derivedWorkspace'), 'derivedWorkspace must survive JSON round-trip'
+  assert parsed['derivedWorkspace']['state'] == 'none',
+         "derivedWorkspace.state must be 'none' on a fresh runner (round-trip)"
 end

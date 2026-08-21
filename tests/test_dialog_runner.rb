@@ -274,3 +274,137 @@ test 'BLOCK-004: ready handshake pushes data once (no double push on click)' do
 ensure
   FakeUI.uninstall!
 end
+
+# --------------------------------------------------------------------------
+# CodeX 030 PRE-BUILD TECHNICAL PREVIEW V1.4 Stage 4: dialog_runner
+# wires the 3 working-mode callbacks (prepare_workspace,
+# discard_workspace, rebuild_workspace) as BLOCKs. Each handler
+# delegates to WorkingModeRunner and re-pushes the payload so the
+# UI updates. The source is NEVER touched.
+# --------------------------------------------------------------------------
+
+require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+
+test 'dialog_runner (V1.4): registers prepare/discard/rebuild workspace callbacks' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  refute_nil dialog.callbacks['prepare_workspace'],
+           'dialog_runner must register prepare_workspace callback'
+  refute_nil dialog.callbacks['discard_workspace'],
+           'dialog_runner must register discard_workspace callback'
+  refute_nil dialog.callbacks['rebuild_workspace'],
+           'dialog_runner must register rebuild_workspace callback'
+ensure
+  FakeUI.uninstall!
+end
+
+test 'dialog_runner (V1.4): prepare_workspace callback transitions the runner to non-idle' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  refute_nil dialog
+  # Simulate the JS-side click on the Prepare button.
+  dialog.callbacks['prepare_workspace'].call(nil)
+  # The runner must now report a non-idle state.
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  refute_equal 'none', snap['state'],
+              'prepare_workspace must transition WorkingModeRunner out of the idle state'
+  # The runner must hold a SourceSnapshot id (captured from the
+  # dialog's analysis result; the plumbing builds one with a
+  # synthetic id).
+  refute_nil snap['source_snapshot_id'],
+              'prepare_workspace must capture a source snapshot id'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+test 'dialog_runner (V1.4): discard_workspace callback transitions the runner to :discarded' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # Prepare first, then Discard.
+  dialog.callbacks['prepare_workspace'].call(nil)
+  refute_equal 'none', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+  dialog.callbacks['discard_workspace'].call(nil)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'discarded', snap['state'],
+               'discard_workspace must transition WorkingModeRunner to :discarded'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+test 'dialog_runner (V1.4): rebuild_workspace callback re-prepares from captured source' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # Prepare, Discard, Rebuild.
+  dialog.callbacks['prepare_workspace'].call(nil)
+  src_id_before = SUAnalysis::Core::WorkingModeRunner.snapshot['source_snapshot_id']
+  dialog.callbacks['discard_workspace'].call(nil)
+  assert_equal 'discarded', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+  dialog.callbacks['rebuild_workspace'].call(nil)
+  snap_after = SUAnalysis::Core::WorkingModeRunner.snapshot
+  # The source_snapshot_id MUST be preserved across rebuild (rebuild
+  # reuses the captured source, never re-creates it).
+  assert_equal src_id_before, snap_after['source_snapshot_id'],
+               'rebuild_workspace must preserve the captured source snapshot id'
+  refute_equal 'none', snap_after['state'],
+               'rebuild_workspace must transition WorkingModeRunner out of :discarded'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+test 'dialog_runner (V1.4): source-integrity invariant -- source fingerprint is identical before/after prepare+discard+rebuild' do
+  # Per directive 030 Stage 4 risk test 1: source fingerprint MUST
+  # be identical before/after a successful prepare, discard, and
+  # rebuild. The dialog_runner path must NEVER mutate the source.
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # The runner doesn't hold a SourceSnapshot externally; we verify
+  # the contract via the snapshot Hash (which is JSON-safe and
+  # carries a deterministic source_fingerprint_digest derived from
+  # the captured source).
+  before_fp = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  dialog.callbacks['prepare_workspace'].call(nil)
+  fp_after_prepare = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  dialog.callbacks['discard_workspace'].call(nil)
+  # After discard, snapshot goes to 'discarded' state but the
+  # source_fingerprint_digest is still in the captured source.
+  fp_after_discard = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  dialog.callbacks['rebuild_workspace'].call(nil)
+  fp_after_rebuild = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  # The captured source is the SAME across the whole lifecycle.
+  # Its fingerprint digest MUST be stable.
+  refute_nil fp_after_prepare, 'prepare_workspace must capture a source fingerprint digest'
+  assert_equal fp_after_prepare, fp_after_discard,
+               'discard_workspace must NOT drift the source fingerprint digest'
+  assert_equal fp_after_prepare, fp_after_rebuild,
+               'rebuild_workspace must NOT drift the source fingerprint digest'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end

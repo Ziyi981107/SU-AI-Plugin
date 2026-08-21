@@ -12,6 +12,7 @@
 
 require 'json'
 require_relative 'core/issue_registry'
+require_relative 'core/working_mode_runner'
 
 module SUAnalysis
   module Extension
@@ -50,6 +51,11 @@ module SUAnalysis
       # face_inventory_groups get `faceInventoryGroups == []`
       # AND `summary['face_inventory_groups'] == []` AND
       # `summary['faces'] == 0` AND `summary['faces_with_holes'] == 0`.
+      #
+      # V1.4 (per directive 030, Stage 4): adds ONE new top-level
+      # key `derivedWorkspace` for the dialog's 'Working Mode'
+      # section. Default value is the runner's idle snapshot
+      # (state='none', no source_snapshot_id, etc.).
       def as_html_data(analysis_result)
         return {} if analysis_result.nil?
         result = {
@@ -61,7 +67,10 @@ module SUAnalysis
           'groups'             => stringify_groups(analysis_result.registry),
           'layerGroups'        => stringify_array(analysis_result.layer_groups),
           'layerIssueGroups'   => stringify_array(analysis_result.layer_issue_groups),
-          'faceInventoryGroups' => stringify_array(analysis_result.face_inventory_groups)
+          'faceInventoryGroups' => stringify_array(analysis_result.face_inventory_groups),
+          # V1.4: working-mode snapshot from WorkingModeRunner.
+          # Default ('none' state) when no workspace is active.
+          'derivedWorkspace'   => SUAnalysis::Core::WorkingModeRunner.snapshot
         }
         result
       end

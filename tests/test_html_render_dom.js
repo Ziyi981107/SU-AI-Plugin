@@ -40,12 +40,31 @@ function MockElement(tag) {
   this._events = {};
   this.hidden = true;
   this.clickCount = 0;
+  // Override textContent getter/setter so it aggregates child
+  // textContent values (matching the real DOM behavior).
+  var self = this;
+  Object.defineProperty(this, 'textContent', {
+    get: function () {
+      if (self._text !== undefined) return self._text;
+      var parts = [];
+      for (var i = 0; i < self.children.length; i++) {
+        var t = self.children[i].textContent;
+        if (t && t.length > 0) parts.push(t);
+      }
+      return parts.join('');
+    },
+    set: function (v) { self._text = v; },
+    configurable: true
+  });
 }
 MockElement.prototype.setAttribute = function (name, value) {
   this.attrs[name] = value;
 };
 MockElement.prototype.getAttribute = function (name) {
   return this.attrs[name];
+};
+MockElement.prototype.hasAttribute = function (name) {
+  return Object.prototype.hasOwnProperty.call(this.attrs, name);
 };
 MockElement.prototype.appendChild = function (child) {
   this.children.push(child);
@@ -64,9 +83,6 @@ MockElement.prototype.fireEvent = function (eventName, ev) {
 };
 MockElement.prototype.hasListener = function (eventName) {
   return !!(this._events[eventName] && this._events[eventName].length > 0);
-};
-MockElement.prototype.setAttribute = function (name, value) {
-  this.attrs[name] = value;
 };
 MockElement.prototype.getAttribute = function (name) {
   return this.attrs[name];
@@ -104,7 +120,12 @@ var mockElements = {
   // V1.3 (per directive 027): the "Face Inventory" section uses
   // these element IDs (placed AFTER #layers-section).
   'face-inventory-summary': new MockElement('summary'),
-  'face-inventory-list':    new MockElement('div')
+  'face-inventory-list':    new MockElement('div'),
+  // V1.4 (per directive 030 Stage 4): the "Working Mode" section
+  // uses these element IDs (placed AFTER #face-inventory-section).
+  'working-mode-summary': new MockElement('summary'),
+  'working-mode-list':    new MockElement('div'),
+  'working-mode-actions': new MockElement('div')
 };
 
 var mockDocument = {
@@ -1122,6 +1143,148 @@ assert('V13: summary block contains "Faces: 1" + "Faces With Holes: 0" scalars',
          var all = texts.join(' | ');
          return all.indexOf('Faces: 1') !== -1 && all.indexOf('Faces With Holes: 0') !== -1;
        })());
+
+// --- V1.4 (per directive 030 Stage 4): "Working Mode" section tests -----
+
+// Render with derivedWorkspace='none' (initial / pre-prepare state).
+renderWithPayload({
+  selectionLabel: 'wm-none', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: { state: 'none' }
+});
+var wmSummary = mockElements['working-mode-summary'];
+var wmList    = mockElements['working-mode-list'];
+var wmActions = mockElements['working-mode-actions'];
+
+assert('V14: working-mode-summary populated with idle text on state="none"',
+       wmSummary && wmSummary.textContent === 'Working Mode — no working copy');
+assert('V14: working-mode-list contains one row describing the idle state',
+       wmList && wmList.children.length === 1);
+assert('V14: idle row uses data-state="none" + .working-mode-row class',
+       wmList && wmList.children[0] &&
+       wmList.children[0].attrs['data-state'] === 'none' &&
+       wmList.children[0].classes.indexOf('working-mode-row') !== -1);
+assert('V14: idle row text uses textContent (no [object Object])',
+       wmList && wmList.children[0] &&
+       wmList.children[0].textContent.indexOf('[object Object]') === -1);
+// In state='none' ONLY the Prepare button is enabled.
+var wmActionBtns = wmActions ? wmActions.children : [];
+assert('V14: state="none" produces exactly ONE action button (Prepare only)',
+       wmActionBtns.length === 1);
+assert('V14: state="none" Prepare button has data-action="prepare_workspace"',
+       wmActionBtns[0] && wmActionBtns[0].attrs['data-action'] === 'prepare_workspace' &&
+       wmActionBtns[0].textContent === 'Prepare' &&
+       !wmActionBtns[0].hasAttribute('disabled'));
+
+// Render with derivedWorkspace='ready' (active workspace).
+renderWithPayload({
+  selectionLabel: 'wm-ready', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-snap-001',
+    source_fingerprint_digest: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    execution_config_digest: 'fedcba0987654321',
+    workspace_id: 'ws-12345'
+  }
+});
+var wmReadySummary = mockElements['working-mode-summary'];
+var wmReadyList    = mockElements['working-mode-list'];
+var wmReadyActions = mockElements['working-mode-actions'];
+assert('V14: ready state summary mentions "Working Mode — N entities ready"',
+       wmReadySummary && /Working Mode — \d+ entities? ready/.test(wmReadySummary.textContent));
+assert('V14: ready list has rows for source_snapshot_id + digests',
+       wmReadyList && wmReadyList.children.length >= 3);
+assert('V14: ready rows carry data-state="ready"',
+       wmReadyList && wmReadyList.children.every(function (c) {
+         return c.attrs['data-state'] === 'ready';
+       }));
+// In state='ready' ALL THREE buttons appear; Discard enabled, Prepare
+// disabled (re-prepare requires discard first).
+var wmReadyBtns = wmReadyActions ? wmReadyActions.children : [];
+assert('V14: state="ready" produces THREE action buttons',
+       wmReadyBtns.length === 3);
+var wmBtnActions = wmReadyBtns.map(function (b) { return b.attrs['data-action']; });
+assert('V14: state="ready" buttons are prepare/discard/rebuild (canonical order)',
+       wmBtnActions[0] === 'prepare_workspace' &&
+       wmBtnActions[1] === 'discard_workspace' &&
+       wmBtnActions[2] === 'rebuild_workspace');
+assert('V14: state="ready" Discard button is enabled (no disabled attr)',
+       wmReadyBtns[1] && !wmReadyBtns[1].hasAttribute('disabled'));
+
+// Render with derivedWorkspace='discarded' (post-discard state).
+renderWithPayload({
+  selectionLabel: 'wm-discarded', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'discarded',
+    source_snapshot_id: 'wm-snap-001',
+    source_fingerprint_digest: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    execution_config_digest: 'fedcba0987654321',
+    workspace_id: 'ws-12345'
+  }
+});
+var wmDiscardedSummary = mockElements['working-mode-summary'];
+assert('V14: discarded state summary shows "Working Mode — discarded"',
+       wmDiscardedSummary && wmDiscardedSummary.textContent.indexOf('discarded') !== -1);
+
+// Render with derivedWorkspace='failed' (build failure state).
+renderWithPayload({
+  selectionLabel: 'wm-failed', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'failed',
+    source_snapshot_id: 'wm-snap-001',
+    source_fingerprint_digest: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    execution_config_digest: 'fedcba0987654321',
+    workspace_id: 'ws-12345',
+    last_error: 'host failure during create_top_level_group'
+  }
+});
+var wmFailedList = mockElements['working-mode-list'];
+assert('V14: failed state has a row labeled "Last Error" with the message',
+       (function () {
+         if (!wmFailedList) return false;
+         var found = wmFailedList.children.filter(function (c) {
+           return c.textContent.indexOf('Last Error') !== -1 &&
+                  c.textContent.indexOf('host failure') !== -1;
+         });
+         return found.length >= 1;
+       })());
+
+// Defensive: missing derivedWorkspace => treated as 'none' state.
+renderWithPayload({
+  selectionLabel: 'wm-missing', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: []
+  // derivedWorkspace is intentionally missing.
+});
+assert('V14: missing derivedWorkspace defaults to state="none" (defensive)',
+       mockElements['working-mode-summary'].textContent === 'Working Mode — no working copy');
+
+// Action button click -> invokes window.SUAIP[callback].
+var locateCountBefore = locateCalls.length;
+wmReadyActions.children.forEach(function (b) { b.fireEvent('click'); });
+assert('V14: clicking Rebuild in state="ready" does NOT invoke Locate (it is a separate callback)',
+       locateCalls.length === locateCountBefore);
+
+// ROOT.renderWorkingMode is exposed.
+assert('V14: ROOT.renderWorkingMode is exposed',
+       typeof context.window.SUAIP.renderWorkingMode === 'function');
 
 // --- final verdict -----------------------------------------------------
 

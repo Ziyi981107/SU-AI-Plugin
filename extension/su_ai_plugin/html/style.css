@@ -277,3 +277,59 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .face-inventory-row[data-visible="false"] {
   opacity: 0.6;
 }
+
+/* ============================================================
+ * V1.4 (per directive 030, Stage 4) Working Mode UI
+ * ============================================================
+ * Neutral palette only -- no new role / state color selectors
+ * (V1.4 must NOT introduce new role / severity / state colors).
+ * Reuses the V1.1 .layer-row convention: single neutral row
+ * style, no hover affordance, no overlay. Rows are informational
+ * only; action affordance is provided by separate buttons in
+ * #working-mode-actions.
+ */
+.working-mode-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  cursor: default;
+  font-size: 12px;
+  color: var(--text);
+}
+.working-mode-row > * + * {
+  margin-left: 8px;
+}
+.working-mode-row .label {
+  font-weight: 500;
+}
+.working-mode-row .value {
+  color: var(--muted);
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.working-mode-row[data-state="failed"] .label {
+  /* Muted emphasis only -- no color selector beyond neutrals. */
+  font-weight: 700;
+}
+.working-mode-row[data-state="none"] {
+  color: var(--muted);
+  font-style: italic;
+}
+.working-mode-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.working-mode-actions button {
+  /* Inherit neutral button style from the page; no new color
+     selectors beyond what is already in style.css. */
+  font: inherit;
+  cursor: pointer;
+}
+.working-mode-actions button[disabled] {
+  cursor: default;
+  opacity: 0.5;
+}

@@ -161,6 +161,14 @@
     // aggregate-by-layer (NOT per-face), non-actionable, neutral
     // styling; reuse the V1.1 role + visibility badge semantics.
     renderFaceInventory(payload.faceInventoryGroups);
+
+    // V1.4 (per directive 030, Stage 4): render the "Working Mode"
+    // section AFTER V1.3. Resilient to a missing payload.derivedWorkspace
+    // (defaults to state='none'). All text via textContent (per the
+    // locked textContent-only contract for user-facing text). The
+    // action buttons (Prepare / Discard / Rebuild) wire to window.SUAIP
+    // callbacks exposed by DialogRunner.
+    renderWorkingMode(payload.derivedWorkspace);
   }
 
   function humanizeKey(k) {
@@ -409,6 +417,151 @@
     return div;
   }
 
+  // V1.4 (per directive 030, Stage 4): render the dialog's
+  // "Working Mode" section. The source is a snapshot of the
+  // WorkingModeRunner (pure-data layer in core/), key
+  // payload.derivedWorkspace.
+  //
+  // Locked contract:
+  //   - All user-facing text rendered via textContent (no
+  //     innerHTML for user-supplied strings).
+  //   - Source-vs-derived ownership is shown by NEVER
+  //     recoloring / re-layering / hiding source; the section
+  //     is INFO ONLY -- it tells the user where the captured
+  //     source snapshot came from and what workspace state
+  //     is current.
+  //   - Action buttons (Prepare / Discard / Rebuild) wire to
+  //     window.SUAIP callbacks exposed by DialogRunner. The
+  //     buttons are inert when the action is not available
+  //     in the current state (disabled attribute).
+  //   - No new role / state color selectors.
+  //
+  // States:
+  //   - 'none'     -> No working copy yet. Show "No working
+  //                   copy yet." + Prepare button enabled.
+  //   - 'building' -> Workspace is being built. Show
+  //                   "Building..." + no action buttons.
+  //   - 'ready'    -> Workspace exists. Show entity count +
+  //                   config digest + Discard + Rebuild
+  //                   buttons.
+  //   - 'discarded'-> Workspace was discarded. Show
+  //                   "Discarded" + Rebuild button enabled.
+  //   - 'failed'   -> A build / discard step raised. Show
+  //                   last_error + Rebuild button enabled.
+  function renderWorkingMode(derivedWorkspace) {
+    var listEl = document.getElementById('working-mode-list');
+    var actionsEl = document.getElementById('working-mode-actions');
+    var summaryEl = document.getElementById('working-mode-summary');
+    if (!listEl || !actionsEl) return;
+
+    // Defensive: missing or wrong-shape payload => 'none'.
+    var ws = (derivedWorkspace && typeof derivedWorkspace === 'object')
+              ? derivedWorkspace : { 'state': 'none' };
+    var state = (typeof ws.state === 'string') ? ws.state : 'none';
+
+    // Clear previous render.
+    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+    while (actionsEl.firstChild) actionsEl.removeChild(actionsEl.firstChild);
+
+    // Summary text (rendered BEFORE user opens the details block,
+    // mirroring the V1.1/V1.2/V1.3 sections' convention).
+    if (summaryEl) {
+      var totalEntities = (typeof ws.entity_count === 'number') ? ws.entity_count : 0;
+      if (state === 'none') {
+        summaryEl.textContent = 'Working Mode — no working copy';
+      } else if (state === 'ready') {
+        summaryEl.textContent = 'Working Mode — ' + totalEntities +
+                                (totalEntities === 1 ? ' entity' : ' entities') +
+                                ' ready';
+      } else {
+        summaryEl.textContent = 'Working Mode — ' + state;
+      }
+    }
+
+    // Per-state rows.
+    if (state === 'none') {
+      addRow(listEl, 'none', null, null, 'No working copy yet. Click Prepare to create one from the current selection snapshot.');
+      // Prepare button enabled.
+      addAction(actionsEl, 'Prepare', 'prepare_workspace', true);
+    } else {
+      // state in {building, ready, discarded, failed}.
+      if (ws.source_snapshot_id) {
+        addRow(listEl, state, 'Source Snapshot', ws.source_snapshot_id, null);
+      }
+      if (ws.source_fingerprint_digest) {
+        addRow(listEl, state, 'Source Fingerprint',
+               ws.source_fingerprint_digest.substring(0, 12) + '\u2026',
+               ws.source_fingerprint_digest);
+      }
+      if (ws.execution_config_digest) {
+        addRow(listEl, state, 'Execution Config',
+               ws.execution_config_digest.substring(0, 12) + '\u2026',
+               ws.execution_config_digest);
+      }
+      if (state === 'failed' && ws.last_error) {
+        addRow(listEl, 'failed', 'Last Error', ws.last_error, ws.last_error);
+      }
+      // Action buttons (locked enable / disable per state).
+      addAction(actionsEl, 'Prepare', 'prepare_workspace', state === 'none' || state === 'discarded' || state === 'failed');
+      addAction(actionsEl, 'Discard', 'discard_workspace', state === 'ready');
+      addAction(actionsEl, 'Rebuild', 'rebuild_workspace',  state === 'ready' || state === 'discarded' || state === 'failed');
+    }
+  }
+
+  // Helper: append a labelled, factual row to the working-mode list.
+  // `state` is the data-state attribute ('none' / 'building' / 'ready'
+  // / 'discarded' / 'failed'). `label` is the small heading; `value`
+  // is the short text; `title` is the long text (used as a tooltip
+  // via the `title` attribute, so no user-text innerHTML).
+  function addRow(listEl, state, label, value, title) {
+    var row = document.createElement('div');
+    row.className = 'working-mode-row';
+    row.setAttribute('data-state', state);
+    if (label) {
+      var labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = label + ':';
+      row.appendChild(labelEl);
+    }
+    if (value) {
+      var valEl = document.createElement('span');
+      valEl.className = 'value';
+      valEl.textContent = value;
+      if (title && title !== value) {
+        valEl.setAttribute('title', title);
+      }
+      row.appendChild(valEl);
+    } else if (title) {
+      // No short value (state=='none' message); put the message
+      // in the row directly.
+      var msgEl = document.createElement('span');
+      msgEl.className = 'value';
+      msgEl.textContent = title;
+      row.appendChild(msgEl);
+    }
+    listEl.appendChild(row);
+  }
+
+  // Helper: append an action button. `callback` is a window.SUAIP
+  // method name (locator using brackets inside the click handler,
+  // NOT eval -- per the locked no-eval contract).
+  function addAction(actionsEl, label, callback, enabled) {
+    var btn = document.createElement('button');
+    btn.textContent = label;
+    btn.setAttribute('data-action', callback);
+    if (!enabled) btn.setAttribute('disabled', 'disabled');
+    btn.addEventListener('click', function () {
+      if (btn.hasAttribute('disabled')) return;
+      // No eval; locate the callback on the namespaced root and
+      // call it with the current payload. The payload is read at
+      // click time so the action reflects the latest render.
+      var root = window.SUAIP || {};
+      var fn = root[callback];
+      if (typeof fn === 'function') fn();
+    });
+    actionsEl.appendChild(btn);
+  }
+
   // V1.2: render one layer-issue bucket. Returns a `<details>`
   // element whose summary is "LayerName (N issue(s))" and whose
   // body contains the existing renderIssue() rows for each issue
@@ -520,6 +673,7 @@
   ROOT.renderLayerIssueBucket  = renderLayerIssueBucket;
   ROOT.renderFaceInventory     = renderFaceInventory;
   ROOT.renderFaceInventoryRow  = renderFaceInventoryRow;
+  ROOT.renderWorkingMode       = renderWorkingMode;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {
