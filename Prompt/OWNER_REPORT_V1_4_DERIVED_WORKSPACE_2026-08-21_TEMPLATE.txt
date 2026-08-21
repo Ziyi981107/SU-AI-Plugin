@@ -1,0 +1,345 @@
+======================================================================
+OWNER REPORT TEMPLATE — V1.4 Derived Workspace + Repair Foundation
+Date: YYYY-MM-DD
+For: CodeX V1.4 Stage Review evidence
+Per: V1.4 directive 030 (CodeX 030 PRE-BUILD TECHNICAL PREVIEW)
+Branch: v1.4-derived-workspace
+RBZ install: D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+======================================================================
+
+PREREQUISITES
+-------------
+1. dist/SU-AI-Plugin.rbz has been BUILT from the latest
+   v1.4-derived-workspace HEAD. The Agent rebuilt the rbz
+   before dispatch; you do NOT need to rebuild yourself.
+2. The rbz is INSTALLED on a real SketchUp 2020 (NOT
+   SketchUp 2017; SU2017 is a separate release gate per
+   R004 + R006). RESTART SU2020 ENTIRELY before testing --
+   the rbz install requires a fresh Ruby process to load
+   cleanly.
+3. A representative imported / nested CAD model is open
+   with at least one Group / Component / Edge selection.
+4. The V1.4 menu item "Analyze selection" is reachable
+   from the Plugins menu (same as V1.0-V1.3).
+
+The 10-step V1.4 Gate 2 checklist is at:
+  Review/OWNER_VERIFICATION_V1_4_DERIVED_WORKSPACE_2026-08-21.txt
+
+For each step, please report:
+  - PASS / FAIL
+  - A short observation (1-3 sentences)
+  - Optional: a screenshot reference
+  - On FAIL: the exact unexpected behavior + the SU
+    console error message (if any)
+
+The Agent does NOT pre-fill PASS. The template is blank
+by Owner choice.
+
+======================================================================
+STEP V14-1: Source-integrity fingerprint baseline
+======================================================================
+
+Run this BEFORE clicking Prepare. Open a representative
+imported / nested CAD group in the SU model. Click
+Plugins > Analyze selection to open the dialog. Scroll
+DOWN past the V1.1 / V1.2 / V1.3 sections to find the
+"Working Mode (V1.4)" details block. Click to open it.
+
+  Expected: state == 'none' (no Prepare has been issued).
+  Capture: a screenshot OR the dialog summary text.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-2: Prepare creates REAL plugin-owned derived groups
+======================================================================
+
+Click the "Prepare" button. Observe the dialog and the
+SU model.
+
+  Expected (UI):
+    - The Working Mode summary text changes to
+      "Working Mode — N entities ready" (N > 0).
+    - The list shows 4 rows (for a 4-edge source): Source
+      Snapshot, Source Fingerprint, Execution Config, plus
+      a row per derived edge.
+    - The actions show 3 buttons: Prepare (disabled,
+      because workspace is already ready), Discard
+      (enabled), Rebuild (enabled).
+    - entity_count IS THE DERIVED EDGE COUNT (NOT edges +
+      faces in the source). V1.4 minimal scope only
+      materializes Edges faithfully.
+
+  Expected (SU model):
+    - The Outliner shows N NEW top-level groups under the
+      MODEL ROOT (`model.entities`, NOT active_entities),
+      each named "SU-AI-Derived-<id>".
+    - Per V1.4 CodeX BLOCK rework (2026-08-22): the derived
+      Edge records the source Edge's two world-coordinate
+      endpoints EXACTLY (no Z lift, no fabricated 3-point
+      face). Verify by opening one SU-AI-Derived-* group
+      in Entity Info and confirming it contains ONE Edge
+      (not a Face) with start / end coordinates matching
+      the source Edge.
+
+  Expected (Ruby console / no exceptions):
+    - Clicking Prepare raises NO Ruby exception.
+    - The dialog does NOT show a "Last Error" row.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-3: Source CAD is unchanged after Prepare
+======================================================================
+
+Compare the source group / edges BEFORE and AFTER Prepare.
+
+  Expected:
+    - The selected source group's edges, layers, layer
+      colors, layer visibility, layer lock state, edge
+      endpoints, and entity counts are IDENTICAL to the
+      pre-Prepare state.
+    - The source group's persistent_id, entityID,
+      definition (if a Component), instance_path,
+      transform are ALL unchanged.
+    - NO entities have been added to the source group.
+    - NO entities have been erased from the source group.
+    - NO attributes (Dictionary) on source entities have
+      been added or removed.
+    - NO layer / material changes anywhere in the model.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-4: Discard erases the saved handles precisely
+======================================================================
+
+Click the "Discard" button. Observe the dialog and the
+SU model.
+
+  Expected (UI):
+    - The Working Mode summary text changes to
+      "Working Mode — discarded".
+    - The Discard button is disabled; Rebuild is enabled.
+    - The list still shows the source_snapshot_id +
+      fingerprint + execution config rows.
+
+  Expected (SU model):
+    - The Outliner no longer shows the N SU-AI-Derived-*
+      groups (they were erased via the private handle
+      registry, NOT by name scan).
+    - The SU Undo stack has the discard operation entry
+      (the adapter called model.start_operation with
+      label "Discard <workspace_id>" and committed on
+      successful full disposal).
+    - Entity Info / Outliner / Model Info all show the
+      SAME counts as before Prepare (source unchanged +
+      all derived groups gone).
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-5: Source CAD is unchanged after Discard
+======================================================================
+
+Repeat V14-3's verification.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-6: Rebuild discards old groups then creates new ones
+======================================================================
+
+Click "Prepare" AGAIN, then click "Rebuild".
+
+  Expected (UI after Prepare again):
+    - State == 'ready'. N entities (same as before).
+
+  Expected (UI after Rebuild):
+    - State still == 'ready'. Entity count still N
+      (rebuild is deterministic: same source -> same
+      derived structure).
+    - The source_snapshot_id + source_fingerprint_digest
+      + execution_config_digest are ALL UNCHANGED from
+      the post-Prepare state (deterministic rebuild
+      fingerprint invariant).
+    - The workspace_id MAY differ (rebuild can mint a
+      new workspace_id; the rebuild FINGERPRINT must NOT
+      differ).
+
+  Expected (SU model after Rebuild):
+    - The Outliner shows N new "SU-AI-Derived-*" groups.
+    - The OLD groups from the previous Prepare are
+      ERASED (the private handle registry precisely
+      disposed each one before the rebuild built new
+      ones).
+    - Entity count of SU-AI-Derived-* groups == N.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-7: Source CAD is unchanged after Rebuild
+======================================================================
+
+Repeat V14-3 / V14-5 verification.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-8: Failure injection -- abort SU operation + zero partial groups
+======================================================================
+
+This step uses a ONE-SOT SELF-RESTORING patch (V14-RUNTIME-BLOCK-001
++ the CodeX BLOCK-R3-3 fix). The patch installs a
+begin_operation override whose FIRST call restores the
+original method AND raises the injected failure. NO `begin /
+ensure` block is required.
+
+======================================================================
+PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT)
+======================================================================
+
+  require 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
+
+  ADAPTER  = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
+  ORIGINAL = ADAPTER.instance_method(:begin_operation)
+
+  ADAPTER.class_eval do
+    define_method(:begin_operation) do |_model, label:|
+      ADAPTER.class_eval do
+        define_method(:begin_operation, ORIGINAL)
+      end
+      raise StandardError, 'v14-gate-2-injected-failure'
+    end
+  end
+
+  # At this point, the patch IS installed. Click "Discard"
+  # first (to clear any current workspace), then click
+  # "Prepare". Observe:
+  #   - dialog: state = "failed", last_error visible
+  #   - model: NO new SU-AI-Derived-* groups
+  #   - ruby: no exception escapes (the workspace caught it)
+
+  ADAPTER.instance_method(:begin_operation) == ORIGINAL
+  # => true (patch has been restored by the one-shot)
+
+======================================================================
+EXPECTED OUTCOMES (V14-8)
+======================================================================
+
+  Expected (UI):
+    - The Working Mode summary text changes to
+      "Working Mode — failed".
+    - A "Last Error" row appears with the message
+      "v14-gate-2-injected-failure" (or similar;
+      "host failure ...").
+    - Per BLOCK-R4-1 (failed-state action policy):
+        * Prepare button: ENABLED (the user can retry).
+        * Rebuild button: ENABLED.
+        * Discard button: DISABLED (no workspace to discard).
+
+  Expected (SU model):
+    - NO new "SU-AI-Derived-*" groups are added.
+    - All groups from the prior Prepare + Rebuild are
+      still erased (Discard cleared them).
+    - Model Info counts match the pre-test baseline
+      exactly.
+
+  Expected (Ruby console):
+    - The injected exception is caught by the workspace
+      and the operation is aborted. NO Ruby exception
+      propagates to the user.
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-9: Undo as an extra safety layer
+======================================================================
+
+  Procedure:
+    1. Click Discard (clear any current workspace).
+    2. Click Prepare (creates N derived groups).
+    3. Press Ctrl+Z (Undo) once.
+
+  Expected:
+    - The most recent SU operation (the latest build
+      operation) is undone: the last SU-AI-Derived-*
+      group is removed from the Outliner.
+    - The source CAD is unchanged by Undo (Undoing a build
+      operation only touches the build's group; source
+      entities were never modified).
+
+  Observation: _____________________________________________
+
+======================================================================
+STEP V14-10: Scale / units / world position on nested / shared instances
+======================================================================
+
+For nested groups / components AND two instances sharing
+one definition, verify:
+
+  1. Open a model with a nested Group (Group A contains
+     Group B which contains 4 edges). Select Group A.
+     Analyze selection. Open Working Mode. Prepare. The
+     derived entities use world coordinates; the nested
+     structure is preserved in the SourceSnapshot's
+     transform_context.
+
+  2. Open a model with two Component Instances of the
+     same Component Definition (same persistent_id).
+     Select BOTH instances. Analyze selection. Open
+     Working Mode. Prepare. The derived entities carry
+     DISTINCT snapshot-local occurrence ids (per
+     directive gate A: snapshot-local identity separate
+     from host-resolvable identity). Two shared-definition
+     instances get DIFFERENT occurrence ids.
+
+  3. Verify units: the source coordinates are in inches
+     (SU internal length unit). The derived entities are
+     created with the same world coordinates (the
+     adapter does NOT change Z or normalize units per
+     directive: "Do not add normalization or change Z in
+     V1.4.").
+
+  Observation: _____________________________________________
+
+======================================================================
+EVIDENCE SUMMARY (Owner fills in)
+======================================================================
+
+V14-1:    PASS / FAIL
+V14-2:    PASS / FAIL
+V14-3:    PASS / FAIL
+V14-4:    PASS / FAIL
+V14-5:    PASS / FAIL
+V14-6:    PASS / FAIL
+V14-7:    PASS / FAIL
+V14-8:    PASS / FAIL
+V14-9:    PASS / FAIL
+V14-10:   PASS / FAIL
+
+Overall:  PASS / FAIL
+
+Notes / observations:
+  _______________________________________________________________
+  _______________________________________________________________
+  _______________________________________________________________
+
+======================================================================
+HARD-RULE COMPLIANCE REMINDER
+======================================================================
+
+Per Cicada 2026-08-20 section 6:
+
+  - The source CAD is NEVER mutated by V1.4.
+  - All Prepare / Discard / Rebuild writes target the
+    plugin-owned derived workspace ONLY.
+  - V1.4 does NOT change R001-R005 / V1.0-V1.3 closed scope.
+  - V1.4 does NOT expand product scope.
+  - V1.4 does NOT push / publish / release.
+  - V1.4 does NOT fake SU2017 as SU2020 evidence.
+
+If the Owner observes ANY violation of these rules during
+the 10-step checklist, mark the relevant step FAIL and
+route the evidence immediately (the violation is a BLOCK,
+not a NIT).

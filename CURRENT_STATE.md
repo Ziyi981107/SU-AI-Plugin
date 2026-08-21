@@ -1,13 +1,16 @@
 # CURRENT STATE
 
-Last updated: 2026-08-20 (V1.4 stages 1..4 **IMPLEMENTATION
-COMPLETE on `v1.4-derived-workspace` branch**. Stages 1..3
-closed via commits `ddefe2f` / `de233be` / `d2a8328`. Stage 4
-(Working Mode UI + runner plumbing) committed via `431af5d`.
-Full suite 579/579 Ruby + 132/132 Node.js DOM assertions
-PASS, 0 fail, 0 error. The previously-failing
-`parent_derived_id not found raises ArgumentError` test now
-passes (the fix was already in place at Stage 3). dist/
+Last updated: 2026-08-22 (V1.4 phases 1..4 + CodeX BLOCK-R3 +
+BLOCK-R4-1 + V14-RUNTIME-BLOCK-001 + Phase-2 self-audit +
+Phase-3 self-audit **ALL CLOSED** on `v1.4-derived-workspace`.
+Full suite **616/616 Ruby + 148/148 Node.js DOM assertions
++ 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
+dist/SU-AI-Plugin.rbz rebuilt (412823 bytes, 53 entries).
+Owner is away; Agent ran a 4-phase closeout autonomously.
+Owner must RESTART SU2020 ENTIRELY + reinstall the rbz
+before running the 10-step V14 Gate 2 checklist. NO Owner
+notification + NO CodeX Stage Review recheck yet; Owner
+Gate 2 evidence is the next gate.
 SU-AI-Plugin.rbz rebuilt to include the new Stage 4 files.
 Next step: MANDATORY CodeX V1.4 Stage Review per directive
 030, base = `550eb74` (V1.4 directive commit), head =

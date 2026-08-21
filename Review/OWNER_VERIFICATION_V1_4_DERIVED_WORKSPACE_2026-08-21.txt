@@ -88,14 +88,20 @@ SU model.
 
   Expected (UI):
     - The Working Mode summary text changes to
-      "Working Mode — N entities ready" (N > 0).
+      "Working Mode — N entities ready" (N > 0). NOTE:
+      N is the DERIVED EDGE count (NOT edges + faces in the
+      source). V1.4 minimal scope only materializes Edges
+      faithfully; source Face records are kept in the
+      SourceSnapshot for provenance but are NOT
+      materialized.
     - The list now shows 4 rows (for a 4-edge source):
         * Source Snapshot: <id> (a long opaque string)
         * Source Fingerprint: <first 12 chars of digest>...
         * Execution Config: <first 12 chars of digest>...
         * (when applicable) a row per derived edge
-    - The actions show 3 buttons: Prepare (disabled),
-      Discard (enabled), Rebuild (enabled).
+    - The actions show 3 buttons: Prepare (disabled,
+      because workspace is already ready), Discard
+      (enabled), Rebuild (enabled).
 
   Expected (SU model):
     - The Outliner shows N NEW top-level groups under the
