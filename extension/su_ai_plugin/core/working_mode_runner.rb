@@ -46,6 +46,7 @@ module SUAnalysis
       @current_source        = nil   # SourceSnapshot (frozen) or nil
       @current_adapter       = nil   # DerivedWorkspaceAdapter instance or nil
       @current_adapter_kind  = nil   # Symbol :real_su | :fake | nil
+      @current_model         = nil   # SU model (for adapter operations); nil if absent
 
       STATES = [:none, :building, :ready, :discarded, :failed].freeze
 
@@ -88,6 +89,7 @@ module SUAnalysis
         @current_source        = source
         @current_adapter       = adapter
         @current_adapter_kind  = _adapter_kind_of(adapter)
+        @current_model         = model
         @current_workspace     = ws
 
         # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R4-1:
@@ -144,7 +146,16 @@ module SUAnalysis
         # If the captured adapter is missing (e.g. tests that
         # bypass prepare()), rebuild stays idle.
         return _empty_snapshot if @current_adapter.nil?
-        prepare(source: @current_source, adapter: @current_adapter)
+        # V1.4 Phase-2 self-audit fix: rebuild MUST replay the
+        # captured model too. Otherwise the production adapter
+        # would resolve via Sketchup.active_model instead of
+        # the controller's model (and the inverse-edit_transform
+        # contract would silently fall back to identity).
+        prepare(
+          source:  @current_source,
+          adapter: @current_adapter,
+          model:   @current_model
+        )
       end
 
       # Snapshot of the runner state for the UI. JSON-safe.
@@ -512,6 +523,7 @@ module SUAnalysis
         @current_source       = nil
         @current_adapter      = nil
         @current_adapter_kind = nil
+        @current_model        = nil
       end
 
       # V1.4 CodeX BLOCK fix (Stage 4): test-only accessor

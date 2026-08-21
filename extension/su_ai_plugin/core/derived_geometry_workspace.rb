@@ -211,9 +211,9 @@ module SUAnalysis
           # into the parent group's host handle.
           host_handle =
             if parent_record
-              @adapter.create_top_level_group("#{parent_record.derived_id}.#{did}")
+              @adapter.create_top_level_group("#{parent_record.derived_id}.#{did}", model: @model)
             else
-              @adapter.create_top_level_group(did)
+              @adapter.create_top_level_group(did, model: @model)
             end
           # 2. Add geometry if requested. V1.4 CodeX BLOCK
           # rework (2026-08-21): for kind=:edge we call

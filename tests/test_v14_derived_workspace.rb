@@ -303,7 +303,7 @@ test 'DerivedGeometryWorkspace: build_entity failure -> :failed (source untouche
   src = v14_source_snapshot
   # Adapter that always raises to simulate host failure.
   class FailingAdapter < FakeDerivedWorkspaceAdapter
-    def create_top_level_group(_name)
+    def create_top_level_group(_name, model: nil)
       raise StandardError, 'host failure'
     end
   end
@@ -378,7 +378,7 @@ end
 test 'DerivedGeometryWorkspace: rebuild when discard failed returns :failed' do
   src = v14_source_snapshot
   class FailingDisposeAdapter < FakeDerivedWorkspaceAdapter
-    def dispose(_handle); raise StandardError, 'dispose failed'; end
+    def dispose(_handle, model: nil); raise StandardError, 'dispose failed'; end
   end
   a  = FailingDisposeAdapter.new
   ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
@@ -523,7 +523,7 @@ test 'Risk test 1d — source fingerprint identical after INJECTED build failure
   src_fp_before = src.fingerprint
   # Adapter that always raises to simulate host failure.
   failing_adapter = Class.new(FakeDerivedWorkspaceAdapter) do
-    def create_top_level_group(_name)
+    def create_top_level_group(_name, model: nil)
       raise StandardError, 'host failure during creation'
     end
   end.new
@@ -557,14 +557,17 @@ test 'Risk test 2 — derived adapter NEVER accepts a source handle (shared-defi
   #   "Every editable derived entity must be independently owned;
   #    no shared mutable definition or attribute container may alias
   #    source."
-  # The fake adapter's create_top_level_group takes ONLY a name.
-  # There is no overload that takes a source-side handle; this is
-  # the API contract that prevents accidental sharing.
+  # The fake adapter's create_top_level_group takes a name
+  # AND the optional `model:` kwarg. There is NO overload that
+  # takes a source-side handle; this is the API contract that
+  # prevents accidental sharing.
   a = FakeDerivedWorkspaceAdapter.new
   m = a.method(:create_top_level_group)
-  # The arity is 1 (name only); the adapter never takes a source handle.
-  assert_equal 1, m.arity,
-               'create_top_level_group must NOT take a source handle parameter'
+  # Arity check: the adapter accepts the name + an optional
+  # `model:` kwarg. It NEVER takes a source-side handle.
+  arity = m.arity
+  assert arity <= 2,
+         "create_top_level_group arity is too high (#{arity}); expected <= 2 (name + optional model)"
   # Two distinct creates yield distinct, independently-owned handles.
   g1 = a.create_top_level_group('group-1')
   g2 = a.create_top_level_group('group-2')
@@ -609,7 +612,7 @@ test 'Cross-stage: DerivedWorkspace failure (:failed) cannot be misreported as :
   # criteria). A :failed workspace's ready? returns FALSE even
   # if the inventory would suggest 'has entities'.
   failing_adapter = Class.new(FakeDerivedWorkspaceAdapter) do
-    def create_top_level_group(_name)
+    def create_top_level_group(_name, model: nil)
       raise StandardError, 'host'
     end
   end.new

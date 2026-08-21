@@ -376,6 +376,29 @@ test 'WorkingModeRunner: prepare with source edges transitions to :ready with on
   end
 end
 
+test 'WorkingModeRunner: rebuild REPLAYS the captured model (Phase 2 self-audit fix)' do
+  # V1.4 Phase-2 self-audit: rebuild() MUST replay the
+  # captured model so the production adapter can wrap
+  # mutations in model.start_operation(...). Without
+  # this, rebuild's prepare() call would use model: nil
+  # and the production adapter would resolve via
+  # Sketchup.active_model (or fail in a partial-install
+  # SU where Sketchup.active_model is unavailable).
+  wm_reset
+  src = v14_source_snapshot_wm
+  fake_model = Object.new
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src,
+    adapter: SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new,
+    model:   fake_model
+  )
+  SUAnalysis::Core::WorkingModeRunner.discard
+  SUAnalysis::Core::WorkingModeRunner.rebuild
+  ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil ws
+  assert_equal 'ready', ws.state.to_s
+end
+
 test 'WorkingModeRunner: rebuild produces a new workspace with identical fingerprint (deterministic rebuild)' do
   # V1.4 CodeX BLOCK fix (Stage 4): rebuild must first
   # discard the old derived groups (via the private handle

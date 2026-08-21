@@ -206,13 +206,29 @@ module SUAnalysis
       # checklist said "model root" but the code wrote into
       # active_entities -- inconsistent). Now both code and
       # checklist agree on `model.entities`.
-      def create_top_level_group(name)
-        unless sketchup_available?
+      #
+      # V1.4 Phase-2 self-audit (2026-08-22): the create call
+      # MUST prefer the caller-supplied model (the controller's
+      # model propagated by DialogRunner) over
+      # Sketchup.active_model. Otherwise a multi-model
+      # scenario (rare, but possible) could write into the
+      # wrong model. resolve_root_entities(model) already
+      # enforces this on the read path; create_top_level_group
+      # now matches.
+      def create_top_level_group(name, model: nil)
+        # Prefer the caller-supplied model; fall back to the
+        # active model when no model was passed in.
+        target_model = nil
+        if model && model.respond_to?(:entities)
+          target_model = model
+        elsif sketchup_available?
+          target_model = Sketchup.active_model
+        end
+        unless target_model
           raise SketchupUnavailableError,
                 "Sketchup.active_model not available; cannot create derived group #{name}"
         end
-        model = Sketchup.active_model
-        entities = model.respond_to?(:entities) ? model.entities : nil
+        entities = target_model.respond_to?(:entities) ? target_model.entities : nil
         unless entities && entities.respond_to?(:add_group)
           raise SketchupUnavailableError,
                 "model.entities.add_group is not available"

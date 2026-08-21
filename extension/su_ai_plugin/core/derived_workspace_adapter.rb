@@ -240,7 +240,7 @@ module SUAnalysis
         @next_operation_should_raise = error
       end
 
-      def create_top_level_group(name)
+      def create_top_level_group(name, model: nil)
         derived_id = next_id
         g = FakeGroup.new(derived_id, name, FakeEntities.new, true)
         @created_handles << g
