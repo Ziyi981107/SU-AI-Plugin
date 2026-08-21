@@ -134,13 +134,38 @@ var mockDocument = {
   createElement: function (tag) { return new MockElement(tag); }
 };
 
-var mockWindow = {
+var mockWindow = global.mockWindow = {
   SUAIP: null,
   sketchup: {
     ready: function () {},
-    locate: function (id) {}
+    locate: function (id) {},
+    // V1.4 CodeX V14-RUNTIME-BLOCK-001 fix: the host
+    // action callbacks (Prepare/Discard/Rebuild) live on
+    // window.sketchup.<callback> (registered by
+    // DialogRunner.add_action_callback at boot). The mock
+    // records every invocation so the V14 DOM tests can
+    // assert the click-handler dispatch path actually calls
+    // the correct sketchup.<callback> (NOT window.SUAIP.*).
+    // The closures reference `global.mockWindow` so the
+    // function bodies resolve the recorded-arrays on the
+    // SAME mockWindow object that the test inspects (the
+    // sandbox sees `mockWindow` as a global via
+    // `global.mockWindow = ...`).
+    prepare_workspace_calls: [],
+    discard_workspace_calls: [],
+    rebuild_workspace_calls: [],
+    prepare_workspace: function () { global.mockWindow.sketchup.prepare_workspace_calls.push('prepare'); },
+    discard_workspace: function () { global.mockWindow.sketchup.discard_workspace_calls.push('discard'); },
+    rebuild_workspace: function () { global.mockWindow.sketchup.rebuild_workspace_calls.push('rebuild'); }
   }
 };
+// Reset helper so each test can clear the call records
+// without rebuilding the whole mockWindow.
+function resetV14HostActionCalls() {
+  mockWindow.sketchup.prepare_workspace_calls.length = 0;
+  mockWindow.sketchup.discard_workspace_calls.length = 0;
+  mockWindow.sketchup.rebuild_workspace_calls.length = 0;
+}
 
 var context = {
   window: mockWindow,
@@ -1277,6 +1302,11 @@ assert('V14: missing derivedWorkspace defaults to state="none" (defensive)',
        mockElements['working-mode-summary'].textContent === 'Working Mode — no working copy');
 
 // Action button click -> invokes window.SUAIP[callback].
+// (The previous assertion's wording was wrong: the host
+// action callbacks live on window.sketchup, NOT
+// window.SUAIP. The corrected assertions below use
+// window.sketchup.<callback>.) We re-run it for legacy
+// clarity: the click MUST NOT touch window.SUAIP[callback].
 var locateCountBefore = locateCalls.length;
 wmReadyActions.children.forEach(function (b) { b.fireEvent('click'); });
 assert('V14: clicking Rebuild in state="ready" does NOT invoke Locate (it is a separate callback)',
@@ -1285,6 +1315,136 @@ assert('V14: clicking Rebuild in state="ready" does NOT invoke Locate (it is a s
 // ROOT.renderWorkingMode is exposed.
 assert('V14: ROOT.renderWorkingMode is exposed',
        typeof context.window.SUAIP.renderWorkingMode === 'function');
+
+// =================================================================
+// V14-RUNTIME-BLOCK-001 (real SU2020 Owner-found BLOCK)
+// =================================================================
+// Per CodeX V14-RUNTIME-BLOCK-001: the host action callbacks
+// (Prepare / Discard / Rebuild) live on window.sketchup, NOT
+// on window.SUAIP. The previous app.js#addAction resolved via
+// `window.SUAIP[callback]` -- which never matched the
+// real-SU callback path -- so the click handler was a
+// no-op on a real SU host. The fixed addAction resolves via
+// `window.sketchup[callback]` (bracket lookup, no eval).
+//
+// These assertions verify the FIXED dispatch path:
+//   - Prepare click -> window.sketchup.prepare_workspace
+//     exactly ONCE.
+//   - Discard click -> window.sketchup.discard_workspace
+//     exactly ONCE.
+//   - Rebuild click -> window.sketchup.rebuild_workspace
+//     exactly ONCE.
+//   - Clicking the action buttons MUST NOT invoke Locate
+//     (separate callback, must not be aliased).
+//   - A disabled Prepare MUST NOT invoke any callback.
+//   - Source guard: app.js#addAction MUST mention
+//     `window.sketchup` AND MUST NOT use
+//     `window.SUAIP[callback]` as host-action dispatch.
+
+// Re-render with state="none" so we can click Prepare (the
+// only enabled button in state='none').
+renderWithPayload({
+  selectionLabel: 'wm-click-none', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: { state: 'none' }
+});
+var wmNoneActions = mockElements['working-mode-actions'];
+var wmNoneBtns = wmNoneActions ? wmNoneActions.children : [];
+assert('V14-RUNTIME-BLOCK-001: state="none" produces exactly ONE button (Prepare only)',
+       wmNoneBtns.length === 1);
+assert('V14-RUNTIME-BLOCK-001: state="none" Prepare button is enabled',
+       wmNoneBtns[0] && !wmNoneBtns[0].hasAttribute('disabled'));
+
+resetV14HostActionCalls();
+wmNoneBtns[0].fireEvent('click');
+assert('V14-RUNTIME-BLOCK-001: clicking Prepare in state="none" calls window.sketchup.prepare_workspace EXACTLY ONCE',
+       mockWindow.sketchup.prepare_workspace_calls.length === 1);
+assert('V14-RUNTIME-BLOCK-001: clicking Prepare does NOT call discard / rebuild',
+       mockWindow.sketchup.discard_workspace_calls.length === 0 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+assert('V14-RUNTIME-BLOCK-001: clicking Prepare does NOT invoke Locate',
+       locateCalls.length === locateCountBefore);
+
+// Re-render with state="ready" and click Discard / Rebuild.
+renderWithPayload({
+  selectionLabel: 'wm-click-ready', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: { state: 'ready' }
+});
+var wmReadyActions2 = mockElements['working-mode-actions'];
+var wmReadyBtns2 = wmReadyActions2 ? wmReadyActions2.children : [];
+resetV14HostActionCalls();
+// The Discard button is the 2nd (index 1); Rebuild is the 3rd (index 2).
+wmReadyBtns2[1].fireEvent('click');
+assert('V14-RUNTIME-BLOCK-001: clicking Discard in state="ready" calls window.sketchup.discard_workspace EXACTLY ONCE',
+       mockWindow.sketchup.discard_workspace_calls.length === 1);
+assert('V14-RUNTIME-BLOCK-001: clicking Discard does NOT call prepare / rebuild',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+assert('V14-RUNTIME-BLOCK-001: clicking Discard does NOT invoke Locate',
+       locateCalls.length === locateCountBefore);
+
+resetV14HostActionCalls();
+wmReadyBtns2[2].fireEvent('click');
+assert('V14-RUNTIME-BLOCK-001: clicking Rebuild in state="ready" calls window.sketchup.rebuild_workspace EXACTLY ONCE',
+       mockWindow.sketchup.rebuild_workspace_calls.length === 1);
+assert('V14-RUNTIME-BLOCK-001: clicking Rebuild does NOT call prepare / discard',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 0);
+assert('V14-RUNTIME-BLOCK-001: clicking Rebuild does NOT invoke Locate',
+       locateCalls.length === locateCountBefore);
+
+// Disabled Prepare MUST NOT invoke any host action.
+renderWithPayload({
+  selectionLabel: 'wm-disabled-prepare', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: { state: 'ready' }
+});
+var wmReady3 = mockElements['working-mode-actions'];
+var wmReady3Btns = wmReady3 ? wmReady3.children : [];
+// In state="ready" the Prepare button is the 1st (index 0)
+// and MUST be disabled (BLOCK-R4-1 ready-state policy).
+resetV14HostActionCalls();
+wmReady3Btns[0].fireEvent('click');
+assert('V14-RUNTIME-BLOCK-001: state="ready" Prepare button is disabled',
+       wmReady3Btns[0].hasAttribute('disabled'));
+assert('V14-RUNTIME-BLOCK-001: clicking a disabled Prepare does NOT invoke any host action',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 0 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+
+// Source guard: app.js#addAction MUST mention
+// `window.sketchup` (host dispatch path) AND MUST NOT use
+// `window.SUAIP[callback]` as host-action dispatch.
+var appJsSrc = fs.readFileSync(appJsPath, 'utf-8');
+// Locate the addAction function body.
+var addActionMatch = appJsSrc.match(/function\s+addAction\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s\}\n/);
+if (addActionMatch === null) {
+  // Fallback for slightly different brace placement.
+  var start = appJsSrc.indexOf('function addAction');
+  if (start >= 0) {
+    var rest = appJsSrc.substring(start);
+    var end = rest.indexOf('\n  }\n');
+    if (end >= 0) addActionMatch = [null, rest.substring(0, end + 4)];
+  }
+}
+var addActionBody = addActionMatch ? addActionMatch[0] : '';
+assert('V14-RUNTIME-BLOCK-001 source guard: addAction MUST mention window.sketchup',
+       addActionBody.indexOf('window.sketchup') >= 0);
+assert('V14-RUNTIME-BLOCK-001 source guard: addAction MUST NOT use window.SUAIP[callback] as host-action dispatch',
+       addActionBody.indexOf('root[callback]') < 0 &&
+       addActionBody.indexOf('SUAIP[callback]') < 0);
+assert('V14-RUNTIME-BLOCK-001 source guard: addAction MUST NOT use eval',
+       addActionBody.indexOf('eval(') < 0);
 
 // --- final verdict -----------------------------------------------------
 

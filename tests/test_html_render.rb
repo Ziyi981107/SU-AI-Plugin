@@ -761,15 +761,33 @@ test 'html_render (V1.4): renderWorkingMode uses textContent only (no innerHTML 
                'renderWorkingMode must use .textContent for user strings (locked contract)')
 end
 
-test 'html_render (V1.4): renderWorkingMode helper (addAction) locates callback via brackets, NOT eval' do
+test 'html_render (V1.4): renderWorkingMode helper (addAction) locates callback on window.sketchup via brackets, NOT eval' do
+  # Per V14-RUNTIME-BLOCK-001 (2026-08-22): the host action
+  # callbacks (Prepare/Discard/Rebuild) live on
+  # window.sketchup (registered by SketchUp's HtmlDialog
+  # add_action_callback at boot). The previous code looked
+  # up the callback on window.SUAIP -- which never matches
+  # the real-SU callback path -- so the click was a no-op on
+  # a real SU host. The fix resolves via
+  # `window.sketchup[callback]` (bracket lookup, no eval).
   src = File.read(HR_HTML_APPJS_V14)
-  # Per the locked no-eval contract, the click handler must look up
-  # the callback on window.SUAIP via bracket notation (root[callback]),
-  # NOT via eval(...).
-  assert_match(/var\s+fn\s*=\s*root\[callback\]/, src,
-               'renderWorkingMode action click handler must use root[callback] lookup (no eval)')
-  refute_match(/eval\s*\(\s*['"`]?\s*(?:root|window)/, src,
-               'renderWorkingMode must NOT eval the callback string')
+  # The addAction function MUST mention window.sketchup as
+  # the host-dispatch path (NOT window.SUAIP[callback]).
+  add_action_match = src.match(/function\s+addAction\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s\}\n/)
+  if add_action_match.nil?
+    start_idx = src.index('function addAction')
+    raise 'addAction function not found' if start_idx.nil?
+    rest = src[start_idx..-1]
+    next_fn = rest.index("\n  function ")
+    add_action_match = [nil, next_fn ? rest[0..next_fn] : rest]
+  end
+  add_action_body = add_action_match[0]
+  assert add_action_body.include?('window.sketchup'),
+         'addAction MUST look up the callback on window.sketchup (V14-RUNTIME-BLOCK-001 fix)'
+  refute add_action_body.include?('SUAIP[callback]'),
+         'addAction MUST NOT look up the callback on window.SUAIP[callback] (V14-RUNTIME-BLOCK-001 fix)'
+  refute_match(/eval\s*\(/, add_action_body,
+               'renderWorkingMode action click handler MUST NOT use eval')
 end
 
 test 'html_render (V1.4): style.css defines .working-mode-row + .working-mode-actions neutral styles' do

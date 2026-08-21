@@ -40,7 +40,11 @@
 (function () {
   'use strict';
 
-  // Namespace MUST match extension/dialog_runner.rb ('window.SUAIP').
+  // window.SUAIP is the page-function namespace (render/toast).
+  // It does NOT carry host actions (Prepare/Discard/Rebuild);
+  // those live on window.sketchup.<callback> (registered by
+  // DialogRunner.add_action_callback at boot).
+  // See addAction() below for the host-action dispatch path.
   var ROOT = window.SUAIP || (window.SUAIP = {});
 
   // Locked issue-type labels (matches Stage 6 plan section 6.7).
@@ -166,8 +170,12 @@
     // section AFTER V1.3. Resilient to a missing payload.derivedWorkspace
     // (defaults to state='none'). All text via textContent (per the
     // locked textContent-only contract for user-facing text). The
-    // action buttons (Prepare / Discard / Rebuild) wire to window.SUAIP
-    // callbacks exposed by DialogRunner.
+    // action buttons (Prepare / Discard / Rebuild) wire to
+    // window.sketchup.<callback> -- the callbacks are
+    // registered by DialogRunner.add_action_callback (Ruby
+    // side) and exposed by SketchUp's HtmlDialog at
+    // window.sketchup.<callback>. window.SUAIP only carries
+    // the page functions render/toast (NOT the host actions).
     renderWorkingMode(payload.derivedWorkspace);
   }
 
@@ -542,9 +550,21 @@
     listEl.appendChild(row);
   }
 
-  // Helper: append an action button. `callback` is a window.SUAIP
-  // method name (locator using brackets inside the click handler,
-  // NOT eval -- per the locked no-eval contract).
+  // Helper: append an action button. `callback` is a SketchUp
+  // add_action_callback name (Prepare / Discard / Rebuild).
+  // V14-RUNTIME-BLOCK-001 (2026-08-22, real-SU2020 Owner
+  // repro): the host action callbacks registered by
+  // DialogRunner.add_action_callback live on
+  // `window.sketchup.<name>` (NOT `window.SUAIP.<name>` --
+  // window.SUAIP only carries the page functions render/toast).
+  // The previous addAction resolved via
+  // `window.SUAIP[callback]` -- which never matched the real
+  // SU callback path -- so the click handler was a no-op on a
+  // real SU host (Prepare/Discard/Rebuild buttons did nothing).
+  // The fix below resolves via `window.sketchup[callback]`
+  // (BRACKET LOOKUP, no eval). When the callback is absent
+  // (test env / partial install), the click is a safe no-op
+  // (the dialog stays usable).
   function addAction(actionsEl, label, callback, enabled) {
     var btn = document.createElement('button');
     btn.textContent = label;
@@ -552,11 +572,11 @@
     if (!enabled) btn.setAttribute('disabled', 'disabled');
     btn.addEventListener('click', function () {
       if (btn.hasAttribute('disabled')) return;
-      // No eval; locate the callback on the namespaced root and
-      // call it with the current payload. The payload is read at
-      // click time so the action reflects the latest render.
-      var root = window.SUAIP || {};
-      var fn = root[callback];
+      // No eval; locate the callback on window.sketchup and
+      // call it. The callback is registered by
+      // DialogRunner.add_action_callback at boot.
+      var sk = window.sketchup || {};
+      var fn = sk[callback];
       if (typeof fn === 'function') fn();
     });
     actionsEl.appendChild(btn);
