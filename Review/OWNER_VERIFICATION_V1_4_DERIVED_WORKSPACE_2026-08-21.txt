@@ -353,9 +353,15 @@ PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT)
 
   # If you skip the verification step, the patch is still
   # gone -- the one-shot self-restoring guarantee holds.
-  # If you somehow close SU before the click happens, the
-  # patch leaks to the NEXT SketchUp session -- in that
-  # rare case, restart SU + re-install the rbz.
+  # NOTE on cross-session persistence: SketchUp is a
+  # single Ruby process; a monkey-patch installed at runtime
+  # lives in that process ONLY. When SketchUp is closed
+  # (or crashes), the process ends and the patch is
+  # discarded with it. The NEXT SketchUp session loads a
+  # fresh process from the rbz and starts with the
+  # un-patched production adapter. No manual restart is
+  # required for monkey-patch hygiene -- the process
+  # boundary IS the reset.
 
 ======================================================================
 EXPECTED OUTCOMES (V14-8)
@@ -369,7 +375,17 @@ After the Prepare click:
     - A "Last Error" row appears with the message
       "v14-gate-2-injected-failure" (or similar;
       "host failure ...").
-    - The Discard + Rebuild buttons are enabled.
+    - Per BLOCK-R4-1 (failed-state action policy):
+        * Prepare button: ENABLED (the user can retry).
+        * Rebuild button: ENABLED (the user can retry
+          against the same captured source).
+        * Discard button: DISABLED -- there is no
+          active workspace to discard (state is :failed,
+          not :discarded / not :ready). Discard only operates
+          on a workspace that has produced entities; in the
+          :failed state there is nothing to clean up beyond
+          what V14-8's begin_operation abort already did
+          (no SU-AI-Derived-* groups were created).
 
   Expected (SU model):
     - NO new "SU-AI-Derived-*" groups are added.

@@ -1024,3 +1024,156 @@ test 'BLOCK-R3-1: transient occurrence id does NOT use record.object_id (determi
   assert_match(/^transient-occ-edge-42$/, occ_id,
                'occurrence id MUST be analysis-local (kind + record.id)')
 end
+
+# BLOCK-R4-1 closure test: Face-only SourceSnapshot ->
+# state == :failed (NOT :building). Per BLOCK-R4-1: V1.4
+# minimal scope derives SOLELY from edges; if edges is empty
+# (even when faces is non-empty), the workspace MUST
+# transition to :failed with a precise last_error. Without
+# this guard the UI would be locked in :building.
+test 'BLOCK-R4-1 closure: Face-only SourceSnapshot -> state == :failed (NOT :building), via production adapter + FakeUI' do
+  v14_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    Object.const_set(:Sketchup, Module.new) unless Object.const_defined?(:Sketchup)
+    Sketchup.define_singleton_method(:active_model) { model }
+
+    # Build a Face-only SourceSnapshot: 1 source face,
+    # zero edges.
+    face = SUAnalysis::Core::FaceRecord.new(
+      id: 0,
+      layer: 'Layer0',
+      outer_loop_vertex_count: 4,
+      source: SUAnalysis::Core::SourceReference.new(
+        entity_id: 15001, persistent_id: 15001, kind: 'face',
+        persistent_id_path: [15001], instance_path: [],
+        structural_depth: 0, pid_path_complete: true,
+        layer_name: 'Layer0'
+      )
+    )
+    layers = [SUAnalysis::Core::LayerRecord.new(name: 'Layer0')]
+    geom = SUAnalysis::Core::GeometrySnapshot.new(edges: [], layers: layers)
+    ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+      SUAnalysis::Core::AnalysisConfig.new(profile_name: 'r4-1'),
+      rule_set_digest: 'r4-1.rule-set',
+      source_snapshot_schema_version: '1'
+    )
+    fp_before = SourceFingerprint.from_snapshot(
+      geom, selection: [], host: nil
+    )
+    src = SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
+      geom,
+      selection: [],
+      execution_config: ec,
+      rule_set_digest: 'r4-1.rule-set',
+      snapshot_id: 'r4-1-face-only',
+      captured_at: '2026-08-22T01:00:00Z'
+    )
+    src_with_face = SUAnalysis::Core::SourceSnapshot.new(
+      snapshot_id:       src.snapshot_id,
+      selection_scope:   src.selection_scope,
+      edges:             [],
+      faces:             [face],
+      layers:            src.layers,
+      vertex_records:    src.vertex_records,
+      unit:              src.unit,
+      coordinate_origin: src.coordinate_origin,
+      transform_context: src.transform_context,
+      execution_config:  src.execution_config,
+      fingerprint:       src.fingerprint
+    )
+    adapter = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.new
+    SUAnalysis::Core::WorkingModeRunner.prepare(
+      source: src_with_face, adapter: adapter, model: model
+    )
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+
+    # 1. state MUST be :failed (NOT :building).
+    assert_equal 'failed', snap['state'],
+                 'Face-only source MUST transition to :failed (NOT :building) -- BLOCK-R4-1'
+
+    # 2. entity_count MUST be 0.
+    assert_equal 0, snap['entity_count'],
+                 'Face-only source MUST yield entity_count == 0'
+
+    # 3. last_error MUST be non-empty and explicitly name the
+    # constraint.
+    refute_nil snap['last_error'], 'last_error MUST be set'
+    assert_match(/\S/, snap['last_error'].to_s, 'last_error MUST be non-empty')
+    assert_match(/requires at least one derivable edge/, snap['last_error'].to_s,
+                 'last_error MUST name the BLOCK-R4-1 constraint explicitly')
+    assert_match(/source faces are retained as provenance only/, snap['last_error'].to_s,
+                 'last_error MUST clarify that source faces are kept as provenance, not materialized')
+
+    # 4. NO SU-AI-Derived-* handles were created in the
+    # model (the production adapter's add_group MUST NOT
+    # have been called).
+    assert_equal 0, model.entities.groups.length,
+                 'Face-only source MUST NOT create any SU-AI-Derived-* handle (BLOCK-R4-1)'
+    assert_equal 0, model.active_entities.groups.length,
+                 'Face-only source MUST NOT write into active_entities either'
+
+    # 5. source fingerprint MUST NOT drift.
+    assert_equal fp_before.digest, src_with_face.fingerprint.digest,
+                 'source fingerprint MUST NOT drift across Face-only prepare'
+  ensure
+    Object.send(:remove_const, :Sketchup) if Object.const_defined?(:Sketchup)
+    FakeUI.uninstall!
+    v14_reset_everything
+  end
+end
+
+# BLOCK-R4-1 extra: Face-only source MUST be :failed even
+# without the production adapter (FakeAdapter path). This
+# proves the failure is detected BEFORE any host adapter call.
+test 'BLOCK-R4-1 extra: Face-only source -> :failed with FakeAdapter (no host call)' do
+  v14_reset_everything
+  face = SUAnalysis::Core::FaceRecord.new(
+    id: 0,
+    layer: 'Layer0',
+    outer_loop_vertex_count: 4,
+    source: SUAnalysis::Core::SourceReference.new(
+      entity_id: 16001, persistent_id: 16001, kind: 'face',
+      persistent_id_path: [16001], instance_path: [],
+      structural_depth: 0, pid_path_complete: true,
+      layer_name: 'Layer0'
+    )
+  )
+  layers = [SUAnalysis::Core::LayerRecord.new(name: 'Layer0')]
+  # (proper constant path: SUAnalysis::Core::LayerRecord)
+  ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+    SUAnalysis::Core::AnalysisConfig.new(profile_name: 'r4-1-extra'),
+    rule_set_digest: 'r4-1-extra.rule-set',
+    source_snapshot_schema_version: '1'
+  )
+  src = SUAnalysis::Core::SourceSnapshot.new(
+    snapshot_id:       'r4-1-face-only-fake',
+    selection_scope:   [],
+    edges:             [],
+    faces:             [face],
+    layers:            layers,
+    vertex_records:    [],
+    unit:              'inches',
+    coordinate_origin: 'raw',
+    transform_context: { 'r4-1-extra' => 'face-only' },
+    execution_config:  ec,
+    fingerprint:       SUAnalysis::Core::SourceFingerprint.new(
+      edge_count: 0, face_count: 1, layer_count: 1
+    )
+  )
+  adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: adapter, model: nil
+  )
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'failed', snap['state'],
+               'Face-only source with FakeAdapter MUST also transition to :failed'
+  assert_equal 0, snap['entity_count']
+  # The FakeAdapter MUST NOT have been called for any host
+  # mutation (no group created, no edge added, no face added).
+  assert_equal 0, adapter.created_handles.length,
+               'Face-only source MUST NOT trigger any FakeAdapter group creation'
+  assert_equal 0, adapter.added_edges.length,
+               'Face-only source MUST NOT trigger any FakeAdapter edge creation'
+end

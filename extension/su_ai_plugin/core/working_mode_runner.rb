@@ -90,19 +90,23 @@ module SUAnalysis
         @current_adapter_kind  = _adapter_kind_of(adapter)
         @current_workspace     = ws
 
-        # V1.4 CodeX BLOCK fix (Stage 4): build at least one
-        # derived entity from the captured source. The SourceSnapshot
-        # carries the real edges + faces; we materialize one
-        # derived entity per source EdgeRecord + one per source
-        # FaceRecord. Each entity captures source_occurrence_ids
-        # (the SourceReference's persistent_id_path as the
-        # snapshot-local occurrence id) so rebuild determinism
-        # is preserved.
+        # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R4-1:
+        # V1.4 minimal scope ONLY materializes Edges
+        # faithfully. Each source EdgeRecord -> one derived
+        # Edge (XYZ-identical, no fabrication). Source
+        # FaceRecords are retained in the SourceSnapshot for
+        # provenance / fingerprint / layer counts but are
+        # NOT materialized as derived Faces (the production
+        # FaceRecord has no #vertices; BLOCK-R3-2 forbids
+        # fabricating vertices).
         #
-        # If the source has no edges AND no faces, prepare
-        # cannot produce ANY derived entity. Per directive:
-        # the workspace must NOT be marked READY in this
-        # case; it transitions to :failed with a clear error.
+        # Derive-ability is therefore determined SOLELY by
+        # the source edges. If edges is empty (Face-only
+        # selection, or no selection at all), prepare MUST
+        # transition the workspace to :failed (NOT stay in
+        # :building) so the UI's Discard/Rebuild stay
+        # operable. The last_error message names the constraint
+        # explicitly.
         built_ws = _build_derived_entities(ws, source)
         @current_workspace = built_ws
         snapshot
@@ -192,18 +196,35 @@ module SUAnalysis
 
       # ---- internals ----
 
-      # V1.4 CodeX BLOCK fix (Stage 4): materialize one derived
-      # entity per source EdgeRecord + one per source FaceRecord.
-      # Returns a new DerivedGeometryWorkspace (the original is
-      # deeply frozen; transitions produce new instances).
-      # On failure (no source geometry OR adapter failure), returns
-      # a :failed workspace with last_error set.
+      # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R4-1:
+      # V1.4 minimal scope ONLY materializes Edges faithfully.
+      # Source FaceRecords are retained in the SourceSnapshot
+      # (provenance / fingerprint / layer counts) but are NOT
+      # materialized as derived Face entities (see the
+      # commit message for the full BLOCK-R3-2 / BLOCK-R4-1
+      # rationale).
+      #
+      # Derive-ability is therefore determined SOLELY by the
+      # source edges: if edges is empty, the workspace MUST
+      # transition to :failed (NOT :building). Without this
+      # guard, a Face-only selection would loop through zero
+      # edges, produce zero entities, and leave the workspace
+      # stuck in :building forever -- the UI would be locked
+      # with Discard/Rebuild inoperable.
+      #
+      # Returns a new DerivedGeometryWorkspace (the original
+      # is deeply frozen; transitions produce new instances).
+      # On failure (no derivable edge OR adapter failure),
+      # returns a :failed workspace with last_error set.
       def _build_derived_entities(ws, source)
         edges = source.respond_to?(:edges) ? source.edges : []
         faces = source.respond_to?(:faces) ? source.faces : []
-        if (edges.nil? || edges.empty?) && (faces.nil? || faces.empty?)
-          # No source geometry to derive from: workspace must
-          # NOT be marked READY. Transition to :failed.
+        if edges.nil? || edges.empty?
+          # No derivable edge in the source: V1.4 minimal
+          # scope cannot produce any derived entity. The
+          # workspace MUST NOT be marked READY (and MUST NOT
+          # stay in :building -- that locks the UI). Transition
+          # to :failed with a precise last_error.
           return DerivedGeometryWorkspace.new_with_inventory(
             workspace_id:    ws.workspace_id,
             source_snapshot: source,
@@ -213,10 +234,16 @@ module SUAnalysis
             entity_pairs:    [].freeze,
             handle_registry: {}.freeze,
             fingerprint:     nil,
-            last_error:      'cannot derive from empty source (no edges / faces in SourceSnapshot)',
+            last_error:      'V1.4 working copy requires at least one derivable edge; source faces are retained as provenance only.',
             build_started_at: ws.build_started_at
           )
         end
+        # Note: the `faces` variable is unused below; we keep
+        # the read so future V1.5+ provenance tooling can use
+        # it without re-reading the snapshot. V1.4 minimal
+        # scope materializes NO Face entities (no fabrication
+        # of vertices, no truncation to first 3 points).
+        _ = faces
         # Build one derived entity per source EdgeRecord.
         # V1.4 CodeX BLOCK rework (2026-08-21): derived
         # Edges use the real two-endpoint path (NO 3-point

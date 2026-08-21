@@ -345,8 +345,8 @@ test 'WorkingModeRunner: prepare with EMPTY source (no edges, no faces) transiti
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'failed', snap['state'],
                'empty source MUST produce :failed (NOT :ready, NOT :building)'
-  assert_match(/cannot derive from empty source/, snap['last_error'],
-               'last_error MUST explain why prepare failed')
+  assert_match(/requires at least one derivable edge/, snap['last_error'],
+               'last_error MUST explain why prepare failed (BLOCK-R4-1)')
 end
 
 test 'WorkingModeRunner: prepare with source edges transitions to :ready with one derived entity per edge' do
