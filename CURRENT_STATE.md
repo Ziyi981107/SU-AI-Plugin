@@ -1,24 +1,153 @@
 # CURRENT STATE
 
-Last updated: 2026-08-20 (V1.2 + V1.3 stages **CLOSED
-on SketchUp 2020** per CodeX 029 end-of-stage review
-`Prompt/CODEX_REVIEW_029_2026-08-20_V1_2_V1_3_END_OF_STAGE.txt`
-**PASS WITH NITS**, 0 BLOCKs. V1.2 Owner Gate 2 PASS on
-real SU2020 (V12-1..V12-7; report at
-`Prompt/OWNER_REPORT_V1_2_ISSUES_BY_LAYER_2026-08-20.txt`).
-V1.3 Owner Gate 2 PASS WITH NIT on real SU2020 (V13-1..V13-6;
-report at
-`Prompt/OWNER_REPORT_V1_3_FACE_INVENTORY_SU2020_2026-08-20.txt`).
-V13-BLOCK-001 CLOSED via `bf2b2fc` production-seam fix;
-V13-NIT-001 spacing fixed via `e66a9ad` margin-only
-fallback. Full suite 470/470 Ruby + 114/114 Node.js DOM
-assertions PASS, 0 fail, 0 error. V1.0 candidate still
-FROZEN at tag `v1.0-candidate-2026-08-19` (commit
-`56ea611`). Gate 1 (SU2017) PENDING per R006 —
-deferred to formal release. Next CodeX engagement: the
-FINAL RELEASE REVIEW only, after the final RBZ is
-assembled and required SU2017 + SU2020 evidence is
-complete, unless a new high-risk BLOCK appears.)
+Last updated: 2026-08-20 (V1.4 stages 1..4 **IMPLEMENTATION
+COMPLETE on `v1.4-derived-workspace` branch**. Stages 1..3
+closed via commits `ddefe2f` / `de233be` / `d2a8328`. Stage 4
+(Working Mode UI + runner plumbing) committed via `431af5d`.
+Full suite 579/579 Ruby + 132/132 Node.js DOM assertions
+PASS, 0 fail, 0 error. The previously-failing
+`parent_derived_id not found raises ArgumentError` test now
+passes (the fix was already in place at Stage 3). dist/
+SU-AI-Plugin.rbz rebuilt to include the new Stage 4 files.
+Next step: MANDATORY CodeX V1.4 Stage Review per directive
+030, base = `550eb74` (V1.4 directive commit), head =
+`431af5d`. V1.0 candidate still FROZEN at tag
+`v1.0-candidate-2026-08-19` (commit `56ea611`). V1.2 + V1.3
+stages remain CLOSED on SketchUp 2020 per CodeX 029.
+
+## V1.4 stage 4 (IMPLEMENTATION COMPLETE on
+            `v1.4-derived-workspace` branch, head = `431af5d`)
+
+- **Implementation status**: ALL 4 V1.4 stages implemented
+  on `v1.4-derived-workspace` (cut from V1.3 close at
+  `550eb74`).
+  - Commit `ddefe2f`: Stage 1 -- SourceSnapshot /
+    fingerprint / execution-config contract.
+  - Commit `de233be`: Stage 2 -- RepairPlan / RepairAction /
+    lifecycle foundation.
+  - Commit `d2a8328`: Stage 3 -- DerivedGeometryWorkspace +
+    adapter + fingerprint.
+  - Commit `431af5d`: Stage 4 -- Working Mode runner + UI
+    plumbing + tests (this commit).
+- **V1.4 directive**: `Prompt/CODEX_PREBUILD_030_2026-08-20_V1_4_START.txt`
+  (PASS TO IMPLEMENT V1.4, 0 BLOCKs).
+- **Locked V1.4 contracts preserved**:
+  - Directive gates A (deep immutability / versioned /
+    fingerprintable SourceSnapshot) and B (independent
+    derived editable geometry, no shared-definition
+    aliasing with source) -- both verified by Stage 3 + 4
+    tests.
+  - Source CAD immutability -- verified by the 5 SourceFingerprint
+    identity risk tests (1a..1e) + the
+    dialog_runner source-integrity invariant test
+    (fingerprint identical before/after prepare / discard /
+    rebuild).
+  - JSON-safe payload (String keys, primitive values,
+    Hashes/Arrays only) -- verified by 2 WorkingModeRunner
+    tests + the UIBridge.to_json round-trip test.
+  - RepairPlan lifecycle invariant (failed plans/results
+    never READY) -- Stage 2 tests.
+  - textContent-only render contract -- Stage 4
+    html_render test.
+  - Bracket-lookup for action callbacks (no eval) -- Stage 4
+    html_render test.
+  - No new role / state color selectors -- Stage 4
+    style.css test (allows only var(--*) neutral palette).
+- **Working Mode UI section** (per directive 030 Stage 4):
+  - `<details id="working-mode-section">` AFTER V1.3
+    face-inventory-section. Default-closed.
+  - 5 states: 'none' (idle) / 'building' (in-progress) /
+    'ready' (workspace active) / 'discarded' (user
+    discarded) / 'failed' (build/cleanup raised). State is
+    rendered as a data-state attribute on each row.
+  - Action buttons (Prepare / Discard / Rebuild) wire to
+    window.SUAIP callbacks exposed by DialogRunner as
+    BLOCKs. Enable/disable per state. Prepare button is
+    ALWAYS shown in 'none' / 'discarded' / 'failed';
+    Discard only in 'ready'; Rebuild in 'ready' /
+    'discarded' / 'failed'.
+  - All user-facing text via textContent (no innerHTML).
+    Bracket lookup for callbacks (no eval). textContent +
+    setAttribute only.
+- **Production adapter**:
+  - `compatibility/su_derived_workspace_adapter.rb`:
+    `SketchupDerivedWorkspaceAdapter` is the production
+    SketchUp adapter. `NAME_PREFIX = 'SU-AI-Derived-'`
+    makes derived entities visually identifiable. Calls
+    `Sketchup::Entities#add_group(NAME_PREFIX + name)`
+    which creates a brand-new ComponentDefinition per
+    call (independent ownership, no shared-definition
+    aliasing with source -- per directive gate B).
+    Capability detection via defined?(Sketchup).
+- **Runner bug fix within this commit**:
+  - The previous version of `core/working_mode_runner.rb`
+    discard() set `@current_workspace = nil` after the
+    workspace discard, which made `snapshot()` return 'none'
+    instead of 'discarded'. The runner now keeps the
+    discarded workspace reference so `snapshot()` reports
+    the correct lifecycle state. The next `prepare()`
+    overwrites `@current_workspace` with a fresh :building
+    workspace, so prior discarded workspaces are never
+    re-used. Verified by 17/17 WorkingModeRunner tests +
+    the source-fingerprint-integrity invariant test in
+    test_dialog_runner.rb.
+- **Test evidence at this commit**:
+  - Ruby: 579/579 PASS, 0 fail, 0 error
+    (was 547/547 before V1.4 Stage 4; +32 from new tests).
+  - Node.js DOM: 132/132 assertions PASS, 0 fail
+    (was 115/115 before V1.4 Stage 4; +17 V14 assertions).
+  - `git diff --check` clean on all changed files.
+  - `dist/SU-AI-Plugin.rbz` rebuilt to include the new
+    working_mode_runner.rb + su_derived_workspace_adapter.rb
+    + dialog_runner.rb / ui_bridge.rb / html/ changes.
+
+## V1.4 stage 3 (IMPLEMENTATION COMPLETE on
+            `v1.4-derived-workspace` branch, head = `d2a8328`)
+
+- **CodeX verdict (pre-build)**: PASS TO IMPLEMENT V1.4
+  per directive 030 (no CodeX stage-review yet, awaiting
+  V1.4 exit gate).
+- **Implementation status**: Stage 3 COMPLETE.
+  - DerivedGeometryWorkspace + adapter + fingerprint
+    (lifecycle: :building / :ready / :discarded / :failed;
+    nested derived entities via parent_derived_id; deep
+    immutability; rebuild preserves fingerprint).
+  - The parent_derived_id validation raises ArgumentError
+    (NOT silently converted to :failed) when the parent
+    is not found in the workspace -- per directive
+    "父子 derived ID 引用严格校验". This test was
+    previously failing and is now passing (commit d2a8328).
+- **Test evidence at this commit**:
+  - Ruby: 547/547 PASS (the 27 new Stage 3 tests
+    + all previous).
+  - `git diff --check` clean.
+
+## V1.4 stage 2 (IMPLEMENTATION COMPLETE on
+            `v1.4-derived-workspace` branch, head = `de233be`)
+
+- RepairPlan / RepairAction / ValidationResult pure-data
+  layer (lifecycle: :proposed / :validated / :applied /
+  :skipped / :rejected / :failed; failed plans NEVER
+  :ready; no fake AI confidence).
+- 22 new tests covering deep immutability, lifecycle
+  transitions, JSON-safe round-trip, and the
+  cross-stage :failed invariant.
+
+## V1.4 stage 1 (IMPLEMENTATION COMPLETE on
+            `v1.4-derived-workspace` branch, head = `ddefe2f`)
+
+- SourceSnapshot / SourceFingerprint / ExecutionConfigSnapshot
+  pure-data layer. Schema version, execution-config capture
+  (profile + rule-set + tolerance values + session
+  overrides), deep immutability (top-level + nested Arrays /
+  Hashes frozen), stable to_digest (SHA256 hex).
+- 25 new tests covering deep immutability, schema version
+  pin, identity quality preserved on selection scope, and
+  source fingerprint stability (risk test 8).
+
+## V1.2 + V1.3 stages (CLOSED on SU2020 per CodeX 029, 2026-08-20)
+(Historical context -- superseded by the V1.2 + V1.3 closed
+sections at the top of the V1.0 narrative.)
 
 ## V1.2 stage (CLOSED on SU2020 per CodeX 029, 2026-08-20)
 
@@ -161,39 +290,60 @@ complete, unless a new high-risk BLOCK appears.)
   - No git remote configured; backup / push separately.
     Not a V1.1 / V1.2 blocker.
 
-## Next action (post-CodeX 029 end-of-stage, awaiting formal release)
+## Next action (post-V1.4 stage 4, awaiting mandatory V1.4 CodeX stage review)
 
 1. **Owner** (whenever Owner is ready; this is a
    non-CodeX-triggered step):
-   - Assemble the final RBZ: combine V1.0 + V1.1 + V1.2 +
-     V1.3 in `dist/SU-AI-Plugin.rbz`. Per CodeX 028 / 029,
-     the V1.1 / V1.2 / V1.3 RBZ shapes are already verified
-     on SU2020; the final assembly just needs the v1.0
-     pieces plus Gate 1 SU2017 + Gate 2 V1.1 + Gate 2 V1.2
-     + Gate 2 V1.3 evidence.
-   - Re-run Gate 1 (SU2017 minimum-host verification) on
-     the final RBZ. Per R004, this is the ONLY remaining
-     blocker before formal release.
-   - Drop the formal-release evidence at
-     `Prompt/OWNER_REPORT_FORMAL_RELEASE_2026-08-XX.txt`.
+   - **V1.4 real-SU2020 verification**: per directive 030
+     exit gate, run the V1.4 workflow on a real
+     SketchUp 2020 model. The Owner Gate 2 V1.4 checklist
+     covers: select representative imported/nested CAD;
+     capture source-integrity fingerprint; create derived
+     workspace; visibly distinguish source from derived
+     without changing source properties; discard and
+     confirm source unchanged; rebuild and compare derived
+     result; inject or safely simulate an
+     interrupted/failing creation path; verify source
+     unchanged and partial result not READY; verify Undo
+     as an extra safety layer, not the only discard
+     mechanism; confirm scale/units/world position on
+     nested/shared-instance cases.
+   - Drop the V1.4 Owner report at
+     `Prompt/OWNER_REPORT_V1_4_DERIVED_WORKSPACE_2026-08-XX.txt`.
 
-2. **CodeX**: next engagement is the **FINAL RELEASE
-   REVIEW** (per CodeX 029), after the final RBZ is
-   assembled and required SU2017 + SU2020 evidence is
-   complete, unless a new high-risk BLOCK appears.
+2. **Agent** (immediately after the Owner V1.4 evidence
+   is dropped):
+   - Assemble the V1.4 stage-review packet per directive
+     030: base = `550eb74` (V1.4 directive commit on
+     `v1.3-face-inventory`), head = `431af5d` (current
+     V1.4 head), changed files, focused source-integrity /
+     provenance / failure evidence, full regression
+     result, real-SU2020 Owner evidence. Drop at
+     `Review/CODEX_V1_4_STAGE_REVIEW_REQUEST_2026-08-XX.md`.
 
-3. **Agent** (on CodeX final-release PASS): close the
-   formal-release stage in CURRENT_STATE; mark the
-   `v1.0-candidate-2026-08-19` tag as the production
-   release (or re-tag); push to remote (if Owner configures
-   one); no more CodeX micro-reviews until the next
-   feature stage.
+3. **CodeX**: next engagement is the **MANDATORY V1.4
+   STAGE REVIEW** per directive 030. The review scope is:
+   source vs derived ownership; SourceSnapshot and
+   provenance contract; deep immutability / fingerprint
+   evidence; shared-definition isolation; failure /
+   discard / rebuild behavior; SU2017+ compatibility
+   implications; relevant regressions and real SU2020
+   workflow. Do not submit tiny edit packets.
 
-4. **Out of scope**:
-   - No V1.4.
+4. **Post-V1.4 (when CodeX V1.4 stage review PASS is
+   received)**: assemble the final V1.0 + V1.4 RBZ
+   (`dist/SU-AI-Plugin.rbz`); re-run Gate 1 (SU2017) +
+   Gate 2 V1.4 on the combined artifact; drop the formal
+   release evidence at
+   `Prompt/OWNER_REPORT_FORMAL_RELEASE_2026-08-XX.txt`;
+   dispatch the FINAL CodeX release review packet.
+
+5. **Out of scope** (V1.5+ stays parked):
+   - No V1.5+ repair actions (delete / weld / flatten /
+     gap-close / loop-rebuild / face / site / MCP / AI).
    - No re-opening of V1.0 / V1.1 / V1.2 / V1.3 closed
      scope without new concrete evidence.
-   - No re-opening of CodeX 029 closed scope.
+   - No re-opening of CodeX 029 / 030 closed scope.
 
 ## Active baseline (V1.0, head of `main` = 56ea611)
 
