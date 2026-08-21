@@ -287,6 +287,20 @@ module SUAnalysis
           rescue StandardError
             # ignore secondary cleanup failures
           end
+          # V1.4 Phase-3 self-audit fix: if host_handle was
+          # already created (create_top_level_group succeeded)
+          # but a subsequent step failed (e.g. add_edge_to_group
+          # raised), dispose host_handle BEFORE returning the
+          # :failed workspace. Otherwise the partially-created
+          # group survives on the model and is NOT in
+          # @handle_registry -- the caller cannot clean it up.
+          begin
+            if host_handle && @adapter.respond_to?(:dispose)
+              @adapter.dispose(host_handle)
+            end
+          rescue StandardError
+            # ignore secondary cleanup failures
+          end
           # Roll back any handles created earlier in this
           # build call -- they are NOT yet committed to
           # the workspace but the host adapter may have

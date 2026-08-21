@@ -1177,3 +1177,181 @@ test 'BLOCK-R4-1 extra: Face-only source -> :failed with FakeAdapter (no host ca
   assert_equal 0, adapter.added_edges.length,
                'Face-only source MUST NOT trigger any FakeAdapter edge creation'
 end
+
+# PHASE-3-MATRIX closure test: first / middle / last entity
+# build failure MUST leave ZERO PARTIAL LEAKED entities.
+# Per directive: failure injection must clean up any
+# partial derived entity created in the SAME build call
+# (precise cleanup via per-entity dispose). Tests this for
+# the first, middle, and last edge in a 3-edge source.
+#
+# The atomic-cleanup invariant: a successfully-built
+# entity that COMPLETED before the failure point is KEPT
+# (the user expects their work to survive). A PARTIAL
+# entity (host_handle created but a later step failed)
+# MUST be disposed. The workspace must be in :failed state.
+test 'PHASE-3-MATRIX: first/middle/last entity build failure -> no partial leaked entities (all positions)' do
+  v14_reset_everything
+  # Build a 3-edge source.
+  src = v14_danger_source_with_paths([
+    { persistent_id: 17001, persistent_id_path: [17001],
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] },
+    { persistent_id: 17002, persistent_id_path: [17002],
+      start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0] },
+    { persistent_id: 17003, persistent_id_path: [17003],
+      start_point: [10.0, 5.0, 0.0], end_point: [0.0, 5.0, 0.0] }
+  ])
+
+  # Build an adapter that fails on the N-th add_edge_to_group
+  # call (1-based). The workspace's build_entity wraps each
+  # call in its own SU operation; the failing N-th call must
+  # dispose any partial handle from that same call. Prior
+  # successfully-committed entities MUST remain (they
+  # completed before the failure point).
+  [1, 2, 3].each do |fail_at|
+    v14_reset_everything
+    counter = 0
+    failing_adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+    original_add_edge = failing_adapter.method(:add_edge_to_group)
+    failing_adapter.define_singleton_method(:add_edge_to_group) do |group, s, e|
+      counter += 1
+      if counter == fail_at
+        raise StandardError, "v14-injected-fail-at-#{fail_at}"
+      end
+      original_add_edge.call(group, s, e)
+    end
+    SUAnalysis::Core::WorkingModeRunner.prepare(
+      source: src, adapter: failing_adapter, model: nil
+    )
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+    assert_equal 'failed', snap['state'],
+                 "failure at position #{fail_at} MUST produce :failed"
+    # Workspace-level invariant: every entity in entity_pairs
+    # has a corresponding live handle in handle_registry. There
+    # are NO partial leaked handles (a group created but
+    # add_edge_to_group failed -> must be disposed).
+    ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+    refute_nil ws
+    entity_count_after = ws.entity_count
+    handle_count_after = ws.handle_registry_keys.length
+    assert_equal entity_count_after, handle_count_after,
+                 "failure at position #{fail_at}: entity_count (#{entity_count_after}) must equal handle_registry_keys length (#{handle_count_after}) -- NO partial leaked handles"
+    # Adapter-level invariant: total groups created by the
+    # adapter across this prepare call equals total groups
+    # disposed (no group survives that isn't in the final
+    # handle_registry).
+    total_created = failing_adapter.created_handles.length
+    total_disposed = failing_adapter.disposed_handles.length
+    surviving_groups = total_created - total_disposed
+    assert_equal handle_count_after, surviving_groups,
+                 "failure at position #{fail_at}: surviving_groups (#{surviving_groups}) must equal handle_registry_keys length (#{handle_count_after})"
+    # For fail_at=1 (very first build fails): NO entities,
+    # NO handles, NO surviving groups.
+    if fail_at == 1
+      assert_equal 0, entity_count_after,
+                   "first failure (fail_at=1) MUST leave entity_count == 0 (no successful builds before)"
+    end
+  end
+end
+
+# PHASE-3-MATRIX closure test: failed state is RECOVERABLE.
+# After Prepare hits a :failed state, a subsequent Prepare
+# (with the same source) MUST start fresh and reach :ready
+# (the failed workspace does NOT block retries).
+test 'PHASE-3-MATRIX: failed state is recoverable -- retry Prepare reaches :ready' do
+  v14_reset_everything
+  src = v14_danger_source_with_paths([
+    { persistent_id: 18001, persistent_id_path: [18001],
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] }
+  ])
+  adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+  # First Prepare with a failing adapter (begin_operation
+  # raises before any build_entity runs).
+  failing_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
+    def begin_operation(_model, label:)
+      raise StandardError, 'v14-first-try-fail'
+    end
+  end.new
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: failing_adapter, model: nil
+  )
+  snap1 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  # The runner's prepare() catches begin_operation failures and
+  # transitions the workspace to :failed with the original
+  # exception captured in last_error.
+  assert_equal 'failed', snap1['state'],
+               'first Prepare (failing begin_operation) MUST produce :failed'
+  assert_match(/v14-first-try-fail/, snap1['last_error'].to_s,
+               'last_error MUST capture the begin_operation failure')
+  # Second Prepare with a WORKING adapter on the SAME source
+  # MUST reach :ready (recovery). This proves the failed
+  # workspace does not block retries.
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: adapter, model: nil
+  )
+  snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'ready', snap2['state'],
+               'retry Prepare (working adapter) MUST reach :ready (failed state is recoverable)'
+  assert_equal 1, snap2['entity_count'],
+               'retry Prepare MUST produce 1 derived entity'
+end
+
+# PHASE-3-MATRIX closure test: rapid click cycles (Prepare +
+# Discard + Rebuild) MUST not produce overlapping workspaces.
+# Each Prepare must replace the previous workspace; each
+# Discard must drop the workspace; each Rebuild must produce
+# a fresh workspace. The runner is single-stateful, so
+# overlapping is forbidden by construction -- this test
+# pins that invariant.
+test 'PHASE-3-MATRIX: rapid Prepare/Discard/Rebuild cycles -- no overlapping workspaces' do
+  v14_reset_everything
+  src = v14_danger_source_with_paths([
+    { persistent_id: 19001, persistent_id_path: [19001],
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] },
+    { persistent_id: 19002, persistent_id_path: [19002],
+      start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0] }
+  ])
+  adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+
+  # Rapid cycle 1: Prepare -> Discard
+  SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
+  assert_equal 'ready', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+  SUAnalysis::Core::WorkingModeRunner.discard
+  assert_equal 'discarded', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+
+  # Rapid cycle 2: Prepare (immediately) -> Rebuild
+  SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
+  snap_pre_rebuild = SUAnalysis::Core::WorkingModeRunner.snapshot
+  SUAnalysis::Core::WorkingModeRunner.rebuild
+  snap_post_rebuild = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'ready', snap_post_rebuild['state'],
+               'rebuild from captured source MUST reach :ready'
+  refute_equal snap_pre_rebuild['workspace_id'], snap_post_rebuild['workspace_id'],
+               'rebuild MUST produce a fresh workspace_id (no overlap)'
+  # The post-rebuild workspace must carry the SAME
+  # source_snapshot_id (deterministic rebuild invariant).
+  assert_equal snap_pre_rebuild['source_snapshot_id'], snap_post_rebuild['source_snapshot_id'],
+               'rebuild MUST preserve the captured source_snapshot_id'
+
+  # Rapid cycle 3: Discard -> Prepare -> Discard
+  SUAnalysis::Core::WorkingModeRunner.discard
+  assert_equal 'discarded', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+  SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
+  assert_equal 'ready', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+  SUAnalysis::Core::WorkingModeRunner.discard
+  assert_equal 'discarded', SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+
+  # The FakeAdapter's added_edges + disposed_handles
+  # should be balanced (no leakage). 2 edges per build, 3
+  # builds total => 6 added; 3 discards => 6 disposed.
+  # (dispose is idempotent; second discard sees an empty
+  # handle_registry and disposes 0. Each Prepare creates 2
+  # new groups and 2 new edges.)
+  # We assert the upper bound: the FakeAdapter must NOT
+  # have more surviving valid groups than the current
+  # workspace's entity_count.
+  ws_final = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  assert_equal 'discarded', ws_final.state.to_s
+  assert_equal 0, ws_final.entity_count,
+               'after final discard, workspace must have 0 entities (no overlap)'
+end

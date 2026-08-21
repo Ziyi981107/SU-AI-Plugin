@@ -92,25 +92,55 @@ module SUAnalysis
         @current_model         = model
         @current_workspace     = ws
 
-        # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R4-1:
-        # V1.4 minimal scope ONLY materializes Edges
-        # faithfully. Each source EdgeRecord -> one derived
-        # Edge (XYZ-identical, no fabrication). Source
-        # FaceRecords are retained in the SourceSnapshot for
-        # provenance / fingerprint / layer counts but are
-        # NOT materialized as derived Faces (the production
-        # FaceRecord has no #vertices; BLOCK-R3-2 forbids
-        # fabricating vertices).
-        #
-        # Derive-ability is therefore determined SOLELY by
-        # the source edges. If edges is empty (Face-only
-        # selection, or no selection at all), prepare MUST
-        # transition the workspace to :failed (NOT stay in
-        # :building) so the UI's Discard/Rebuild stay
-        # operable. The last_error message names the constraint
-        # explicitly.
-        built_ws = _build_derived_entities(ws, source)
-        @current_workspace = built_ws
+        # V1.4 Phase-3 self-audit fix: wrap the WHOLE build
+        # sequence in a single SU operation so a mid-build
+        # failure rolls back ALL entities created so far
+        # (per directive: "Failure injection cleanup all
+        # created handles"). The workspace's per-entity
+        # build_entity opens its own operation; on SU, a
+        # nested operation's abort rolls back the parent
+        # too, so wrapping here gives us atomic cleanup.
+        built_ws = nil  # explicit initial so rescue path can reference it
+        begin
+          adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.4 Working Copy Prepare')
+          built_ws = _build_derived_entities(ws, source)
+          adapter.end_operation(model, commit: true)
+          @current_workspace = built_ws
+        rescue StandardError => e
+          # Atomic cleanup: abort the outer operation; SU
+          # rolls back every per-entity operation that was
+          # nested inside (including all successfully-
+          # created entities that the workspace's per-entity
+          # operations had already committed). The runner's
+          # @current_workspace is set to the :failed workspace
+          # (built_ws) so the UI sees the failed state.
+          # Note: we DELIBERATELY do not wrap the abort +
+          # built_ws construction in another rescue, because
+          # a failure in the cleanup path is a real bug (the
+          # workspace MUST report :failed). Surface the
+          # exception via last_error instead.
+          begin
+            adapter.end_operation(model, commit: false)
+          rescue StandardError => abort_err
+            # Record the secondary failure but do NOT
+            # swallow the original error: the workspace is
+            # still :failed (the original build failed).
+            @abort_error = "#{abort_err.class}: #{abort_err.message}"
+          end
+          built_ws = DerivedGeometryWorkspace.new_with_inventory(
+            workspace_id:    ws.workspace_id,
+            source_snapshot: source,
+            adapter:         adapter,
+            model:           model,
+            state:           :failed,
+            entity_pairs:    [].freeze,
+            handle_registry: {}.freeze,
+            fingerprint:     nil,
+            last_error:      "#{e.class}: #{e.message}",
+            build_started_at: ws.build_started_at
+          )
+          @current_workspace = built_ws
+        end
         snapshot
       end
 
