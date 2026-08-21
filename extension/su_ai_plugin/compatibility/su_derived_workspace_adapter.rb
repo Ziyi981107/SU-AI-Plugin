@@ -17,6 +17,17 @@
 # belongs to the plugin and what belongs to source. Source
 # entities are NEVER touched.
 #
+# V1.4 CodeX BLOCK fix (Stage 4): the adapter wraps every
+# derived-entity mutation in a SketchUp operation
+# (model.start_operation / commit_operation / abort_operation).
+# On failure, the workspace calls end_operation(commit: false),
+# which aborts the operation -- this is what guarantees that
+# partial derived entities are rolled back when an injected
+# failure happens. The adapter never relies on the workspace
+# to clean up entities after an aborted operation; the
+# operation-abort IS the cleanup. (Entities created via
+# start_operation / abort_operation are not retained by SU.)
+#
 # Per directive: shared ComponentDefinition aliasing is a
 # release BLOCK. The adapter does NOT accept a source-side
 # handle parameter -- every derived group is freshly created
@@ -39,8 +50,10 @@ module SUAnalysis
       # Recognizable prefix so operators can distinguish
       # plugin-owned derived groups from source.
       NAME_PREFIX = 'SU-AI-Derived-'.freeze
+      OPERATION_NAME = 'SU-AI-Plugin: V1.4 Derived Workspace'.freeze
 
       class SketchupUnavailableError < StandardError; end
+      class OperationWrapError < StandardError; end
 
       # Per AGENT.md §3 capability detection: respond_to? on
       # the Sketchup constant. The test env does not load the
@@ -55,6 +68,60 @@ module SUAnalysis
 
       def sketchup_available?
         self.class.sketchup_available?
+      end
+
+      # Resolve the active SU model. If a model was passed
+      # in (the dialog_runner propagates the controller's
+      # model), prefer it; else fall back to
+      # Sketchup.active_model.
+      def resolve_model(model)
+        if model && model.respond_to?(:active_entities)
+          model
+        elsif sketchup_available?
+          Sketchup.active_model
+        else
+          nil
+        end
+      end
+
+      # V1.4 CodeX BLOCK fix (Stage 4): operation wrapping.
+      # Begins a SU operation. Returns nothing. Raises on
+      # failure (capability miss or SU rejecting the
+      # operation).
+      def begin_operation(model, label:)
+        m = resolve_model(model)
+        unless m && m.respond_to?(:start_operation)
+          # No SU / no model: no-op for the production
+          # adapter. The workspace can still call
+          # create_top_level_group / dispose; those
+          # methods raise SketchupUnavailableError if
+          # invoked without SU available. The begin/end
+          # boundaries remain balanced.
+          return nil
+        end
+        # SU's start_operation(label, disable_ui). We pass
+        # disable_ui=true so the user cannot click other
+        # tools during a build -- important because partial
+        # SU operations left in a dirty state are exactly
+        # what the directive prohibits.
+        m.start_operation(OPERATION_NAME + " -- " + label.to_s, true)
+        nil
+      end
+
+      # V1.4 CodeX BLOCK fix (Stage 4): end the SU operation.
+      # commit=true -> commit_operation. commit=false ->
+      # abort_operation. This is the SU-blessed cleanup
+      # path; on abort, all entities created within the
+      # current operation are discarded by SU.
+      def end_operation(model, commit:)
+        m = resolve_model(model)
+        return nil unless m && m.respond_to?(commit ? :commit_operation : :abort_operation)
+        if commit
+          m.commit_operation
+        else
+          m.abort_operation
+        end
+        nil
       end
 
       # Create a brand-new top-level group in the active
@@ -92,7 +159,9 @@ module SUAnalysis
       end
 
       # Dispose a derived group. Idempotent; safe to call on
-      # an already-erased handle.
+      # an already-erased handle. The workspace invokes this
+      # inside its discard operation; on partial failure the
+      # workspace aborts the operation.
       def dispose(handle)
         return true if handle.nil?
         # If the handle is no longer valid (already erased),

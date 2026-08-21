@@ -18,6 +18,7 @@
 
 require_relative 'preflight_runner'
 require_relative 'display_unit_formatter'
+require_relative 'compatibility/su_capability'
 require_relative 'core/preflight'
 require_relative 'core/analyzers/duplicate_detector'
 require_relative 'core/analyzers/short_edge_detector'
@@ -67,6 +68,16 @@ module SUAnalysis
         # to :edge_count; AnalysisResult#summary uses safe_attr which
         # defaults to 0 for non-responsive objects.
         preflight = SUAnalysis::Core::PreflightAnalyzer.run(snapshot)
+
+        # V1.4 (per directive 030 Stage 4 fix): capture the
+        # active-edit context facts at analysis time so the
+        # dialog_runner's V1.4 plumbing can build a SourceSnapshot
+        # with real transform_context (per directive gate A).
+        active_edit_facts = SUAnalysis::Compatibility::SUCapability.active_edit_context_facts(model)
+        # Convert Symbol-keyed facts Hash to String keys for the
+        # frozen AnalysisResult (UI bridge is String-only).
+        active_edit_facts_for_result = {}
+        active_edit_facts.each { |k, v| active_edit_facts_for_result[k.to_s] = v }
 
         # 2. Run analyzers. Per-analyzer rescue — one bad analyzer must
         # not abort the others. PI_TASK_001 §18.
@@ -209,6 +220,10 @@ module SUAnalysis
         # by Layer" section has per-layer issue buckets to render.
         # V1.3: also pass face_inventory_groups so the dialog's
         # "Face Inventory" section has per-layer face buckets to render.
+        # V1.4 (per directive 030 Stage 4 fix): also pass the
+        # geometry_snapshot + selection_entities + active_edit_facts
+        # so the dialog_runner's V1.4 plumbing can build a real
+        # SourceSnapshot from the analysis (not synthetic plumbing).
         SUAnalysis::Core::AnalysisResult.new(
           preflight:            preflight,
           registry:             registry,
@@ -219,7 +234,10 @@ module SUAnalysis
           selection_label:      selection_label,
           layer_groups:         layer_groups,
           layer_issue_groups:   layer_issue_groups,
-          face_inventory_groups: face_inventory_groups
+          face_inventory_groups: face_inventory_groups,
+          geometry_snapshot:    snapshot,
+          selection_entities:   normalized_selection,
+          active_edit_facts:    active_edit_facts_for_result
         )
       end
 

@@ -20,14 +20,38 @@ module SUAnalysis
                   :selection_type, :selection_label,
                   :layer_groups,
                   :layer_issue_groups,
-                  :face_inventory_groups
+                  :face_inventory_groups,
+                  # V1.4 (per directive 030 Stage 4 fix): the
+                  # geometry_snapshot is the live GeometrySnapshot
+                  # built by PreflightRunner from the real SU
+                  # selection. It carries the world-coordinate
+                  # Edges / Faces / Layers + the per-source-record
+                  # SourceReference (persistent_id_path,
+                  # instance_path, structural_depth, etc.).
+                  # It is the input to the V1.4 SourceSnapshot.
+                  :geometry_snapshot,
+                  # V1.4 (per directive 030 Stage 4 fix): the
+                  # selection raw array (post-normalize). Carries
+                  # the real selection scope (Group / Component /
+                  # Edges / etc.) with full provenance. Required
+                  # for the dialog_runner to build a SourceSnapshot
+                  # that preserves the real user selection.
+                  :selection_entities,
+                  # V1.4 (per directive 030 Stage 4 fix): the active
+                  # edit context facts (PID path + transform) at
+                  # the time of analysis. Required for V1.4
+                  # SourceSnapshot.transform_context.
+                  :active_edit_facts
 
       def initialize(preflight:, registry:, snapshot_lookup: nil,
                      display_data: nil, diagnostics: nil,
                      selection_type: nil, selection_label: nil,
                      layer_groups: nil,
                      layer_issue_groups: nil,
-                     face_inventory_groups: nil)
+                     face_inventory_groups: nil,
+                     geometry_snapshot: nil,
+                     selection_entities: nil,
+                     active_edit_facts: nil)
         raise ArgumentError, 'preflight is required' if preflight.nil?
         raise ArgumentError, 'registry is required'  if registry.nil?
         @preflight         = preflight
@@ -37,6 +61,13 @@ module SUAnalysis
         @diagnostics       = (diagnostics || []).dup.freeze
         @selection_type    = selection_type.to_s
         @selection_label   = selection_label.to_s
+        # V1.4 (per directive 030 Stage 4 fix): accept the real
+        # GeometrySnapshot + selection entities + active edit
+        # facts. They may be nil for V1.0/V1.1/V1.2/V1.3 callers;
+        # V1.4 dialog_runner relies on these being populated.
+        @geometry_snapshot  = geometry_snapshot
+        @selection_entities = (selection_entities || []).dup.freeze
+        @active_edit_facts  = (active_edit_facts || {}).dup.freeze
         # V1.1 (per plan §4.8): layer_groups is the locked Array of
         # LayerSummary hashes produced by LayerSemanticMapper. Default
         # to an empty Array for V1.0 callers. The frozen Array is the

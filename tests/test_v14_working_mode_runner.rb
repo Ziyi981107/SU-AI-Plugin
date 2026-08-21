@@ -312,6 +312,96 @@ test 'WorkingModeRunner: source fingerprint digest stays stable across discard +
                'source fingerprint digest must NOT drift across discard + rebuild'
 end
 
+test 'WorkingModeRunner: prepare with EMPTY source (no edges, no faces) transitions to :failed' do
+  # V1.4 CodeX BLOCK fix (Stage 4): prepare MUST actually
+  # build at least one derived entity. If the source has
+  # NO edges AND NO faces, the workspace MUST transition
+  # to :failed (NOT :ready). The "no source geometry ->
+  # empty workspace" path is the directive's forbidden
+  # silent failure.
+  wm_reset
+  ec = v14_exec_config_wm
+  empty_src = SourceSnapshot.new(
+    snapshot_id:       'empty-src-001',
+    selection_scope:   [],
+    edges:             [],
+    faces:             [],
+    layers:            [],
+    vertex_records:    [],
+    unit:              'inches',
+    coordinate_origin: 'raw',
+    transform_context: { 'empty' => 'no-source-geometry' },
+    execution_config:  ec,
+    fingerprint:       SourceFingerprint.new(
+      edge_count: 0,
+      face_count: 0,
+      layer_count: 0
+    )
+  )
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source:  empty_src,
+    adapter: FakeDerivedWorkspaceAdapter.new
+  )
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'failed', snap['state'],
+               'empty source MUST produce :failed (NOT :ready, NOT :building)'
+  assert_match(/cannot derive from empty source/, snap['last_error'],
+               'last_error MUST explain why prepare failed')
+end
+
+test 'WorkingModeRunner: prepare with source edges transitions to :ready with one derived entity per edge' do
+  # V1.4 CodeX BLOCK fix (Stage 4): prepare MUST materialize
+  # one derived entity per source EdgeRecord (and one per
+  # FaceRecord, if any). entity_count MUST equal
+  # edges.size + faces.size.
+  wm_reset
+  src = v14_source_snapshot_wm
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source:  src,
+    adapter: FakeDerivedWorkspaceAdapter.new
+  )
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'ready', snap['state']
+  ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil ws
+  assert_equal src.edges.length, ws.entity_count,
+               'prepare must produce one derived entity per source edge'
+  # Each entity MUST carry the source-occurrence provenance
+  # (per directive gate A: derived-record -> source-occurrence
+  # provenance preserved).
+  ws.entities.each do |rec|
+    refute_nil rec.source_occurrence_ids
+    assert_operator rec.source_occurrence_ids.length, :>, 0,
+                    'every derived entity must carry at least one source-occurrence id'
+  end
+end
+
+test 'WorkingModeRunner: rebuild produces a new workspace with identical fingerprint (deterministic rebuild)' do
+  # V1.4 CodeX BLOCK fix (Stage 4): rebuild must first
+  # discard the old derived groups (via the private handle
+  # registry) then create fresh derived entities. The new
+  # workspace's fingerprint MUST match the original (per
+  # directive: "A second build from identical source +
+  # captured config must produce the same canonical
+  # derived fingerprint, excluding documented host-assigned
+  # IDs").
+  wm_reset
+  src = v14_source_snapshot_wm
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source:  src,
+    adapter: FakeDerivedWorkspaceAdapter.new
+  )
+  ws_before = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  fp_before = ws_before.fingerprint.digest
+  SUAnalysis::Core::WorkingModeRunner.rebuild
+  ws_after = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_equal ws_before.object_id, ws_after.object_id,
+               'rebuild must produce a new workspace instance'
+  assert_equal 'ready', ws_after.state.to_s
+  assert_equal fp_before, ws_after.fingerprint.digest,
+               'rebuild fingerprint must match the original (deterministic rebuild)'
+end
+
 test 'WorkingModeRunner: execution config digest stays stable across the lifecycle' do
   wm_reset
   src = v14_source_snapshot_wm

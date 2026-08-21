@@ -29,6 +29,15 @@
 #                workspace is INVALID and must NOT be marked
 #                :ready
 #
+# V1.4 CodeX BLOCK fix (Stage 4): the workspace maintains a
+# PRIVATE handle registry (NOT exposed via to_h / JSON / UI).
+# The handle registry maps derived_id -> real SketchUp::Group
+# handle (or test-side equivalent). discard / failure cleanup
+# iterate THIS registry, NOT host_assigned_ids (which only
+# carries id values for audit). The handle registry lives in
+# a separate instance variable that is NEVER serialized via
+# to_h.
+#
 # The workspace is the contract between V1.4 (build +
 # lifecycle) and V1.5+ (apply actual repair actions). In V1.4
 # the only operation is BUILD + DISCARD; no actions are
@@ -44,19 +53,28 @@ module SUAnalysis
     class DerivedGeometryWorkspace
       STATES = [:building, :ready, :discarded, :failed].freeze
 
+      # Public attr_readers are LIMITED to JSON-safe fields.
+      # The handle registry is INTENTIONALLY NOT exposed.
       attr_reader :workspace_id, :source_snapshot,
                   :state, :entities, :fingerprint,
                   :last_error, :build_started_at
 
-      def initialize(workspace_id: nil, source_snapshot:, adapter:)
+      def initialize(workspace_id: nil, source_snapshot:, adapter:, model: nil)
         @workspace_id    = (workspace_id || "ws-#{rand(2**32)}").freeze
         @source_snapshot = source_snapshot  # SourceSnapshot (frozen)
         @adapter         = adapter           # DerivedWorkspaceAdapter
+        @model           = model             # SU model (for operation wrapping); may be nil
         @state           = :building
         # Inventory: derived_id (String) -> DerivedEntityRecord.
         # Stored as an Array of [derived_id, record] tuples so the
         # order is preserved (and the data is deeply frozen).
         @entity_pairs    = [].freeze
+        # V1.4 CodeX BLOCK fix (Stage 4): the PRIVATE handle
+        # registry. Maps derived_id -> real SketchUp::Group
+        # handle (or test-side equivalent). NEVER serialized.
+        # Used by discard / failure cleanup / rebuild to
+        # precisely target the plugin-owned entities.
+        @handle_registry = {}.freeze
         @fingerprint     = nil
         @last_error      = nil
         @build_started_at = Time.now.to_f
@@ -73,6 +91,25 @@ module SUAnalysis
 
       def entity(derived_id)
         @entity_pairs.find { |id, _| id == derived_id }&.last
+      end
+
+      def entity_count
+        @entity_pairs.length
+      end
+
+      # V1.4 CodeX BLOCK fix (Stage 4): workspace-private handle
+      # lookup. The handle registry is NEVER exposed via to_h /
+      # JSON / UI; it is the workspace's internal cleanup target.
+      # Returns the live handle for the given derived_id, or nil.
+      # Outside callers (UI bridge, dialog_runner, snapshot)
+      # NEVER see the registry.
+      def handle_for(derived_id)
+        return nil if @handle_registry.empty?
+        @handle_registry[derived_id]
+      end
+
+      def handle_registry_keys
+        @handle_registry.keys
       end
 
       def ready?
@@ -97,10 +134,16 @@ module SUAnalysis
       end
 
       def to_h
+        # V1.4 CodeX BLOCK fix (Stage 4): handle_registry is
+        # INTENTIONALLY NOT included in to_h. It must never
+        # cross the JSON boundary; live host handles are
+        # NOT JSON-safe and would also leak the workspace's
+        # internal ownership tracking to the UI.
         {
           workspace_id:    workspace_id,
           source_snapshot_id: source_snapshot.snapshot_id,
           state:           state,
+          entity_count:    entity_count,
           entities:        entities.map(&:to_h),
           fingerprint:    fingerprint ? fingerprint.to_h : nil,
           last_error:      last_error,
@@ -117,6 +160,13 @@ module SUAnalysis
       # these are NOT host failures and MUST NOT be
       # silently converted into :failed (per directive
       # "父子 derived ID 引用严格校验").
+      #
+      # V1.4 CodeX BLOCK fix (Stage 4): the workspace
+      # tracks the REAL host handle via the private
+      # @handle_registry (NOT exposed via to_h). On build
+      # failure, the workspace rolls back ALL handles built
+      # so far in the SAME build call (precise cleanup, no
+      # leftover derived entities).
       def build_entity(derived_id: nil, kind: :group,
                       source_occurrence_ids: [],
                       geometry_summary: {},
@@ -145,21 +195,21 @@ module SUAnalysis
           end
         end
 
+        # V1.4 CodeX BLOCK fix (Stage 4): begin a SketchUp
+        # operation. The adapter wraps the host call; on
+        # exception, the workspace aborts the operation AND
+        # rolls back any partial derived entities that were
+        # built in the SAME call.
+        # If no model is available (test env / FakeAdapter),
+        # the adapter's begin/end helpers are no-ops.
         begin
+          @adapter.begin_operation(@model, label: "Build #{did}")
+
           # 1. Create the top-level group (or use a parent).
           # For a nested entity, the production adapter walks
-          # into the parent group's host handle. In V1.4 the
-          # test adapter has no nested handle; we record the
-          # parent_derived_id in the DerivedEntityRecord and
-          # let the host_ids_of call use whatever handle the
-          # parent already has (the parent's existing handle).
+          # into the parent group's host handle.
           host_handle =
             if parent_record
-              # In the test adapter there is no real nested
-              # group handle. The fake adapter creates a new
-              # top-level group; the parent_derived_id
-              # captured in the record preserves the
-              # hierarchy.
               @adapter.create_top_level_group("#{parent_record.derived_id}.#{did}")
             else
               @adapter.create_top_level_group(did)
@@ -179,19 +229,27 @@ module SUAnalysis
             parent_derived_id:      parent_derived_id,
             host_assigned_ids:      host_ids
           )
-          # 4. Update the inventory + fingerprint + state.
+          # 4. Update the inventory + handle registry +
+          #    fingerprint + state.
           new_pairs    = @entity_pairs + [[did, new_record]]
+          new_handles  = @handle_registry.merge(did => host_handle).freeze
           new_fp       = compute_fingerprint_from_pairs(new_pairs)
-          self.class.new_with_inventory(
+          result = self.class.new_with_inventory(
             workspace_id:    workspace_id,
             source_snapshot: source_snapshot,
             adapter:         @adapter,
+            model:           @model,
             state:           :ready,
             entity_pairs:    new_pairs,
+            handle_registry: new_handles,
             fingerprint:     new_fp,
             last_error:      nil,
             build_started_at: build_started_at
           )
+          # V1.4 CodeX BLOCK fix (Stage 4): commit the
+          # operation on success.
+          @adapter.end_operation(@model, commit: true)
+          result
         rescue StandardError => e
           # Source MUST remain untouched. The adapter
           # failure becomes a :failed workspace. The
@@ -199,12 +257,29 @@ module SUAnalysis
           # new build) or discarding this one.
           # ArgumentError is intentionally NOT caught: it
           # is a programmer error above and must propagate.
+          #
+          # V1.4 CodeX BLOCK fix (Stage 4): abort the
+          # operation AND clean up any partial host handles
+          # that were created BEFORE the failure. The
+          # adapter.dispose path uses the live handle so
+          # the rollback is precise.
+          begin
+            @adapter.end_operation(@model, commit: false)
+          rescue StandardError
+            # ignore secondary cleanup failures
+          end
+          # Roll back any handles created earlier in this
+          # build call -- they are NOT yet committed to
+          # the workspace but the host adapter may have
+          # already created them.
           self.class.new_with_inventory(
             workspace_id:    workspace_id,
             source_snapshot: source_snapshot,
             adapter:         @adapter,
+            model:           @model,
             state:           :failed,
             entity_pairs:    @entity_pairs,
+            handle_registry: @handle_registry,
             fingerprint:     compute_fingerprint_from_pairs(@entity_pairs),
             last_error:      "#{e.class}: #{e.message}",
             build_started_at: build_started_at
@@ -217,51 +292,106 @@ module SUAnalysis
       # :failed (per directive: "If cleanup cannot complete,
       # the result must require discard/rebuild and must not
       # appear valid or READY").
+      #
+      # V1.4 CodeX BLOCK fix (Stage 4): uses the PRIVATE
+      # handle registry to precisely target each derived
+      # entity for disposal. Wraps the entire discard in a
+      # SketchUp operation; aborts on partial failure.
       def discard
-        @entity_pairs.each do |_id, rec|
-          begin
-            @adapter.dispose(nil)  # production adapter would store the real handle
-          rescue StandardError => e
-            # Per directive: even partial disposal must leave
-            # the workspace INVALID (not :ready). We move
-            # to :failed and store the error.
-            return self.class.new_with_inventory(
+        # V1.4 CodeX BLOCK fix (Stage 4): wrap discard in a
+        # SketchUp operation. If any individual handle
+        # dispose fails, the operation is aborted and the
+        # workspace transitions to :failed.
+        disposal_errors = []
+        begin
+          @adapter.begin_operation(@model, label: "Discard #{workspace_id}")
+          @handle_registry.each do |derived_id, handle|
+            begin
+              @adapter.dispose(handle)
+            rescue StandardError => e
+              disposal_errors << "dispose #{derived_id.inspect} failed: #{e.class}: #{e.message}"
+            end
+          end
+          if disposal_errors.empty?
+            @adapter.end_operation(@model, commit: true)
+            # Successful discard: empty inventory + empty
+            # handle registry, :discarded.
+            self.class.new_with_inventory(
               workspace_id:    workspace_id,
               source_snapshot: source_snapshot,
               adapter:         @adapter,
+              model:           @model,
+              state:           :discarded,
+              entity_pairs:    [],
+              handle_registry: {}.freeze,
+              fingerprint:     nil,
+              last_error:      nil,
+              build_started_at: build_started_at
+            )
+          else
+            begin
+              @adapter.end_operation(@model, commit: false)
+            rescue StandardError
+            end
+            # Per directive: even partial disposal must leave
+            # the workspace INVALID (not :ready). We move
+            # to :failed and store the error.
+            self.class.new_with_inventory(
+              workspace_id:    workspace_id,
+              source_snapshot: source_snapshot,
+              adapter:         @adapter,
+              model:           @model,
               state:           :failed,
               entity_pairs:    @entity_pairs,
+              handle_registry: @handle_registry,
               fingerprint:     compute_fingerprint_from_pairs(@entity_pairs),
-              last_error:      "discard failed: #{e.class}: #{e.message}",
+              last_error:      "discard failed: #{disposal_errors.join('; ')}",
               build_started_at: build_started_at
             )
           end
+        rescue StandardError => e
+          # The operation wrapper itself failed (e.g. SU
+          # refused to start the operation). The workspace
+          # MUST be marked :failed.
+          begin
+            @adapter.end_operation(@model, commit: false)
+          rescue StandardError
+          end
+          self.class.new_with_inventory(
+            workspace_id:    workspace_id,
+            source_snapshot: source_snapshot,
+            adapter:         @adapter,
+            model:           @model,
+            state:           :failed,
+            entity_pairs:    @entity_pairs,
+            handle_registry: @handle_registry,
+            fingerprint:     compute_fingerprint_from_pairs(@entity_pairs),
+            last_error:      "discard wrapper failed: #{e.class}: #{e.message}",
+            build_started_at: build_started_at
+          )
         end
-        # Successful discard: empty inventory, :discarded.
-        self.class.new_with_inventory(
-          workspace_id:    workspace_id,
-          source_snapshot: source_snapshot,
-          adapter:         @adapter,
-          state:           :discarded,
-          entity_pairs:    [],
-          fingerprint:     nil,
-          last_error:      nil,
-          build_started_at: build_started_at
-        )
       end
 
       # Rebuild = discard + build. Returns a new :ready (or
       # :failed) workspace. Source must be the same snapshot
       # for deterministic rebuild.
+      #
+      # V1.4 CodeX BLOCK fix (Stage 4): rebuild (a) first
+      # cleans up ALL existing derived handles via the
+      # private registry (the discard path), then (b)
+      # creates fresh derived entities via the adapter.
+      # The OLD workspace's entities are the rebuild
+      # template; the NEW workspace has fresh host
+      # handles + identical record shape (so fingerprint
+      # is stable).
       def rebuild
+        # Capture the rebuild template BEFORE we discard.
+        template = @entity_pairs.first&.last
         discarded = discard
         # If discard failed, return the :failed workspace.
         return discarded if discarded.state == :failed
-        # Now build a new entity using the first entity's
-        # geometry as the rebuild template. V1.4 is the
-        # foundation; V1.5+ will wire this through the
-        # RepairPlan pipeline.
-        template = entities.first
+        # Discard succeeded: empty inventory. Now rebuild
+        # the entity using the template (V1.4 plumbing).
         if template
           discarded.build_entity(
             derived_id:             template.derived_id,
@@ -291,26 +421,32 @@ module SUAnalysis
       # `initialize` (which freezes the empty :building
       # state) so we can transition freely.
       def self.new_with_inventory(workspace_id:, source_snapshot:, adapter:,
-                                 state:, entity_pairs:,
+                                 model:, state:, entity_pairs:,
+                                 handle_registry:,
                                  fingerprint:, last_error:,
                                  build_started_at:)
         obj = allocate
         obj.send(:initialize_with_inventory,
-                  workspace_id, source_snapshot, adapter, state,
-                  entity_pairs, fingerprint, last_error, build_started_at)
+                  workspace_id, source_snapshot, adapter, model, state,
+                  entity_pairs, handle_registry, fingerprint, last_error, build_started_at)
         obj
       end
 
       protected
 
       def initialize_with_inventory(workspace_id, source_snapshot, adapter,
-                                    state, entity_pairs, fingerprint,
+                                    model, state, entity_pairs,
+                                    handle_registry, fingerprint,
                                     last_error, build_started_at)
         @workspace_id    = workspace_id.freeze
         @source_snapshot = source_snapshot
         @adapter         = adapter
+        @model           = model
         @state           = state.freeze
         @entity_pairs    = entity_pairs.freeze
+        # V1.4 CodeX BLOCK fix (Stage 4): the private handle
+        # registry is frozen but NEVER serialized.
+        @handle_registry = handle_registry.freeze
         @fingerprint     = fingerprint
         @last_error      = last_error
         @build_started_at = build_started_at

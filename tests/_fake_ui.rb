@@ -128,16 +128,109 @@ module FakeUI
   end
 
   # FakeModel with a selection (FakeSelection) and an active_view.
+  # V1.4 (per directive 030 CodeX BLOCK fix Stage 4): the fake
+  # model now ALSO supports SketchUp operations
+  # (start_operation / commit_operation / abort_operation) and
+  # an active_entities collection that emulates
+  # Sketchup::Entities#add_group + erase!. This is what makes
+  # the production-adapter call chain exercisable from tests
+  # WITHOUT faking the operation boundary. Tests that need
+  # to verify the production contract (dialog callback ->
+  # WorkingModeRunner -> workspace.build_entity -> real-adapter
+  # contract) use this FakeModel via the controller.
   class FakeModel
+    # A sketchup::Group-like entity in active_entities.
+    class FakeGroup
+      attr_reader :name, :entities, :entityID
+      attr_accessor :persistent_id
+      def initialize(name, id_counter)
+        @name = name.to_s
+        @entityID = id_counter
+        @persistent_id = id_counter
+        @entities = FakeEntities.new(@entityID)
+        @valid = true
+      end
+      def valid?
+        @valid == true
+      end
+      def erase!
+        @valid = false
+        @entities.invalidate_all!
+        true
+      end
+    end
+    class FakeEntities
+      attr_reader :groups, :next_id, :faces
+      def initialize(parent_id = 0)
+        @groups = []
+        @faces = []
+        @next_id = (parent_id * 1000) + 1
+        @face_id = 0
+      end
+      def add_group(name)
+        @next_id += 1
+        g = FakeGroup.new(name, @next_id)
+        @groups << g
+        g
+      end
+      def add_face(points)
+        # Mimics Sketchup::Entities#add_face: returns a face
+        # handle (a plain Object exposing the minimum face API).
+        @face_id += 1
+        face = Object.new
+        face.define_singleton_method(:entityID) { @face_id }
+        face.define_singleton_method(:persistent_id) { @face_id }
+        face.define_singleton_method(:points) { Array(points).dup }
+        face.define_singleton_method(:valid?) { true }
+        @faces << face
+        face
+      end
+      def invalidate_all!
+        @groups.each(&:erase!)
+      end
+      def valid_count
+        @groups.count(&:valid?)
+      end
+    end
+
+    attr_reader :selection, :active_view, :active_entities,
+                :operation_log, :open_operations
+
     def initialize
       @selection = FakeSelection.new
       @active_view = FakeView.new
+      @active_entities = FakeEntities.new
+      # V1.4: operation wrapping. Each start_operation opens a
+      # new frame; commit/abort closes it. If a commit happens
+      # with no matching open frame, the model raises (mirrors
+      # the real SU behavior of "operation stack underflow").
+      @operation_log = []
+      @open_operations = 0
     end
-    def selection
-      @selection
+
+    def start_operation(label, disable_ui = false)
+      @operation_log << { kind: :start, label: label.to_s, disable_ui: disable_ui }
+      @open_operations += 1
+      true
     end
-    def active_view
-      @active_view
+
+    def commit_operation
+      raise 'SU commit_operation called with no matching start_operation' if @open_operations <= 0
+      @operation_log << { kind: :commit }
+      @open_operations -= 1
+      true
+    end
+
+    def abort_operation
+      raise 'SU abort_operation called with no matching start_operation' if @open_operations <= 0
+      # Per directive: an aborted operation MUST roll back any
+      # entities created within the operation. We emulate this
+      # by tracking the groups created since the last
+      # commit/abort and invalidating them.
+      invalidated = @active_entities.invalidate_all!
+      @operation_log << { kind: :abort, invalidated: invalidated }
+      @open_operations -= 1
+      true
     end
   end
 

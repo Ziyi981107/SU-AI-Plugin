@@ -220,7 +220,7 @@ end
 test 'DerivedGeometryWorkspace: initial state is :building with no entities' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   assert_equal :building, ws.state
   assert_equal 0,         ws.entities.length
   refute ws.ready?, 'empty workspace must NOT be :ready'
@@ -229,7 +229,7 @@ end
 test 'DerivedGeometryWorkspace: build_entity -> :ready with one entity' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(
     derived_id:            'der-edge-1',
     kind:                  :edge,
@@ -247,7 +247,7 @@ end
 test 'DerivedGeometryWorkspace: build_entity provenance -- derived_id maps to source_occurrence_ids' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(
     derived_id:            'der-edge-1',
     kind:                  :edge,
@@ -266,7 +266,7 @@ test 'DerivedGeometryWorkspace: build_entity failure -> :failed (source untouche
     end
   end
   a  = FailingAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   assert_equal :failed, ws1.state
   assert !ws1.ready?, ':failed workspace must NOT be :ready'
@@ -283,7 +283,7 @@ end
 test 'DerivedGeometryWorkspace: discard -> :discarded with empty inventory' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   ws2 = ws1.discard
   assert_equal :discarded, ws2.state
@@ -301,7 +301,7 @@ test 'DerivedGeometryWorkspace: discard failure -> :failed (per directive)' do
     end
   end
   a  = FailingDisposeAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   ws2 = ws1.discard
   assert_equal :failed, ws2.state, 'discard failure MUST transition to :failed'
@@ -312,7 +312,7 @@ end
 test 'DerivedGeometryWorkspace: rebuild -> new :ready workspace with same fingerprint' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(
     derived_id:            'd1',
     kind:                  :edge,
@@ -339,7 +339,7 @@ test 'DerivedGeometryWorkspace: rebuild when discard failed returns :failed' do
     def dispose(_handle); raise StandardError, 'dispose failed'; end
   end
   a  = FailingDisposeAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   ws2 = ws1.rebuild
   assert_equal :failed, ws2.state, 'rebuild with failing discard MUST be :failed'
@@ -350,7 +350,7 @@ test 'DerivedGeometryWorkspace: source_occurrence_ids are preserved through buil
   # is preserved across rebuilds.
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(
     derived_id:            'd1',
     kind:                  :edge,
@@ -364,7 +364,7 @@ end
 test 'DerivedGeometryWorkspace: nested derived entity (parent_derived_id) builds under parent' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'parent', kind: :group)
   ws2 = ws1.build_entity(
     derived_id:        'child',
@@ -387,7 +387,7 @@ test 'DerivedGeometryWorkspace: source snapshot is NEVER mutated by any operatio
   src = v14_source_snapshot
   src_digest_before = src.to_digest
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   ws1.discard
   ws1.build_entity(derived_id: 'd2', kind: :face)
@@ -399,7 +399,7 @@ end
 test 'DerivedGeometryWorkspace: build_entity with parent_derived_id not found raises' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   # No parent entity has been built yet.
   raised = false
   begin
@@ -422,7 +422,7 @@ end
 test 'DerivedGeometryWorkspace: top-level + entities are deeply frozen' do
   src = v14_source_snapshot
   a  = FakeDerivedWorkspaceAdapter.new
-  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws1 = ws0.build_entity(derived_id: 'd1', kind: :group)
   assert ws1.frozen?, 'top-level must be frozen'
   # entities returns a new Array; the underlying inventory
@@ -443,7 +443,7 @@ test 'Risk test 1a — source fingerprint identical after SUCCESSFUL create' do
   src_fp_before = src.fingerprint
   src_digest_before = src.to_digest
   a  = FakeDerivedWorkspaceAdapter.new
-  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws = ws.build_entity(derived_id: 'd1', kind: :group)
   assert_equal :ready, ws.state
   assert_equal src_fp_before, src.fingerprint,
@@ -456,7 +456,7 @@ test 'Risk test 1b — source fingerprint identical after DISCARD' do
   src = v14_source_snapshot
   src_fp_before = src.fingerprint
   a  = FakeDerivedWorkspaceAdapter.new
-  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws = ws.build_entity(derived_id: 'd1', kind: :group)
   ws = ws.discard
   assert_equal :discarded, ws.state
@@ -468,7 +468,7 @@ test 'Risk test 1c — source fingerprint identical after REBUILD' do
   src = v14_source_snapshot
   src_fp_before = src.fingerprint
   a  = FakeDerivedWorkspaceAdapter.new
-  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a)
+  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: a, model: nil)
   ws = ws.build_entity(derived_id: 'd1', kind: :group)
   ws = ws.rebuild
   assert_equal :ready, ws.state

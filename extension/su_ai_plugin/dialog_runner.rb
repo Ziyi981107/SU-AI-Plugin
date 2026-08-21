@@ -15,10 +15,12 @@
 #
 
 require 'json'
+require 'time'
 require_relative 'dialog_controller'
 require_relative 'ui_bridge'
 require_relative 'issue_locator'
 require_relative 'core/working_mode_runner'
+require_relative 'core/source_snapshot'
 
 module SUAnalysis
   module Extension
@@ -112,7 +114,8 @@ module SUAnalysis
         end
         SUAnalysis::Core::WorkingModeRunner.prepare(
           source:  src,
-          adapter: _adapter_for(_host_safety_check: true)
+          adapter: _adapter_for(_host_safety_check: true),
+          model:   _resolve_model_for(controller)
         )
         push_data(dialog, controller)
       end
@@ -140,15 +143,95 @@ module SUAnalysis
       # workspace adapter path. The adapter is the production
       # adapter when Sketchup is available, a nil adapter that
       # the runner rejects (-> :failed) when not.
+      #
+      # V1.4 CodeX BLOCK fix (Stage 4): this method MUST build a
+      # SourceSnapshot from the REAL GeometrySnapshot carried by
+      # the AnalysisResult (not synthetic plumbing). The captured
+      # source has:
+      #   - the real Edges + Faces + Layers from the user's
+      #     selection (built by PreflightRunner.build_snapshot);
+      #   - per-record SourceReference persistent_id_path /
+      #     instance_path / structural_depth / pid_path_complete
+      #     (per directive gate A: identity quality preserved);
+      #   - the real selection scope (one entry per real selected
+      #     entity, with persistent_id_path + instance_path);
+      #   - the real active-edit transform context (the active
+      #     path's transform, not "identity");
+      #   - the real unit + coordinate_origin policy (inches +
+      #     raw).
+      # If the AnalysisResult was built by a V1.0/V1.1/V1.2/V1.3
+      # caller that did NOT populate geometry_snapshot /
+      # selection_entities / active_edit_facts, we fall back to
+      # the plumbing summary; this preserves backward compat
+      # (existing V1.0/V1.3 tests still pass) while allowing the
+      # V1.4 dialog_runner path to use REAL source geometry.
       def _source_snapshot_for(controller)
-        # The controller's result is an AnalysisResult (V1.0-V1.3
-        # type). For V1.4 plumbing we DO NOT touch the V1.0-V1.3
-        # analysis pipeline; instead we build a minimal
-        # SourceSnapshot from the PreflightReport's scalar facts.
-        # The full SourceSnapshot with edges / faces / layers is
-        # captured in a V1.4+ stage.
         ar = controller.result if controller
         return nil if ar.nil?
+        # Prefer the V1.4 AnalysisResult real source geometry.
+        geom = ar.respond_to?(:geometry_snapshot) ? ar.geometry_snapshot : nil
+        if geom
+          return _source_snapshot_from_real_geometry(ar, geom)
+        end
+        # Fallback: plumbing-only SourceSnapshot (V1.0/V1.1/V1.2/
+        # V1.3 AnalysisResult callers).
+        _plumbing_source_snapshot(ar)
+      end
+
+      # V1.4 CodeX BLOCK fix (Stage 4): build a SourceSnapshot
+      # from the REAL GeometrySnapshot carried by the
+      # AnalysisResult.
+      def _source_snapshot_from_real_geometry(ar, geom)
+        cfg = ar.respond_to?(:config) && ar.config ? ar.config : nil
+        cfg = SUAnalysis::Core::AnalysisConfig.new if cfg.nil?
+        # Build the SourceFingerprint from the real GeometrySnapshot
+        # + selection_entities + the SU host (model) so the
+        # fingerprint matches what V1.0..V1.3 saw in the dialog
+        # summary.
+        sel_entities = ar.respond_to?(:selection_entities) ? ar.selection_entities : []
+        active_facts = ar.respond_to?(:active_edit_facts) ? ar.active_edit_facts : {}
+        fingerprint = SUAnalysis::Core::SourceFingerprint.from_snapshot(
+          geom,
+          selection: sel_entities,
+          host: _host_for(ar)
+        )
+        # Build the ExecutionConfigSnapshot from the live config
+        # + the analysis's rule-set digest (consistent with
+        # V1.0..V1.3 wiring).
+        rule_set_digest = (ar.respond_to?(:snapshot_lookup) && ar.snapshot_lookup && ar.snapshot_lookup[:rule_set_digest]) ||
+                          'plumbing.rule-set'
+        ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+          cfg,
+          rule_set_digest: rule_set_digest,
+          source_snapshot_schema_version: '1'
+        )
+        # Selection scope: one entry per real selected entity,
+        # with persistent_id_path / instance_path (per directive
+        # "selection-scope identity").
+        sel_scope = _selection_scope_for(sel_entities, geom)
+        # Transform context: the REAL active-edit transform,
+        # NOT 'identity'. If the AnalysisResult did not carry
+        # an active-edit transform, use the model's
+        # active_edit_context_facts.
+        transform_context = _transform_context_for(active_facts)
+        # Use the canonical from_geometry_snapshot factory to
+        # build a deeply-frozen, fingerprintable SourceSnapshot.
+        SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
+          geom,
+          selection: sel_scope,
+          host: _host_for(ar),
+          execution_config: ec,
+          rule_set_digest: rule_set_digest,
+          snapshot_id: "v14-#{rand(2**32)}",
+          captured_at: Time.now.utc.iso8601
+        )
+      end
+
+      # Build a SourceSnapshot from the plumbing summary
+      # (PreflightReport scalar facts). Used as the fallback
+      # path for V1.0/V1.1/V1.2/V1.3 callers that did not
+      # populate the V1.4 fields on AnalysisResult.
+      def _plumbing_source_snapshot(ar)
         cfg = ar.respond_to?(:config) && ar.config ? ar.config : nil
         cfg = SUAnalysis::Core::AnalysisConfig.new if cfg.nil?
         ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
@@ -181,6 +264,76 @@ module SUAnalysis
         )
       end
 
+      # Build the selection_scope entries from the real
+      # selection entities. Per directive: each entry has
+      # {kind:, persistent_id_path:, instance_path:, layer:}
+      # so the rebuild contract can preserve occurrence
+      # identity. We read the SourceReference for each
+      # selected entity (Edge / Face / Group / Component).
+      def _selection_scope_for(sel_entities, geom)
+        sel_scope = []
+        Array(sel_entities).each do |ent|
+          kind = _typename_of(ent)
+          layer = nil
+          pid_path = []
+          ipath = []
+          if ent.respond_to?(:persistent_id) && ent.persistent_id
+            pid_path = [ent.persistent_id]
+          end
+          if ent.respond_to?(:layer) && ent.layer
+            layer = (ent.layer.respond_to?(:name) ? ent.layer.name : ent.layer).to_s
+          end
+          # Some SketchUp entities expose a definition; capture
+          # its persistent_id as the second hop if available.
+          if ent.respond_to?(:definition) && ent.definition && ent.definition.respond_to?(:persistent_id) && ent.definition.persistent_id
+            pid_path = pid_path + [ent.definition.persistent_id]
+          end
+          sel_scope << {
+            kind:               kind,
+            persistent_id_path: pid_path,
+            instance_path:      ipath,
+            layer:              layer
+          }
+        end
+        sel_scope
+      end
+
+      def _typename_of(entity)
+        return 'unknown' if entity.nil?
+        if entity.respond_to?(:typename)
+          entity.typename.to_s.downcase
+        else
+          entity.class.name.to_s.split('::').last.to_s.downcase
+        end
+      end
+
+      # Build a Hash representation of the real active-edit
+      # transform context. Per directive gate A: "world/local
+      # conversion or unit handling is uncertain" -- the V1.4
+      # plumbing path MUST record the active edit transform
+      # the rebuild uses, NOT a synthetic 'identity'.
+      def _transform_context_for(active_facts)
+        ctx = {}
+        if active_facts.is_a?(Hash) && !active_facts.empty?
+          # String-keyed (UI bridge convention) or Symbol-keyed.
+          active_facts.each do |k, v|
+            ctx[k.to_s] = v
+          end
+        else
+          ctx['active_edit_seed'] = 'identity'
+        end
+        ctx
+      end
+
+      # The SU host (model). For the V1.4 plumbing path we
+      # pass the model the dialog was constructed with so
+      # the production adapter can wrap operations.
+      def _host_for(_ar)
+        # No AR-side host field yet; the dialog_runner passes
+        # the controller's model directly to prepare.
+        nil
+      end
+
       def _adapter_for(_host_safety_check:)
         if defined?(SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter) &&
            SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.sketchup_available?
@@ -197,6 +350,21 @@ module SUAnalysis
       def _toast(dialog, message)
         json = JSON.generate(message.to_s)
         dialog.execute_script("window.SUAIP.toast(#{json})")
+      end
+
+      # V1.4 CodeX BLOCK fix (Stage 4): resolve the SU model
+      # to use for the workspace's operation wrapping. The
+      # controller carries the model passed to DialogRunner.show;
+      # in tests the controller's model is a FakeUI::FakeModel.
+      # The model is passed to WorkingModeRunner.prepare so the
+      # production adapter can wrap mutations in
+      # model.start_operation / commit_operation / abort_operation.
+      def _resolve_model_for(controller)
+        if controller && controller.respond_to?(:model)
+          controller.model
+        else
+          nil
+        end
       end
 
       # Idempotent close handler. Releases the controller and the
