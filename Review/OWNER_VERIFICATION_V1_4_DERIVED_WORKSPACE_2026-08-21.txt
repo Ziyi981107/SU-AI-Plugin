@@ -278,19 +278,33 @@ Prepare. The V1.4 plumbing path supports this via the
 Ruby console (the production adapter's `begin_operation`
 is the failure surface).
 
-The snippet below uses ABSOLUTE PATHS (paste-runnable)
-and an `ensure` block to RESTORE the original method
-after the test -- so V14-9 and V14-10 are NOT polluted
-by the monkey-patch.
+Per BLOCK-R3-3: the snippet uses a ONE-SOT SELF-RESTORING
+patch. The FIRST `begin_operation` call (the one triggered
+by the click) restores the original method BEFORE raising
+the injected failure. This guarantees:
+
+  - The patch is INSTALLED BEFORE the Owner click (a
+    probe call would raise; the `instance_method` is
+    NOT the original).
+  - The click triggers the injected failure exactly
+    ONCE (one-shot).
+  - AFTER the click, the patch is GONE (V14-9 and V14-10
+    run against the original production adapter; no
+    pollution).
+  - NO `begin / ensure` block is required (the previous
+    `ensure` pattern restored IMMEDIATELY, before the
+    Owner click could happen -- BLOCK-R3-3 forbids that).
 
 ======================================================================
-PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8)
+PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT)
 ======================================================================
 
   # V14-8: inject a host failure into the production
-  # adapter's begin_operation. The Prepare call will fail
-  # at the SU operation boundary; the workspace transitions
-  # to :failed; the dialog shows it as the state.
+  # adapter's begin_operation. ONE-SOT self-restoring
+  # patch (BLOCK-R3-3): the FIRST begin_operation call
+  # restores the original method AND raises the injected
+  # failure. After that, V14-9 and V14-10 run against
+  # the original production adapter.
   #
   # ABSOLUTE PATHS -- replace `D:/Projects/SU-AI-Plugin`
   # with the actual project root on your machine. The
@@ -300,55 +314,48 @@ PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8)
   # the rbz).
   require 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
 
-  # Save the original begin_operation so the ensure block
-  # can restore it.
+  # Capture the original begin_operation.
   ADAPTER  = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
   ORIGINAL = ADAPTER.instance_method(:begin_operation)
 
-  begin
-    # Monkey-patch the production adapter's begin_operation
-    # to raise on the next call. The next Prepare's first
-    # entity build will fail at begin_operation.
-    ADAPTER.class_eval do
-      define_method(:begin_operation) do |_model, label:|
-        raise StandardError, 'v14-gate-2-injected-failure'
+  # Install the ONE-SOT self-restoring patch.
+  ADAPTER.class_eval do
+    define_method(:begin_operation) do |_model, label:|
+      # RESTORE FIRST so subsequent calls (V14-9, V14-10,
+      # anything after this click) run the ORIGINAL method.
+      ADAPTER.class_eval do
+        define_method(:begin_operation, ORIGINAL)
       end
+      # THEN raise the injected failure (one-shot).
+      raise StandardError, 'v14-gate-2-injected-failure'
     end
-
-    # At this point, a subsequent Prepare will fail.
-    # Click "Discard" first (to clear any current
-    # workspace), then click "Prepare". Observe:
-    #   - dialog: state = "failed", last_error visible
-    #   - model: NO new SU-AI-Derived-* groups
-    #   - ruby: no exception escapes
-
-    # Wait for the Owner to do the click. There is no
-    # built-in SketchUp Ruby sleep that yields to the UI;
-    # leave this snippet in the console and click in the
-    # dialog. When the click has run, the test is complete.
-  ensure
-    # RESTORE: re-define begin_operation with the original
-    # implementation. After this line, V14-9 and V14-10
-    # run against the original production adapter -- the
-    # monkey-patch is GONE.
-    ADAPTER.class_eval do
-      define_method(:begin_operation, ORIGINAL)
-    end
-    puts 'V14-8: monkey-patch RESTORED. begin_operation is back to the production implementation.'
   end
 
-  # If you skip the `ensure` block (e.g. close the Ruby
-  # Console before it runs), the restore does NOT happen.
-  # In that case you MUST restart SU + reload the
-  # extension before running V14-9 / V14-10. The recovery
-  # script below is the explicit restore:
+  # At this point, the patch IS installed. Probe verification
+  # (without triggering the injection): the instance_method
+  # is NOT the original. You can check this in Ruby:
+  #   SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
+  #     .instance_method(:begin_operation) != ORIGINAL
+  #     # => true (patch installed)
 
-  # V14-8 RECOVERY (only if the ensure block was skipped):
-  #   1. Close SketchUp entirely.
-  #   2. Restart SketchUp.
-  #   3. Re-install the SU-AI-Plugin.rbz (or re-load the
-  #      extension). The monkey-patch is gone because
-  #      SketchUp reloaded the file.
+  # Click "Discard" first (to clear any current workspace),
+  # then click "Prepare". Observe:
+  #   - dialog: state = "failed", last_error visible
+  #   - model: NO new SU-AI-Derived-* groups
+  #   - ruby: no exception escapes (the workspace caught it)
+  # The click triggers the injected failure ONCE. After the
+  # click, the patch is GONE -- V14-9 and V14-10 will run
+  # against the original method.
+
+  # Verification step (paste AFTER clicking Prepare):
+  ADAPTER.instance_method(:begin_operation) == ORIGINAL
+  # => true (patch has been restored by the one-shot)
+
+  # If you skip the verification step, the patch is still
+  # gone -- the one-shot self-restoring guarantee holds.
+  # If you somehow close SU before the click happens, the
+  # patch leaks to the NEXT SketchUp session -- in that
+  # rare case, restart SU + re-install the rbz.
 
 ======================================================================
 EXPECTED OUTCOMES (V14-8)
@@ -382,6 +389,13 @@ the workspace is incorrectly marked :ready, mark this
 step FAIL -- BLOCK 4 of the rework regression (the
 abort_operation path failed to roll back partial
 entities).
+
+After the click, verify the patch is gone:
+
+  ADAPTER.instance_method(:begin_operation) == ORIGINAL
+  # => MUST be true. If it is false, the patch leaked;
+  # in that case restart SU + re-install the rbz before
+  # running V14-9 / V14-10.
 
 ======================================================================
 STEP V14-9: Undo as an extra safety layer

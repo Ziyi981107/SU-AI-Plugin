@@ -543,6 +543,85 @@ test 'DANGER 8b: Owner V14-8 checklist commands have a recovery path that does N
          'after restore, a NEW adapter instance MUST see the original begin_operation (no pollution into V14-9/V14-10)'
 end
 
+# BLOCK-R3-3 closure test: V14-8 ONE-SHOT SELF-RESTORING
+# patch. The patch is INSTALLED BEFORE the Owner click,
+# raises the injected failure on the FIRST call, AND restores
+# itself on that first call (so subsequent calls -- including
+# V14-9/V14-10 -- run against the original method). The Owner
+# snippet (in the checklist) uses this pattern so the patch
+# is GUARANTEED to NOT leak.
+#
+# Per the BLOCK: the test must prove (a) the patch is installed
+# before any click, (b) the first call actually raises, (c)
+# the patch is restored AFTER the first call (not before --
+# the previous `ensure` pattern restored IMMEDIATELY, before
+# the click could happen).
+test 'BLOCK-R3-3 closure: V14-8 one-shot self-restoring patch is installed BEFORE, raises, restores AFTER' do
+  adapter_class = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
+  original = adapter_class.instance_method(:begin_operation)
+
+  # The V14-8 ONE-SHOT SELF-RESTORING patch: the FIRST call
+  # restores the original method (so V14-9/V14-10 see no patch)
+  # AND raises the injected failure. Subsequent calls run the
+  # ORIGINAL method.
+  raised_first = false
+  adapter_class.class_eval do
+    define_method(:begin_operation) do |_model, label:|
+      # RESTORE FIRST -- so V14-9/V14-10 see no patch.
+      adapter_class.class_eval do
+        define_method(:begin_operation, original)
+      end
+      # THEN raise the injected failure (one-shot).
+      raise StandardError, 'V14-8-injected-once' unless raised_first
+      raised_first = true
+    end
+  end
+
+  # (a) The patch MUST be installed BEFORE any click.
+  # We verify by checking that the instance_method is NOT
+  # the original. This is what makes "is the patch still
+  # installed?" testable without triggering the injection.
+  pre_click_method = adapter_class.instance_method(:begin_operation)
+  refute_equal original, pre_click_method,
+               'patch MUST be installed BEFORE any click (instance_method differs from original)'
+
+  # (b) The first call MUST raise the injected failure.
+  raised_call = false
+  begin
+    adapter_class.new.begin_operation(nil, label: 'first-call')
+  rescue StandardError => e
+    raised_call = true
+    assert_match(/V14-8-injected-once/, e.message,
+                 'first call MUST raise the injected failure (V14-8)')
+  end
+  assert raised_call, 'first call MUST raise (BLOCK-R3-3)'
+
+  # (c) The patch MUST be restored AFTER the first call.
+  post_click_method = adapter_class.instance_method(:begin_operation)
+  assert_equal original, post_click_method,
+               'patch MUST be self-restored AFTER the first call (BLOCK-R3-3)'
+
+  # (d) Subsequent calls MUST NOT raise (V14-9/V14-10 safety).
+  raised_second = false
+  begin
+    adapter_class.new.begin_operation(nil, label: 'second-call')
+  rescue StandardError
+    raised_second = true
+  end
+  refute raised_second,
+         'second call MUST NOT raise (patch self-restored after first call)'
+
+  # (e) The patched method, after restoration, MUST have the
+  # SAME source location as the original (Ruby recreates the
+  # UnboundMethod object on `define_method`, but the source
+  # location is preserved -- this is the strongest behavioral
+  # check we can do without holding the original UnboundMethod
+  # object across `define_method`).
+  restored = adapter_class.instance_method(:begin_operation)
+  assert_equal original.source_location, restored.source_location,
+               'restored method MUST share source_location with the original (true restoration)'
+end
+
 # BLOCK 7-9: Face derivation rejects non-faithful input -> :failed.
 # The current FaceRecord model carries outer_loop_vertex_count
 # (Integer), not a vertex array; the per-vertex faithful
@@ -571,11 +650,24 @@ test 'DANGER 9a: adapter.add_face_to_group rejects Integer vertex (non-Float)' d
   assert raised, 'add_face_to_group MUST reject Integer vertex components (no Float coercion)'
 end
 
-test 'DANGER 9b: source Face with < 3 vertices -> workspace :failed (no fabrication)' do
+test 'DANGER 9b: source Face present BUT V1.4 minimal scope does NOT fail the workspace (no fabrication)' do
+  # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R3-2:
+  # FaceRecord#vertices does not exist on the production
+  # FaceRecord. V1.4 minimal scope ONLY derives Edges
+  # faithfully; source Faces are recorded in the SourceSnapshot
+  # (for layer counts / fingerprint / provenance) but NOT
+  # materialized as derived Face entities. The previous
+  # implementation called FaceRecord#vertices and forced a
+  # :failed transition for any source with a face; that
+  # broke the "Edge-only faithful derivation" contract.
+  # The new behavior: workspace reaches :ready (driven by the
+  # edge-derivation loop) and the face is silently skipped
+  # (no fabrication, no :failed transition).
   v14_reset_everything
   face_class = SUAnalysis::Core::FaceRecord
   # A source Face with outer_loop_vertex_count == 2 (not a
-  # faithful polygon).
+  # faithful polygon). Under the OLD code this would have
+  # forced :failed; under the NEW code it is silently skipped.
   face = face_class.new(
     id: 0,
     layer: 'Layer0',
@@ -587,12 +679,34 @@ test 'DANGER 9b: source Face with < 3 vertices -> workspace :failed (no fabricat
       layer_name: 'Layer0'
     )
   )
+  edge1 = SUAnalysis::Core::EdgeRecord.new(
+    id: 0,
+    source: SUAnalysis::Core::SourceReference.new(
+      entity_id: 12010, persistent_id: 12010, kind: 'edge',
+      persistent_id_path: [12010], instance_path: [],
+      structural_depth: 0, pid_path_complete: true,
+      layer_name: 'Layer0'
+    ),
+    start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+    layer: 'Layer0'
+  )
+  edge2 = SUAnalysis::Core::EdgeRecord.new(
+    id: 1,
+    source: SUAnalysis::Core::SourceReference.new(
+      entity_id: 12011, persistent_id: 12011, kind: 'edge',
+      persistent_id_path: [12011], instance_path: [],
+      structural_depth: 0, pid_path_complete: true,
+      layer_name: 'Layer0'
+    ),
+    start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0],
+    layer: 'Layer0'
+  )
   src = v14_danger_source_with_paths([])
   ec = src.execution_config
-  bad_src = SUAnalysis::Core::SourceSnapshot.new(
-    snapshot_id:       'bad-face-snap',
+  mixed_src = SUAnalysis::Core::SourceSnapshot.new(
+    snapshot_id:       'mixed-edge-face-snap',
     selection_scope:   [],
-    edges:             [],
+    edges:             [edge1, edge2],
     faces:             [face],
     layers:            src.layers,
     vertex_records:    [],
@@ -602,14 +716,167 @@ test 'DANGER 9b: source Face with < 3 vertices -> workspace :failed (no fabricat
     execution_config:  ec,
     fingerprint:       src.fingerprint
   )
-  # Use the FakeDerivedWorkspaceAdapter (no SU needed).
   adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
-  SUAnalysis::Core::WorkingModeRunner.prepare(source: bad_src, adapter: adapter, model: nil)
+  SUAnalysis::Core::WorkingModeRunner.prepare(source: mixed_src, adapter: adapter, model: nil)
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
-  assert_equal 'failed', snap['state'],
-               'non-faithful source face MUST transition the workspace to :failed (no fabrication)'
-  assert_match(/not faithfully representable/, snap['last_error'].to_s,
-               'last_error MUST explain why the face is unsupported')
+  # Workspace MUST reach :ready (driven by the 2 edges),
+  # NOT :failed (no fabrication).
+  assert_equal 'ready', snap['state'],
+               'presence of a source Face MUST NOT force :failed in V1.4 (no fabrication)'
+  assert_equal 2, snap['entity_count'],
+               'entity_count is the derived EDGE count (NOT edges + faces), per BLOCK-R3-2'
+  ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  assert_equal 2, ws.entity_count,
+               'workspace entity_count must equal the derived EDGE count'
+  refute_match(/fabricat|not faithfully/, snap['last_error'].to_s,
+               'no fabrication-related last_error for V1.4 minimal scope')
+end
+
+# BLOCK-R3-2 closure test: closed quadrilateral (4 edges + 1
+# face) Prepare => ready, 4 derived edges, 0 fabricated
+# faces.
+test 'BLOCK-R3-2 closure: closed quadrilateral (4 edges + 1 face) Prepare => ready, 4 derived edges, 0 fabricated faces' do
+  v14_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    Object.const_set(:Sketchup, Module.new) unless Object.const_defined?(:Sketchup)
+    Sketchup.define_singleton_method(:active_model) { model }
+
+    edges = [
+      SUAnalysis::Core::EdgeRecord.new(
+        id: 0,
+        source: SUAnalysis::Core::SourceReference.new(
+          entity_id: 14001, persistent_id: 14001, kind: 'edge',
+          persistent_id_path: [14001], instance_path: [],
+          structural_depth: 0, pid_path_complete: true,
+          layer_name: 'Layer0'
+        ),
+        start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+        layer: 'Layer0'
+      ),
+      SUAnalysis::Core::EdgeRecord.new(
+        id: 1,
+        source: SUAnalysis::Core::SourceReference.new(
+          entity_id: 14002, persistent_id: 14002, kind: 'edge',
+          persistent_id_path: [14002], instance_path: [],
+          structural_depth: 0, pid_path_complete: true,
+          layer_name: 'Layer0'
+        ),
+        start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0],
+        layer: 'Layer0'
+      ),
+      SUAnalysis::Core::EdgeRecord.new(
+        id: 2,
+        source: SUAnalysis::Core::SourceReference.new(
+          entity_id: 14003, persistent_id: 14003, kind: 'edge',
+          persistent_id_path: [14003], instance_path: [],
+          structural_depth: 0, pid_path_complete: true,
+          layer_name: 'Layer0'
+        ),
+        start_point: [10.0, 5.0, 0.0], end_point: [0.0, 5.0, 0.0],
+        layer: 'Layer0'
+      ),
+      SUAnalysis::Core::EdgeRecord.new(
+        id: 3,
+        source: SUAnalysis::Core::SourceReference.new(
+          entity_id: 14004, persistent_id: 14004, kind: 'edge',
+          persistent_id_path: [14004], instance_path: [],
+          structural_depth: 0, pid_path_complete: true,
+          layer_name: 'Layer0'
+        ),
+        start_point: [0.0, 5.0, 0.0], end_point: [0.0, 0.0, 0.0],
+        layer: 'Layer0'
+      )
+    ]
+    # The face carries a faithful vertex array (4 corner
+    # points) -- but per BLOCK-R3-2 V1.4 minimal scope does
+    # NOT materialize it. We include a FaceRecord to assert
+    # that the presence of a faithful face does NOT trigger
+    # fabrication.
+    face = SUAnalysis::Core::FaceRecord.new(
+      id: 0,
+      layer: 'Layer0',
+      outer_loop_vertex_count: 4,
+      source: SUAnalysis::Core::SourceReference.new(
+        entity_id: 14005, persistent_id: 14005, kind: 'face',
+        persistent_id_path: [14005], instance_path: [],
+        structural_depth: 0, pid_path_complete: true,
+        layer_name: 'Layer0'
+      )
+    )
+    layers = [SUAnalysis::Core::LayerRecord.new(name: 'Layer0')]
+    geom = SUAnalysis::Core::GeometrySnapshot.new(edges: edges, layers: layers)
+    ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+      SUAnalysis::Core::AnalysisConfig.new(profile_name: 'r3-2'),
+      rule_set_digest: 'r3-2.rule-set',
+      source_snapshot_schema_version: '1'
+    )
+    src = SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
+      geom,
+      selection: [],
+      execution_config: ec,
+      rule_set_digest: 'r3-2.rule-set',
+      snapshot_id: 'r3-2-snap',
+      captured_at: '2026-08-22T00:00:00Z'
+    )
+    # Inject the face into the snapshot's faces field.
+    src_with_face = SUAnalysis::Core::SourceSnapshot.new(
+      snapshot_id:       src.snapshot_id,
+      selection_scope:   src.selection_scope,
+      edges:             src.edges,
+      faces:             [face],
+      layers:            src.layers,
+      vertex_records:    src.vertex_records,
+      unit:              src.unit,
+      coordinate_origin: src.coordinate_origin,
+      transform_context: src.transform_context,
+      execution_config:  src.execution_config,
+      fingerprint:       src.fingerprint
+    )
+
+    adapter = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.new
+    SUAnalysis::Core::WorkingModeRunner.prepare(
+      source: src_with_face, adapter: adapter, model: model
+    )
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+    assert_equal 'ready', snap['state'],
+                 'closed quadrilateral Prepare MUST reach :ready (BLOCK-R3-2)'
+    assert_equal 4, snap['entity_count'],
+                 'entity_count MUST be the derived EDGE count (4), NOT edges + faces'
+    ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+    assert_equal 4, ws.entity_count
+    # Verify: 4 derived groups in model.entities (one per edge),
+    # each carrying exactly ONE real Edge with the source's
+    # two world-coordinate endpoints (XYZ identical, no Z lift,
+    # no fabricated Face).
+    assert_equal 4, model.entities.groups.length
+    all_edges = []
+    model.entities.groups.each do |g|
+      ents = g.respond_to?(:entities) ? g.entities : g.children
+      all_edges.concat(ents.edges) if ents.respond_to?(:edges)
+    end
+    assert_equal 4, all_edges.length, '4 derived edges (NOT 5)'
+    # Verify 0 fabricated faces across all derived groups.
+    all_faces = []
+    model.entities.groups.each do |g|
+      ents = g.respond_to?(:entities) ? g.entities : g.children
+      all_faces.concat(ents.faces) if ents.respond_to?(:faces)
+    end
+    assert_equal 0, all_faces.length,
+                 'derived groups MUST carry 0 fabricated faces (BLOCK-R3-2)'
+    # Verify XYZ identity on every derived Edge.
+    src.edges.zip(all_edges).each do |src_edge, derived_edge|
+      assert_equal src_edge.start_point, derived_edge.start,
+                   'derived edge start MUST equal source edge start (XYZ)'
+      assert_equal src_edge.end_point,   derived_edge.end,
+                   'derived edge end MUST equal source edge end (XYZ)'
+    end
+  ensure
+    Object.send(:remove_const, :Sketchup) if Object.const_defined?(:Sketchup)
+    FakeUI.uninstall!
+    v14_reset_everything
+  end
 end
 
 # BLOCK 7-10 (DOM regression): WorkingModeRunner.snapshot.entity_count
@@ -653,4 +920,107 @@ test 'DANGER 10: snapshot.entity_count flows through UIBridge -> JS render summa
   # would be a UI lie.
   refute_nil payload['derivedWorkspace']['entity_count'],
                'snapshot MUST include entity_count for the UI render'
+end
+
+# BLOCK-R3-1 closure test: two no-PID root Edges produce
+# DIFFERENT occurrence IDs (snapshot-local uniqueness), AND
+# rebuild produces the SAME occurrence IDs (snapshot-local
+# determinism). The transient-occ- prefix is preserved; we
+# never collapse to 'transient-occ-unresolved'.
+test 'BLOCK-R3-1 closure: two no-PID root Edges -> DIFFERENT occurrence IDs, SAME after rebuild' do
+  v14_reset_everything
+  # Build two edges WITHOUT persistent_id (root transient
+  # edges with NO usable identity chain). Each edge has a
+  # distinct analysis-local id (record.id).
+  edge1 = SUAnalysis::Core::EdgeRecord.new(
+    id: 0,
+    source: SUAnalysis::Core::SourceReference.new(
+      kind: 'edge', layer_name: 'Layer0',
+      persistent_id_path: [], instance_path: [],
+      structural_depth: 0, pid_path_complete: false
+    ),
+    start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+    layer: 'Layer0'
+  )
+  edge2 = SUAnalysis::Core::EdgeRecord.new(
+    id: 1,
+    source: SUAnalysis::Core::SourceReference.new(
+      kind: 'edge', layer_name: 'Layer0',
+      persistent_id_path: [], instance_path: [],
+      structural_depth: 0, pid_path_complete: false
+    ),
+    start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0],
+    layer: 'Layer0'
+  )
+  layers = [SUAnalysis::Core::LayerRecord.new(name: 'Layer0')]
+  geom = SUAnalysis::Core::GeometrySnapshot.new(edges: [edge1, edge2], layers: layers)
+  ec = SUAnalysis::Core::ExecutionConfigSnapshot.from_live_config(
+    SUAnalysis::Core::AnalysisConfig.new(profile_name: 'r3-1'),
+    rule_set_digest: 'r3-1.rule-set',
+    source_snapshot_schema_version: '1'
+  )
+  src = SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
+    geom, selection: [], execution_config: ec,
+    rule_set_digest: 'r3-1.rule-set',
+    snapshot_id: 'r3-1-snap', captured_at: '2026-08-22T00:00:00Z'
+  )
+  adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
+  # First build: capture the occurrence IDs.
+  SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
+  ws1 = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil ws1
+  occ1 = ws1.entities.map { |rec| rec.source_occurrence_ids.first }
+  assert_equal 2, occ1.length
+  # Per BLOCK-R3-1: the two edges MUST get DIFFERENT
+  # snapshot-local occurrence IDs (no collapse to
+  # 'transient-occ-unresolved').
+  refute_equal occ1[0], occ1[1],
+               'two no-PID root Edges MUST have DIFFERENT occurrence IDs (BLOCK-R3-1)'
+  occ1.each do |id|
+    assert_match(/^transient-occ-edge-\d+$/, id,
+                 'transient occurrence MUST be snapshot-local (kind+id), got ' + id.inspect)
+    refute_equal 'transient-occ-unresolved', id,
+                 'must NOT collapse distinct edges to the same id (BLOCK-R3-1)'
+  end
+  # Capture the deterministic ids for the rebuild check.
+  first_build_ids = occ1.dup
+
+  # Rebuild from the SAME captured source: occurrence IDs
+  # MUST be identical (snapshot-local determinism).
+  SUAnalysis::Core::WorkingModeRunner.discard
+  SUAnalysis::Core::WorkingModeRunner.rebuild
+  ws2 = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil ws2
+  occ2 = ws2.entities.map { |rec| rec.source_occurrence_ids.first }
+  assert_equal first_build_ids, occ2,
+               'rebuild MUST produce the SAME occurrence IDs (snapshot-local determinism)'
+end
+
+# BLOCK-R3-1 extra: NEVER use record.object_id in the id
+# (object_id varies per process; we must use the
+# analysis-local record id, which is part of the captured
+# SourceSnapshot and is stable across rebuilds).
+test 'BLOCK-R3-1: transient occurrence id does NOT use record.object_id (determinism invariant)' do
+  v14_reset_everything
+  edge = SUAnalysis::Core::EdgeRecord.new(
+    id: 42,
+    source: SUAnalysis::Core::SourceReference.new(
+      kind: 'edge', layer_name: 'Layer0',
+      persistent_id_path: [], instance_path: [],
+      structural_depth: 0, pid_path_complete: false
+    ),
+    start_point: [0.0, 0.0, 0.0], end_point: [1.0, 0.0, 0.0],
+    layer: 'Layer0'
+  )
+  occ_id = SUAnalysis::Core::WorkingModeRunner.send(:_source_occurrence_id_for, edge, kind: :edge, array_index: 99)
+  refute_match(/object_id/i, occ_id,
+               'transient occurrence MUST NOT use object_id (BLOCK-R3-1)')
+  refute_match(/\d{16,}/, occ_id,
+               'transient occurrence MUST NOT use the Ruby object_id (16+ digits)')
+  # The id MUST be deterministic (rebuild -> same id).
+  occ_id2 = SUAnalysis::Core::WorkingModeRunner.send(:_source_occurrence_id_for, edge, kind: :edge, array_index: 99)
+  assert_equal occ_id, occ_id2,
+               'transient occurrence id MUST be deterministic (rebuild -> same id)'
+  assert_match(/^transient-occ-edge-42$/, occ_id,
+               'occurrence id MUST be analysis-local (kind + record.id)')
 end

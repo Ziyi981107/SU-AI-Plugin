@@ -223,10 +223,21 @@ module SUAnalysis
         # face fabrication, NO Z lift). The geometry_data is
         # [start_point, end_point] -- the adapter's
         # add_edge_to_group uses add_edges for these.
+        #
+        # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R3-2:
+        # V1.4 minimal scope ONLY derives Edges faithfully.
+        # Source FaceRecords are recorded in the SourceSnapshot
+        # (provenance / fingerprint / layer counts) but are NOT
+        # materialized as derived Face entities. The previous
+        # path called FaceRecord#vertices (which does not
+        # exist on the production FaceRecord) and forced a
+        # :failed transition for any source selection with a
+        # face; that broke the "Edge-only faithful derivation"
+        # contract.
         cur = ws
         edges.each_with_index do |edge, idx|
           did = "der-edge-#{idx}-#{_stable_id_fragment(edge)}"
-          occ_id = _source_occurrence_id_for(edge)
+          occ_id = _source_occurrence_id_for(edge, kind: :edge, array_index: idx)
           geom   = _geometry_summary_for_edge(edge)
           pts    = _edge_endpoints(edge)
           cur = cur.build_entity(
@@ -239,82 +250,99 @@ module SUAnalysis
           break if cur.state == :failed
         end
         return cur if cur.state == :failed
-        # Build one derived entity per source FaceRecord.
-        # V1.4 CodeX BLOCK rework (2026-08-21): if the source
-        # face has < 3 vertices OR the vertices are not
-        # faithful 3-Float Arrays, the face is marked
-        # "unsupported" via the workspace's :failed transition
-        # (no fabrication, no truncation to first 3 points).
-        # The workspace's :failed state + last_error is the
-        # conservative, non-fabricating path.
-        faces.each_with_index do |face, idx|
-          did = "der-face-#{idx}-#{_stable_id_fragment(face)}"
-          occ_id = _source_occurrence_id_for(face)
-          geom   = _geometry_summary_for_face(face)
-          pts    = _face_vertices_for_face(face)
-          if pts.nil?
-            # Source face is NOT faithfully representable;
-            # transition the workspace to :failed.
-            return cur.class.new_with_inventory(
-              workspace_id:    cur.workspace_id,
-              source_snapshot: source,
-              adapter:         cur.instance_variable_get(:@adapter),
-              model:           cur.instance_variable_get(:@model),
-              state:           :failed,
-              entity_pairs:    cur.instance_variable_get(:@entity_pairs),
-              handle_registry: cur.instance_variable_get(:@handle_registry),
-              fingerprint:     cur.compute_fingerprint_from_pairs(cur.instance_variable_get(:@entity_pairs)),
-              last_error:      "source face #{idx} not faithfully representable: vertices must be Array of >= 3 3-Float world points (got #{face.respond_to?(:vertices) ? face.vertices.length : 'no :vertices method'})",
-              build_started_at: cur.build_started_at
-            )
-          end
-          cur = cur.build_entity(
-            derived_id:            did,
-            kind:                  :face,
-            source_occurrence_ids: [occ_id],
-            geometry_summary:      geom,
-            geometry_data:         pts
-          )
-          break if cur.state == :failed
-        end
+        # Per BLOCK-R3-2: V1.4 minimal scope does NOT
+        # materialize derived Faces. The faces are kept in
+        # the SourceSnapshot (for layer counts / fingerprint /
+        # provenance) but the prepare path SKIPS face
+        # materialization so the workspace reaches :ready
+        # without fabricating face geometry.
+        # entity_count == edges.length (NOT edges.length +
+        # faces.length); the Owner checklist + UI text
+        # explicitly call out "derived Edge count" so the
+        # operator is never misled.
         cur
       end
 
       # Derive a snapshot-local occurrence id from a
-      # SourceRecord. V1.4 CodeX BLOCK rework (2026-08-21):
-      # the occurrence id MUST be based on the FULL
-      # persistent_id_path (Array), NOT on the leaf
-      # persistent_id only. Two instances sharing the same
-      # ComponentDefinition have different persistent_id_path
-      # arrays (extra hops up the instance hierarchy), so they
-      # get different snapshot-local occurrence ids.
+      # SourceRecord. V1.4 CodeX BLOCK rework (2026-08-22):
+      # the occurrence id MUST be unique WITHIN one
+      # SourceSnapshot and deterministic across rebuilds of
+      # the same snapshot. We never use `record.object_id`
+      # (which varies per process) and we never return a
+      # unified `transient-occ-unresolved` (which would
+      # collapse distinct occurrences to the same id).
       #
-      # Nested PID incomplete stays transient/unresolved
-      # (prefixed `transient-:`); entityID / object_id are
-      # NEVER used as a substitute for stable identity (per
-      # directive: "snapshot-local occurrence/record
-      # identity that is always unique within one snapshot,
-      # separate from host-resolvable identity").
-      def _source_occurrence_id_for(record)
-        return 'unknown' if record.nil?
+      # Resolution priority:
+      #   1. Stable root: persistent_id_path non-empty AND
+      #      pid_path_complete=true -> "occ-<path>" (full path
+      #      joined by '>').
+      #   2. Transient root: persistent_id_path non-empty but
+      #      pid_path_complete=false -> "transient-occ-<path>"
+      #      (still unique within the snapshot; never claims
+      #      cross-session stability).
+      #   3. No usable host identity chain (root edge with no
+      #      PID, transient leaf, etc.) -> fallback to a
+      #      snapshot-local analysis-local id of the form
+      #      "transient-occ-<kind>-<record.id>" where
+      #      <record.id> is the analysis-local record id
+      #      (EdgeRecord#id / FaceRecord#id). This id is
+      #      unique within the snapshot AND stable across
+      #      rebuilds of the same snapshot (the record's
+      #      analysis-local id is the snapshot-local occurrence
+      #      id, per BLOCK-R3-1). The caller MUST pass
+      #      `kind:` (`:edge` or `:face`) so the id is
+      #      distinguishable across kinds.
+      #
+      # We NEVER use entityID / object_id as a substitute
+      # for stable identity (per BLOCK 2 / BLOCK-R3-1).
+      def _source_occurrence_id_for(record, kind: nil, array_index: nil)
+        if record.nil?
+          return _transient_local_id(:edge, 0, array_index)
+        end
         src = record.respond_to?(:source) ? record.source : nil
         # Prefer the full persistent_id_path.
-        pid_path = (src.respond_to?(:persistent_id_path) && src.persistent_id_path) ? src.persistent_id_path : nil
-        ipath    = (src.respond_to?(:instance_path) && src.instance_path) ? src.instance_path : nil
+        pid_path  = (src.respond_to?(:persistent_id_path) && src.persistent_id_path) ? src.persistent_id_path : nil
+        ipath     = (src.respond_to?(:instance_path)      && src.instance_path)      ? src.instance_path      : nil
         # Identity quality (per directive): if pid_path_complete
         # is false, prefix `transient-:` so the rebuild contract
         # never silently treats transient occurrences as stable.
         complete  = src.respond_to?(:pid_path_complete) ? src.pid_path_complete : true
         quality   = complete ? 'occ' : 'transient-occ'
         if pid_path.is_a?(Array) && !pid_path.empty?
-          "#{quality}-#{pid_path.map(&:to_s).join('>')}"
+          return "#{quality}-#{pid_path.map(&:to_s).join('>')}"
         elsif ipath.is_a?(Array) && !ipath.empty?
-          "#{quality}-ipath-#{ipath.map(&:to_s).join('>')}"
+          return "#{quality}-ipath-#{ipath.map(&:to_s).join('>')}"
+        end
+        # No usable identity chain: snapshot-local fallback.
+        # The record's analysis-local id is the snapshot-local
+        # occurrence id (unique within the snapshot, stable
+        # across rebuilds of the same snapshot).
+        inferred_kind = kind || (record.respond_to?(:vertices) ? :face : :edge)
+        inferred_id   = if record.respond_to?(:id) && record.id
+                          record.id
+                        elsif !array_index.nil?
+                          array_index
+                        else
+                          0
+                        end
+        _transient_local_id(inferred_kind, inferred_id, array_index)
+      end
+
+      # Build a transient snapshot-local occurrence id. The
+      # caller supplies the kind + record id (or array index
+      # if record id is unavailable). The id is unique within
+      # one SourceSnapshot and stable across rebuilds of the
+      # same snapshot.
+      def _transient_local_id(kind, record_id, array_index)
+        kind_str = (kind || :edge).to_s
+        if record_id && record_id > 0
+          "transient-occ-#{kind_str}-#{record_id}"
+        elsif !array_index.nil? && array_index >= 0
+          "transient-occ-#{kind_str}-#{array_index}"
         else
-          # No usable identity chain: stay `transient-:`. NEVER
-          # use entityID / object_id as a substitute for stable
-          # identity (BLOCK 2 forbids it).
-          'transient-occ-unresolved'
+          # Last-resort deterministic id (still snapshot-local,
+          # never claims cross-session stability).
+          "transient-occ-#{kind_str}-0"
         end
       end
 
@@ -359,17 +387,30 @@ module SUAnalysis
       # record so derived_id is stable across rebuilds (per
       # directive: "rebuild is deterministic for identical
       # source + captured config"). The fragment is the FULL
-      # persistent_id_path joined by `>` so two same-definition
+      # persistent_id_path joined by `-` so two same-definition
       # instances get different fragments (per BLOCK 2).
-      def _stable_id_fragment(record)
+      #
+      # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R3-1:
+      # we MUST NEVER use `record.object_id` here (it varies
+      # per process and is NOT deterministic across rebuilds).
+      # When no PID path is available, we use the
+      # analysis-local record id (EdgeRecord#id / FaceRecord#id)
+      # as a snapshot-local fallback -- the record id is part
+      # of the captured SourceSnapshot and is therefore stable
+      # across rebuilds of the same snapshot.
+      def _stable_id_fragment(record, array_index: nil)
         return '0' if record.nil?
         src = record.respond_to?(:source) ? record.source : nil
         if src && src.respond_to?(:persistent_id_path) && src.persistent_id_path.is_a?(Array) && !src.persistent_id_path.empty?
           src.persistent_id_path.map(&:to_s).join('-')
         elsif src && src.respond_to?(:persistent_id) && src.persistent_id
           "pid#{src.persistent_id}"
+        elsif record.respond_to?(:id) && record.id
+          "rec#{record.id}"
+        elsif !array_index.nil?
+          "idx#{array_index}"
         else
-          "x#{record.object_id}"
+          '0'
         end
       end
 
@@ -387,25 +428,6 @@ module SUAnalysis
         return nil unless s.is_a?(Array) && e.is_a?(Array) && s.length == 3 && e.length == 3
         return nil unless _is_finite_point?(s) && _is_finite_point?(e)
         [[s[0], s[1], s[2]], [e[0], e[1], e[2]]]
-      end
-
-      # V1.4 CodeX BLOCK rework (2026-08-21): extract the
-      # source Face's faithful vertex array. The face is
-      # REJECTED (workspace -> :failed) if:
-      #   - the face has < 3 vertices, OR
-      #   - any vertex is not a 3-Float Array, OR
-      #   - any vertex component is not finite.
-      # Per directive: "fabricating a face from non-faithful
-      # input is forbidden" -- we do NOT truncate to first 3
-      # points; we do NOT fill missing vertices with zeros.
-      def _face_vertices_for_face(face)
-        return nil if face.nil?
-        verts = face.respond_to?(:vertices) ? face.vertices : nil
-        return nil unless verts.is_a?(Array) && verts.length >= 3
-        verts.each do |v|
-          return nil unless _is_finite_point?(v)
-        end
-        verts.map { |v| [v[0], v[1], v[2]] }
       end
 
       # Validate a 3-Float Array world-coordinate point.
