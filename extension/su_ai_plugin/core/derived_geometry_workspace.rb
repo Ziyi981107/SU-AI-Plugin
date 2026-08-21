@@ -90,7 +90,8 @@ module SUAnalysis
       end
 
       def entity(derived_id)
-        @entity_pairs.find { |id, _| id == derived_id }&.last
+        hit = @entity_pairs.find { |id, _| id == derived_id }
+        hit.nil? ? nil : hit[1]
       end
 
       def entity_count
@@ -214,9 +215,27 @@ module SUAnalysis
             else
               @adapter.create_top_level_group(did)
             end
-          # 2. Add geometry if requested.
+          # 2. Add geometry if requested. V1.4 CodeX BLOCK
+          # rework (2026-08-21): for kind=:edge we call
+          # add_edge_to_group with the two world-coordinate
+          # endpoints (NO Z lift, NO fabricated 3-point face).
+          # For kind=:face we call add_face_to_group with the
+          # faithful vertex array (>= 3 world-coordinate points,
+          # ALL finite 3-Float Arrays).
           if geometry_data
-            @adapter.add_face_to_group(host_handle, geometry_data)
+            case kind
+            when :edge
+              s = geometry_data[0]
+              e = geometry_data[1]
+              if s.is_a?(Array) && e.is_a?(Array) && s.length == 3 && e.length == 3
+                @adapter.add_edge_to_group(host_handle, s, e)
+              else
+                raise ArgumentError,
+                      "build_entity(kind=:edge) requires geometry_data = [start_point, end_point] (each 3-Float); got #{geometry_data.inspect}"
+              end
+            else
+              @adapter.add_face_to_group(host_handle, geometry_data)
+            end
           end
           # 3. Snapshot host_assigned_ids (EXCLUDED from
           #    rebuild fingerprint).
@@ -386,23 +405,55 @@ module SUAnalysis
       # is stable).
       def rebuild
         # Capture the rebuild template BEFORE we discard.
-        template = @entity_pairs.first&.last
+        first_pair = @entity_pairs.first
+        template   = first_pair.nil? ? nil : first_pair[1]
         discarded = discard
         # If discard failed, return the :failed workspace.
         return discarded if discarded.state == :failed
         # Discard succeeded: empty inventory. Now rebuild
         # the entity using the template (V1.4 plumbing).
-        if template
+        if template.nil?
+          discarded
+        else
+          # V1.4 CodeX BLOCK rework (2026-08-21): rebuild must
+          # call the SAME adapter method the original build
+          # used. For Edges, that is add_edge_to_group (NOT
+          # add_face_to_group -- the previous implementation
+          # passed geometry_summary['points'] to a fabricated
+          # 3-point face, which is BLOCK 1's forbidden
+          # fabrication path).
+          geom_data = if template.kind.to_s == 'edge'
+                        _edge_geometry_data_from_template(template)
+                      else
+                        template.geometry_summary['points']
+                      end
           discarded.build_entity(
             derived_id:             template.derived_id,
             kind:                   template.kind,
             source_occurrence_ids:  template.source_occurrence_ids,
             geometry_summary:       template.geometry_summary,
             parent_derived_id:      template.parent_derived_id,
-            geometry_data:          template.geometry_summary['points']
+            geometry_data:          geom_data
           )
+        end
+      end
+
+      # V1.4 CodeX BLOCK rework (2026-08-21): extract the
+      # original (start, end) endpoints from a template Edge
+      # record's geometry_summary. The build_entity flow
+      # passes this as geometry_data (a 2-element Array of
+      # 3-Float Arrays) to the adapter's add_edge_to_group.
+      # Per directive: derived Edge must use real
+      # add_edges/add_line, faithfully preserving the two
+      # world-coordinate endpoints.
+      def _edge_geometry_data_from_template(template)
+        gs = template.geometry_summary
+        s = gs['start']
+        e = gs['end']
+        if s.is_a?(Array) && e.is_a?(Array) && s.length == 3 && e.length == 3
+          [s, e]
         else
-          discarded
+          nil
         end
       end
 

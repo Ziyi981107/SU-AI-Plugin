@@ -156,9 +156,9 @@ test 'V14 production call chain: prepare creates REAL derived groups via FakeUI:
   v14_install_fake_su(model)
 
   # Use the PRODUCTION adapter (not FakeDerivedWorkspaceAdapter).
-  # The production adapter calls model.active_entities.add_group
-  # which goes through the FakeUI's FakeEntities -> creates a
-  # real FakeGroup handle.
+  # The production adapter calls model.entities.add_group
+  # (model ROOT, per BLOCK 3) which goes through the FakeUI's
+  # FakeEntities -> creates a real FakeGroup handle.
   adapter = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.new
 
   src = v14_real_source_snapshot(edge_count: 4)
@@ -184,12 +184,36 @@ test 'V14 production call chain: prepare creates REAL derived groups via FakeUI:
 
   # The model MUST hold 4 FakeGroups with the recognizable
   # 'SU-AI-Derived-' name prefix.
-  assert_equal 4, model.active_entities.groups.length,
-               'production adapter must have created 4 real groups in model.active_entities'
-  model.active_entities.groups.each do |g|
+  assert_equal 4, model.entities.groups.length,
+               'production adapter must have created 4 real groups at model.entities (root, NOT active_entities)'
+  model.entities.groups.each do |g|
     assert g.name.start_with?('SU-AI-Derived-'),
            "derived group name must carry the prefix; got #{g.name.inspect}"
     assert g.valid?, 'each derived group must be valid'
+  end
+
+  # Each derived group MUST carry exactly one real edge
+  # with XYZ-identical endpoints (BLOCK 7 risk test).
+  # Total edges across all groups == source edge count.
+  # Each FakeGroup stores its edges on its OWN entities
+  # (FakeEntities); the model's root entities only track
+  # the groups themselves. Gather across all groups.
+  all_edges = []
+  model.entities.groups.each do |g|
+    ents = g.respond_to?(:entities) ? g.entities : g.children
+    if ents && ents.respond_to?(:edges)
+      all_edges.concat(ents.edges)
+    end
+  end
+  assert_equal 4, all_edges.length,
+               'one derived edge per source edge (no extra Face, no extra Edge)'
+  all_edges.zip(src.edges).each do |derived_edge, source_edge|
+    s_src = source_edge.start_point
+    e_src = source_edge.end_point
+    assert_equal s_src, derived_edge.start,
+                 'derived edge start MUST equal source edge start (XYZ)'
+    assert_equal e_src, derived_edge.end,
+                 'derived edge end MUST equal source edge end (XYZ)'
   end
 
   # The model MUST have wrapped the build in a SU operation
@@ -224,7 +248,7 @@ test 'V14 production call chain: discard calls the REAL saved handles (precise c
   src = v14_real_source_snapshot(edge_count: 3)
   SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: model)
   # Pre-discard: 3 groups are valid.
-  assert_equal 3, model.active_entities.valid_count
+  assert_equal 3, model.entities.valid_count
 
   SUAnalysis::Core::WorkingModeRunner.discard
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
@@ -232,7 +256,7 @@ test 'V14 production call chain: discard calls the REAL saved handles (precise c
   # Every saved handle MUST be erased precisely (not just
   # dropped; the production adapter's dispose path erases
   # the real handle).
-  assert_equal 0, model.active_entities.valid_count,
+  assert_equal 0, model.entities.valid_count,
                'discard MUST erase every saved handle (precise cleanup)'
   # The model MUST have wrapped the discard in a SU operation.
   last_two = model.operation_log.last(2)
@@ -256,7 +280,7 @@ test 'V14 production call chain: rebuild discards old groups then creates new on
 
   src = v14_real_source_snapshot(edge_count: 3)
   SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: model)
-  pre_rebuild_groups = model.active_entities.groups.dup
+  pre_rebuild_groups = model.entities.groups.dup
   pre_rebuild_count  = pre_rebuild_groups.length
   refute_nil pre_rebuild_groups
   assert_operator pre_rebuild_groups.length, :>, 0
@@ -274,7 +298,7 @@ test 'V14 production call chain: rebuild discards old groups then creates new on
 
   # New groups MUST exist (the rebuild creates a fresh
   # workspace with the same template -> 3 new groups).
-  new_groups = model.active_entities.groups - pre_rebuild_groups
+  new_groups = model.entities.groups - pre_rebuild_groups
   assert_operator new_groups.length, :>, 0,
                   'rebuild must create fresh groups in addition to the discarded old ones'
   new_groups.each do |g|
@@ -334,7 +358,7 @@ test 'V14 production call chain: failure injection aborts SU operation and rolls
     assert_equal 0, model.open_operations,
                  'after host failure the operation stack MUST be balanced'
     # NO partial derived groups must remain.
-    assert_equal 0, model.active_entities.valid_count,
+    assert_equal 0, model.entities.valid_count,
                  'failure injection MUST leave zero valid derived groups'
   ensure
     # Restore the original start_operation method.
@@ -447,7 +471,7 @@ test 'V14 production call chain: dialog callback -> WorkingModeRunner -> workspa
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'ready', snap['state'],
                'dialog prepare_workspace callback MUST reach :ready via production adapter'
-  assert_operator model.active_entities.valid_count, :>, 0,
+  assert_operator model.entities.valid_count, :>, 0,
                   'production adapter must have created real derived groups via the dialog callback path'
   # Source snapshot id MUST be carried (proves the dialog
   # built a real SourceSnapshot, not a synthetic plumbing one).
@@ -458,7 +482,7 @@ test 'V14 production call chain: dialog callback -> WorkingModeRunner -> workspa
   dialog.callbacks['discard_workspace'].call(nil)
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'discarded', snap['state']
-  assert_equal 0, model.active_entities.valid_count,
+  assert_equal 0, model.entities.valid_count,
                'discard via dialog callback MUST erase all real groups'
 
   # Rebuild via the dialog callback.
@@ -466,7 +490,7 @@ test 'V14 production call chain: dialog callback -> WorkingModeRunner -> workspa
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'ready', snap['state'],
                'rebuild via dialog callback MUST reach :ready'
-  assert_operator model.active_entities.valid_count, :>, 0,
+  assert_operator model.entities.valid_count, :>, 0,
                   'rebuild via dialog callback MUST create fresh real groups'
 ensure
   v14_uninstall_fake_su

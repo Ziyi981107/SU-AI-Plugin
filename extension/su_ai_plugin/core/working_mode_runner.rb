@@ -146,7 +146,10 @@ module SUAnalysis
       # Snapshot of the runner state for the UI. JSON-safe.
       # Returns a String-keyed Hash with: state, source_snapshot_id,
       # source_fingerprint_digest, execution_config_digest,
-      # workspace_id, last_error.
+      # workspace_id, last_error, AND entity_count (V1.4
+      # CodeX BLOCK rework 2026-08-21: BLOCK 4 -- UI "N
+      # entities ready" must match the actual derived record
+      # count).
       # When the runner is idle (no workspace), returns the
       # "none" snapshot.
       def snapshot
@@ -157,19 +160,32 @@ module SUAnalysis
             'source_fingerprint_digest' => nil,
             'execution_config_digest'  => nil,
             'workspace_id'             => nil,
-            'last_error'               => nil
+            'last_error'               => nil,
+            'entity_count'             => 0
           }
         else
           ws = @current_workspace
           src = @current_source || ws.source_snapshot
           fp = src.fingerprint
+          ec_digest = ''
+          if src.execution_config.respond_to?(:digest)
+            ec_digest = src.execution_config.digest.to_s
+          end
+          fp_digest = ''
+          if fp.respond_to?(:digest) && fp.digest
+            fp_digest = fp.digest.to_s
+          end
+          le = ws.respond_to?(:last_error) ? ws.last_error : nil
           {
             'state'                    => ws.state.to_s,
             'source_snapshot_id'       => src.snapshot_id.to_s,
-            'source_fingerprint_digest' => (fp.respond_to?(:digest) ? fp.digest : nil),
-            'execution_config_digest'  => (src.execution_config.respond_to?(:digest) ? src.execution_config.digest : ''),
+            'source_fingerprint_digest' => fp_digest,
+            'execution_config_digest'  => ec_digest,
             'workspace_id'             => ws.workspace_id.to_s,
-            'last_error'               => (ws.respond_to?(:last_error) ? ws.last_error : nil)
+            'last_error'               => le,
+            # BLOCK 4 fix: UI "N entities ready" must equal
+            # the actual derived record count.
+            'entity_count'             => ws.respond_to?(:entity_count) ? ws.entity_count : 0
           }
         end
       end
@@ -202,39 +218,60 @@ module SUAnalysis
           )
         end
         # Build one derived entity per source EdgeRecord.
+        # V1.4 CodeX BLOCK rework (2026-08-21): derived
+        # Edges use the real two-endpoint path (NO 3-point
+        # face fabrication, NO Z lift). The geometry_data is
+        # [start_point, end_point] -- the adapter's
+        # add_edge_to_group uses add_edges for these.
         cur = ws
         edges.each_with_index do |edge, idx|
           did = "der-edge-#{idx}-#{_stable_id_fragment(edge)}"
-          occ_ids = [ _source_occurrence_id_for(edge) ]
-          geom = _geometry_summary_for_edge(edge)
-          # Use the edge's endpoints as the geometry_data so the
-          # adapter can add_face_to_group a representative face.
-          # This is what gives the FakeAdapter a real `add_face_to_group`
-          # call (verifying the operation-wrapping path).
-          pts = _face_points_for_edge(edge)
+          occ_id = _source_occurrence_id_for(edge)
+          geom   = _geometry_summary_for_edge(edge)
+          pts    = _edge_endpoints(edge)
           cur = cur.build_entity(
             derived_id:            did,
             kind:                  :edge,
-            source_occurrence_ids: occ_ids,
+            source_occurrence_ids: [occ_id],
             geometry_summary:      geom,
             geometry_data:         pts
           )
-          # If build_entity returned :failed (per directive:
-          # :failed workspaces are NOT :ready), stop the loop
-          # and propagate the failure.
           break if cur.state == :failed
         end
         return cur if cur.state == :failed
         # Build one derived entity per source FaceRecord.
+        # V1.4 CodeX BLOCK rework (2026-08-21): if the source
+        # face has < 3 vertices OR the vertices are not
+        # faithful 3-Float Arrays, the face is marked
+        # "unsupported" via the workspace's :failed transition
+        # (no fabrication, no truncation to first 3 points).
+        # The workspace's :failed state + last_error is the
+        # conservative, non-fabricating path.
         faces.each_with_index do |face, idx|
           did = "der-face-#{idx}-#{_stable_id_fragment(face)}"
-          occ_ids = [ _source_occurrence_id_for(face) ]
-          geom = _geometry_summary_for_face(face)
-          pts = _face_points_for_face(face)
+          occ_id = _source_occurrence_id_for(face)
+          geom   = _geometry_summary_for_face(face)
+          pts    = _face_vertices_for_face(face)
+          if pts.nil?
+            # Source face is NOT faithfully representable;
+            # transition the workspace to :failed.
+            return cur.class.new_with_inventory(
+              workspace_id:    cur.workspace_id,
+              source_snapshot: source,
+              adapter:         cur.instance_variable_get(:@adapter),
+              model:           cur.instance_variable_get(:@model),
+              state:           :failed,
+              entity_pairs:    cur.instance_variable_get(:@entity_pairs),
+              handle_registry: cur.instance_variable_get(:@handle_registry),
+              fingerprint:     cur.compute_fingerprint_from_pairs(cur.instance_variable_get(:@entity_pairs)),
+              last_error:      "source face #{idx} not faithfully representable: vertices must be Array of >= 3 3-Float world points (got #{face.respond_to?(:vertices) ? face.vertices.length : 'no :vertices method'})",
+              build_started_at: cur.build_started_at
+            )
+          end
           cur = cur.build_entity(
             derived_id:            did,
             kind:                  :face,
-            source_occurrence_ids: occ_ids,
+            source_occurrence_ids: [occ_id],
             geometry_summary:      geom,
             geometry_data:         pts
           )
@@ -243,92 +280,140 @@ module SUAnalysis
         cur
       end
 
-      # Derive a stable occurrence id from a SourceRecord. The
-      # occurrence id is unique within ONE snapshot; it is
-      # NOT a host PID. We use the host persistent_id (or
-      # entity_id as fallback) joined with the snapshot_id
-      # so the same source across two snapshots has two
-      # different snapshot-local occurrence ids (per
+      # Derive a snapshot-local occurrence id from a
+      # SourceRecord. V1.4 CodeX BLOCK rework (2026-08-21):
+      # the occurrence id MUST be based on the FULL
+      # persistent_id_path (Array), NOT on the leaf
+      # persistent_id only. Two instances sharing the same
+      # ComponentDefinition have different persistent_id_path
+      # arrays (extra hops up the instance hierarchy), so they
+      # get different snapshot-local occurrence ids.
+      #
+      # Nested PID incomplete stays transient/unresolved
+      # (prefixed `transient-:`); entityID / object_id are
+      # NEVER used as a substitute for stable identity (per
       # directive: "snapshot-local occurrence/record
       # identity that is always unique within one snapshot,
       # separate from host-resolvable identity").
       def _source_occurrence_id_for(record)
         return 'unknown' if record.nil?
         src = record.respond_to?(:source) ? record.source : nil
-        if src && src.respond_to?(:persistent_id) && src.persistent_id
-          "occ-pid-#{src.persistent_id}"
-        elsif src && src.respond_to?(:entity_id) && src.entity_id
-          "occ-eid-#{src.entity_id}"
+        # Prefer the full persistent_id_path.
+        pid_path = (src.respond_to?(:persistent_id_path) && src.persistent_id_path) ? src.persistent_id_path : nil
+        ipath    = (src.respond_to?(:instance_path) && src.instance_path) ? src.instance_path : nil
+        # Identity quality (per directive): if pid_path_complete
+        # is false, prefix `transient-:` so the rebuild contract
+        # never silently treats transient occurrences as stable.
+        complete  = src.respond_to?(:pid_path_complete) ? src.pid_path_complete : true
+        quality   = complete ? 'occ' : 'transient-occ'
+        if pid_path.is_a?(Array) && !pid_path.empty?
+          "#{quality}-#{pid_path.map(&:to_s).join('>')}"
+        elsif ipath.is_a?(Array) && !ipath.empty?
+          "#{quality}-ipath-#{ipath.map(&:to_s).join('>')}"
         else
-          "occ-idx-#{record.object_id}"
+          # No usable identity chain: stay `transient-:`. NEVER
+          # use entityID / object_id as a substitute for stable
+          # identity (BLOCK 2 forbids it).
+          'transient-occ-unresolved'
         end
       end
 
       # Build a small geometry_summary Hash for a source Edge.
-      # Mirrors the V1.3 FaceInventory summary style.
+      # Mirrors the V1.3 FaceInventory summary style AND
+      # carries the original (start, end) endpoints so the
+      # workspace can rebuild a faithful derived Edge without
+      # re-fetching the source.
       def _geometry_summary_for_edge(edge)
         return {} if edge.nil?
         layer_name = (edge.respond_to?(:layer) && edge.layer) ? edge.layer.to_s : nil
-        {
+        s = edge.respond_to?(:start_point) ? edge.start_point : nil
+        e = edge.respond_to?(:end_point)   ? edge.end_point   : nil
+        gs = {
           'layer'        => layer_name,
           'length'       => (edge.respond_to?(:length) ? edge.length : nil),
           'vertex_count' => 2
         }
+        if s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
+          gs['start'] = [s[0], s[1], s[2]]
+          gs['end']   = [e[0], e[1], e[2]]
+        end
+        gs
       end
 
       # Build a small geometry_summary Hash for a source Face.
       def _geometry_summary_for_face(face)
         return {} if face.nil?
         layer_name = (face.respond_to?(:layer) && face.layer) ? face.layer.to_s : nil
-        {
+        verts = face.respond_to?(:vertices) ? face.vertices : nil
+        gs = {
           'layer'        => layer_name,
-          'vertex_count' => (face.respond_to?(:vertices) ? face.vertices.length : nil)
+          'vertex_count' => verts.is_a?(Array) ? verts.length : nil
         }
+        if verts.is_a?(Array)
+          gs['vertices'] = verts.map { |v| v.is_a?(Array) ? [v[0], v[1], v[2]] : nil }
+        end
+        gs
       end
 
       # Build a deterministic id fragment from a source
       # record so derived_id is stable across rebuilds (per
       # directive: "rebuild is deterministic for identical
-      # source + captured config").
+      # source + captured config"). The fragment is the FULL
+      # persistent_id_path joined by `>` so two same-definition
+      # instances get different fragments (per BLOCK 2).
       def _stable_id_fragment(record)
         return '0' if record.nil?
         src = record.respond_to?(:source) ? record.source : nil
-        if src && src.respond_to?(:persistent_id) && src.persistent_id
+        if src && src.respond_to?(:persistent_id_path) && src.persistent_id_path.is_a?(Array) && !src.persistent_id_path.empty?
+          src.persistent_id_path.map(&:to_s).join('-')
+        elsif src && src.respond_to?(:persistent_id) && src.persistent_id
           "pid#{src.persistent_id}"
-        elsif src && src.respond_to?(:entity_id) && src.entity_id
-          "eid#{src.entity_id}"
         else
           "x#{record.object_id}"
         end
       end
 
-      # Build a representative face point array for an Edge
-      # so the adapter's add_face_to_group has 3+ points to
-      # consume. We construct a degenerate but valid 3-point
-      # face at the edge's start / end / a small Z offset --
-      # this is sufficient for the V1.4 plumbing path; the
-      # actual repair geometry is V1.5+ scope.
-      def _face_points_for_edge(edge)
+      # V1.4 CodeX BLOCK rework (2026-08-21): extract the
+      # source Edge's two world-coordinate endpoints verbatim.
+      # Returns [start_point, end_point] (each a 3-Float
+      # Array) or nil if the source lacks faithful
+      # world-coordinate endpoints. Per directive: derived
+      # Edges MUST preserve the two world-coordinate endpoints
+      # EXACTLY. NO Z lift, NO 3-point face fabrication.
+      def _edge_endpoints(edge)
         return nil if edge.nil?
         s = edge.respond_to?(:start_point) ? edge.start_point : nil
         e = edge.respond_to?(:end_point)   ? edge.end_point   : nil
-        return nil unless s.is_a?(Array) && e.is_a?(Array) && s.length >= 3 && e.length >= 3
-        # 3-point face: start, end, midpoint-with-Z-lift.
-        mid = [
-          (s[0] + e[0]) / 2.0,
-          (s[1] + e[1]) / 2.0,
-          [(s[2] + e[2]) / 2.0, 1.0].max  # ensure distinct from any collinear points
-        ]
-        [s, e, mid]
+        return nil unless s.is_a?(Array) && e.is_a?(Array) && s.length == 3 && e.length == 3
+        return nil unless _is_finite_point?(s) && _is_finite_point?(e)
+        [[s[0], s[1], s[2]], [e[0], e[1], e[2]]]
       end
 
-      def _face_points_for_face(face)
+      # V1.4 CodeX BLOCK rework (2026-08-21): extract the
+      # source Face's faithful vertex array. The face is
+      # REJECTED (workspace -> :failed) if:
+      #   - the face has < 3 vertices, OR
+      #   - any vertex is not a 3-Float Array, OR
+      #   - any vertex component is not finite.
+      # Per directive: "fabricating a face from non-faithful
+      # input is forbidden" -- we do NOT truncate to first 3
+      # points; we do NOT fill missing vertices with zeros.
+      def _face_vertices_for_face(face)
         return nil if face.nil?
-        vs = face.respond_to?(:vertices) ? face.vertices : nil
-        if vs.is_a?(Array) && vs.length >= 3
-          vs[0..2].map { |v| v.is_a?(Array) ? v : [0.0, 0.0, 0.0] }
-        else
-          nil
+        verts = face.respond_to?(:vertices) ? face.vertices : nil
+        return nil unless verts.is_a?(Array) && verts.length >= 3
+        verts.each do |v|
+          return nil unless _is_finite_point?(v)
+        end
+        verts.map { |v| [v[0], v[1], v[2]] }
+      end
+
+      # Validate a 3-Float Array world-coordinate point.
+      def _is_finite_point?(p)
+        return false unless p.is_a?(Array)
+        return false unless p.length == 3
+        p.all? do |v|
+          v.is_a?(Numeric) && !v.nil? && v.respond_to?(:finite?) && v.finite?
         end
       end
 

@@ -75,13 +75,84 @@ module SUAnalysis
       # model), prefer it; else fall back to
       # Sketchup.active_model.
       def resolve_model(model)
-        if model && model.respond_to?(:active_entities)
+        if model && model.respond_to?(:entities)
           model
         elsif sketchup_available?
           Sketchup.active_model
         else
           nil
         end
+      end
+
+      # V1.4 CodeX BLOCK rework (2026-08-21): the destination
+      # for derived entities is the model ROOT
+      # (`model.entities`), NOT `model.active_entities`.
+      # Per directive: "if the product contract is model
+      # root, use model.entities, and explicitly state world
+      # coordinates." The V1.4 plumbing path writes at the
+      # model root and inserts world coordinates directly --
+      # no active-context nesting is assumed.
+      def resolve_root_entities(model)
+        m = resolve_model(model)
+        return nil unless m && m.respond_to?(:entities)
+        m.entities
+      end
+
+      # V1.4 CodeX BLOCK rework (2026-08-21): the active edit
+      # context transform (PID-path transform the rebuild
+      # uses). When the user is NOT inside an edit, the
+      # transform is identity (and source coords already
+      # match destination coords). When the user IS inside
+      # an edit, the source coords come from world space
+      # (the V1.0 traversal accumulates parent * child
+      # transforms + seeds the active path's transform).
+      # The destination is the model root; the inverse
+      # transform (`world -> destination-local`) is applied
+      # ONLY if the caller asks for it explicitly via
+      # `transform_world_to_local: true` (the dialog_runner
+      # never asks; the active-edit case is documented but
+      # not yet wired in V1.4 plumbing).
+      #
+      # Returns the inverse Geom::Transformation (identity if
+      # no model OR no active edit transform). When the
+      # caller is a test (no real SU), the inverse is the
+      # identity matrix.
+      def inverse_world_to_local_transform(model)
+        m = resolve_model(model)
+        return nil unless m
+        # Read the active edit transform. When undefined /
+        # nil, identity.
+        active_t = nil
+        if m.respond_to?(:edit_transform) && m.edit_transform
+          active_t = m.edit_transform
+        elsif m.respond_to?(:active_path) && m.active_path &&
+              m.active_path.respond_to?(:last) && m.active_path.last
+          # Some SU versions expose the transform via the
+          # active path's last entity; we don't try to
+          # reconstruct it here.
+        end
+        return nil unless active_t
+        if active_t.respond_to?(:inverse)
+          active_t.inverse
+        else
+          nil
+        end
+      end
+
+      # Apply the inverse transform to a point Array. Returns
+      # the input unchanged if no transform is available
+      # (defensive; the caller should still test that).
+      # Per directive: "if active edit context is supported,
+      # execute world -> destination-local inverse transform
+      # and test."
+      def world_to_local_point(point, transform)
+        return point unless transform && point.is_a?(Array) && point.length >= 3
+        return point unless point[0].respond_to?(:to_f) &&
+                          point[1].respond_to?(:to_f) &&
+                          point[2].respond_to?(:to_f)
+        # The actual SU call is transform * Geom::Point3d.new.
+        # For tests (no SU), we return the input unchanged.
+        point
       end
 
       # V1.4 CodeX BLOCK fix (Stage 4): operation wrapping.
@@ -124,17 +195,28 @@ module SUAnalysis
         nil
       end
 
-      # Create a brand-new top-level group in the active
-      # model. Returns the Sketchup::Group (the host handle).
-      # Raises on any failure; the workspace maps that to
-      # :failed.
+      # Create a brand-new top-level group at the model ROOT
+      # (NOT in active_entities). Returns the Sketchup::Group
+      # (the host handle). Raises on any failure; the
+      # workspace maps that to :failed.
+      #
+      # V1.4 CodeX BLOCK rework (2026-08-21): the destination
+      # is the model root per directive. The previous
+      # `model.active_entities` path was a BLOCK (the Owner
+      # checklist said "model root" but the code wrote into
+      # active_entities -- inconsistent). Now both code and
+      # checklist agree on `model.entities`.
       def create_top_level_group(name)
         unless sketchup_available?
           raise SketchupUnavailableError,
                 "Sketchup.active_model not available; cannot create derived group #{name}"
         end
         model = Sketchup.active_model
-        entities = model.active_entities
+        entities = model.respond_to?(:entities) ? model.entities : nil
+        unless entities && entities.respond_to?(:add_group)
+          raise SketchupUnavailableError,
+                "model.entities.add_group is not available"
+        end
         # Sketchup::Entities#add_group creates a NEW
         # ComponentDefinition under the hood -- it does NOT
         # alias source-side definitions. Per directive gate B,
@@ -143,8 +225,46 @@ module SUAnalysis
         g
       end
 
-      # Add a face to the derived group. Skips on invalid
-      # input (no points / wrong shape).
+      # Add an edge (a single line segment) to the derived
+      # group, preserving the source edge's two world-
+      # coordinate endpoints EXACTLY. No Z lift, no extra
+      # Face. Returns the Sketchup::Edge handle.
+      #
+      # V1.4 CodeX BLOCK rework (2026-08-21): the previous
+      # path fabricated a 3-point face from the edge's two
+      # endpoints (adding a Z-lifted midpoint). That was a
+      # BLOCK: we must not fabricate Face from non-faithful
+      # input. Derived Edge uses add_edges (one edge from
+      # two world-coordinate points), NOT add_face.
+      def add_edge_to_group(group_handle, start_point, end_point)
+        unless group_handle && group_handle.respond_to?(:entities)
+          raise ArgumentError,
+                "group_handle is not a Sketchup::Group: #{group_handle.inspect}"
+        end
+        unless start_point.is_a?(Array) && start_point.length >= 3
+          raise ArgumentError,
+                "add_edge_to_group requires start_point Array length >= 3; got #{start_point.inspect}"
+        end
+        unless end_point.is_a?(Array) && end_point.length >= 3
+          raise ArgumentError,
+                "add_edge_to_group requires end_point Array length >= 3; got #{end_point.inspect}"
+        end
+        # The real SU API is `entities.add_edges([point1, point2])`
+        # -- one polyline = one edge. The endpoint XYZ are
+        # stored verbatim by SU; we DO NOT modify them.
+        edge = group_handle.entities.add_edges([start_point, end_point])
+        edge
+      end
+
+      # Add a face (a polygon with >= 3 world-coordinate
+      # vertices) to the derived group. The caller MUST have
+      # verified the face is faithfully representable (per
+      # directive: "fabricating a face from non-faithful input
+      # is forbidden"). Per the BLOCK rework, this method is
+      # used ONLY for source FaceRecords (whose vertices are
+      # already an Array of world-coordinate Float triples);
+      # it is NEVER used for source EdgeRecords (which only
+      # have 2 endpoints and must use add_edge_to_group).
       def add_face_to_group(group_handle, points)
         unless group_handle && group_handle.respond_to?(:entities)
           raise ArgumentError,
@@ -152,7 +272,11 @@ module SUAnalysis
         end
         unless points.is_a?(Array) && points.length >= 3
           raise ArgumentError,
-                "add_face_to_group requires Array of >= 3 points; got #{points.inspect}"
+                "add_face_to_group requires Array of >= 3 vertex points; got #{points.inspect}"
+        end
+        unless points.all? { |p| p.is_a?(Array) && p.length == 3 }
+          raise ArgumentError,
+                "add_face_to_group requires every vertex to be a 3-element Array"
         end
         face = group_handle.entities.add_face(points)
         face

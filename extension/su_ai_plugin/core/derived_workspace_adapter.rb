@@ -52,8 +52,29 @@ module SUAnalysis
         raise NotImplementedError, 'subclass must implement create_top_level_group'
       end
 
-      # Add a face to an existing group. Returns a host
-      # handle for the face. Raises StandardError on failure.
+      # Add an edge (a single line segment) to an existing
+      # group, preserving the source edge's two world-
+      # coordinate endpoints EXACTLY. No Z lift, no extra
+      # Face, no fabrication. Returns a host handle for the
+      # edge (per directive: "V1.4 derived edge must use
+      # real add_edges/add_line capabilities, faithfully
+      # preserving the two world-coordinate endpoints").
+      # Raises StandardError on failure.
+      def add_edge_to_group(group_handle, start_point, end_point)
+        raise NotImplementedError, 'subclass must implement add_edge_to_group'
+      end
+
+      # Add a face (a polygon with >= 3 world-coordinate
+      # vertices) to an existing group. The face is only
+      # added if the caller supplies a faithful Array of
+      # vertex coordinates (length >= 3, all Float). When
+      # the source's face vertices are NOT faithfully
+      # representable (e.g. only 2 endpoints from a derived
+      # Edge, or non-Float values), the caller MUST NOT use
+      # this method; per directive, fabricating a face from
+      # non-faithful input is forbidden. The caller signals
+      # "unsupported" via the workspace's :failed transition.
+      # Raises StandardError on failure.
       def add_face_to_group(group_handle, points)
         raise NotImplementedError, 'subclass must implement add_face_to_group'
       end
@@ -107,6 +128,28 @@ module SUAnalysis
     # @operation_log so the test can assert operation
     # boundaries are honored).
     class FakeDerivedWorkspaceAdapter < DerivedWorkspaceAdapter
+      # Mimics Sketchup::Entities. Tracks each add_edge /
+      # add_face call so the test can assert endpoint
+      # identity, no extra Face, and no Z lift.
+      FakeEntities = Struct.new(:items) do
+        def initialize
+          super([])
+        end
+        def add_item(item)
+          items << item
+          item
+        end
+        def edges
+          items.select { |i| i.is_a?(FakeEdge) }
+        end
+        def faces
+          items.select { |i| i.is_a?(FakeFace) }
+        end
+        def invalidate_all!
+          items.each(&:erase!)
+          items.clear
+        end
+      end
       FakeGroup = Struct.new(:derived_id, :name, :children, :valid) do
         # Mimic Sketchup::Entity#valid?. After dispose,
         # the fake handle reports valid? == false.
@@ -114,25 +157,63 @@ module SUAnalysis
           self[:valid] != false
         end
         def erase!
+          # Children may be a FakeEntities (post-2026-08-21) or
+          # a plain Array (legacy callers in tests). Tolerate
+          # both.
+          ch = self[:children]
+          if ch.respond_to?(:invalidate_all!)
+            ch.invalidate_all!
+          elsif ch.is_a?(Array)
+            ch.clear
+          end
           self[:valid] = false
           true
         end
-        def add_child(face)
-          children << face
+        def add_child(item)
+          ch = self[:children]
+          if ch.respond_to?(:add_item)
+            ch.add_item(item)
+          elsif ch.is_a?(Array)
+            ch << item
+          end
+          item
         end
       end
-      FakeFace = Struct.new(:derived_id, :layer, :vertex_count, :valid) do
+      # A sketchup::Edge stand-in: stores start / end / layer /
+      # entityID. After erase, valid? returns false. Tests
+      # assert endpoint XYZ identity via `edge.start` /
+      # `edge.end` (per BLOCK 7 risk test: source Edge ->
+      # derived Edge endpoints must be XYZ-identical).
+      FakeEdge = Struct.new(:entityID, :start, :end, :layer, :valid) do
+        def valid?
+          self[:valid] != false
+        end
+        def erase?
+          true
+        end
+        def erase!
+          self[:valid] = false
+          true
+        end
+      end
+      FakeFace = Struct.new(:derived_id, :layer, :vertex_count, :valid, :vertices) do
         def valid?
           self[:valid] != false
         end
       end
 
       attr_reader :created_handles, :disposed_handles,
-                  :operation_log, :operation_open
+                  :operation_log, :operation_open,
+                  :added_edges, :added_faces
 
       def initialize
         @created_handles = []
         @disposed_handles = []
+        # V1.4 CodeX BLOCK rework (2026-08-21): track every
+        # add_edge / add_face call so the test can assert
+        # endpoint XYZ identity, no extra Face, and no Z lift.
+        @added_edges = []
+        @added_faces = []
         @id_counter = 0
         @next_entity_id = 0
         # V1.4 CodeX BLOCK fix (Stage 4): operation-wrapping
@@ -161,18 +242,66 @@ module SUAnalysis
 
       def create_top_level_group(name)
         derived_id = next_id
-        g = FakeGroup.new(derived_id, name, [], true)
+        g = FakeGroup.new(derived_id, name, FakeEntities.new, true)
         @created_handles << g
         g
       end
 
+      # V1.4 CodeX BLOCK rework (2026-08-21): add_edge_to_group
+      # preserves the source edge's two world-coordinate
+      # endpoints EXACTLY. No Z lift, no extra Face. The
+      # FakeEdge handle is returned so tests can assert the
+      # endpoint identity via edge.start / edge.end.
+      def add_edge_to_group(group_handle, start_point, end_point)
+        unless group_handle && group_handle.respond_to?(:add_child)
+          raise ArgumentError,
+                "group_handle is not a derived group: #{group_handle.inspect}"
+        end
+        unless _is_finite_point?(start_point) && _is_finite_point?(end_point)
+          raise ArgumentError,
+                "add_edge_to_group requires two finite world-coordinate points; got #{start_point.inspect}, #{end_point.inspect}"
+        end
+        edge = FakeEdge.new(
+          next_entity_id,
+          _copy_point(start_point),
+          _copy_point(end_point),
+          (group_handle.respond_to?(:name) ? 'Layer0' : nil),
+          true
+        )
+        @added_edges << edge
+        group_handle.add_child(edge)
+        edge
+      end
+
+      # V1.4 CodeX BLOCK rework (2026-08-21): add_face_to_group
+      # requires a faithful Array of >= 3 vertex points (each a
+      # 3-Float Array). The caller MUST verify faithfulness
+      # before invoking; the adapter does NOT fabricate
+      # faces from non-faithful input. Per directive:
+      # "fabricating a face from non-faithful input is
+      # forbidden."
       def add_face_to_group(group_handle, points)
+        unless group_handle && group_handle.respond_to?(:add_child)
+          raise ArgumentError,
+                "group_handle is not a derived group: #{group_handle.inspect}"
+        end
+        unless points.is_a?(Array) && points.length >= 3
+          raise ArgumentError,
+                "add_face_to_group requires Array of >= 3 vertex points; got #{points.inspect}"
+        end
+        unless points.all? { |p| _is_finite_point?(p) }
+          raise ArgumentError,
+                "add_face_to_group requires every vertex to be a finite 3-Float point"
+        end
+        verts = points.map { |p| _copy_point(p) }
         face = FakeFace.new(
           next_id,
           (group_handle.respond_to?(:name) ? 'Layer0' : nil),
-          points.respond_to?(:length) ? points.length : (points.is_a?(Array) ? points.length : 0),
-          true
+          verts.length,
+          true,
+          verts
         )
+        @added_faces << face
         group_handle.add_child(face)
         face
       end
@@ -186,6 +315,33 @@ module SUAnalysis
         end
         true
       end
+
+      private
+
+      # Validate that a point is a finite 3-Float Array.
+      # We require v.is_a?(Float) explicitly -- Integer
+      # is_a?(Numeric) but is NOT a Float and would corrupt
+      # the derived edge's world-coordinate endpoints if
+      # passed through silently. Per BLOCK 1: derived Edge
+      # must preserve the source's two world-coordinate
+      # endpoints EXACTLY (no implicit conversion, no Z
+      # lift, no fabrication).
+      def _is_finite_point?(p)
+        return false unless p.is_a?(Array)
+        return false unless p.length == 3
+        p.all? do |v|
+          v.is_a?(Float) && v.respond_to?(:finite?) && v.finite?
+        end
+      end
+
+      # Defensive copy of a 3-Float point (so callers cannot
+      # mutate the derived edge's stored endpoints after the
+      # fact).
+      def _copy_point(p)
+        [p[0], p[1], p[2]]
+      end
+
+      public
 
       def host_assigned_ids_of(handle)
         if handle.respond_to?(:derived_id)

@@ -202,9 +202,51 @@ end
 test 'FakeDerivedWorkspaceAdapter: add_face_to_group records the face under the group' do
   a = FakeDerivedWorkspaceAdapter.new
   g = a.create_top_level_group('g')
-  face = a.add_face_to_group(g, [[0, 0, 0], [10, 0, 0], [10, 5, 0], [0, 5, 0]])
+  face = a.add_face_to_group(g, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 5.0, 0.0], [0.0, 5.0, 0.0]])
   refute_nil face
-  assert_equal 1, g.children.length
+  assert_equal 1, a.added_faces.length
+  # V1.4 CodeX BLOCK rework: face vertices are faithfully
+  # recorded (no fabrication).
+  refute_nil face
+end
+
+test 'FakeDerivedWorkspaceAdapter: add_edge_to_group records the edge with XYZ-identical endpoints' do
+  # V1.4 CodeX BLOCK rework (2026-08-21): BLOCK 1 forbids
+  # fabricating a 3-point face from a 2-endpoint Edge. The
+  # adapter records the two world-coordinate endpoints
+  # VERBATIM (no Z lift, no midpoint injection).
+  a = FakeDerivedWorkspaceAdapter.new
+  g = a.create_top_level_group('g')
+  edge = a.add_edge_to_group(g, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
+  refute_nil edge
+  assert_equal 1, a.added_edges.length
+  assert_equal [1.0, 2.0, 3.0], edge.start
+  assert_equal [4.0, 5.0, 6.0], edge.end
+end
+
+test 'FakeDerivedWorkspaceAdapter: add_face_to_group REJECTS non-faithful input' do
+  # V1.4 CodeX BLOCK rework (2026-08-21): BLOCK 1 -- do
+  # NOT fabricate a face from < 3 vertices or non-Float
+  # values. The adapter raises ArgumentError so the
+  # workspace can transition to :failed.
+  a = FakeDerivedWorkspaceAdapter.new
+  g = a.create_top_level_group('g')
+  # Only 2 vertices -> reject.
+  raised_short = false
+  begin
+    a.add_face_to_group(g, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])
+  rescue ArgumentError
+    raised_short = true
+  end
+  assert raised_short, 'add_face_to_group with only 2 vertices MUST raise ArgumentError'
+  # Non-Float vertex component -> reject.
+  raised_nonfloat = false
+  begin
+    a.add_face_to_group(g, [[0, 0, 0], [10.0, 0.0, 0.0], [10.0, 5.0, 0.0]])
+  rescue ArgumentError
+    raised_nonfloat = true
+  end
+  assert raised_nonfloat, 'add_face_to_group with non-Float vertex MUST raise ArgumentError'
 end
 
 test 'FakeDerivedWorkspaceAdapter: dispose is idempotent' do

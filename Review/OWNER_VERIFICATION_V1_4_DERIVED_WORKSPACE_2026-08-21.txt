@@ -99,9 +99,9 @@ SU model.
 
   Expected (SU model):
     - The Outliner shows N NEW top-level groups under the
-      active model root, each named
-      "SU-AI-Derived-<id>" (e.g. "SU-AI-Derived-der-edge-0-
-      pid1000").
+      MODEL ROOT (`model.entities`, NOT active_entities),
+      each named "SU-AI-Derived-<id>" (e.g.
+      "SU-AI-Derived-der-edge-0-pid1000").
     - These groups are at the model root, NOT inside the
       source group. They are independently owned.
     - The SU Undo stack has ONE entry labeled with the
@@ -109,6 +109,13 @@ SU model.
       model.start_operation with label
       "SU-AI-Plugin: V1.4 Derived Workspace -- Build ...",
       disable_ui=true; ONE operation per derived entity).
+    - Per V1.4 CodeX BLOCK rework (2026-08-21): the
+      derived Edge records the source Edge's two
+      world-coordinate endpoints EXACTLY (no Z lift,
+      no fabricated 3-point face). To verify, open one
+      SU-AI-Derived-* group in Entity Info and confirm
+      it contains ONE Edge (not a Face) with start /
+      end coordinates matching the source Edge.
 
   Expected (Ruby console / no exceptions):
     - Clicking Prepare raises NO Ruby exception.
@@ -181,6 +188,10 @@ SU model.
     - Entity Info / Outliner / Model Info all show
       the SAME counts as before Prepare (source
       unchanged + all derived groups gone).
+    - The discard erases the groups at the MODEL ROOT
+      (`model.entities`), NOT at active_entities. To
+      verify, search the Outliner for any leftover
+      SU-AI-Derived-* group (none should remain).
 
   Expected (Ruby console / no exceptions):
     - Clicking Discard raises NO Ruby exception.
@@ -265,23 +276,85 @@ STEP V14-8: Failure injection -- abort SU operation + zero partial groups
 This step requires you to inject a host failure during
 Prepare. The V1.4 plumbing path supports this via the
 Ruby console (the production adapter's `begin_operation`
-is the failure surface). Run this Ruby snippet from
-the SketchUp Ruby Console BEFORE clicking Prepare:
+is the failure surface).
 
-  # Monkey-patch the production adapter's begin_operation
-  # to raise on the next call. The next Prepare's first
-  # entity build will fail at begin_operation.
-  require_relative '...path-to.../extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
-  SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
-    .class_eval do
-      def begin_operation(model, label:)
+The snippet below uses ABSOLUTE PATHS (paste-runnable)
+and an `ensure` block to RESTORE the original method
+after the test -- so V14-9 and V14-10 are NOT polluted
+by the monkey-patch.
+
+======================================================================
+PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8)
+======================================================================
+
+  # V14-8: inject a host failure into the production
+  # adapter's begin_operation. The Prepare call will fail
+  # at the SU operation boundary; the workspace transitions
+  # to :failed; the dialog shows it as the state.
+  #
+  # ABSOLUTE PATHS -- replace `D:/Projects/SU-AI-Plugin`
+  # with the actual project root on your machine. The
+  # rbz install root is the SketchUp Plugins/<your-rbz-folder>/
+  # location; the `require_relative` here uses the project
+  # source path (the V1.4 plumbing path is identical in
+  # the rbz).
+  require 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
+
+  # Save the original begin_operation so the ensure block
+  # can restore it.
+  ADAPTER  = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
+  ORIGINAL = ADAPTER.instance_method(:begin_operation)
+
+  begin
+    # Monkey-patch the production adapter's begin_operation
+    # to raise on the next call. The next Prepare's first
+    # entity build will fail at begin_operation.
+    ADAPTER.class_eval do
+      define_method(:begin_operation) do |_model, label:|
         raise StandardError, 'v14-gate-2-injected-failure'
       end
     end
 
-Then click "Discard" first (to clear any current
-workspace), then click "Prepare". Observe the dialog
-and the SU model.
+    # At this point, a subsequent Prepare will fail.
+    # Click "Discard" first (to clear any current
+    # workspace), then click "Prepare". Observe:
+    #   - dialog: state = "failed", last_error visible
+    #   - model: NO new SU-AI-Derived-* groups
+    #   - ruby: no exception escapes
+
+    # Wait for the Owner to do the click. There is no
+    # built-in SketchUp Ruby sleep that yields to the UI;
+    # leave this snippet in the console and click in the
+    # dialog. When the click has run, the test is complete.
+  ensure
+    # RESTORE: re-define begin_operation with the original
+    # implementation. After this line, V14-9 and V14-10
+    # run against the original production adapter -- the
+    # monkey-patch is GONE.
+    ADAPTER.class_eval do
+      define_method(:begin_operation, ORIGINAL)
+    end
+    puts 'V14-8: monkey-patch RESTORED. begin_operation is back to the production implementation.'
+  end
+
+  # If you skip the `ensure` block (e.g. close the Ruby
+  # Console before it runs), the restore does NOT happen.
+  # In that case you MUST restart SU + reload the
+  # extension before running V14-9 / V14-10. The recovery
+  # script below is the explicit restore:
+
+  # V14-8 RECOVERY (only if the ensure block was skipped):
+  #   1. Close SketchUp entirely.
+  #   2. Restart SketchUp.
+  #   3. Re-install the SU-AI-Plugin.rbz (or re-load the
+  #      extension). The monkey-patch is gone because
+  #      SketchUp reloaded the file.
+
+======================================================================
+EXPECTED OUTCOMES (V14-8)
+======================================================================
+
+After the Prepare click:
 
   Expected (UI):
     - The Working Mode summary text changes to

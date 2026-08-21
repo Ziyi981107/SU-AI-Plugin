@@ -160,18 +160,49 @@ module FakeUI
       end
     end
     class FakeEntities
-      attr_reader :groups, :next_id, :faces
+      # V1.4 CodeX BLOCK rework (2026-08-21): the fake host
+      # now distinguishes the MODEL ROOT entities (per
+      # directive: "if the product contract is model root,
+      # use model.entities") from the active-edit-context
+      # entities. add_groups / add_face / add_edges /
+      # invalidate_all mirror the real Sketchup::Entities API.
+      attr_reader :groups, :next_id, :faces, :edges
       def initialize(parent_id = 0)
         @groups = []
         @faces = []
+        @edges = []
         @next_id = (parent_id * 1000) + 1
         @face_id = 0
+        @edge_id = 0
       end
       def add_group(name)
         @next_id += 1
         g = FakeGroup.new(name, @next_id)
         @groups << g
         g
+      end
+      # V1.4 CodeX BLOCK rework (2026-08-21): add_edges (one
+      # polyline = one edge) faithfully stores the two
+      # world-coordinate endpoints. Used for derived Edge
+      # records (NOT for fabricating a 3-point face).
+      def add_edges(points)
+        unless points.is_a?(Array) && points.length == 2
+          raise ArgumentError,
+                "add_edges requires exactly 2 world-coordinate points; got #{points.inspect}"
+        end
+        s = points[0]
+        e = points[1]
+        unless s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
+          raise ArgumentError,
+                "add_edges requires 3-element Arrays for both endpoints"
+        end
+        @edge_id += 1
+        # Sketchup::Entities#add_edges returns one Edge per
+        # consecutive pair of points. With 2 points we get 1
+        # edge. Mimic that.
+        edge = FakeEdge.new(@edge_id, s.dup, e.dup)
+        @edges << edge
+        edge
       end
       def add_face(points)
         # Mimics Sketchup::Entities#add_face: returns a face
@@ -180,34 +211,69 @@ module FakeUI
         face = Object.new
         face.define_singleton_method(:entityID) { @face_id }
         face.define_singleton_method(:persistent_id) { @face_id }
-        face.define_singleton_method(:points) { Array(points).dup }
+        face.define_singleton_method(:points) { Array(points).map(&:dup) }
+        face.define_singleton_method(:vertices) { Array(points).map(&:dup) }
         face.define_singleton_method(:valid?) { true }
         @faces << face
         face
       end
       def invalidate_all!
         @groups.each(&:erase!)
+        @edges.clear
+        @faces.clear
       end
       def valid_count
         @groups.count(&:valid?)
       end
+      def valid_edge_count
+        @edges.size
+      end
+    end
+    # A fake Sketchup::Edge: stores start / end / entityID /
+    # persistent_id. Mimics the real API for downstream
+    # assertions (per BLOCK 7 risk test: source Edge ->
+    # derived Edge endpoints must be XYZ-identical).
+    class FakeEdge
+      attr_reader :entityID, :start, :end
+      attr_accessor :persistent_id
+      def initialize(entity_id, start, e)
+        @entityID = entity_id
+        @persistent_id = entity_id
+        @start = start.dup
+        @end = e.dup
+      end
+      def valid?
+        true
+      end
     end
 
     attr_reader :selection, :active_view, :active_entities,
-                :operation_log, :open_operations
+                :entities, :operation_log, :open_operations
 
     def initialize
       @selection = FakeSelection.new
       @active_view = FakeView.new
-      @active_entities = FakeEntities.new
+      # V1.4 CodeX BLOCK rework (2026-08-21): the production
+      # adapter writes at the MODEL ROOT (model.entities), not
+      # active_entities. The fake model supports both; the
+      # V1.4 plumbing path uses entities (root).
+      @entities = FakeEntities.new
+      @active_entities = FakeEntities.new(1)
       # V1.4: operation wrapping. Each start_operation opens a
       # new frame; commit/abort closes it. If a commit happens
       # with no matching open frame, the model raises (mirrors
       # the real SU behavior of "operation stack underflow").
       @operation_log = []
       @open_operations = 0
+      # V1.4 CodeX BLOCK rework (2026-08-21): edit_transform
+      # support for the active-edit-context inverse transform
+      # test. The default is nil (no active edit; identity).
+      @edit_transform = nil
     end
 
+    # The production adapter resolves the destination via
+    # `model.entities` (root). For tests, we set this up
+    # in FakeModel.new by instantiating FakeEntities.
     def start_operation(label, disable_ui = false)
       @operation_log << { kind: :start, label: label.to_s, disable_ui: disable_ui }
       @open_operations += 1
@@ -221,16 +287,35 @@ module FakeUI
       true
     end
 
+    # V1.4 CodeX BLOCK rework (2026-08-21): the abort path
+    # invalidates entities at the MODEL ROOT, where the V1.4
+    # production adapter writes. (The previous version only
+    # invalidated active_entities, which is wrong because the
+    # production adapter writes to model.entities.)
     def abort_operation
       raise 'SU abort_operation called with no matching start_operation' if @open_operations <= 0
-      # Per directive: an aborted operation MUST roll back any
-      # entities created within the operation. We emulate this
-      # by tracking the groups created since the last
-      # commit/abort and invalidating them.
-      invalidated = @active_entities.invalidate_all!
-      @operation_log << { kind: :abort, invalidated: invalidated }
+      invalidated_root = @entities.invalidate_all!
+      invalidated_active = @active_entities.invalidate_all!
+      @operation_log << {
+        kind: :abort,
+        invalidated_root: invalidated_root,
+        invalidated_active: invalidated_active
+      }
       @open_operations -= 1
       true
+    end
+
+    # Test hook: inject an edit_transform that the
+    # production adapter's inverse_world_to_local_transform
+    # will read. The transform is a plain Object with
+    # `.inverse` so the adapter's `transform.respond_to?(:inverse)`
+    # branch picks it up.
+    def inject_edit_transform(transform)
+      @edit_transform = transform
+    end
+
+    def edit_transform
+      @edit_transform
     end
   end
 
