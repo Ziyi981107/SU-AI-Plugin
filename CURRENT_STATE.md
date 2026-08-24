@@ -1,22 +1,23 @@
 # CURRENT STATE
 
-Last updated: 2026-08-24 (V1.4 Owner Gate 2 PASS V14-1..V14-10
-+ CodeX Stage Review BLOCK recheck #2 closed:
-V14-STAGE-BLOCK-001 (production-path fix) + V14-STAGE-BLOCK-002
-(recovery path + abort on :failed + never-clear workspace)
-both re-fixed in the production path).
+Last updated: 2026-08-24 (V1.4 Stage Review VERDICT: PASS
+WITH NITS — V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 BOTH
+CLOSED; one NIT (root-layer identity seed) addressed; final
+RBZ built; awaiting SU2020 narrow re-test of V14-9 before
+the V1.4 Stage Review is officially complete).
 Branch `v1.4-derived-workspace`.
   - Production candidate HEAD (rbz built from): 707273a
   - Review-packet HEAD (evidence + fixes): f9bc321
   - BLOCK-recheck #1 HEAD (narrow fixes committed): f3eaa1e
-  - BLOCK-recheck #2 HEAD (narrow re-fixes committed): PENDING
+  - BLOCK-recheck #2 HEAD (narrow re-fixes committed): 6adbe70
+  - NIT-fix HEAD (root-layer identity seed): PENDING
   - Working tree: clean
 
-Full suite **644/644 Ruby + 148/148 Node.js DOM assertions
+Full suite **646/646 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
-dist/SU-AI-Plugin.rbz rebuilt (438,607 bytes, 53 entries,
-SHA256 `a698d837bd02f08ecef80ad597305e5b332b749f736da32f6c5f34499ca6a15a`,
-committed with BLOCK-recheck #2 fixes).
+dist/SU-AI-Plugin.rbz rebuilt (439,067 bytes, 53 entries,
+SHA256 `af3e8621ab37582ae711be337fd18ac846e4b564e2d84b4dbadb315e3550cf97`,
+committed with NIT fix + final production path fixes).
 
 Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
 rbz. Evidence at

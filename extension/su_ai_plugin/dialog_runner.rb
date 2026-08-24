@@ -377,11 +377,19 @@ module SUAnalysis
         if facts['structural_depth'].is_a?(Integer)
           ctx['structural_depth'] = facts['structural_depth']
         end
-        # Seed must be 'real' when a real transform is supplied;
-        # the identity marker ('identity') is reserved for the
-        # nil-facts fallback.
+        # V1.4 V14-STAGE-BLOCK-001 NIT fix (2026-08-24, CodeX recheck
+        # #2): when no transform is supplied (root layer, no
+        # active edit) but other production facts are present
+        # (pid_path / pid_path_complete / raw_with_nil /
+        # structural_depth), the context MUST carry the
+        # explicit 'identity' seed marker so downstream
+        # rebuild / V1.5+ tools can distinguish "no active
+        # edit" from "real active edit". When a real
+        # transform IS supplied, the seed is 'real'.
         if ctx.key?('active_edit_transform') || ctx.key?('active_edit_inverse')
           ctx['active_edit_seed'] = 'real'
+        elsif !ctx.key?('active_edit_seed')
+          ctx['active_edit_seed'] = 'identity'
         end
         # When we have NO production facts AND no host
         # edit_transform, return nil (factory writes the

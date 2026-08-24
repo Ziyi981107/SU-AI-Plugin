@@ -265,11 +265,22 @@ test 'V14-STAGE-BLOCK-001: dialog_runner._resolve_transform_context falls back t
     model = FakeUI::FakeModel.new
     v14_stage_install_fake_su(model)
     # No inject_edit_transform -- model.edit_transform returns nil.
+    # No production facts either.
     dr = SUAnalysis::Extension::DialogRunner
     ctx = dr.send(:_resolve_transform_context,
                   active_facts: {}, model: model)
-    assert_nil ctx,
-              'dialog_runner MUST return nil (let the factory write the identity marker) when model has no edit_transform'
+    # V1.4 V14-STAGE-BLOCK-001 NIT fix (2026-08-24, CodeX recheck
+    # #2): the dialog_runner now returns an explicit 'identity'
+    # marker Hash (NOT nil) when no production facts and no
+    # host edit_transform are present. This distinguishes
+    # "no active edit" from "real active edit" so V1.5+ rebuild
+    # / provenance tools can reason about the no-edit state.
+    refute_nil ctx,
+              'dialog_runner MUST return an explicit identity marker (not nil) when no production facts and no host edit_transform'
+    assert_equal 'identity', ctx['active_edit_seed'],
+              'identity marker MUST be present in the explicit "no active edit" context'
+    refute ctx.key?('active_edit_transform'),
+           'identity context MUST NOT have active_edit_transform (no real transform supplied)'
   ensure
     v14_stage_uninstall_fake_su
     FakeUI.uninstall!
@@ -490,6 +501,138 @@ test 'V14-STAGE-BLOCK-001: production path falls back to model.edit_transform wh
 end
 
 # ---- V14-STAGE-BLOCK-002 regressions ----
+
+# V14-STAGE-BLOCK-001 NIT fix (2026-08-24, CodeX recheck #2):
+# when the production active_edit_facts is non-empty (the
+# AnalyzersRunner always produces pid_path /
+# pid_path_complete / raw_with_nil / structural_depth when
+# it has a selection) but the root layer is NOT inside an
+# active edit (no :transform key, model.edit_transform is
+# nil), the dialog_runner MUST produce a context Hash with
+# the explicit 'identity' seed marker. This distinguishes
+# "no active edit" from "real active edit" so V1.5+ rebuild
+# / provenance tools can reason about the root-layer case.
+test 'V14-STAGE-BLOCK-001: production-shaped root-context (no active edit) carries the identity seed marker' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    # The model's edit_transform is nil (root layer, no
+    # active edit). AnalyzersRunner-style facts have NO
+    # 'transform' key (root layer, no active edit), but DO
+    # carry pid_path / pid_path_complete / raw_with_nil
+    # (because there IS a selection at the root).
+    active_edit_facts = {
+      'pid_path'          => [],
+      'structural_depth'  => 0,
+      'pid_path_complete' => true,
+      'raw_with_nil'      => []
+      # NO 'transform' key
+    }
+    dr = SUAnalysis::Extension::DialogRunner
+    ctx = dr.send(:_resolve_transform_context,
+                  active_facts: active_edit_facts, model: model)
+    refute_nil ctx,
+              'root-context MUST produce a non-nil transform_context when other production facts are present'
+    # NO transform was supplied, so the context MUST carry
+    # the explicit 'identity' seed marker (NOT 'real').
+    assert_equal 'identity', ctx['active_edit_seed'],
+              'root-context (no active edit) MUST carry the "identity" seed marker'
+    refute ctx.key?('active_edit_transform'),
+           'root-context MUST NOT have active_edit_transform (no real transform supplied)'
+    refute ctx.key?('active_edit_inverse'),
+           'root-context MUST NOT have active_edit_inverse (no real transform supplied)'
+    # Other production facts MUST be preserved.
+    assert_equal [], ctx['active_edit_path'],
+              'pid_path MUST be preserved as active_edit_path'
+    assert_equal true, ctx['pid_path_complete'],
+              'pid_path_complete MUST be preserved'
+    assert_equal [], ctx['raw_with_nil'],
+              'raw_with_nil MUST be preserved'
+    assert_equal 0, ctx['structural_depth'],
+              'structural_depth MUST be preserved'
+    # The context MUST be deeply frozen.
+    assert ctx.frozen?, 'root-context Hash MUST be frozen'
+  ensure
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
+
+# V14-STAGE-BLOCK-001 NIT fix: the full production path
+# (controller + analysis result + model) at the root layer
+# (no active edit) must produce a SourceSnapshot whose
+# transform_context carries the 'identity' seed marker.
+test 'V14-STAGE-BLOCK-001: full production path -- root layer (no active edit) carries the identity seed marker' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    # Production-shaped active_edit_facts: root layer, no
+    # active edit (no 'transform' key), but a selection
+    # present (pid_path / pid_path_complete / raw_with_nil).
+    active_edit_facts = {
+      'pid_path'          => [1000, 1001],
+      'structural_depth'  => 2,
+      'pid_path_complete' => true,
+      'raw_with_nil'      => [1000, 1001]
+    }
+    # Build a real AnalysisResult + GeometrySnapshot.
+    edges = [EdgeRecord.new(
+      id: 0,
+      source: SourceReference.new(
+        entity_id: 1000, persistent_id: 1000, kind: 'edge',
+        persistent_id_path: [1000], instance_path: [],
+        structural_depth: 0, pid_path_complete: true,
+        layer_name: 'Layer0'
+      ),
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+      layer: 'Layer0'
+    )]
+    layers = [LayerRecord.new(name: 'Layer0')]
+    geom = GeometrySnapshot.new(edges: edges, layers: layers)
+    pf = PreflightAnalyzer.run(geom)
+    reg = IssueRegistry.new([])
+    ar = AnalysisResult.new(
+      preflight:          pf,
+      registry:           reg,
+      selection_type:     'Edges',
+      selection_label:    '1 edge',
+      geometry_snapshot:  geom,
+      selection_entities: [],
+      active_edit_facts:  active_edit_facts
+    )
+    controller = SUAnalysis::Extension::DialogController.new(ar, model: model)
+    # Call the REAL _source_snapshot_for(controller) path.
+    dr = SUAnalysis::Extension::DialogRunner
+    src = dr.send(:_source_snapshot_for, controller)
+    refute_nil src
+    # The SourceSnapshot MUST carry the 'identity' seed
+    # marker (root layer, no active edit).
+    assert_equal 'identity', src.transform_context['active_edit_seed'],
+              'root-layer SourceSnapshot MUST carry the "identity" seed marker (no active edit)'
+    refute src.transform_context.key?('active_edit_transform'),
+           'root-layer SourceSnapshot MUST NOT have active_edit_transform'
+    refute src.transform_context.key?('active_edit_inverse'),
+           'root-layer SourceSnapshot MUST NOT have active_edit_inverse'
+    # Other production facts MUST be preserved.
+    assert_equal [1000, 1001], src.transform_context['active_edit_path']
+    assert_equal true, src.transform_context['pid_path_complete']
+    assert_equal [1000, 1001], src.transform_context['raw_with_nil']
+    assert_equal 2, src.transform_context['structural_depth']
+    # to_h MUST also preserve the root-layer marker.
+    h = src.to_h
+    assert_equal 'identity', h[:transform_context]['active_edit_seed'],
+              'to_h MUST carry the "identity" seed marker for the root layer'
+  ensure
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
 
 test 'V14-STAGE-BLOCK-002: FakeModel has SEQUENTIAL operations (not nestable counter)' do
   # Per V14-STAGE-BLOCK-002: the FakeModel must mimic real
