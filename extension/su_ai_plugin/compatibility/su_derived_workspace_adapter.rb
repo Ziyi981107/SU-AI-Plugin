@@ -200,21 +200,22 @@ module SUAnalysis
       # (the host handle). Raises on any failure; the
       # workspace maps that to :failed.
       #
-      # V1.4 CodeX BLOCK rework (2026-08-21): the destination
-      # is the model root per directive. The previous
-      # `model.active_entities` path was a BLOCK (the Owner
-      # checklist said "model root" but the code wrote into
-      # active_entities -- inconsistent). Now both code and
-      # checklist agree on `model.entities`.
-      #
-      # V1.4 Phase-2 self-audit (2026-08-22): the create call
-      # MUST prefer the caller-supplied model (the controller's
-      # model propagated by DialogRunner) over
-      # Sketchup.active_model. Otherwise a multi-model
-      # scenario (rare, but possible) could write into the
-      # wrong model. resolve_root_entities(model) already
-      # enforces this on the read path; create_top_level_group
-      # now matches.
+      # V1.4 CodeX V14-RUNTIME-BLOCK-003 (2026-08-22, real
+      # SU2020 Owner repro): Sketchup::Entities#add_group takes
+      # NO arguments (or an optional Sketchup::Entity to
+      # pre-populate with). It does NOT take a group-name
+      # String. The previous code called
+      # `entities.add_group(NAME_PREFIX + name.to_s)` which
+      # real SU interpreted as "add the source entity
+      # 'SU-AI-Derived-...'" and raised:
+      #   TypeError: wrong argument type (expected Sketchup::Entity)
+      # The correct SketchUp host contract is:
+      #   1. call `entities.add_group` (no args) to get a fresh
+      #      Group (its name is initially empty or auto-set by
+      #      SU).
+      #   2. assign the recognizable name via `g.name = ...`.
+      #   3. return the new Group handle.
+      # Both code + test stub match the host contract exactly.
       def create_top_level_group(name, model: nil)
         # Prefer the caller-supplied model; fall back to the
         # active model when no model was passed in.
@@ -233,11 +234,14 @@ module SUAnalysis
           raise SketchupUnavailableError,
                 "model.entities.add_group is not available"
         end
-        # Sketchup::Entities#add_group creates a NEW
-        # ComponentDefinition under the hood -- it does NOT
-        # alias source-side definitions. Per directive gate B,
-        # this guarantees independent derived ownership.
-        g = entities.add_group(NAME_PREFIX + name.to_s)
+        # The host API: `Sketchup::Entities#add_group` is called
+        # with NO arguments (it returns a brand-new Group
+        # whose ComponentDefinition is NOT shared with any
+        # source -- per directive gate B, independent
+        # derived ownership). The recognizable name is
+        # assigned via `g.name = ...` immediately after.
+        g = entities.add_group
+        g.name = NAME_PREFIX + name.to_s
         g
       end
 

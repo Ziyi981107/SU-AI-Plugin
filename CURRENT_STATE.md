@@ -1,22 +1,157 @@
 # CURRENT STATE
 
-Last updated: 2026-08-22 (V1.4 phases 1..4 + CodeX BLOCK-R3 +
-BLOCK-R4-1 + V14-RUNTIME-BLOCK-001 + Phase-2 self-audit +
-Phase-3 self-audit **ALL CLOSED** on `v1.4-derived-workspace`.
-Full suite **616/616 Ruby + 148/148 Node.js DOM assertions
+Last updated: 2026-08-24 (V14-RUNTIME-BLOCK-003 fix COMPLETE
+on `v1.4-derived-workspace`, base = `bcfd348`).
+Full suite **622/622 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
-dist/SU-AI-Plugin.rbz rebuilt (412823 bytes, 53 entries).
-Owner is away; Agent ran a 4-phase closeout autonomously.
-Owner must RESTART SU2020 ENTIRELY + reinstall the rbz
-before running the 10-step V14 Gate 2 checklist. NO Owner
-notification + NO CodeX Stage Review recheck yet; Owner
-Gate 2 evidence is the next gate.
-SU-AI-Plugin.rbz rebuilt to include the new Stage 4 files.
-Next step: MANDATORY CodeX V1.4 Stage Review per directive
-030, base = `550eb74` (V1.4 directive commit), head =
-`431af5d`. V1.0 candidate still FROZEN at tag
-`v1.0-candidate-2026-08-19` (commit `56ea611`). V1.2 + V1.3
-stages remain CLOSED on SketchUp 2020 per CodeX 029.
+dist/SU-AI-Plugin.rbz rebuilt (416996 bytes, 53 entries,
+SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`).
+BLOCK-003 closed; awaiting CodeX narrow-scope recheck of
+the BLOCK-003 fix (production adapter add_group contract +
+RBZ smoke test isolation). Owner Gate 2 V1.4 SU2020 NOT
+yet run on this rebuild. V1.0 candidate still FROZEN at
+tag `v1.0-candidate-2026-08-19` (commit `56ea611`). V1.2
++ V1.3 stages remain CLOSED on SketchUp 2020 per CodeX 029.
+
+## V14-RUNTIME-BLOCK-003 (real SU2020 Owner repro 2026-08-22)
+                        -- fix COMPLETE 2026-08-24
+
+- **Symptom**: Owner real-SU2020 repro at the V14 Gate 2
+  click on Prepare. Production adapter's
+  `SketchupDerivedWorkspaceAdapter#create_top_level_group`
+  called `entities.add_group(NAME_PREFIX + name.to_s)`.
+  Real SketchUp 2020 `Sketchup::Entities#add_group` takes
+  NO arguments (it accepts an optional pre-population
+  `Sketchup::Entity`, NOT a String group name). The call
+  raised on the host:
+  ```
+  TypeError: wrong argument type (expected Sketchup::Entity)
+  ```
+  and the dialog entered the `failed` state. CI-side, the
+  full test suite produced 9 FAILs (DANGER 1, 2, 5a,
+  BLOCK-R3-2 closure, plus 5 V14 production call chain
+  tests) when run in alphabetical file order, while the
+  same tests PASS in isolated runs -- classic test-state
+  pollution.
+
+- **Root cause (production adapter)**:
+  `extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb`
+  used the wrong SketchUp host contract:
+  `g = entities.add_group(NAME_PREFIX + name.to_s)`. The
+  correct contract is:
+  ```
+  g = entities.add_group         # zero args -> fresh Group
+  g.name = NAME_PREFIX + name.to_s  # separate property write
+  g
+  ```
+
+- **Root cause (test pollution)**: `tests/test_rbz_smoke.rb`
+  extracts the existing `dist/SU-AI-Plugin.rbz` into a TEMP
+  directory and `load`s the entry-point + main.rb through
+  the boot! require_relative chain. The chain reopens the
+  production classes (including the production adapter) with
+  the EXTRACTED source from the .rbz. The .rbz was built
+  BEFORE BLOCK-003, so the extracted adapter had the BUG
+  (`add_group(NAME_PREFIX + name)`). After the smoke test,
+  `SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter#create_top_level_group`
+  remained bound to the BUGGY extracted source, so
+  subsequent tests (DANGER 1/2/5a, BLOCK-R3-2, the V14
+  production call chain) ran the BUGGY production path and
+  hit the FakeEntities TypeError guard we had tightened
+  in BLOCK-003 to surface exactly this regression.
+
+- **Fix -- production adapter**:
+  `extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb`
+  - `create_top_level_group`: `entities.add_group` (no
+    args) then `g.name = NAME_PREFIX + name.to_s`.
+  - Updated the doc comment to spell out the real SketchUp
+    host contract (no string group-name argument; the
+    recognizable name is assigned via the property writer).
+
+- **Fix -- host-API contract tests**:
+  `tests/_fake_ui.rb` FakeUI::FakeModel::FakeEntities
+  - `add_group(*args)`: takes `*args` and raises `TypeError`
+    if `args` is non-empty, mirroring the real
+    `Sketchup::Entities#add_group` signature. The previous
+    version accepted `add_group(name)` as a positional
+    argument, which masked the BLOCK-003 bug.
+  `tests/_fake_ui.rb` FakeUI::FakeModel::FakeGroup
+  - `name` / `name=` re-implemented explicitly to support
+    the production adapter's `g.name = ...` assignment.
+  `tests/test_v14_dangerous_failure_modes.rb`
+  - `v14_install_fake_su` ensures the test fake model
+    responds to BOTH `:entities` (the production
+    destination) AND `:active_entities` (the
+    `sketchup_available?` capability check).
+
+- **Fix -- test isolation in RBZ smoke**:
+  `tests/test_rbz_smoke.rb` adds a defensive restore step
+  that `load`s the in-tree production source files (with
+  absolute paths) AFTER the smoke test, so the production
+  classes' method bindings are restored to the in-tree
+  source regardless of which .rbz build was extracted.
+  Without this, any .rbz that lags behind a production-side
+  fix would pollute subsequent tests via class re-opening.
+  The list of files to restore is the complete boot!
+  require_relative chain + dialog_runner's transitive
+  requires (loader.rb, dialog_runner.rb, analyzers_runner,
+  ui_bridge, dialog_controller, issue_locator, all the
+  core/* pure-Ruby files, the compatibility/* files, and
+  the V1.4 stage 3/4 files: derived_workspace_adapter,
+  derived_geometry_workspace, working_mode_runner,
+  source_snapshot, su_derived_workspace_adapter).
+
+- **Verification**:
+  - Targeted: `tests/run_all.rb "DANGER"` -> 15/15 PASS;
+    `tests/run_all.rb "V14 production call chain"` -> 7/7
+    PASS; `tests/run_all.rb "V14-RUNTIME-BLOCK-002"` ->
+    6/6 PASS.
+  - Full Ruby: 622/622 PASS, 0 fail, 0 error, exit 0.
+  - Node DOM: 148/148 PASS.
+  - `git diff --check`: clean.
+  - RBZ rebuilt: `dist/SU-AI-Plugin.rbz` 416996 bytes,
+    53 entries,
+    SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`
+    (distinct from the prior 416781-byte build).
+  - The BLOCK-003 fix IS present in the .rbz
+    (`su_ai_plugin/compatibility/su_derived_workspace_adapter.rb`
+    inside the archive has `entities.add_group` then
+    `g.name = ...`, not `entities.add_group(NAME_PREFIX + ...)`).
+
+- **What remains**:
+  - **CodeX narrow-scope recheck** of the BLOCK-003 fix.
+    DO NOT submit the full V1.4 Stage Review yet -- the
+    BLOCK-003 fix is a focused, narrow patch (production
+    add_group contract + FakeUI host-API contract tests +
+    RBZ smoke test isolation). CodeX should re-check only
+    these changes.
+  - **Owner Gate 2 V1.4 SU2020** on the rebuilt rbz: Owner
+    must RESTART SU2020 ENTIRELY and reinstall the rbz
+    before running the 10-step V14 Gate 2 checklist
+    (`Review/OWNER_VERIFICATION_V1_4_DERIVED_WORKSPACE_2026-08-21.txt`).
+    Agent will NOT pre-fill PASS.
+  - **V1.4 Stage Review** packet: remains STALE; do not
+    submit. After CodeX BLOCK-003 recheck PASS + Owner
+    Gate 2 PASS, Agent will assemble the consolidated
+    V1.4 stage review packet per directive 030.
+
+- **Lessons**:
+  - Test stubs that accept "anything goes" argument shapes
+    (`def add_group(name)` instead of `def add_group(*args)`
+    with strict validation) MASK production bugs. The
+    fake host MUST mirror the real host signature so the
+    test suite catches regressions, not paper over them.
+  - Smoke tests that `load` extracted package files in the
+    SAME Ruby process as the main test suite can pollute
+    global classes via class re-opening semantics. Either
+    run the smoke test in a subprocess (preferred for
+    future redesign) or restore the in-tree files at the
+    END of the smoke test. We chose the latter as the
+    minimum-invasive fix.
+  - Build artifacts MUST be regenerated whenever a
+    production-side fix touches a file that ships in the
+    .rbz; otherwise the smoke test's extracted copy lags
+    behind the in-tree source.
 
 ## V1.4 stage 4 (IMPLEMENTATION COMPLETE on
             `v1.4-derived-workspace` branch, head = `431af5d`)
@@ -77,11 +212,27 @@ stages remain CLOSED on SketchUp 2020 per CodeX 029.
     `SketchupDerivedWorkspaceAdapter` is the production
     SketchUp adapter. `NAME_PREFIX = 'SU-AI-Derived-'`
     makes derived entities visually identifiable. Calls
-    `Sketchup::Entities#add_group(NAME_PREFIX + name)`
-    which creates a brand-new ComponentDefinition per
-    call (independent ownership, no shared-definition
-    aliasing with source -- per directive gate B).
-    Capability detection via defined?(Sketchup).
+    `Sketchup::Entities#add_group` with NO arguments
+    (a brand-new ComponentDefinition per call -- per
+    directive gate B, independent derived ownership, no
+    shared-definition aliasing with source) and assigns
+    the recognizable name via `g.name = NAME_PREFIX +
+    name.to_s`. Capability detection via defined?(Sketchup).
+
+    > **CORRECTION (V14-RUNTIME-BLOCK-003, 2026-08-22,
+    > fix 2026-08-24)**: the previous description in
+    > this section referred to
+    > `Sketchup::Entities#add_group(NAME_PREFIX + name)`
+    > as the correct production contract. That is the
+    > BUG. Real SketchUp 2020 `add_group` takes NO
+    > arguments (or an optional pre-population
+    > `Sketchup::Entity`); passing a String group name
+    > raises TypeError on the host. The BLOCK-003 fix
+    > changed the production adapter to
+    > `g = entities.add_group` (no args) followed by
+    > `g.name = NAME_PREFIX + name.to_s`. See the
+    > V14-RUNTIME-BLOCK-003 section at the top of this
+    > file for the full root-cause analysis.
 - **Runner bug fix within this commit**:
   - The previous version of `core/working_mode_runner.rb`
     discard() set `@current_workspace = nil` after the

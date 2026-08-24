@@ -141,14 +141,31 @@ module FakeUI
   class FakeModel
     # A sketchup::Group-like entity in active_entities.
     class FakeGroup
-      attr_reader :name, :entities, :entityID
+      attr_reader :entities, :entityID
       attr_accessor :persistent_id
+      # V1.4 CodeX V14-RUNTIME-BLOCK-003 (2026-08-22): the
+      # real Sketchup::Group exposes `name` as a property
+      # with a `name=` writer. The Struct-based FakeGroup
+      # cannot override the auto-generated Struct writers
+      # via attr_reader; we use a custom method that
+      # reads + writes through @name and replaces the
+      # auto-generated writer.
       def initialize(name, id_counter)
         @name = name.to_s
         @entityID = id_counter
         @persistent_id = id_counter
         @entities = FakeEntities.new(@entityID)
         @valid = true
+      end
+      def name
+        @name
+      end
+      # The production adapter calls `g.name = NAME_PREFIX + name.to_s`
+      # -- the recognizable derived group name assignment.
+      # The real Sketchup::Group supports this property
+      # writer; the FakeGroup must mirror it.
+      def name=(value)
+        @name = value.to_s
       end
       def valid?
         @valid == true
@@ -175,9 +192,19 @@ module FakeUI
         @face_id = 0
         @edge_id = 0
       end
-      def add_group(name)
+      def add_group(*args)
+        # V1.4 CodeX V14-RUNTIME-BLOCK-003 (2026-08-22):
+        # match the real SketchUp::Entities#add_group contract
+        # -- it takes NO arguments (or an optional Sketchup::Entity
+        # to pre-populate with). Calling add_group with a
+        # String is a TypeError on a real host. The test
+        # stub MUST match the real signature so the test
+        # suite catches the BLOCK, not mask it.
+        unless args.empty?
+          raise TypeError, "add_group expects 0 arguments (or 1 Sketchup::Entity); got #{args.length} (#{args.inspect})"
+        end
         @next_id += 1
-        g = FakeGroup.new(name, @next_id)
+        g = FakeGroup.new('', @next_id)
         @groups << g
         g
       end

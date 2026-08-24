@@ -408,7 +408,128 @@ else
           SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
           SUAnalysis::Extension::Loader.instance_variable_set(:@live_dialog, nil)
         end
+        # V1.4 V14-RUNTIME-BLOCK-003 (2026-08-24) test-isolation
+        # fix: re-load the in-tree production source files so the
+        # methods on the production classes are restored to the
+        # in-tree implementations AFTER the smoke test loads the
+        # EXTRACTED .rbz versions. The smoke test triggers the full
+        # boot path (main.rb -> boot! -> require_relative chain),
+        # which re-opens the production classes with the EXTRACTED
+        # code from the .rbz. If the .rbz was built BEFORE a
+        # BLOCK-003 fix (or any other production-side change), the
+        # extracted code becomes stale relative to the in-tree
+        # source, and subsequent tests inherit that stale code via
+        # the polluted global classes. We restore by `load`-ing
+        # each polluted production file by absolute path from the
+        # in-tree source. `load` always re-executes (unlike
+        # `require`, which checks $LOADED_FEATURES), and using
+        # absolute paths avoids the require_relative path-resolution
+        # trap (TEMP files take precedence inside boot!).
+        v14_reload_in_tree_production_files!
       end
     end
+  end
+end
+
+# V1.4 V14-RUNTIME-BLOCK-003 (2026-08-24): restore the in-tree
+# production source files after the RBZ smoke test pollutes the
+# global classes via the extracted .rbz load chain. We `load`
+# each polluted file by absolute path from the in-tree source
+# so subsequent tests see the correct (in-tree) implementations,
+# not the stale (extracted) ones.
+#
+# Files polluted by the smoke test (per the boot! require_relative
+# chain + dialog_runner.rb's transitive requires):
+#   - compatibility/su_capability.rb
+#   - core/tolerance.rb, core/analysis_config.rb, core/preflight.rb
+#   - core/analyzers/*.rb
+#   - core/issue_registry.rb, core/issue_id_assigner.rb,
+#     core/issue_normalizer.rb, core/issue_enricher.rb,
+#     core/issue_grouper.rb, core/issue_locator_policy.rb
+#   - core/analysis_result.rb
+#   - analyzers_runner.rb, issue_locator.rb,
+#     display_unit_formatter.rb, ui_bridge.rb,
+#     dialog_controller.rb, dialog_runner.rb
+#   - core/working_mode_runner.rb, core/source_snapshot.rb,
+#     core/derived_workspace_adapter.rb
+#   - compatibility/su_derived_workspace_adapter.rb
+#   - loader.rb
+#
+# We reload them in dependency order (children before parents)
+# so any class-reopening that references a parent class method
+# resolves to the FRESHLY loaded in-tree implementation.
+V14_RBZ_SMOKE_IN_TREE_FILES = %w[
+  core/tolerance.rb
+  core/analysis_config.rb
+  core/quantize_key.rb
+  core/vertex_record.rb
+  core/source_reference.rb
+  core/edge_record.rb
+  core/face_record.rb
+  core/layer_record.rb
+  core/layer_role.rb
+  core/layer_role_config.rb
+  core/geometry_snapshot.rb
+  core/issue_registry.rb
+  core/issue_id_assigner.rb
+  core/issue_normalizer.rb
+  core/issue_enricher.rb
+  core/issue_grouper.rb
+  core/issue_locator_policy.rb
+  core/structural_facts.rb
+  core/synthetic_factory.rb
+  core/face_inventory_grouper.rb
+  core/layer_semantic_mapper.rb
+  core/layer_issue_grouper.rb
+  core/vertex_index.rb
+  core/source_fingerprint.rb
+  core/execution_config_snapshot.rb
+  core/source_snapshot.rb
+  core/repair_plan.rb
+  core/derived_entity_record.rb
+  core/derived_workspace_fingerprint.rb
+  core/derived_workspace_adapter.rb
+  core/preflight.rb
+  core/analysis_result.rb
+  core/derived_geometry_workspace.rb
+  core/working_mode_runner.rb
+  analyzers_runner.rb
+  issue_locator.rb
+  display_unit_formatter.rb
+  ui_bridge.rb
+  dialog_controller.rb
+  dialog_runner.rb
+  loader.rb
+  compatibility/su_capability.rb
+  compatibility/su_derived_workspace_adapter.rb
+].freeze
+
+def v14_reload_in_tree_production_files!
+  # Resolve the in-tree extension root (D:/Projects/SU-AI-Plugin/
+  # extension/su_ai_plugin). We use __dir__ of this test file.
+  in_tree_root = File.expand_path('../extension/su_ai_plugin', __dir__)
+  V14_RBZ_SMOKE_IN_TREE_FILES.each do |rel|
+    abs = File.join(in_tree_root, rel)
+    next unless File.file?(abs)
+    # `load` (not `require`) so the file is RE-executed even if
+    # it was previously loaded from a different path. The class
+    # re-opening semantics re-bind the methods to the new
+    # (in-tree) source location.
+    begin
+      load abs
+    rescue StandardError => e
+      # If a file's reload fails for a benign reason (e.g., a
+      # constant is already locked), continue. The whole point
+      # is to restore method definitions on the production
+      # classes; a redefinition error in an unrelated file
+      # shouldn't break the whole restore.
+      $stderr.puts("[V14-RUNTIME-BLOCK-003] reload note: #{e.class}: #{e.message} (continuing)")
+    end
+  end
+  # Reset Loader state so the freshly loaded registration does
+  # not skip on the @registered sentinel.
+  if defined?(SUAnalysis::Extension::Loader)
+    SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
+    SUAnalysis::Extension::Loader.instance_variable_set(:@live_dialog, nil)
   end
 end

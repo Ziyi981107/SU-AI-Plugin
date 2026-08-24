@@ -99,6 +99,15 @@ def v14_install_fake_su(model)
     Object.const_set(:Sketchup, Module.new)
   end
   Sketchup.define_singleton_method(:active_model) { model }
+  # The production adapter's sketchup_available? checks
+  # `Sketchup.active_model.respond_to?(:active_entities)`. The
+  # test fake model must respond to BOTH :entities AND
+  # :active_entities (V14-RUNTIME-BLOCK-003 also tightened
+  # the host-API contract tests to match the real SU
+  # signature).
+  unless model.respond_to?(:active_entities)
+    model.define_singleton_method(:active_entities) { :fake_active_entities }
+  end
 end
 
 def v14_uninstall_fake_su
