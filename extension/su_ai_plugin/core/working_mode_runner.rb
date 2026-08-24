@@ -76,6 +76,41 @@ module SUAnalysis
         # runner only ever sees a frozen SourceSnapshot and
         # builds a brand new workspace. Any prior workspace
         # is discarded (best-effort) first.
+        #
+        # V1.4 V14-STAGE-BLOCK-002 (2026-08-24, CodeX V1.4 Stage Review):
+        # if the prior workspace is in :failed state (its
+        # cleanup did not fully complete), we MUST NOT proceed
+        # with a new build. The prior failed workspace's
+        # handle_registry may still hold live derived handles
+        # that the user has not cleaned up -- overwriting it
+        # with a fresh :building workspace would lose the
+        # private registry tracking and leak partial derived
+        # entities into the model. Instead, we refuse the
+        # new build: keep @current_workspace as the :failed
+        # workspace, set last_error to explain the refusal,
+        # and return a snapshot with state=:failed so the
+        # UI can show the user "cleanup failed; please retry
+        # Discard / Rebuild manually". The user must
+        # explicitly trigger a Discard (or Rebuild) that
+        # completes the cleanup before a new Prepare is
+        # allowed.
+        prior = @current_workspace
+        if prior && prior.state == :failed
+          refused = DerivedGeometryWorkspace.new_with_inventory(
+            workspace_id:    prior.workspace_id,
+            source_snapshot: prior.source_snapshot,
+            adapter:         prior.instance_variable_get(:@adapter),
+            model:           prior.instance_variable_get(:@model),
+            state:           :failed,
+            entity_pairs:    prior.instance_variable_get(:@entity_pairs),
+            handle_registry: prior.instance_variable_get(:@handle_registry),
+            fingerprint:     prior.fingerprint,
+            last_error:      'prepare refused: prior workspace is :failed (cleanup incomplete); call discard or rebuild before retrying',
+            build_started_at: prior.build_started_at
+          )
+          @current_workspace = refused
+          return snapshot
+        end
         _discard_if_present
 
         # Build the empty workspace first. We will populate
@@ -92,14 +127,20 @@ module SUAnalysis
         @current_model         = model
         @current_workspace     = ws
 
-        # V1.4 Phase-3 self-audit fix: wrap the WHOLE build
-        # sequence in a single SU operation so a mid-build
-        # failure rolls back ALL entities created so far
-        # (per directive: "Failure injection cleanup all
-        # created handles"). The workspace's per-entity
-        # build_entity opens its own operation; on SU, a
-        # nested operation's abort rolls back the parent
-        # too, so wrapping here gives us atomic cleanup.
+        # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): the prepare
+        # path is the SINGLE operation owner for the build.
+        # Real SketchUp does NOT nest operations (per the
+        # SketchUp Ruby API docs: calling Model#start_operation
+        # while another operation is open implicitly ends
+        # the previous one). The workspace's build_entity
+        # does NOT open its own operation -- it just calls
+        # create_top_level_group + add_edge_to_group inside
+        # our open operation. On mid-build failure the runner
+        # aborts THIS operation; SU rolls back every derived
+        # entity created so far (atomic cleanup). This is
+        # what the per-entity nesting attempt was trying to
+        # achieve; the sequential-operation model achieves it
+        # correctly on real SU.
         built_ws = nil  # explicit initial so rescue path can reference it
         begin
           adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.4 Working Copy Prepare')
@@ -108,17 +149,15 @@ module SUAnalysis
           @current_workspace = built_ws
         rescue StandardError => e
           # Atomic cleanup: abort the outer operation; SU
-          # rolls back every per-entity operation that was
-          # nested inside (including all successfully-
-          # created entities that the workspace's per-entity
-          # operations had already committed). The runner's
-          # @current_workspace is set to the :failed workspace
-          # (built_ws) so the UI sees the failed state.
-          # Note: we DELIBERATELY do not wrap the abort +
-          # built_ws construction in another rescue, because
-          # a failure in the cleanup path is a real bug (the
-          # workspace MUST report :failed). Surface the
-          # exception via last_error instead.
+          # rolls back every derived entity created so far
+          # under it (atomic cleanup). The runner's
+          # @current_workspace is set to the :failed
+          # workspace so the UI sees the failed state and
+          # the handle_registry stays intact (precise
+          # tracking of any partial handles that the abort
+          # failed to roll back -- e.g. if the host is
+          # running an older SU API that did not auto-roll-
+          # back via abort_operation).
           begin
             adapter.end_operation(model, commit: false)
           rescue StandardError => abort_err
@@ -127,15 +166,50 @@ module SUAnalysis
             # still :failed (the original build failed).
             @abort_error = "#{abort_err.class}: #{abort_err.message}"
           end
+          # The :failed workspace preserves the partial
+          # inventory + handle_registry so the user can
+          # issue a Discard (or Rebuild) to clean up
+          # explicitly. The next prepare() will refuse
+          # until cleanup completes (see the prior ==
+          # :failed check at the top of this method).
+          #
+          # Per V14-STAGE-BLOCK-002 (2026-08-24): the
+          # partial inventory + handle_registry MUST come
+          # from `built_ws` (the last build_entity result,
+          # which may carry surviving entities + handles),
+          # NOT from `ws` (the original empty :building
+          # workspace which has no entities yet). When
+          # _build_derived_entities raised BEFORE returning
+          # any workspace (e.g., when the empty-source
+          # :failed workspace is returned, or when a
+          # build raised during the very first entity),
+          # built_ws may be nil or carry no inventory; we
+          # fall back to the original ws's empty state in
+          # that case.
+          partial_pairs = if built_ws && built_ws.respond_to?(:instance_variable_get)
+                          built_ws.instance_variable_get(:@entity_pairs)
+                        else
+                          []
+                        end
+          partial_handles = if built_ws && built_ws.respond_to?(:instance_variable_get)
+                              built_ws.instance_variable_get(:@handle_registry)
+                            else
+                              {}.freeze
+                            end
+          partial_fp = if built_ws && built_ws.respond_to?(:fingerprint)
+                         built_ws.fingerprint
+                       else
+                         nil
+                       end
           built_ws = DerivedGeometryWorkspace.new_with_inventory(
             workspace_id:    ws.workspace_id,
             source_snapshot: source,
             adapter:         adapter,
             model:           model,
             state:           :failed,
-            entity_pairs:    [].freeze,
-            handle_registry: {}.freeze,
-            fingerprint:     nil,
+            entity_pairs:    partial_pairs,
+            handle_registry: partial_handles,
+            fingerprint:     partial_fp,
             last_error:      "#{e.class}: #{e.message}",
             build_started_at: ws.build_started_at
           )

@@ -275,7 +275,7 @@ module FakeUI
     end
 
     attr_reader :selection, :active_view, :active_entities,
-                :entities, :operation_log, :open_operations
+                :entities, :operation_log
 
     def initialize
       @selection = FakeSelection.new
@@ -286,31 +286,71 @@ module FakeUI
       # V1.4 plumbing path uses entities (root).
       @entities = FakeEntities.new
       @active_entities = FakeEntities.new(1)
-      # V1.4: operation wrapping. Each start_operation opens a
-      # new frame; commit/abort closes it. If a commit happens
-      # with no matching open frame, the model raises (mirrors
-      # the real SU behavior of "operation stack underflow").
+      # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): operation
+      # wrapping uses SEQUENTIAL semantics (NOT a nestable
+      # counter stack). At most ONE operation may be open
+      # at a time. start_operation when one is open
+      # auto-closes the previous (logged as :implicit_close);
+      # commit_operation / abort_operation when no operation
+      # is open raise.
       @operation_log = []
-      @open_operations = 0
+      @operation_open = false
+      @current_operation_label = nil
       # V1.4 CodeX BLOCK rework (2026-08-21): edit_transform
       # support for the active-edit-context inverse transform
       # test. The default is nil (no active edit; identity).
+      # When non-nil, edit_transform MUST expose `.to_a`
+      # returning a 16-float Array (the canonical
+      # Geom::Transformation flattened form). inject_edit_transform
+      # accepts any object that responds to .to_a; the
+      # dialog_runner reads the result via .to_a.
       @edit_transform = nil
     end
 
     # The production adapter resolves the destination via
     # `model.entities` (root). For tests, we set this up
     # in FakeModel.new by instantiating FakeEntities.
+    #
+    # V1.4 V14-STAGE-BLOCK-002 (2026-08-24, CodeX V1.4 Stage Review):
+    # the FakeModel MUST mimic real SketchUp's SEQUENTIAL
+    # operation semantics, NOT the prior nestable counter
+    # stack. Per the SketchUp Ruby API: calling
+    # Model#start_operation while another operation is open
+    # implicitly ends the previous one. The previous
+    # implementation (counter stack) hid this behavior
+    # and let the workspace's per-entity begin_operation
+    # calls (now removed) appear to nest cleanly. Now we
+    # expose the real-SU auto-close + single-open invariant:
+    # at most ONE operation may be open at a time; calling
+    # start_operation when one is already open auto-closes
+    # the previous (logged as :implicit_close with the
+    # previous label); calling commit_operation /
+    # abort_operation when no operation is open raises.
     def start_operation(label, disable_ui = false)
+      if @operation_open
+        # Implicit close of the previous operation
+        # (real SU closes it via commit when the user
+        # starts a new top-level operation; we log it
+        # for diagnostic visibility).
+        @operation_log << {
+          kind:       :implicit_close,
+          prev_label: @current_operation_label.to_s,
+          new_label:  label.to_s
+        }
+      end
       @operation_log << { kind: :start, label: label.to_s, disable_ui: disable_ui }
-      @open_operations += 1
+      @operation_open            = true
+      @current_operation_label   = label.to_s
       true
     end
 
     def commit_operation
-      raise 'SU commit_operation called with no matching start_operation' if @open_operations <= 0
+      unless @operation_open
+        raise 'SU commit_operation called with no matching start_operation'
+      end
       @operation_log << { kind: :commit }
-      @open_operations -= 1
+      @operation_open            = false
+      @current_operation_label   = nil
       true
     end
 
@@ -319,8 +359,14 @@ module FakeUI
     # production adapter writes. (The previous version only
     # invalidated active_entities, which is wrong because the
     # production adapter writes to model.entities.)
+    #
+    # V1.4 V14-STAGE-BLOCK-002: abort invalidates the same
+    # entities and logs :abort. After abort, the operation
+    # stack is empty (single-open invariant holds).
     def abort_operation
-      raise 'SU abort_operation called with no matching start_operation' if @open_operations <= 0
+      unless @operation_open
+        raise 'SU abort_operation called with no matching start_operation'
+      end
       invalidated_root = @entities.invalidate_all!
       invalidated_active = @active_entities.invalidate_all!
       @operation_log << {
@@ -328,8 +374,15 @@ module FakeUI
         invalidated_root: invalidated_root,
         invalidated_active: invalidated_active
       }
-      @open_operations -= 1
+      @operation_open            = false
+      @current_operation_label   = nil
       true
+    end
+
+    # Test hook: also expose the single-open invariant via a
+    # predicate (cheaper than reaching into @operation_open).
+    def operation_open?
+      @operation_open ? true : false
     end
 
     # Test hook: inject an edit_transform that the

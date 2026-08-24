@@ -1263,46 +1263,76 @@ test 'PHASE-3-MATRIX: first/middle/last entity build failure -> no partial leake
   end
 end
 
-# PHASE-3-MATRIX closure test: failed state is RECOVERABLE.
-# After Prepare hits a :failed state, a subsequent Prepare
-# (with the same source) MUST start fresh and reach :ready
-# (the failed workspace does NOT block retries).
-test 'PHASE-3-MATRIX: failed state is recoverable -- retry Prepare reaches :ready' do
+# PHASE-3-MATRIX closure test: failed state refuses new Prepare
+# until cleanup completes (V14-STAGE-BLOCK-002, 2026-08-24).
+# After Prepare hits a :failed state, the runner MUST refuse
+# the next Prepare -- overwriting the failed workspace would
+# lose its private handle_registry tracking and leak partial
+# derived entities into the model. The user MUST explicitly
+# trigger Discard (which may transition to :discarded or
+# :failed depending on cleanup outcome) before a fresh
+# Prepare is allowed.
+test 'PHASE-3-MATRIX: failed state refuses new Prepare until Discard completes' do
   v14_reset_everything
   src = v14_danger_source_with_paths([
     { persistent_id: 18001, persistent_id_path: [18001],
       start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] }
   ])
-  adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
-  # First Prepare with a failing adapter (begin_operation
-  # raises before any build_entity runs).
-  failing_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
-    def begin_operation(_model, label:)
-      raise StandardError, 'v14-first-try-fail'
+  # Use a single adapter that fails begin_operation exactly
+  # ONCE (transient failure). After that single failure the
+  # adapter works normally for subsequent calls -- mirroring
+  # a transient host operation-stack error on real SU.
+  state = { failed: true }  # fail the first call (the Prepare)
+  transient_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
+    define_method(:begin_operation) do |_model, label:|
+      if state[:failed]
+        state[:failed] = false  # consume the failure (transient)
+        raise StandardError, 'v14-first-try-fail'
+      end
+      nil
     end
   end.new
   SUAnalysis::Core::WorkingModeRunner.prepare(
-    source: src, adapter: failing_adapter, model: nil
+    source: src, adapter: transient_adapter, model: nil
   )
   snap1 = SUAnalysis::Core::WorkingModeRunner.snapshot
-  # The runner's prepare() catches begin_operation failures and
-  # transitions the workspace to :failed with the original
-  # exception captured in last_error.
   assert_equal 'failed', snap1['state'],
                'first Prepare (failing begin_operation) MUST produce :failed'
   assert_match(/v14-first-try-fail/, snap1['last_error'].to_s,
                'last_error MUST capture the begin_operation failure')
-  # Second Prepare with a WORKING adapter on the SAME source
-  # MUST reach :ready (recovery). This proves the failed
-  # workspace does not block retries.
+  # The failed workspace's workspace_id is preserved (NOT
+  # overwritten by a new Prepare).
+  failed_ws_id = snap1['workspace_id']
+  refute_nil failed_ws_id
+  # Second Prepare (still using the transient adapter; its
+  # begin_operation now succeeds because state[:failed] is
+  # reset) MUST be REFUSED -- the runner keeps the failed
+  # workspace intact so its handle_registry stays in scope.
   SUAnalysis::Core::WorkingModeRunner.prepare(
-    source: src, adapter: adapter, model: nil
+    source: src, adapter: transient_adapter, model: nil
   )
   snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
-  assert_equal 'ready', snap2['state'],
-               'retry Prepare (working adapter) MUST reach :ready (failed state is recoverable)'
-  assert_equal 1, snap2['entity_count'],
-               'retry Prepare MUST produce 1 derived entity'
+  assert_equal 'failed', snap2['state'],
+               'retry Prepare (working adapter) MUST be REFUSED while prior workspace is :failed (V14-STAGE-BLOCK-002)'
+  assert_equal failed_ws_id, snap2['workspace_id'],
+               'retry Prepare MUST NOT overwrite the failed workspace_id (handle_registry preservation)'
+  assert_match(/refused/i, snap2['last_error'].to_s,
+               'last_error MUST explain the refusal (so the UI / Owner can see why)')
+  # After Discard completes (the FakeAdapter's dispose is a
+  # no-op so Discard returns :discarded), a new Prepare is
+  # allowed and reaches :ready.
+  SUAnalysis::Core::WorkingModeRunner.discard
+  snap_discarded = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'discarded', snap_discarded['state'],
+               'Discard after :failed MUST transition to :discarded (clean state)'
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: transient_adapter, model: nil
+  )
+  snap3 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'ready', snap3['state'],
+               'after Discard, a new Prepare MUST reach :ready (recovery path)'
+  assert_equal 1, snap3['entity_count'],
+               'new Prepare MUST produce 1 derived entity'
 end
 
 # PHASE-3-MATRIX closure test: rapid click cycles (Prepare +

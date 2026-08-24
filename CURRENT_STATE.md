@@ -1,23 +1,201 @@
 # CURRENT STATE
 
 Last updated: 2026-08-24 (V1.4 Owner Gate 2 PASS V14-1..V14-10
-on real SU2020 + Stage Review packet dispatched on
-`v1.4-derived-workspace`, base = `550eb74`, HEAD = `707273a`).
-Full suite **628/628 Ruby + 148/148 Node.js DOM assertions
++ CodeX Stage Review BLOCK recheck closed:
+V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 both fixed, narrow recheck
+packet ready).
+Branch `v1.4-derived-workspace`.
+  - Production candidate HEAD (rbz built from): 707273a
+  - Review-packet HEAD (evidence + fixes): f9bc321
+  - This commit (BLOCK recheck + narrow fixes): pending local
+    verification; HEAD will be recorded after commit.
+
+Full suite **637/637 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
 dist/SU-AI-Plugin.rbz rebuilt (416996 bytes, 53 entries,
 SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`,
 commit 707273a, post-V14-RUNTIME-BLOCK-003 production add_group
 contract fix).
+
 Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
 rbz. Evidence at
 `Prompt/OWNER_REPORT_V1_4_DERIVED_WORKSPACE_2026-08-24.txt`.
+
+CodeX V1.4 Stage Review (2026-08-24) verdict:
+VERDICT: BLOCKED (BLOCKS: V14-STAGE-BLOCK-001, V14-STAGE-BLOCK-002).
+Both BLOCKs closed in this commit (narrow recheck scope; full
+Stage Review NOT requested). Stage Review packet base/head
+recorded separately.
+
 Stage Review packet dispatched at
 `Review/CODEX_STAGE_REVIEW_REQUEST_V1_4_DERIVED_WORKSPACE_2026-08-24.md`.
+
 V1.5 Phase 1 plan + Pi Task prepared but NOT started (gated on
 CodeX V1.4 Stage Review PASS):
   - `Review/V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md`
   - `Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt`
+
+## V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002
+                            -- fix COMPLETE 2026-08-24
+
+CodeX V1.4 Stage Review verdict (2026-08-24):
+VERDICT: BLOCKED
+  BLOCKS:
+    V14-STAGE-BLOCK-001: real active-edit transform is
+                          computed in dialog_runner but
+                          discarded by
+                          SourceSnapshot.from_geometry_snapshot
+                          (which unconditionally wrote identity).
+                          Violates Gate A (SourceSnapshot must
+                          preserve world/local transform context
+                          for rebuild / V1.5+ repairs /
+                          provenance).
+    V14-STAGE-BLOCK-002: operation/recovery model does not
+                          match real SketchUp. The production
+                          code wrapped per-entity operations
+                          inside the runner's outer operation
+                          (real SU does NOT nest; start_operation
+                          implicitly ends the prior). FakeModel
+                          used a counter (masking the real SU
+                          behavior). Also: _discard_if_present
+                          returning :failed was overwritten by
+                          the next prepare() (losing handle
+                          registry).
+  NITS:
+    - Stage Review packet says HEAD = 707273a but
+      evidence-packet HEAD = f9bc321. Record RBZ /
+      production-candidate HEAD separately from
+      review-packet HEAD.
+    - CURRENT_STATE.md had stale "do not submit Stage
+      Review" todo. Clean up.
+
+Fix -- V14-STAGE-BLOCK-001 (production add_group /
+                                transform_context):
+  - `core/source_snapshot.rb`:
+    - `SourceSnapshot.from_geometry_snapshot` now accepts a
+      `transform_context:` keyword (the dialog_runner MUST
+      pass the real transform context). When nil, the factory
+      writes the legacy identity marker Hash (V1.0-V1.3 plumbing
+      compatibility).
+    - New class method `SourceSnapshot.normalize_transform_context`
+      validates the shape (16 finite Floats for
+      active_edit_transform / active_edit_inverse; Boolean /
+      nil pid_path_complete; Array of Integer / String /
+      nil slots for active_edit_path; non-'identity' String
+      active_edit_seed when a real transform is supplied).
+      Returns a deeply-frozen Hash ready to embed in a
+      SourceSnapshot. Malformed shapes return nil
+      (defensive -- a raise would surface a BLOCK in the
+      dialog callback path).
+  - `extension/su_ai_plugin/dialog_runner.rb`:
+    - New private method `_resolve_transform_context`
+      reads the host model's `edit_transform.to_a` (16
+      finite Floats) and the model's active path facts,
+      and produces the frozen transform_context Hash the
+      factory expects. When the host has no active edit
+      (or the AnalysisResult did not carry
+      active_edit_facts), returns nil (factory writes the
+      identity marker).
+    - `_source_snapshot_from_real_geometry` now passes
+      `transform_context:` to `from_geometry_snapshot`
+      (NOT silently identity).
+
+Fix -- V14-STAGE-BLOCK-002 (sequential operations +
+                                failed-workspace preservation):
+  - `core/derived_geometry_workspace.rb`:
+    - `build_entity` no longer opens its own SU operation
+      (the runner's outer operation in prepare() is the
+      single operation owner). The rescue clause no
+      longer calls `end_operation(commit: false)` -- the
+      runner owns that decision. It still disposes any
+      partial host handle from the SAME call (precise
+      per-entity rollback).
+    - `discard` keeps its own operation wrapper (the
+      single owner for cleanup). Unchanged from prior.
+  - `core/working_mode_runner.rb`:
+    - `prepare` reads the partial inventory + handle_registry
+      from the LAST build_entity result (the :failed
+      workspace returned by build_entity when a mid-build
+      failure happens), NOT from the original empty
+      `:building` workspace. This preserves the precise
+      handle_registry tracking for cleanup.
+    - NEW: at the top of `prepare`, when the prior
+      `@current_workspace.state == :failed`, refuse the
+      new Prepare -- keep the failed workspace intact (no
+      overwrite), set last_error explaining the refusal, and
+      return a snapshot with state=:failed. The user MUST
+      explicitly trigger a Discard (or Rebuild) that
+      completes the cleanup before a fresh Prepare is
+      allowed. Prevents losing the failed workspace's
+      private handle_registry and leaking partial derived
+      entities on hosts where abort failed to roll back.
+  - `tests/_fake_ui.rb`:
+    - FakeModel now uses SEQUENTIAL operation semantics
+      (single-open boolean), NOT the prior nestable counter
+      stack. Calling `start_operation` while an operation
+      is open auto-closes the prior one (logged as
+      `:implicit_close`); calling `commit_operation` /
+      `abort_operation` when no operation is open raises.
+      This mirrors real SketchUp's behavior, per the
+      SketchUp Ruby API docs.
+
+NITS addressed:
+  - Stage Review packet base/head now recorded
+    separately (`RBZ / production candidate HEAD =
+    707273a`, `Review packet HEAD = f9bc321`).
+  - CURRENT_STATE.md no longer carries the stale "do not
+    submit Stage Review" todo.
+
+Verification:
+  - Targeted: `tests/run_all.rb "V14-STAGE-BLOCK"` -> 9
+    new tests, 9 pass, 0 fail, 0 error.
+    - V14-STAGE-BLOCK-001 (5 tests): transform_context
+      passes through SourceSnapshot (no silent identity
+      fallback); nil preserves legacy identity marker;
+      malformed transform_context rejected; dialog_runner
+      reads model.edit_transform via .to_a; falls back
+      to identity when host has no edit_transform.
+    - V14-STAGE-BLOCK-002 (4 tests): FakeModel sequential
+      operations; production Prepare wraps build in EXACTLY
+      ONE SU operation (no per-entity nesting); prepare
+      refuses to overwrite a :failed workspace (handle
+      registry preservation); build failure mid-build
+      preserves partial handle registry in :failed
+      workspace; second Discard after transient dispose
+      failure succeeds.
+  - Existing tests updated:
+    - `test_v14_production_call_chain.rb`: assertion
+      changed from `operation_log.length >= 2` to
+      `== 2` (sequential-operation contract: exactly one
+      start + one commit, NOT 2*N entries); `open_operations`
+      predicate replaced with `operation_open?` predicate.
+    - `test_v14_targeted_regression.rb`: V14-TARGETED-4
+      updated to reflect the sequential-operation semantics
+      (subsequent Discard's start_operation logs :implicit_close
+      + :start = 2 more entries on top of the existing 1
+      = 3 total).
+    - `test_v14_dangerous_failure_modes.rb`: PHASE-3-MATRIX
+      "failed state is recoverable" replaced with "failed
+      state refuses new Prepare until Discard completes"
+      (V14-STAGE-BLOCK-002 new contract).
+  - Full Ruby: 637 tests, 637 pass, 0 fail, 0 error.
+  - Node DOM: 148/148 PASS.
+  - RBZ smoke (8): all pass.
+  - `git diff --check`: clean.
+
+What remains:
+  - CodeX V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 narrow
+    recheck (NOT the full V1.4 Stage Review; the Stage
+    Review packet was already dispatched in the prior
+    commit).
+  - Once CodeX PASSES the narrow recheck, the V1.4
+    Stage Review verdict is COMPLETE. No further review
+    dispatch is required -- the BLOCK recheck IS the
+    Stage Review.
+  - Owner Gate 2 V1.4 SU2020 already PASSED (prior
+    commit); no re-run needed.
+  - V1.5 Phase 1 still gated on the V1.4 Stage Review
+    PASS + a fresh Pi Task dispatch.
 V1.0 candidate still FROZEN at tag `v1.0-candidate-2026-08-19`
 (commit `56ea611`). V1.2 + V1.3 stages remain CLOSED on
 SketchUp 2020 per CodeX 029.

@@ -196,16 +196,25 @@ module SUAnalysis
           end
         end
 
-        # V1.4 CodeX BLOCK fix (Stage 4): begin a SketchUp
-        # operation. The adapter wraps the host call; on
-        # exception, the workspace aborts the operation AND
-        # rolls back any partial derived entities that were
-        # built in the SAME call.
-        # If no model is available (test env / FakeAdapter),
-        # the adapter's begin/end helpers are no-ops.
+        # V1.4 CodeX V14-STAGE-BLOCK-002 (2026-08-24): the
+        # workspace DOES NOT open a per-entity SU operation.
+        # Real SketchUp does NOT nest operations; calling
+        # Model#start_operation while another operation is
+        # open implicitly commits / aborts the previous one
+        # (per the SketchUp Ruby API docs). The single operation
+        # owner is the runner's outer operation in prepare()
+        # (or the workspace's discard() for cleanup). Per-
+        # entity operations are pure code; the adapter's
+        # begin/end helpers are no-ops here so the runner's
+        # outer operation wraps every create_top_level_group +
+        # add_edge_to_group call for this build_entity. If no
+        # model is available (test env / FakeAdapter), no
+        # operation wrapping happens at any level.
+        # If a model is available, this method assumes the
+        # caller has already begun an operation; the method's
+        # only contract is to RETURN a :ready workspace on
+        # success or a :failed workspace on failure.
         begin
-          @adapter.begin_operation(@model, label: "Build #{did}")
-
           # 1. Create the top-level group (or use a parent).
           # For a nested entity, the production adapter walks
           # into the parent group's host handle.
@@ -253,7 +262,7 @@ module SUAnalysis
           new_pairs    = @entity_pairs + [[did, new_record]]
           new_handles  = @handle_registry.merge(did => host_handle).freeze
           new_fp       = compute_fingerprint_from_pairs(new_pairs)
-          result = self.class.new_with_inventory(
+          self.class.new_with_inventory(
             workspace_id:    workspace_id,
             source_snapshot: source_snapshot,
             adapter:         @adapter,
@@ -265,10 +274,6 @@ module SUAnalysis
             last_error:      nil,
             build_started_at: build_started_at
           )
-          # V1.4 CodeX BLOCK fix (Stage 4): commit the
-          # operation on success.
-          @adapter.end_operation(@model, commit: true)
-          result
         rescue StandardError => e
           # Source MUST remain untouched. The adapter
           # failure becomes a :failed workspace. The
@@ -277,23 +282,14 @@ module SUAnalysis
           # ArgumentError is intentionally NOT caught: it
           # is a programmer error above and must propagate.
           #
-          # V1.4 CodeX BLOCK fix (Stage 4): abort the
-          # operation AND clean up any partial host handles
-          # that were created BEFORE the failure. The
-          # adapter.dispose path uses the live handle so
-          # the rollback is precise.
-          begin
-            @adapter.end_operation(@model, commit: false)
-          rescue StandardError
-            # ignore secondary cleanup failures
-          end
-          # V1.4 Phase-3 self-audit fix: if host_handle was
-          # already created (create_top_level_group succeeded)
-          # but a subsequent step failed (e.g. add_edge_to_group
-          # raised), dispose host_handle BEFORE returning the
-          # :failed workspace. Otherwise the partially-created
-          # group survives on the model and is NOT in
-          # @handle_registry -- the caller cannot clean it up.
+          # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): build_entity
+          # does NOT open its own SU operation (the runner's
+          # outer operation in prepare() is the single
+          # operation owner). On failure, we DO NOT call
+          # end_operation(commit: false) here -- the runner
+          # owns that decision. We DO dispose any partial
+          # host handle that was created in the SAME call
+          # (precise rollback of just-this-entity).
           begin
             if host_handle && @adapter.respond_to?(:dispose)
               @adapter.dispose(host_handle)

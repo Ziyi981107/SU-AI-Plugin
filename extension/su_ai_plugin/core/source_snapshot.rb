@@ -162,13 +162,53 @@ module SUAnalysis
       # + selection. Pure-Ruby. This is the V1.4 wiring point:
       # the V1.0-V1.3 GeometrySnapshot is the input; the new
       # SourceSnapshot wraps it with the V1.4 contract.
+      #
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review):
+      # the REAL active-edit transform MUST flow through to
+      # SourceSnapshot.transform_context. The previous code
+      # unconditionally wrote `{ 'active_edit_seed' => 'identity' }`,
+      # which violated Gate A (SourceSnapshot must preserve
+      # world/local transform context for rebuild / V1.5+ repairs
+      # / provenance). The factory now accepts a `transform_context:`
+      # keyword (default: identity marker Hash), and the
+      # dialog_runner MUST pass the real transform context
+      # (the 16-float array + active_edit_seed string + any
+      # active_path facts).
+      #
+      # Contract for `transform_context` argument:
+      # - When caller has REAL active-edit facts: pass a Hash
+      #   that contains at least:
+      #     'active_edit_transform' => Array of 16 finite Floats
+      #                                 (the Geom::Transformation
+      #                                 flattened to 16 numbers;
+      #                                 identity is 16 x [1,0,0,0,
+      #                                 0,1,0,0, 0,0,1,0, 0,0,0,1])
+      #     'active_edit_seed'      => 'real' (or a unique string
+      #                                 marking the seed source)
+      #     'active_edit_path'      => Array of persistent_ids (the
+      #                                 active container path; may be
+      #                                 empty for root editing)
+      #     'active_edit_inverse'    => Array of 16 finite Floats
+      #                                 (the inverse of
+      #                                 active_edit_transform; the
+      #                                 rebuild path needs both the
+      #                                 forward and inverse)
+      #     'pid_path_complete'      => Boolean (per directive:
+      #                                 active-edit path is complete
+      #                                 iff all slots have a usable
+      #                                 persistent_id; nil slots are
+      #                                 transient)
+      # - When caller has NO active-edit facts: pass nil and the
+      #   factory writes the identity marker Hash (consistent
+      #   with the V1.0-V1.3 plumbing path).
       def self.from_geometry_snapshot(geometry_snapshot,
                                       selection: nil,
                                       host: nil,
                                       execution_config:,
                                       rule_set_digest:,
                                       snapshot_id: nil,
-                                      captured_at: nil)
+                                      captured_at: nil,
+                                      transform_context: nil)
         # The geometry_snapshot IS the body of the SourceSnapshot
         # in V1.4 (the rebuild contract is a superset of the
         # V1.0 GeometrySnapshot data, not a replacement). We do
@@ -204,6 +244,16 @@ module SUAnalysis
           end
         end : []
 
+        # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): resolve the
+        # active-edit transform context. When the caller supplies
+        # a non-nil transform_context Hash, we preserve the REAL
+        # 16-float transform (NOT a synthetic identity marker).
+        # The dialog_runner passes the real active_edit_facts;
+        # the factory validates the shape and falls back to
+        # the identity marker only when the caller explicitly
+        # passes nil (the V1.0-V1.3 plumbing path).
+        ctx = transform_context.nil? ? { 'active_edit_seed' => 'identity' } : transform_context
+
         new(
           snapshot_id:          snapshot_id,
           captured_at:          captured_at,
@@ -214,10 +264,125 @@ module SUAnalysis
           vertex_records:       vertex_records,
           unit:                 'inches',
           coordinate_origin:    'raw',
-          transform_context:    { 'active_edit_seed' => 'identity' },
+          transform_context:    ctx,
           execution_config:     execution_config,
           fingerprint:          fingerprint
         )
+      end
+
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): validate the shape
+      # of a transform_context Hash. Called by the dialog_runner
+      # BEFORE it passes the context to from_geometry_snapshot,
+      # so the SourceSnapshot is guaranteed to carry either a
+      # valid 16-float transform OR an explicit identity marker.
+      # Pure Ruby (no Sketchup::Geom dependency).
+      #
+      # Validates:
+      # - Hash shape
+      # - active_edit_transform is an Array of exactly 16 finite Floats
+      #   (when present); identity matrix is
+      #   [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+      #    0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+      # - active_edit_inverse is an Array of exactly 16 finite Floats
+      # - pid_path_complete is a Boolean (or nil)
+      # - active_edit_path is an Array of Integer / String slots
+      #
+      # Returns a deeply-frozen Hash ready to pass to
+      # from_geometry_snapshot. When `facts` is nil / empty /
+      # not-a-Hash, returns nil (so the factory writes the
+      # identity marker).
+      def self.normalize_transform_context(facts)
+        return nil if facts.nil?
+        return nil unless facts.is_a?(Hash)
+        return nil if facts.empty?
+        ctx = {}
+        facts.each do |k, v|
+          ctx[k.to_s] = v
+        end
+        # Validate 16-float transform (when present).
+        # Defensive: a malformed shape returns nil so the
+        # factory writes the identity marker (NOT a raise --
+        # the dialog_runner's caller is the UI callback path
+        # and a raise would surface a BLOCK in production).
+        if ctx.key?('active_edit_transform')
+          t = ctx['active_edit_transform']
+          unless t.is_a?(Array) && t.length == 16 &&
+                 t.all? { |v| v.is_a?(Float) && v.respond_to?(:finite?) && v.finite? }
+            return nil
+          end
+        end
+        # Validate 16-float inverse (when present).
+        if ctx.key?('active_edit_inverse')
+          t = ctx['active_edit_inverse']
+          unless t.is_a?(Array) && t.length == 16 &&
+                 t.all? { |v| v.is_a?(Float) && v.respond_to?(:finite?) && v.finite? }
+            return nil
+          end
+        end
+        # pid_path_complete: Boolean or nil.
+        if ctx.key?('pid_path_complete') && ctx['pid_path_complete'] != nil
+          unless [true, false].include?(ctx['pid_path_complete'])
+            return nil
+          end
+        end
+        # active_edit_path: Array of Integer / String / nil slots.
+        if ctx.key?('active_edit_path')
+          path = ctx['active_edit_path']
+          unless path.is_a?(Array) &&
+                 path.all? { |s| s.nil? || s.is_a?(Integer) || s.is_a?(String) }
+            return nil
+          end
+        end
+        # active_edit_seed: String (or symbol coerced). When the
+        # caller provided a real transform, the seed MUST be
+        # 'real' or a non-'identity' string. The identity marker
+        # ('identity') is reserved for the nil-facts fallback.
+        if ctx.key?('active_edit_transform') || ctx.key?('active_edit_inverse')
+          seed = ctx['active_edit_seed']
+          unless seed.is_a?(String) && seed != 'identity'
+            return nil
+          end
+        end
+        # Deep-freeze the result. We use a private recursive
+        # deep_freeze helper (deep_freeze_class_hash below) so
+        # we don't depend on the SourceSnapshot instance-level
+        # deep_freeze_array helper.
+        deep_freeze_class_hash(ctx)
+      end
+
+      # Private class-level deep-freeze for a Hash (and its
+      # nested Array / Hash values). Used by
+      # normalize_transform_context so the returned Hash is
+      # deeply frozen and safe to embed in a SourceSnapshot.
+      def self.deep_freeze_class_hash(h)
+        return h if h.nil?
+        h.each do |k, v|
+          case v
+          when Hash
+            deep_freeze_class_hash(v)
+          when Array
+            deep_freeze_class_array(v)
+          else
+            v.freeze if v.respond_to?(:freeze)
+          end
+          k.freeze if k.respond_to?(:freeze)
+        end
+        h.freeze
+      end
+
+      def self.deep_freeze_class_array(a)
+        return a if a.nil?
+        a.each do |item|
+          case item
+          when Hash
+            deep_freeze_class_hash(item)
+          when Array
+            deep_freeze_class_array(item)
+          else
+            item.freeze if item.respond_to?(:freeze)
+          end
+        end
+        a.freeze
       end
 
       def self.default_snapshot_id

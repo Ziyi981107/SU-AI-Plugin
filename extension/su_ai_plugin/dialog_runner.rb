@@ -233,11 +233,21 @@ module SUAnalysis
         # with persistent_id_path / instance_path (per directive
         # "selection-scope identity").
         sel_scope = _selection_scope_for(sel_entities, geom)
-        # Transform context: the REAL active-edit transform,
-        # NOT 'identity'. If the AnalysisResult did not carry
-        # an active-edit transform, use the model's
-        # active_edit_context_facts.
-        transform_context = _transform_context_for(active_facts)
+        # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review):
+        # the REAL active-edit transform MUST flow through to
+        # SourceSnapshot.transform_context. We extract the
+        # 16-float transform from the host's edit_transform
+        # (or the AnalysisResult's active_edit_facts if the
+        # controller already cached it), validate the shape,
+        # and pass it as a frozen Hash. When the host has no
+        # active edit (or the AnalysisResult did not carry
+        # active_edit_facts), the factory falls back to the
+        # identity marker Hash. Pure data only -- NO live
+        # Sketchup::Geom::Transformation in the snapshot.
+        transform_context = _resolve_transform_context(
+          active_facts: active_facts,
+          model:        _host_for(ar)
+        )
         # Use the canonical from_geometry_snapshot factory to
         # build a deeply-frozen, fingerprintable SourceSnapshot.
         SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
@@ -247,8 +257,84 @@ module SUAnalysis
           execution_config: ec,
           rule_set_digest: rule_set_digest,
           snapshot_id: "v14-#{rand(2**32)}",
-          captured_at: Time.now.utc.iso8601
+          captured_at: Time.now.utc.iso8601,
+          transform_context: transform_context
         )
+      end
+
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): resolve the REAL
+      # active-edit transform context as pure data. Reads
+      # model.edit_transform (16 floats, identity when nil)
+      # and model.active_path (Array of persistent_ids or nil
+      # slots). When the host has no active edit, the result
+      # is the identity marker Hash (the factory treats nil
+      # as "use identity marker"). When the host DOES have an
+      # active edit, the result is a frozen Hash carrying
+      #   - active_edit_transform (Array of 16 finite Floats)
+      #   - active_edit_inverse   (Array of 16 finite Floats)
+      #   - active_edit_path      (Array of Integer / nil slots)
+      #   - pid_path_complete     (Boolean -- true iff no slot is nil)
+      #   - active_edit_seed      ('real' String)
+      # The result is what Gate A requires for V1.5+ rebuild
+      # and provenance.
+      def _resolve_transform_context(active_facts:, model:)
+        facts = active_facts.is_a?(Hash) ? active_facts : {}
+        # When the controller has no active-edit facts, fall
+        # back to reading the host's edit_transform (real SU)
+        # or return nil (test env without edit_transform).
+        if facts.empty?
+          transform_a = _host_edit_transform_16floats(model)
+          if transform_a.nil?
+            return nil  # factory writes the identity marker
+          end
+          facts = {
+            'active_edit_transform' => transform_a,
+            'active_edit_seed'      => 'real'
+          }
+        end
+        SUAnalysis::Core::SourceSnapshot.normalize_transform_context(facts)
+      end
+
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): extract the host
+      # model's edit_transform as a 16-float Array (pure data).
+      # Returns nil when the model is absent OR the model does
+      # not expose edit_transform / active_path (the factory
+      # will write the identity marker Hash in that case).
+      def _host_edit_transform_16floats(model)
+        return nil if model.nil?
+        return nil unless model.respond_to?(:edit_transform)
+        t = model.edit_transform
+        return nil if t.nil?
+        # Real SketchUp::Geom::Transformation exposes .to_a (16
+        # floats). The FakeModel exposes the same shape. We
+        # accept either:
+        #   - An Array of 16 finite Floats.
+        #   - An Array of 4 Arrays of 4 Floats (matrix-row form).
+        #   - An object that responds to .to_a and returns one
+        #     of the above shapes.
+        if t.respond_to?(:to_a)
+          arr = t.to_a
+          return _coerce_to_16floats(arr)
+        end
+        nil
+      end
+
+      # Coerce a SketchUp Geom::Transformation#to_a result
+      # (either a flat 16-float Array or a 4x4 nested Array)
+      # to the canonical flat Array of 16 finite Floats.
+      def _coerce_to_16floats(arr)
+        return nil if arr.nil?
+        if arr.is_a?(Array) && arr.length == 16 &&
+               arr.all? { |v| v.is_a?(Numeric) }
+          return arr.map { |v| v.to_f }
+        end
+        if arr.is_a?(Array) && arr.length == 4 &&
+               arr.all? { |r| r.is_a?(Array) && r.length == 4 && r.all? { |v| v.is_a?(Numeric) } }
+          flat = []
+          arr.each { |row| row.each { |v| flat << v.to_f } }
+          return flat
+        end
+        nil
       end
 
       # Build a SourceSnapshot from the plumbing summary

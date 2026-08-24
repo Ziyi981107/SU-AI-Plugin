@@ -233,10 +233,21 @@ test 'V14-TARGETED-4: full Prepare -> Discard -> Prepare cycle with label-target
                'patch MUST be self-restored after Prepare begin_operation'
 
   # (5) A subsequent Discard begin_operation works normally.
+  # Per V14-STAGE-BLOCK-002 (2026-08-24), the FakeModel now
+  # mimics real SketchUp's SEQUENTIAL operation semantics:
+  # calling start_operation while another operation is open
+  # implicitly closes the previous one (logged as :implicit_close)
+  # and starts the new one. So this call logs :implicit_close
+  # (closing the prior Discard) + :start (opening this Discard)
+  # = 2 entries on top of the existing 1 entry = 3 total.
   adapter_class.new.begin_operation(m,
                                     label: 'SU-AI-Plugin: V1.4 Derived Workspace -- Discard ws-3')
-  assert_equal 2, m.operation_log.length,
-               'subsequent Discard begin_operation MUST work normally'
+  assert_equal 3, m.operation_log.length,
+               'subsequent Discard begin_operation MUST work normally (sequential operation semantics: implicit_close + start)'
+  assert_equal :implicit_close, m.operation_log[-2][:kind],
+               'second Discard start MUST auto-close the prior operation (real SU behavior)'
+  assert_equal :start,          m.operation_log.last[:kind],
+               'second Discard start MUST open a new operation'
 ensure
   if defined?(adapter_class) && defined?(original)
     adapter_class.class_eval do

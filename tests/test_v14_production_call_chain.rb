@@ -216,16 +216,22 @@ test 'V14 production call chain: prepare creates REAL derived groups via FakeUI:
                  'derived edge end MUST equal source edge end (XYZ)'
   end
 
-  # The model MUST have wrapped the build in a SU operation
-  # (start_operation + commit_operation). Per directive
-  # gate: production writes MUST be wrapped in SU operations.
-  assert model.operation_log.length >= 2,
-         'production adapter must wrap host writes in a SU operation'
+  # The model MUST have wrapped the build in a single
+  # SU operation (start_operation + commit_operation).
+  # Per V14-STAGE-BLOCK-002 (2026-08-24): the workspace's
+  # per-entity begin_operation calls are removed; the
+  # runner's outer operation is the single operation owner.
+  # The operation_log MUST therefore have exactly 2 entries
+  # (1 start + 1 commit), NOT 2*N entries (one per entity).
+  # Per directive gate: production writes MUST be wrapped
+  # in SU operations.
+  assert_equal 2, model.operation_log.length,
+               'production adapter must wrap host writes in EXACTLY ONE SU operation (single owner; per-entity nesting is forbidden by real SU)'
   assert_equal :start,  model.operation_log.first[:kind]
   assert_equal :commit, model.operation_log.last[:kind],
                'successful prepare MUST commit (NOT abort) the SU operation'
-  assert_equal 0, model.open_operations,
-               'after commit the operation stack MUST be balanced (open_operations == 0)'
+  refute model.operation_open?,
+               'after commit the operation MUST be closed (single-open invariant)'
 
   # Source fingerprint MUST be unchanged.
   assert_equal fp_before, src.fingerprint.digest,
@@ -351,12 +357,10 @@ test 'V14 production call chain: failure injection aborts SU operation and rolls
     # The model MUST show the aborted attempt in the
     # operation log. Because begin_operation raised, no
     # commit/abort was emitted by the production adapter;
-    # but the operation stack MUST be balanced (the
-    # workspace catches the exception and the adapter's
-    # end_operation(commit: false) is a no-op when the
-    # model never started).
-    assert_equal 0, model.open_operations,
-                 'after host failure the operation stack MUST be balanced'
+    # the FakeModel's single-open invariant is preserved
+    # (the raise happened before @operation_open=true).
+    refute model.operation_open?,
+           'after host failure the operation MUST be closed (single-open invariant)'
     # NO partial derived groups must remain.
     assert_equal 0, model.entities.valid_count,
                  'failure injection MUST leave zero valid derived groups'
