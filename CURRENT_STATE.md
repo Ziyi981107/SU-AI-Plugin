@@ -7,15 +7,14 @@ packet ready).
 Branch `v1.4-derived-workspace`.
   - Production candidate HEAD (rbz built from): 707273a
   - Review-packet HEAD (evidence + fixes): f9bc321
-  - This commit (BLOCK recheck + narrow fixes): pending local
-    verification; HEAD will be recorded after commit.
+  - BLOCK-recheck HEAD (narrow fixes committed): f3eaa1e
+  - Working tree: clean
 
 Full suite **637/637 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
-dist/SU-AI-Plugin.rbz rebuilt (416996 bytes, 53 entries,
-SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`,
-commit 707273a, post-V14-RUNTIME-BLOCK-003 production add_group
-contract fix).
+dist/SU-AI-Plugin.rbz rebuilt (432,162 bytes, 53 entries,
+SHA256 `eb1c6a00364d181af184447ec3d5977ca9c9d557a83055e382544c97203f5c76`,
+committed with BLOCK-recheck fixes).
 
 Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
 rbz. Evidence at
