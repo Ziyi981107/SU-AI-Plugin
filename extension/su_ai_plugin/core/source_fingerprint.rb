@@ -164,7 +164,21 @@ module SUAnalysis
         # supply a list, we use the empty string so callers can
         # distinguish 'no materials' from a populated set without
         # comparing against an arbitrary SHA256 of nothing.
-        material_list = host && host.respond_to?(:materials) ? host.materials : []
+        material_source = host && host.respond_to?(:materials) ? host.materials : []
+        # SketchUp::Materials (SU2020) is enumerable but does not
+        # implement Array's #empty? / #map surface. Normalize the
+        # host collection before using ordinary Array operations;
+        # this keeps the core free of host-specific constants.
+        material_list = if material_source.respond_to?(:to_a)
+                          material_source.to_a
+                        elsif material_source.respond_to?(:each)
+                          list = []
+                          material_source.each { |m| list << m }
+                          list
+                        else
+                          Array(material_source)
+                        end
+        material_list = Array(material_list)
         local_material_digest = if material_list.empty?
                                    ''
                                  else

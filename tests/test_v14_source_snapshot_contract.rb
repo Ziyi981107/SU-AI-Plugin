@@ -133,6 +133,29 @@ test 'SourceFingerprint: empty snapshot -> all counts zero, no crash' do
   assert_equal '', fp.selection_scope_digest
 end
 
+class V14MaterialsCollectionWithoutEmpty
+  def initialize(items)
+    @items = items
+  end
+
+  def each(&block)
+    @items.each(&block)
+  end
+
+  def length
+    @items.length
+  end
+end
+
+test 'SourceFingerprint: enumerable host materials without empty? are normalized safely' do
+  host = Struct.new(:materials).new(
+    V14MaterialsCollectionWithoutEmpty.new(['Oak', 'Steel'])
+  )
+  fp = SourceFingerprint.from_snapshot(v14_empty_snapshot, host: host)
+  expected = Digest::SHA256.hexdigest("Oak\nSteel")
+  assert_equal expected, fp.material_digest
+end
+
 test 'SourceFingerprint: edge_count + edge_length_sum accurate' do
   snap = GeometrySnapshot.new(edges: v14_simple_edges, layers: [
     LayerRecord.new(name: 'Layer0', edge_count: 2)

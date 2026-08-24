@@ -1,5 +1,18 @@
 # CURRENT STATE
 
+## V14-RUNTIME-BLOCK-005 (2026-08-24) — material collection compatibility fixed
+
+The first clean V14-9 retry surfaced the original host error after BLOCK-004
+logging repair: `Sketchup::Materials` lacks `empty?`. `SourceFingerprint`
+now normalizes enumerable material collections before Array operations.
+
+Evidence: SourceFingerprint 7/7; full Ruby 656/656; Node DOM 148/148; RBZ
+smoke 8/8. New RBZ is 443,553 bytes, 53 entries, SHA256
+`4708569bef45af7c66945a78da700cb61b73368be09ec12d0f8cb0010e669705`.
+Review packet: `Review/V14_RUNTIME_BLOCK_005_FIX_PACKET_2026-08-24.md`.
+
+Next: install the new RBZ and retry the real SU2020 V14-9 narrow test.
+
 ## V14-RUNTIME-BLOCK-004 (2026-08-24) — implementation + automated verification complete
 
 Pi's real-SketchUp-2020 repro exposed a second failure in the error path;
