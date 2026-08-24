@@ -1,5 +1,27 @@
 # CURRENT STATE
 
+## V14-RUNTIME-BLOCK-004 (2026-08-24) — implementation + automated verification complete
+
+Pi's real-SketchUp-2020 repro exposed a second failure in the error path;
+`$stderr.puts` / `$stdout.puts` called private `Sketchup::Console#puts`,
+masking the original Prepare exception. The narrow fix is committed at
+`5f23917`: defensive `_safe_log` via bare `warn`,
+original-error toast preservation, unconditional `push_data`, and the same
+safe logging rule in `main.rb` and `on_locate`.
+
+Evidence:
+
+- V14-RUNTIME-BLOCK-004: 9/9 pass
+- Full Ruby: 655/655 pass, 0 fail, 0 error
+- Node DOM: 148/148 pass
+- RBZ smoke: 8/8 pass
+- RBZ rebuilt: `dist/SU-AI-Plugin.rbz`, 442,832 bytes, 53 entries
+- SHA256: `c8288a2c2b499291fc9a03a75b90f96f4184a057df41a833a5d410f625418db0`
+- Review packet: `Review/V14_RUNTIME_BLOCK_004_FIX_PACKET_2026-08-24.md`
+
+Next gate: CodeX narrow recheck, then install this RBZ and rerun only the
+real SU2020 V14-9 narrow flow. V1.5 remains gated; do not publish/release.
+
 Last updated: 2026-08-24 (V1.4 Stage Review VERDICT: PASS
 WITH NITS — V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 BOTH
 CLOSED; one NIT (root-layer identity seed) addressed; final

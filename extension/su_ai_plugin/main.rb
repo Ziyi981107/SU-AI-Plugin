@@ -70,9 +70,20 @@ begin
   SUAnalysis::Boot.boot!
 rescue StandardError => e
   msg = "[SU-AI-Plugin] boot failed: #{e.class}: #{e.message}"
-  if defined?(STDERR)
-    STDERR.puts(msg)
-  elsif $stdout.respond_to?(:puts)
-    $stdout.puts(msg)
+  # V1.4 V14-RUNTIME-BLOCK-004 (2026-08-24, real SU2020 narrow
+  # test): in SketchUp 2020, $stdout IS Sketchup::Console and
+  # #puts is private -- a direct call raises NoMethodError.
+  # STDERR.puts in real Ruby would work but in SU2020
+  # STDERR === Sketchup::Console too. We use bare `warn(...)`
+  # (a Kernel method that writes via the C error stream and
+  # is the canonical safe logging path) wrapped in a
+  # defensive rescue. Logging failures MUST NOT mask the
+  # original boot exception.
+  begin
+    warn(msg)
+  rescue StandardError
+    # Silent: boot is best-effort; the original exception
+    # is the source of truth.
+    nil
   end
 end

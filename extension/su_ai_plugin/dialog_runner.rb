@@ -108,7 +108,12 @@ module SUAnalysis
         if result[:status] == :unresolved
           msg = JSON.generate("source no longer available for: #{issue_id}")
           dialog.execute_script("window.SUAIP.toast(#{msg})")
-          $stdout.puts("[SU-AI-Plugin] locate_issue: #{result[:diagnostics].last || 'unresolved'}")
+          # V1.4 V14-RUNTIME-BLOCK-004 (2026-08-24, real SU2020
+          # narrow test): $stdout IS Sketchup::Console in SU2020
+          # and #puts is private. Direct $stdout.puts(...) raises
+          # NoMethodError. Use _safe_log (warn) which is
+          # best-effort and never propagates.
+          _safe_log("[SU-AI-Plugin] locate_issue: #{result[:diagnostics].last || 'unresolved'}")
         end
       end
 
@@ -594,6 +599,30 @@ module SUAnalysis
         dialog.execute_script("window.SUAIP.toast(#{json})")
       end
 
+      # V1.4 V14-RUNTIME-BLOCK-004 (2026-08-24, real SU2020 narrow
+      # test): in SketchUp 2020, $stderr IS Sketchup::Console and
+      # $stdout IS Sketchup::Console -- both have #puts as a
+      # PRIVATE method. Direct $stderr.puts(...) /
+      # $stdout.puts(...) raises NoMethodError, which masked
+      # the original Prepare exception in _safe_invoke's
+      # rescue block. We use bare `warn(...)` (a Kernel method
+      # that goes through the C-level error stream and does
+      # not require an explicit `.puts` on the receiver) AND
+      # wrap the call in a defensive rescue. The logging path
+      # MUST NEVER propagate an exception to the caller -- the
+      # original action exception is the source of truth.
+      def _safe_log(msg)
+        begin
+          warn(msg)
+        rescue StandardError
+          # Last-resort: silent. Logging is best-effort.
+          # The original exception in _safe_invoke / on_locate
+          # / main.rb boot is the source of truth for the UI
+          # toast + push_data path.
+          nil
+        end
+      end
+
       # V1.4 CodeX BLOCK fix (Stage 4): resolve the SU model
       # to use for the workspace's operation wrapping. The
       # controller carries the model passed to DialogRunner.show;
@@ -610,20 +639,61 @@ module SUAnalysis
       end
 
       # V1.4 CodeX V14-RUNTIME-BLOCK-002: wrap a host-action
-      # block so any StandardError is logged to $stderr AND
-      # surfaced as a UI toast. The UI payload is then
-      # re-pushed so the dialog never gets stuck in an
-      # invisible intermediate state.
+      # block so any StandardError is surfaced as a UI toast.
+      # The UI payload is then re-pushed so the dialog never
+      # gets stuck in an invisible intermediate state.
+      #
+      # V1.4 V14-RUNTIME-BLOCK-004 (2026-08-24, real SU2020 narrow
+      # test): the previous implementation called
+      # $stderr.puts(...) inside the rescue block. In
+      # SketchUp 2020, $stderr IS Sketchup::Console whose
+      # #puts is private; the call raised NoMethodError and
+      # MASKED the original Prepare exception, skipping both
+      # the toast and the push_data. The fix:
+      #   1. Each side-effect (log, toast, push_data) is in
+      #      its own defensive rescue so a failure in one
+      #      path does not stop the others.
+      #   2. Logging uses _safe_log (bare `warn(...)` wrapped
+      #      in a defensive rescue) instead of $stderr.puts.
+      #   3. The original exception `e` is the source of truth
+      #      for the toast text; the exception type and message
+      #      are preserved.
+      #   4. push_data runs UNCONDITIONALLY (even when the
+      #      action raised) so the UI is re-pushed and the
+      #      Working Mode state is refreshed.
       def _safe_invoke(dialog, controller, action_name)
+        action_exception = nil
         begin
           yield
         rescue StandardError => e
-          $stderr.puts("[SU-AI-Plugin V14-RUNTIME-BLOCK-002] " \
-                       "#{action_name} raised #{e.class}: #{e.message}")
-          $stderr.puts("  backtrace: #{e.backtrace.first(5).join(' | ')}")
-          _toast(dialog, "V1.4 #{action_name} failed: #{e.class}: #{e.message}")
+          # Capture -- do NOT raise. The toast / push_data
+          # paths must run after this rescue.
+          action_exception = e
         end
-        push_data(dialog, controller)
+
+        if action_exception
+          e = action_exception
+          # 1. Log (defensive -- never propagates).
+          _safe_log("[SU-AI-Plugin V14-RUNTIME-BLOCK-002] " \
+                    "#{action_name} raised #{e.class}: #{e.message}")
+          _safe_log("  backtrace: #{e.backtrace.first(5).join(' | ')}")
+          # 2. Toast (defensive -- never propagates).
+          begin
+            _toast(dialog, "V1.4 #{action_name} failed: #{e.class}: #{e.message}")
+          rescue StandardError => toast_err
+            _safe_log("[SU-AI-Plugin] toast error in #{action_name}: " \
+                      "#{toast_err.class}: #{toast_err.message}")
+          end
+        end
+
+        # 3. push_data (MUST always run; the UI is re-pushed so
+        # the dialog never gets stuck in a stale state).
+        begin
+          push_data(dialog, controller)
+        rescue StandardError => push_err
+          _safe_log("[SU-AI-Plugin] push_data error in #{action_name}: " \
+                    "#{push_err.class}: #{push_err.message}")
+        end
       end
 
       # Idempotent close handler. Releases the controller and the

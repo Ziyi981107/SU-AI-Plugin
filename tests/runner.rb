@@ -70,6 +70,11 @@ module Tests
     raise AssertionError, msg unless cond
   end
 
+  def self.refute_empty(coll, msg = nil)
+    return if coll.respond_to?(:empty?) && !coll.empty?
+    raise AssertionError, msg || "expected non-empty, got #{coll.inspect}"
+  end
+
   def self.assert_equal(expected, actual, msg = nil)
     return if expected == actual
     raise AssertionError, msg || "expected #{expected.inspect}, got #{actual.inspect}"
@@ -193,6 +198,7 @@ def assert_operator(*a, &b); Tests.assert_operator(*a, &b); end
 def refute_match(*a, &b);  Tests.refute_match(*a, &b);  end
 def assert_match(*a, &b);  Tests.assert_match(*a, &b);  end
 def refute_equal(*a, &b); Tests.refute_equal(*a, &b); end
+def refute_empty(*a, &b); Tests.refute_empty(*a, &b); end
 def assert_kind_of(*a, &b); Tests.assert_kind_of(*a, &b); end
 def assert_includes(*a, &b); Tests.assert_includes(*a, &b); end
 def test(*a, &b);          Tests.test(*a, &b);          end
