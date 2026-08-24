@@ -77,39 +77,50 @@ module SUAnalysis
         # builds a brand new workspace. Any prior workspace
         # is discarded (best-effort) first.
         #
-        # V1.4 V14-STAGE-BLOCK-002 (2026-08-24, CodeX V1.4 Stage Review):
-        # if the prior workspace is in :failed state (its
-        # cleanup did not fully complete), we MUST NOT proceed
-        # with a new build. The prior failed workspace's
-        # handle_registry may still hold live derived handles
-        # that the user has not cleaned up -- overwriting it
-        # with a fresh :building workspace would lose the
-        # private registry tracking and leak partial derived
-        # entities into the model. Instead, we refuse the
-        # new build: keep @current_workspace as the :failed
-        # workspace, set last_error to explain the refusal,
-        # and return a snapshot with state=:failed so the
-        # UI can show the user "cleanup failed; please retry
-        # Discard / Rebuild manually". The user must
-        # explicitly trigger a Discard (or Rebuild) that
-        # completes the cleanup before a new Prepare is
-        # allowed.
+        # V1.4 V14-STAGE-BLOCK-002 (2026-08-24, CodeX V1.4 Stage Review
+        # recheck): when the prior workspace is in :failed
+        # state, we MUST attempt to clean it up first --
+        # this is the UI's recovery path (the UI's Rebuild
+        # button calls prepare; if we refuse without trying
+        # cleanup, the user is stuck in the failed state).
+        # The discard call may itself fail (cleanup couldn't
+        # complete); in that case we keep the failed workspace
+        # intact (no overwrite) and refuse the new build with
+        # a clear last_error. This preserves the failed
+        # workspace's private handle_registry AND gives the
+        # user at least one recovery path.
         prior = @current_workspace
         if prior && prior.state == :failed
-          refused = DerivedGeometryWorkspace.new_with_inventory(
-            workspace_id:    prior.workspace_id,
-            source_snapshot: prior.source_snapshot,
-            adapter:         prior.instance_variable_get(:@adapter),
-            model:           prior.instance_variable_get(:@model),
-            state:           :failed,
-            entity_pairs:    prior.instance_variable_get(:@entity_pairs),
-            handle_registry: prior.instance_variable_get(:@handle_registry),
-            fingerprint:     prior.fingerprint,
-            last_error:      'prepare refused: prior workspace is :failed (cleanup incomplete); call discard or rebuild before retrying',
-            build_started_at: prior.build_started_at
-          )
-          @current_workspace = refused
-          return snapshot
+          begin
+            @current_workspace = @current_workspace.discard
+            if @current_workspace && @current_workspace.state != :failed
+              # Discard succeeded -- proceed with the new build.
+            else
+              # Discard transitioned to :failed again (partial
+              # cleanup). Refuse + return.
+              refused = DerivedGeometryWorkspace.new_with_inventory(
+                workspace_id:    prior.workspace_id,
+                source_snapshot: prior.source_snapshot,
+                adapter:         prior.instance_variable_get(:@adapter),
+                model:           prior.instance_variable_get(:@model),
+                state:           :failed,
+                entity_pairs:    prior.instance_variable_get(:@entity_pairs),
+                handle_registry: prior.instance_variable_get(:@handle_registry),
+                fingerprint:     prior.fingerprint,
+                last_error:      'prepare refused: prior workspace cleanup incomplete; cannot overwrite failed workspace',
+                build_started_at: prior.build_started_at
+              )
+              @current_workspace = refused
+              return snapshot
+            end
+          rescue StandardError
+            # Outer rescue (paranoid): the prior failed workspace
+            # is preserved AS-IS (handle_registry intact,
+            # last_error unchanged). The user has at least one
+            # recovery path (the prior workspace's explicit
+            # Discard / Rebuild call from the UI).
+            return snapshot
+          end
         end
         _discard_if_present
 
@@ -145,7 +156,28 @@ module SUAnalysis
         begin
           adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.4 Working Copy Prepare')
           built_ws = _build_derived_entities(ws, source)
-          adapter.end_operation(model, commit: true)
+          # V1.4 V14-STAGE-BLOCK-002 recheck (2026-08-24):
+          # _build_derived_entities returns a :failed workspace
+          # (NOT raises) when a mid-build failure happens. The
+          # previous code committed the operation unconditionally
+          # after _build_derived_entities returned, which left
+          # surviving entities on the model when the build
+          # failed mid-way. The new code ABORTS the operation
+          # when built_ws.state == :failed, so SU rolls back
+          # every entity created so far (atomic cleanup). The
+          # :failed workspace's handle_registry still tracks
+          # any handles that the abort failed to roll back.
+          if built_ws && built_ws.state == :failed
+            begin
+              adapter.end_operation(model, commit: false)
+            rescue StandardError
+              # The abort itself failed (e.g. host rejected);
+              # the partial handle_registry still tracks the
+              # surviving entities for precise cleanup.
+            end
+          else
+            adapter.end_operation(model, commit: true)
+          end
           @current_workspace = built_ws
         rescue StandardError => e
           # Atomic cleanup: abort the outer operation; SU
@@ -586,9 +618,15 @@ module SUAnalysis
         begin
           @current_workspace = @current_workspace.discard
         rescue StandardError
-          # If the discard itself fails, leave the state alone;
-          # the next prepare() will retry from scratch.
-          @current_workspace = nil
+          # V1.4 V14-STAGE-BLOCK-002 recheck (2026-08-24):
+          # NEVER clear @current_workspace on exception. The
+          # workspace.discard path has its OWN rescue that
+          # returns a :failed workspace when cleanup cannot
+          # complete -- so this outer rescue is paranoid.
+          # If it does trigger (something truly unexpected),
+          # preserve the workspace AS-IS so the prior
+          # handle_registry stays in scope for the user's
+          # # explicit recovery attempt.
         end
       end
 

@@ -1263,16 +1263,19 @@ test 'PHASE-3-MATRIX: first/middle/last entity build failure -> no partial leake
   end
 end
 
-# PHASE-3-MATRIX closure test: failed state refuses new Prepare
-# until cleanup completes (V14-STAGE-BLOCK-002, 2026-08-24).
-# After Prepare hits a :failed state, the runner MUST refuse
-# the next Prepare -- overwriting the failed workspace would
-# lose its private handle_registry tracking and leak partial
-# derived entities into the model. The user MUST explicitly
-# trigger Discard (which may transition to :discarded or
-# :failed depending on cleanup outcome) before a fresh
-# Prepare is allowed.
-test 'PHASE-3-MATRIX: failed state refuses new Prepare until Discard completes' do
+# PHASE-3-MATRIX closure test: failed state auto-cleans up
+# (V14-STAGE-BLOCK-002 recheck, 2026-08-24). After Prepare hits
+# a :failed state, the next Prepare MUST try to discard the
+# prior failed workspace first; only when cleanup succeeds does
+# the new build proceed. This is the UI's recovery path:
+# the UI's Rebuild button calls prepare; if we refuse without
+# trying cleanup, the user is stuck. The discard call may
+# itself fail (cleanup couldn't complete); in that case the
+# runner preserves the failed workspace intact (no overwrite)
+# and refuses the new build with a clear last_error -- this
+# keeps the handle_registry in scope for the user's explicit
+# Discard / Rebuild call.
+test 'PHASE-3-MATRIX: failed state auto-cleans-up (V14-STAGE-BLOCK-002 recheck)' do
   v14_reset_everything
   src = v14_danger_source_with_paths([
     { persistent_id: 18001, persistent_id_path: [18001],
@@ -1282,11 +1285,11 @@ test 'PHASE-3-MATRIX: failed state refuses new Prepare until Discard completes' 
   # ONCE (transient failure). After that single failure the
   # adapter works normally for subsequent calls -- mirroring
   # a transient host operation-stack error on real SU.
-  state = { failed: true }  # fail the first call (the Prepare)
+  state = { failed: true }
   transient_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
     define_method(:begin_operation) do |_model, label:|
       if state[:failed]
-        state[:failed] = false  # consume the failure (transient)
+        state[:failed] = false
         raise StandardError, 'v14-first-try-fail'
       end
       nil
@@ -1300,39 +1303,75 @@ test 'PHASE-3-MATRIX: failed state refuses new Prepare until Discard completes' 
                'first Prepare (failing begin_operation) MUST produce :failed'
   assert_match(/v14-first-try-fail/, snap1['last_error'].to_s,
                'last_error MUST capture the begin_operation failure')
-  # The failed workspace's workspace_id is preserved (NOT
-  # overwritten by a new Prepare).
-  failed_ws_id = snap1['workspace_id']
-  refute_nil failed_ws_id
   # Second Prepare (still using the transient adapter; its
-  # begin_operation now succeeds because state[:failed] is
-  # reset) MUST be REFUSED -- the runner keeps the failed
-  # workspace intact so its handle_registry stays in scope.
+  # begin_operation now succeeds because state[:failed] was
+  # reset on the first call). The runner's auto-cleanup MUST
+  # call ws.discard first; if discard succeeds (which it does
+  # here, since the FakeAdapter's dispose is a no-op), the
+  # new build proceeds to :ready. The user MUST NOT be stuck
+  # in the failed state (the UI's Rebuild button calls this
+  # same code path).
   SUAnalysis::Core::WorkingModeRunner.prepare(
     source: src, adapter: transient_adapter, model: nil
   )
   snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
-  assert_equal 'failed', snap2['state'],
-               'retry Prepare (working adapter) MUST be REFUSED while prior workspace is :failed (V14-STAGE-BLOCK-002)'
-  assert_equal failed_ws_id, snap2['workspace_id'],
-               'retry Prepare MUST NOT overwrite the failed workspace_id (handle_registry preservation)'
-  assert_match(/refused/i, snap2['last_error'].to_s,
-               'last_error MUST explain the refusal (so the UI / Owner can see why)')
-  # After Discard completes (the FakeAdapter's dispose is a
-  # no-op so Discard returns :discarded), a new Prepare is
-  # allowed and reaches :ready.
-  SUAnalysis::Core::WorkingModeRunner.discard
-  snap_discarded = SUAnalysis::Core::WorkingModeRunner.snapshot
-  assert_equal 'discarded', snap_discarded['state'],
-               'Discard after :failed MUST transition to :discarded (clean state)'
+  assert_equal 'ready', snap2['state'],
+               'retry Prepare (after prior failed) MUST auto-cleanup and reach :ready (V14-STAGE-BLOCK-002 recheck)'
+  assert_equal 1, snap2['entity_count'],
+               'auto-cleanup + new build MUST produce 1 derived entity'
+end
+
+# PHASE-3-MATRIX closure test: failed state REFUSES new Prepare
+# when cleanup itself fails. The runner preserves the prior
+# failed workspace (no overwrite) so the user has at least one
+# real recovery path (the prior workspace's explicit Discard /
+# Rebuild call from the UI). The prior failed workspace's
+# workspace_id is preserved AND its handle_registry is intact.
+test 'PHASE-3-MATRIX: failed state REFUSES new Prepare when cleanup fails (V14-STAGE-BLOCK-002 recheck)' do
+  v14_reset_everything
+  src = v14_danger_source_with_paths([
+    { persistent_id: 18001, persistent_id_path: [18001],
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] }
+  ])
+  # Adapter that fails begin_operation for ALL calls (not
+  # transient). This means the auto-cleanup's begin_operation
+  # ALSO fails (clean discard can't start an operation). The
+  # discard returns :failed (the outer rescue in workspace.discard
+  # catches it). The runner then refuses the new build and
+  # preserves the prior failed workspace.
+  always_failing_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
+    define_method(:begin_operation) do |_model, label:|
+      raise StandardError, 'v14-cleanup-fails-too'
+    end
+    # dispose also fails (so the discard path's handle dispose
+    # loop also fails -- worst case).
+    define_method(:dispose) do |_handle|
+      raise StandardError, 'v14-dispose-fails'
+    end
+  end.new
   SUAnalysis::Core::WorkingModeRunner.prepare(
-    source: src, adapter: transient_adapter, model: nil
+    source: src, adapter: always_failing_adapter, model: nil
   )
-  snap3 = SUAnalysis::Core::WorkingModeRunner.snapshot
-  assert_equal 'ready', snap3['state'],
-               'after Discard, a new Prepare MUST reach :ready (recovery path)'
-  assert_equal 1, snap3['entity_count'],
-               'new Prepare MUST produce 1 derived entity'
+  snap1 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'failed', snap1['state'],
+               'first Prepare (with always-failing begin_operation) MUST produce :failed'
+  failed_ws_id = snap1['workspace_id']
+  refute_nil failed_ws_id
+  # New Prepare (still using the always-failing adapter): the
+  # runner tries to discard the prior failed workspace, but
+  # the discard ALSO fails (because begin_operation raises).
+  # The runner MUST refuse the new build and preserve the prior
+  # failed workspace (no overwrite).
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: always_failing_adapter, model: nil
+  )
+  snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'failed', snap2['state'],
+               'retry Prepare (cleanup also fails) MUST be REFUSED (V14-STAGE-BLOCK-002 recheck)'
+  assert_equal failed_ws_id, snap2['workspace_id'],
+               'retry Prepare MUST preserve the prior failed workspace_id (no overwrite)'
+  assert_match(/refused|cleanup/i, snap2['last_error'].to_s,
+               'last_error MUST explain the refusal / cleanup failure')
 end
 
 # PHASE-3-MATRIX closure test: rapid click cycles (Prepare +

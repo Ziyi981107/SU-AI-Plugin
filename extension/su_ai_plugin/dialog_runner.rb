@@ -195,7 +195,15 @@ module SUAnalysis
         # Prefer the V1.4 AnalysisResult real source geometry.
         geom = ar.respond_to?(:geometry_snapshot) ? ar.geometry_snapshot : nil
         if geom
-          return _source_snapshot_from_real_geometry(ar, geom)
+          # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review
+          # recheck): pass the controller's model through to
+          # _source_snapshot_from_real_geometry. The previous
+          # code did NOT pass the model -- _host_for(ar) returned
+          # nil, which left the production path unable to read
+          # model.edit_transform and forced the factory to
+          # write the identity marker.
+          model = (controller.respond_to?(:model) ? controller.model : nil)
+          return _source_snapshot_from_real_geometry(ar, geom, model: model)
         end
         # Fallback: plumbing-only SourceSnapshot (V1.0/V1.1/V1.2/
         # V1.3 AnalysisResult callers).
@@ -205,7 +213,19 @@ module SUAnalysis
       # V1.4 CodeX BLOCK fix (Stage 4): build a SourceSnapshot
       # from the REAL GeometrySnapshot carried by the
       # AnalysisResult.
-      def _source_snapshot_from_real_geometry(ar, geom)
+      #
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review
+      # recheck): the controller's model is REQUIRED here. The
+      # previous code passed nil for the model (via _host_for(ar)
+      # which always returned nil), which made it impossible to
+      # read the real edit_transform from the host. AnalyzersRunner
+      # stores active_edit_facts under the production keys
+      # ('transform', 'pid_path', 'pid_path_complete',
+      # 'raw_with_nil'); the production 'transform' value is a
+      # LIVE Sketchup::Geom::Transformation object. We must convert
+      # that live object into a 16-float Array (pure data) and
+      # keep the snapshot free of any live SketchUp objects.
+      def _source_snapshot_from_real_geometry(ar, geom, model: nil)
         cfg = ar.respond_to?(:config) && ar.config ? ar.config : nil
         cfg = SUAnalysis::Core::AnalysisConfig.new if cfg.nil?
         # Build the SourceFingerprint from the real GeometrySnapshot
@@ -217,7 +237,7 @@ module SUAnalysis
         fingerprint = SUAnalysis::Core::SourceFingerprint.from_snapshot(
           geom,
           selection: sel_entities,
-          host: _host_for(ar)
+          host: model
         )
         # Build the ExecutionConfigSnapshot from the live config
         # + the analysis's rule-set digest (consistent with
@@ -233,27 +253,27 @@ module SUAnalysis
         # with persistent_id_path / instance_path (per directive
         # "selection-scope identity").
         sel_scope = _selection_scope_for(sel_entities, geom)
-        # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review):
-        # the REAL active-edit transform MUST flow through to
-        # SourceSnapshot.transform_context. We extract the
+        # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review
+        # recheck): the REAL active-edit transform MUST flow through
+        # to SourceSnapshot.transform_context. We extract the
         # 16-float transform from the host's edit_transform
-        # (or the AnalysisResult's active_edit_facts if the
-        # controller already cached it), validate the shape,
-        # and pass it as a frozen Hash. When the host has no
-        # active edit (or the AnalysisResult did not carry
-        # active_edit_facts), the factory falls back to the
-        # identity marker Hash. Pure data only -- NO live
-        # Sketchup::Geom::Transformation in the snapshot.
+        # (via .to_a) AND/OR from the AnalysisResult's
+        # active_edit_facts Hash (production keys: 'transform',
+        # 'pid_path', 'pid_path_complete', 'raw_with_nil'). The
+        # 'transform' value is a LIVE Sketchup::Geom::Transformation
+        # object -- we MUST convert it to pure data (16-float
+        # Array). Pure data only -- NO live Sketchup objects in
+        # the snapshot.
         transform_context = _resolve_transform_context(
           active_facts: active_facts,
-          model:        _host_for(ar)
+          model:        model
         )
         # Use the canonical from_geometry_snapshot factory to
         # build a deeply-frozen, fingerprintable SourceSnapshot.
         SUAnalysis::Core::SourceSnapshot.from_geometry_snapshot(
           geom,
           selection: sel_scope,
-          host: _host_for(ar),
+          host: model,
           execution_config: ec,
           rule_set_digest: rule_set_digest,
           snapshot_id: "v14-#{rand(2**32)}",
@@ -262,61 +282,112 @@ module SUAnalysis
         )
       end
 
-      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): resolve the REAL
-      # active-edit transform context as pure data. Reads
-      # model.edit_transform (16 floats, identity when nil)
-      # and model.active_path (Array of persistent_ids or nil
-      # slots). When the host has no active edit, the result
-      # is the identity marker Hash (the factory treats nil
-      # as "use identity marker"). When the host DOES have an
-      # active edit, the result is a frozen Hash carrying
+      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24, CodeX V1.4 Stage Review
+      # recheck): resolve the REAL active-edit transform context
+      # as pure data. Reads the AnalyzersRunner-style
+      # active_edit_facts Hash (production keys: 'transform',
+      # 'pid_path', 'pid_path_complete', 'raw_with_nil') AND/OR
+      # the host model's edit_transform. The 'transform' value
+      # in active_edit_facts is a LIVE Sketchup::Geom::Transformation
+      # object -- we MUST convert it to pure data (16-float Array)
+      # via .to_a. The result is a frozen Hash carrying:
       #   - active_edit_transform (Array of 16 finite Floats)
-      #   - active_edit_inverse   (Array of 16 finite Floats)
+      #   - active_edit_inverse   (Array of 16 finite Floats, when present)
       #   - active_edit_path      (Array of Integer / nil slots)
       #   - pid_path_complete     (Boolean -- true iff no slot is nil)
-      #   - active_edit_seed      ('real' String)
-      # The result is what Gate A requires for V1.5+ rebuild
-      # and provenance.
+      #   - raw_with_nil          (Array of Integer / nil slots -- the
+      #                            full active_path with nil slots)
+      #   - active_edit_seed      ('real' String when a real transform
+      #                            is supplied; otherwise the identity
+      #                            marker fallback)
+      # When the host has no active edit AND no edit_transform
+      # AND no AnalyzersRunner facts, returns nil (factory writes
+      # the identity marker). NEVER includes a live SketchUp
+      # object in the returned Hash.
       def _resolve_transform_context(active_facts:, model:)
         facts = active_facts.is_a?(Hash) ? active_facts : {}
-        # When the controller has no active-edit facts, fall
-        # back to reading the host's edit_transform (real SU)
-        # or return nil (test env without edit_transform).
-        if facts.empty?
-          transform_a = _host_edit_transform_16floats(model)
-          if transform_a.nil?
-            return nil  # factory writes the identity marker
+        # Normalize the keys: AnalyzersRunner stores String keys
+        # in the AnalysisResult; the dialog_runner's helper
+        # functions may pass Symbol keys. Coerce everything to
+        # String for the normalize pass.
+        facts = facts.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
+        # Build a candidate Hash from the production fields.
+        ctx = {}
+        # 'transform' may be a LIVE Sketchup::Geom::Transformation
+        # (production) OR a 16-float Array (already-converted by
+        # a host adapter in tests). Handle both shapes.
+        #
+        # We keep `t_raw` (the original value, possibly a live
+        # Sketchup object) so we can call .inverse on it for
+        # the inverse extraction. The 16-float array is
+        # derived from `t_raw` via _coerce_to_16floats.
+        t_raw = facts['transform']
+        t_raw_model = nil
+        if t_raw.nil?
+          # No transform in facts -- try the model's edit_transform.
+          # The model's edit_transform may be a live
+          # Sketchup::Geom::Transformation (real SU) or a plain
+          # Object with .to_a (test env). The fallback path
+          # needs to preserve the original Object so we can
+          # call .inverse on it for the inverse extraction.
+          t_raw_model = model
+          if model && model.respond_to?(:edit_transform)
+            et = model.edit_transform
+            t_raw = et if et
           end
-          facts = {
-            'active_edit_transform' => transform_a,
-            'active_edit_seed'      => 'real'
-          }
         end
-        SUAnalysis::Core::SourceSnapshot.normalize_transform_context(facts)
-      end
-
-      # V1.4 V14-STAGE-BLOCK-001 (2026-08-24): extract the host
-      # model's edit_transform as a 16-float Array (pure data).
-      # Returns nil when the model is absent OR the model does
-      # not expose edit_transform / active_path (the factory
-      # will write the identity marker Hash in that case).
-      def _host_edit_transform_16floats(model)
-        return nil if model.nil?
-        return nil unless model.respond_to?(:edit_transform)
-        t = model.edit_transform
-        return nil if t.nil?
-        # Real SketchUp::Geom::Transformation exposes .to_a (16
-        # floats). The FakeModel exposes the same shape. We
-        # accept either:
-        #   - An Array of 16 finite Floats.
-        #   - An Array of 4 Arrays of 4 Floats (matrix-row form).
-        #   - An object that responds to .to_a and returns one
-        #     of the above shapes.
-        if t.respond_to?(:to_a)
-          arr = t.to_a
-          return _coerce_to_16floats(arr)
+        if t_raw
+          arr = _coerce_to_16floats(t_raw)
+          if arr
+            ctx['active_edit_transform'] = arr
+          end
         end
-        nil
+        # 'transform.inverse' (production) or 'active_edit_inverse'
+        # (already-converted) -- whichever is present.
+        if t_raw && t_raw.respond_to?(:inverse) && t_raw.inverse.respond_to?(:to_a)
+          inv = _coerce_to_16floats(t_raw.inverse.to_a)
+          if inv
+            ctx['active_edit_inverse'] = inv
+          end
+        end
+        inv_direct = facts['active_edit_inverse']
+        if inv_direct && !ctx.key?('active_edit_inverse')
+          arr = _coerce_to_16floats(inv_direct)
+          if arr
+            ctx['active_edit_inverse'] = arr
+          end
+        end
+        # 'pid_path' (production: Array of Integers) AND/OR
+        # 'active_edit_path' (already-coerced).
+        if facts['pid_path'].is_a?(Array)
+          ctx['active_edit_path'] = facts['pid_path']
+        elsif facts['active_edit_path'].is_a?(Array)
+          ctx['active_edit_path'] = facts['active_edit_path']
+        end
+        # 'pid_path_complete' (production: Boolean) AND/OR
+        # 'pid_path_complete' (already-coerced).
+        if [true, false].include?(facts['pid_path_complete'])
+          ctx['pid_path_complete'] = facts['pid_path_complete']
+        end
+        # 'raw_with_nil' (production: Array of Integer / nil slots).
+        if facts['raw_with_nil'].is_a?(Array)
+          ctx['raw_with_nil'] = facts['raw_with_nil']
+        end
+        # 'structural_depth' (production: Integer).
+        if facts['structural_depth'].is_a?(Integer)
+          ctx['structural_depth'] = facts['structural_depth']
+        end
+        # Seed must be 'real' when a real transform is supplied;
+        # the identity marker ('identity') is reserved for the
+        # nil-facts fallback.
+        if ctx.key?('active_edit_transform') || ctx.key?('active_edit_inverse')
+          ctx['active_edit_seed'] = 'real'
+        end
+        # When we have NO production facts AND no host
+        # edit_transform, return nil (factory writes the
+        # identity marker).
+        return nil if ctx.empty?
+        SUAnalysis::Core::SourceSnapshot.normalize_transform_context(ctx)
       end
 
       # Coerce a SketchUp Geom::Transformation#to_a result
@@ -324,6 +395,17 @@ module SUAnalysis
       # to the canonical flat Array of 16 finite Floats.
       def _coerce_to_16floats(arr)
         return nil if arr.nil?
+        # When arr is a live Sketchup::Geom::Transformation
+        # (or any object that responds to .to_a returning one
+        # of the canonical shapes), extract the 16-float Array
+        # via .to_a FIRST, then validate the canonical shape.
+        # This is the production path: AnalyzersRunner stores
+        # the live transform under active_edit_facts['transform'];
+        # the snapshot MUST contain pure data (NOT a live
+        # Sketchup object).
+        if arr.respond_to?(:to_a) && !arr.is_a?(Array)
+          arr = arr.to_a
+        end
         if arr.is_a?(Array) && arr.length == 16 &&
                arr.all? { |v| v.is_a?(Numeric) }
           return arr.map { |v| v.to_f }
@@ -439,8 +521,11 @@ module SUAnalysis
       # pass the model the dialog was constructed with so
       # the production adapter can wrap operations.
       def _host_for(_ar)
-        # No AR-side host field yet; the dialog_runner passes
-        # the controller's model directly to prepare.
+        # The dialog_runner passes the controller's model
+        # directly to _source_snapshot_for and prepare. The
+        # AnalysisResult itself does not carry the model
+        # (host is an external reference); callers should
+        # use the controller's #model accessor instead.
         nil
       end
 

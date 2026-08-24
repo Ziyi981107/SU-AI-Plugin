@@ -245,7 +245,19 @@ module FakeUI
         face
       end
       def invalidate_all!
+        # V1.4 V14-STAGE-BLOCK-002 recheck (2026-08-24):
+        # abort MUST roll back every entity created under
+        # the open operation. The previous implementation
+        # only marked @groups as invalid (via erase!) but
+        # did NOT clear @groups -- so the `groups` reader
+        # still returned the rolled-back groups (with
+        # valid?=false). The correct behavior mirrors real
+        # SU: the groups are gone (the operation is undone),
+        # NOT just invalid. We now clear @groups and also
+        # mark the items invalid defensively (in case any
+        # caller still holds a handle reference).
         @groups.each(&:erase!)
+        @groups.clear
         @edges.clear
         @faces.clear
       end

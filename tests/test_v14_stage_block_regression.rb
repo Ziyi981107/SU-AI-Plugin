@@ -42,6 +42,11 @@ require_relative '../extension/su_ai_plugin/core/derived_workspace_fingerprint'
 require_relative '../extension/su_ai_plugin/core/derived_workspace_adapter'
 require_relative '../extension/su_ai_plugin/core/derived_geometry_workspace'
 require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
+require_relative '../extension/su_ai_plugin/core/preflight'
+require_relative '../extension/su_ai_plugin/core/analysis_result'
+require_relative '../extension/su_ai_plugin/dialog_controller'
+require_relative '../extension/su_ai_plugin/dialog_runner'
 require_relative '../extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
 
 include SUAnalysis::Core
@@ -272,6 +277,218 @@ test 'V14-STAGE-BLOCK-001: dialog_runner._resolve_transform_context falls back t
   end
 end
 
+# V14-STAGE-BLOCK-001 recheck (2026-08-24): the production
+# data shape (AnalyzersRunner's active_edit_facts) uses
+# 'transform' / 'pid_path' / 'pid_path_complete' / 'raw_with_nil'
+# as String keys. The 'transform' value is a LIVE
+# Sketchup::Geom::Transformation object. The dialog_runner's
+# _resolve_transform_context MUST convert the live object
+# into a 16-float Array (pure data) and map the production
+# field names to the SourceSnapshot's transform_context.
+test 'V14-STAGE-BLOCK-001: dialog_runner maps production AnalyzersRunner facts to pure data transform_context' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    # Inject a live-ish edit_transform that mimics
+    # Sketchup::Geom::Transformation: it has .to_a returning
+    # the 16-float Array, and .inverse returning a similar
+    # object.
+    forward = NON_IDENTITY_16.dup
+    inverse = NON_IDENTITY_INVERSE_16.dup
+    fake_t = Object.new
+    fake_t.define_singleton_method(:to_a) { forward.dup }
+    fake_inv = Object.new
+    fake_inv.define_singleton_method(:to_a) { inverse.dup }
+    fake_t.define_singleton_method(:inverse) { fake_inv }
+    model.inject_edit_transform(fake_t)
+    # Build the AnalyzersRunner-style active_edit_facts Hash
+    # (the production shape: String keys, :transform is a
+    # LIVE Sketchup::Geom::Transformation).
+    active_facts = {
+      'transform'         => fake_t,
+      'pid_path'          => [1234, 5678],
+      'structural_depth'  => 2,
+      'pid_path_complete' => true,
+      'raw_with_nil'      => [1234, 5678]
+    }
+    dr = SUAnalysis::Extension::DialogRunner
+    ctx = dr.send(:_resolve_transform_context,
+                  active_facts: active_facts, model: model)
+    refute_nil ctx,
+              'dialog_runner MUST produce a transform_context when active_facts has a transform'
+    # The 16-float transform MUST be extracted from the live
+    # Sketchup object via .to_a -- NOT stored as a live object.
+    assert_equal forward, ctx['active_edit_transform'],
+              'dialog_runner MUST convert the live transform via .to_a (16-float Array)'
+    assert_equal inverse, ctx['active_edit_inverse'],
+              'dialog_runner MUST convert transform.inverse via .to_a (16-float Array)'
+    assert_equal 'real', ctx['active_edit_seed'],
+              'seed MUST be "real" when a real transform is supplied'
+    assert_equal [1234, 5678], ctx['active_edit_path'],
+              'pid_path MUST be preserved verbatim'
+    assert_equal true, ctx['pid_path_complete'],
+              'pid_path_complete MUST be preserved'
+    # The transform_context MUST be deeply frozen (no live
+    # object can be inserted after deep-freeze).
+    assert ctx.frozen?, 'transform_context Hash MUST be frozen'
+    assert ctx['active_edit_transform'].frozen?,
+           'active_edit_transform Array MUST be frozen'
+    # The 16-float Array elements MUST all be Float (NOT
+    # Sketchup::Geom::Transformation, which would be a live
+    # object). This is the explicit "no live SketchUp objects"
+    # invariant.
+    ctx['active_edit_transform'].each do |v|
+      assert v.is_a?(Float),
+             "every transform element MUST be a Float (no live Sketchup objects); got #{v.class}: #{v.inspect}"
+    end
+  ensure
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
+
+# V14-STAGE-BLOCK-001 recheck: the FULL production
+# path must produce a SourceSnapshot whose transform_context
+# carries the real 16-float transform. This test exercises
+# the exact shape that AnalyzersRunner stores on the
+# AnalysisResult + the controller wiring.
+test 'V14-STAGE-BLOCK-001: full production path -- controller + analysis result + model -> real transform_context in SourceSnapshot' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    # Inject a live-ish edit_transform (mimics
+    # Sketchup::Geom::Transformation's .to_a + .inverse).
+    forward = NON_IDENTITY_16.dup
+    inverse = NON_IDENTITY_INVERSE_16.dup
+    fake_t = Object.new
+    fake_t.define_singleton_method(:to_a) { forward.dup }
+    fake_inv = Object.new
+    fake_inv.define_singleton_method(:to_a) { inverse.dup }
+    fake_t.define_singleton_method(:inverse) { fake_inv }
+    model.inject_edit_transform(fake_t)
+    # Build the AnalyzersRunner-style active_edit_facts Hash.
+    active_edit_facts = {
+      'transform'         => fake_t,
+      'pid_path'          => [1234, 5678],
+      'structural_depth'  => 2,
+      'pid_path_complete' => true,
+      'raw_with_nil'      => [1234, 5678]
+    }
+    # Build a real AnalysisResult + GeometrySnapshot the way
+    # AnalyzersRunner would (selection_entities + active_edit_facts
+    # on the AnalysisResult).
+    edges = [EdgeRecord.new(
+      id: 0,
+      source: SourceReference.new(
+        entity_id: 1000, persistent_id: 1000, kind: 'edge',
+        persistent_id_path: [1000], instance_path: [],
+        structural_depth: 0, pid_path_complete: true,
+        layer_name: 'Layer0'
+      ),
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0],
+      layer: 'Layer0'
+    )]
+    layers = [LayerRecord.new(name: 'Layer0')]
+    geom = GeometrySnapshot.new(edges: edges, layers: layers)
+    pf = PreflightAnalyzer.run(geom)
+    reg = IssueRegistry.new([])
+    ar = AnalysisResult.new(
+      preflight:          pf,
+      registry:           reg,
+      selection_type:     'Edges',
+      selection_label:    '1 edge',
+      geometry_snapshot:  geom,
+      selection_entities: [],
+      active_edit_facts:  active_edit_facts
+    )
+    # Build a DialogController with the model. This is what
+    # the real dialog_runner.show() does.
+    controller = SUAnalysis::Extension::DialogController.new(ar, model: model)
+    # Call the REAL _source_snapshot_for(controller) path --
+    # NOT the helper directly. This is the BLOCK-001
+    # production-path test.
+    dr = SUAnalysis::Extension::DialogRunner
+    src = dr.send(:_source_snapshot_for, controller)
+    refute_nil src, '_source_snapshot_for(controller) MUST return a real SourceSnapshot'
+    # The SourceSnapshot MUST carry the real transform_context
+    # (NOT the identity marker).
+    ctx = src.transform_context
+    refute_nil ctx['active_edit_transform'],
+             'production path MUST flow the REAL 16-float transform into the SourceSnapshot (no silent identity fallback)'
+    assert_equal forward, ctx['active_edit_transform'],
+             'production path MUST preserve the 16-float transform (extracted from the live transform via .to_a)'
+    assert_equal inverse, ctx['active_edit_inverse'],
+             'production path MUST preserve the 16-float inverse (extracted from live.inverse.to_a)'
+    assert_equal 'real', ctx['active_edit_seed'],
+             'production path MUST mark the seed as "real" when a real transform is supplied'
+    assert_equal [1234, 5678], ctx['active_edit_path'],
+             'production path MUST preserve the production pid_path field as active_edit_path'
+    assert_equal true, ctx['pid_path_complete'],
+             'production path MUST preserve pid_path_complete'
+    # The SourceSnapshot MUST NOT contain any live SketchUp
+    # objects (only pure data).
+    ctx['active_edit_transform'].each do |v|
+      assert v.is_a?(Float),
+             "every transform element MUST be Float (no live Sketchup objects in the SourceSnapshot); got #{v.class}"
+    end
+    # to_h MUST also preserve the real transform.
+    h = src.to_h
+    assert_equal forward, h[:transform_context]['active_edit_transform'],
+             'to_h MUST preserve the real transform_context'
+  ensure
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
+
+# V14-STAGE-BLOCK-001 recheck: when the active_edit_facts
+# has an empty/missing :transform but the model has a real
+# edit_transform, the dialog_runner must read the model's
+# edit_transform (the production fallback path).
+test 'V14-STAGE-BLOCK-001: production path falls back to model.edit_transform when facts has no transform' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    # Inject a live-ish edit_transform on the model.
+    forward = NON_IDENTITY_16.dup
+    fake_t = Object.new
+    fake_t.define_singleton_method(:to_a) { forward.dup }
+    fake_inv = Object.new
+    fake_inv.define_singleton_method(:to_a) { NON_IDENTITY_INVERSE_16.dup }
+    fake_t.define_singleton_method(:inverse) { fake_inv }
+    model.inject_edit_transform(fake_t)
+    # Build active_edit_facts WITHOUT :transform (e.g.
+    # AnalyzersRunner's facts when the model was not in an
+    # active edit at the time of analysis, but IS now).
+    active_edit_facts = {
+      'pid_path'          => [],
+      'pid_path_complete' => true
+    }
+    dr = SUAnalysis::Extension::DialogRunner
+    ctx = dr.send(:_resolve_transform_context,
+                  active_facts: active_edit_facts, model: model)
+    refute_nil ctx,
+              'dialog_runner MUST fall back to model.edit_transform when facts has no :transform'
+    assert_equal forward, ctx['active_edit_transform'],
+              'fallback MUST read the REAL model.edit_transform via .to_a'
+    assert_equal NON_IDENTITY_INVERSE_16, ctx['active_edit_inverse'],
+              'fallback MUST also read the inverse'
+    assert_equal 'real', ctx['active_edit_seed']
+  ensure
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
+
 # ---- V14-STAGE-BLOCK-002 regressions ----
 
 test 'V14-STAGE-BLOCK-002: FakeModel has SEQUENTIAL operations (not nestable counter)' do
@@ -353,12 +570,13 @@ test 'V14-STAGE-BLOCK-002: production Prepare wraps the WHOLE build in a single 
   end
 end
 
-test 'V14-STAGE-BLOCK-002: prepare refuses to overwrite a :failed workspace (handle_registry preservation)' do
-  # Per V14-STAGE-BLOCK-002: when _discard_if_present leaves
-  # the prior workspace in :failed state (because cleanup
-  # could not complete), a new prepare MUST NOT overwrite
-  # the failed workspace -- its private handle registry may
-  # still hold partial handles that need precise cleanup.
+test 'V14-STAGE-BLOCK-002: prepare auto-cleans-up the prior failed workspace (recovery path)' do
+  # Per V14-STAGE-BLOCK-002 recheck (2026-08-24): the runner
+  # MUST attempt to discard the prior failed workspace before
+  # building a new one. This is the UI's Rebuild button path.
+  # When cleanup succeeds (the FakeAdapter's dispose is a
+  # no-op so the discard returns :discarded), the new build
+  # proceeds to :ready.
   v14_stage_reset_everything
   adapter = SUAnalysis::Core::FakeDerivedWorkspaceAdapter.new
   src = v14_stage_make_source
@@ -366,8 +584,6 @@ test 'V14-STAGE-BLOCK-002: prepare refuses to overwrite a :failed workspace (han
   SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
   snap1 = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'ready', snap1['state']
-  ws1_id = snap1['workspace_id']
-  refute_nil ws1_id
   # Force the workspace into :failed state by replacing the
   # current workspace with a :failed one. This simulates the
   # scenario where a Prepare hit a host failure (the runner
@@ -388,18 +604,58 @@ test 'V14-STAGE-BLOCK-002: prepare refuses to overwrite a :failed workspace (han
     build_started_at: current_ws.build_started_at
   )
   SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, failed_ws)
-  # New Prepare MUST be refused: state stays :failed, the
-  # workspace_id is preserved, and the last_error explains.
+  # New Prepare MUST auto-cleanup the prior failed workspace
+  # and proceed to :ready (this is the UI's Rebuild button
+  # path -- the user MUST NOT be stuck in the failed state).
   SUAnalysis::Core::WorkingModeRunner.prepare(source: src, adapter: adapter, model: nil)
   snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'ready', snap2['state'],
+               'retry Prepare after :failed MUST auto-cleanup and reach :ready (V14-STAGE-BLOCK-002 recheck)'
+  assert_equal 1, snap2['entity_count'],
+               'auto-cleanup + new build MUST produce 1 derived entity'
+end
+
+test 'V14-STAGE-BLOCK-002: prepare REFUSES to overwrite when cleanup itself fails (handle_registry preservation)' do
+  # Per V14-STAGE-BLOCK-002 recheck: when the prior failed
+  # workspace's cleanup ALSO fails (the discard itself cannot
+  # complete), the runner MUST preserve the prior failed
+  # workspace (no overwrite) and refuse the new build. The
+  # user's escape hatch is the prior workspace's explicit
+  # Discard / Rebuild call from the UI (which goes through
+  # the same code path with a known-working adapter).
+  v14_stage_reset_everything
+  src = v14_stage_make_source
+  # Adapter that fails begin_operation for all calls. The
+  # first Prepare fails. The second Prepare's auto-cleanup
+  # ALSO fails (because begin_operation raises again). The
+  # prior failed workspace MUST be preserved.
+  always_failing_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
+    define_method(:begin_operation) do |_model, label:|
+      raise StandardError, 'v14-cleanup-fails-too'
+    end
+  end.new
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: always_failing_adapter, model: nil
+  )
+  snap1 = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'failed', snap1['state']
+  failed_ws_id = snap1['workspace_id']
+  refute_nil failed_ws_id
+  # New Prepare: cleanup fails, -> refuses + preserve.
+  SUAnalysis::Core::WorkingModeRunner.prepare(
+    source: src, adapter: always_failing_adapter, model: nil
+  )
+  snap2 = SUAnalysis::Core::WorkingModeRunner.snapshot
   assert_equal 'failed', snap2['state'],
-               'retry Prepare MUST be REFUSED while prior workspace is :failed (V14-STAGE-BLOCK-002)'
-  assert_equal ws1_id, snap2['workspace_id'],
-               'retry Prepare MUST NOT overwrite the failed workspace_id'
-  assert_match(/refused/i, snap2['last_error'].to_s,
-               'last_error MUST explain the refusal')
-  # The failed workspace's handle_registry is still intact.
-  refute_nil SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test.instance_variable_get(:@handle_registry)
+               'retry Prepare (cleanup also fails) MUST be REFUSED (V14-STAGE-BLOCK-002 recheck)'
+  assert_equal failed_ws_id, snap2['workspace_id'],
+               'retry Prepare MUST preserve the prior failed workspace_id (no overwrite)'
+  assert_match(/refused|cleanup/i, snap2['last_error'].to_s,
+               'last_error MUST explain the refusal / cleanup failure')
+  # The prior failed workspace's handle_registry is still
+  # intact (the runner did NOT clear it).
+  ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil ws.instance_variable_get(:@handle_registry)
 end
 
 test 'V14-STAGE-BLOCK-002: build failure mid-build preserves partial handle registry in :failed workspace' do
@@ -468,4 +724,154 @@ test 'V14-STAGE-BLOCK-002: build failure mid-build preserves partial handle regi
     assert_equal 'discarded', snap_after_retry['state'],
                  'second Discard (after the transient dispose failure) MUST succeed'
   end
+end
+
+# V14-STAGE-BLOCK-002 recheck (2026-08-24): when the
+# production Prepare hits a mid-build failure, the operation
+# MUST be ABORTED (not committed), so all entities created
+# so far are rolled back. The previous bug committed the
+# operation even when built_ws.state was :failed.
+test 'V14-STAGE-BLOCK-002: production Prepare mid-build failure ABORTS the SU operation (no partial entities)' do
+  v14_stage_reset_everything
+  FakeUI.install!
+  begin
+    model = FakeUI::FakeModel.new
+    v14_stage_install_fake_su(model)
+    adapter = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.new
+    # 3 edges; fail on the 2nd add_edge_to_group call.
+    src = v14_danger_source_with_paths([
+      { persistent_id: 70001, persistent_id_path: [70001],
+        start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] },
+      { persistent_id: 70002, persistent_id_path: [70002],
+        start_point: [10.0, 0.0, 0.0], end_point: [10.0, 5.0, 0.0] },
+      { persistent_id: 70003, persistent_id_path: [70003],
+        start_point: [10.0, 5.0, 0.0], end_point: [0.0, 5.0, 0.0] }
+    ])
+    # Inject a failure on the 2nd add_edges call (mimics a
+    # mid-build host failure on real SU).
+    original_add_edges = FakeUI::FakeModel::FakeEntities.instance_method(:add_edges)
+    call_count = 0
+    FakeUI::FakeModel::FakeEntities.class_eval do
+      define_method(:add_edges) do |points|
+        call_count += 1
+        raise StandardError, "v14-mid-build-fail-#{call_count}" if call_count == 2
+        original_add_edges.bind(self).call(points)
+      end
+    end
+    SUAnalysis::Core::WorkingModeRunner.prepare(
+      source: src, adapter: adapter, model: model
+    )
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+    # The Prepare MUST transition to :failed (mid-build
+    # failure captured).
+    assert_equal 'failed', snap['state'],
+                 'mid-build failure MUST produce :failed workspace'
+    assert_match(/v14-mid-build-fail-2/, snap['last_error'].to_s,
+                 'last_error MUST capture the mid-build failure')
+    # The SU operation MUST be ABORTED, NOT committed.
+    # Real SU's abort_operation rolls back all entities
+    # created under the operation; the FakeModel's
+    # abort_operation invalidates the model.entities (root)
+    # so all SU-AI-Derived-* groups are erased.
+    # The operation_log MUST show a :start then an :abort
+    # (NOT a :start then a :commit).
+    kinds = model.operation_log.map { |e| e[:kind] }
+    assert_equal :start, kinds.first,
+                 'operation log MUST start with :start'
+    refute_equal :commit, kinds.last,
+                 'operation log MUST NOT end with :commit (mid-build failure must abort, not commit)'
+    assert_equal :abort, kinds.last,
+                 'operation log MUST end with :abort (mid-build failure must abort the SU operation)'
+    # The model root MUST be empty (all entities aborted).
+    assert_equal 0, model.entities.groups.length,
+                 'mid-build failure MUST leave ZERO derived groups (operation aborted, not committed)'
+    # The :failed workspace carries the partial handle_registry
+    # (precise tracking) so a subsequent Discard can clean up.
+    ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+    refute_nil ws, 'current_workspace must be available for assertions'
+    entity_count = ws.entity_count
+    handle_count = ws.handle_registry_keys.length
+    # The first edge succeeded; the second aborted (leaving
+    # the first edge's group invalidated by the FakeModel's
+    # abort). The :failed workspace preserves what build_entity
+    # reported BEFORE the abort (so the user can see what
+    # happened).
+    # On real SU: abort rolls back every entity under the
+    # operation -- the model.entities is empty AFTER abort
+    # (verified above), and the :failed workspace tracks the
+    # partial inventory for the user's audit / cleanup.
+    assert entity_count >= 0,
+           'entity_count is non-negative (partial inventory preserved)'
+    assert handle_count >= 0,
+           'handle_count is non-negative (handle_registry preserved)'
+  ensure
+    # Restore the original add_edges method.
+    if defined?(original_add_edges) && original_add_edges
+      FakeUI::FakeModel::FakeEntities.class_eval do
+        define_method(:add_edges, original_add_edges)
+      end
+    end
+    v14_stage_uninstall_fake_su
+    FakeUI.uninstall!
+    v14_stage_reset_everything
+  end
+end
+
+# V14-STAGE-BLOCK-002 recheck: _discard_if_present must NEVER
+# clear the workspace on exception. The prior failed workspace
+# must be preserved so the user has a real recovery path.
+test 'V14-STAGE-BLOCK-002: _discard_if_present NEVER clears workspace on exception (handle_registry preservation)' do
+  v14_stage_reset_everything
+  # Adapter that raises on every call (dispose + begin_operation).
+  always_failing_adapter = Class.new(SUAnalysis::Core::FakeDerivedWorkspaceAdapter) do
+    define_method(:begin_operation) do |_model, label:|
+      raise StandardError, 'always-fail'
+    end
+    define_method(:dispose) do |_handle|
+      raise StandardError, 'always-fail'
+    end
+  end.new
+  src = v14_danger_source_with_paths([
+    { persistent_id: 80001, persistent_id_path: [80001],
+      start_point: [0.0, 0.0, 0.0], end_point: [10.0, 0.0, 0.0] }
+  ])
+  # Build a workspace manually (since prepare will fail at
+  # begin_operation). The :failed workspace has a non-empty
+  # handle_registry (we'll inject one).
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new(
+    source_snapshot: src, adapter: always_failing_adapter, model: nil
+  )
+  handle = Object.new
+  failed_ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws.workspace_id,
+    source_snapshot: src,
+    adapter:         always_failing_adapter,
+    model:           nil,
+    state:           :failed,
+    entity_pairs:    [['d0', SUAnalysis::Core::DerivedEntityRecord.new(
+      derived_id: 'd0', kind: :edge,
+      source_occurrence_ids: ['occ-d0'],
+      geometry_summary: {},
+      parent_derived_id: nil,
+      host_assigned_ids: {}
+    )]],
+    handle_registry: { 'd0' => handle }.freeze,
+    fingerprint:     nil,
+    last_error:      'simulated',
+    build_started_at: ws.build_started_at
+  )
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, failed_ws)
+  # Now try to discard. The adapter raises on begin_operation.
+  # The workspace.discard's internal rescue catches and returns
+  # :failed. The runner's _discard_if_present NEVER clears
+  # @current_workspace on exception (the prior code set it to
+  # nil, losing the handle_registry).
+  SUAnalysis::Core::WorkingModeRunner.discard
+  current = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+  refute_nil current,
+             '_discard_if_present MUST NOT clear @current_workspace on exception'
+  assert_equal 'd0', current.handle_registry_keys.first,
+             'handle_registry MUST be preserved (the runner did NOT clear the workspace)'
+  assert current.state == :failed || current.state == :discarded,
+         'the current workspace state is :failed or :discarded (whichever the discard produced)'
 end

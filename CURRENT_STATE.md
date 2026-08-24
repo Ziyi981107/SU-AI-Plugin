@@ -1,20 +1,22 @@
 # CURRENT STATE
 
 Last updated: 2026-08-24 (V1.4 Owner Gate 2 PASS V14-1..V14-10
-+ CodeX Stage Review BLOCK recheck closed:
-V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 both fixed, narrow recheck
-packet ready).
++ CodeX Stage Review BLOCK recheck #2 closed:
+V14-STAGE-BLOCK-001 (production-path fix) + V14-STAGE-BLOCK-002
+(recovery path + abort on :failed + never-clear workspace)
+both re-fixed in the production path).
 Branch `v1.4-derived-workspace`.
   - Production candidate HEAD (rbz built from): 707273a
   - Review-packet HEAD (evidence + fixes): f9bc321
-  - BLOCK-recheck HEAD (narrow fixes committed): f3eaa1e
+  - BLOCK-recheck #1 HEAD (narrow fixes committed): f3eaa1e
+  - BLOCK-recheck #2 HEAD (narrow re-fixes committed): PENDING
   - Working tree: clean
 
-Full suite **637/637 Ruby + 148/148 Node.js DOM assertions
+Full suite **644/644 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
-dist/SU-AI-Plugin.rbz rebuilt (432,162 bytes, 53 entries,
-SHA256 `eb1c6a00364d181af184447ec3d5977ca9c9d557a83055e382544c97203f5c76`,
-committed with BLOCK-recheck fixes).
+dist/SU-AI-Plugin.rbz rebuilt (438,607 bytes, 53 entries,
+SHA256 `a698d837bd02f08ecef80ad597305e5b332b749f736da32f6c5f34499ca6a15a`,
+committed with BLOCK-recheck #2 fixes).
 
 Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
 rbz. Evidence at
@@ -33,6 +35,219 @@ V1.5 Phase 1 plan + Pi Task prepared but NOT started (gated on
 CodeX V1.4 Stage Review PASS):
   - `Review/V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md`
   - `Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt`
+
+## V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002
+                          -- recheck fix COMPLETE 2026-08-24
+
+CodeX V1.4 Stage Review BLOCK RECHECK verdict (2026-08-24):
+VERDICT: BLOCKED
+  BLOCKS:
+    V14-STAGE-BLOCK-001 still not closed: the production path
+      reads AnalyzersRunner-style fields ('transform',
+      'pid_path', 'pid_path_complete', 'raw_with_nil') but
+      the previous fix expected the WRONG keys
+      ('active_edit_transform', 'active_edit_path', etc).
+      The dialog_runner's _host_for(ar) returned nil, so
+      the production code could not read the controller's
+      model. The new tests called the normalize helper
+      directly and missed the real production flow.
+    V14-STAGE-BLOCK-002 still not closed: when _build_derived_entities
+      returns a :failed workspace (no exception), prepare
+      still committed the operation (NOT aborted), so
+      surviving entities were kept. The :failed-state
+      refusal guard made the UI's Rebuild path dead
+      (Discard disabled, Rebuild calls prepare which is
+      refused). _discard_if_present's rescue branch
+      cleared @current_workspace = nil, losing the
+      handle_registry.
+  NITS:
+    - Operation changed from per-edge to whole-Prepare, so
+      V14-9's real Undo behavior changes. Need to retest
+      on real SU2020: Prepare success, mid-build failure
+      no leftover / leftover cleanable, Discard/Retry
+      recovery, Ctrl+Z reverts whole Prepare, source
+      unchanged. Cannot reuse old V14-9 evidence.
+
+Fix -- V14-STAGE-BLOCK-001 (production path recheck):
+
+  extension/su_ai_plugin/dialog_runner.rb:
+    - _source_snapshot_for(controller) now reads
+      controller.model and passes it through to
+      _source_snapshot_from_real_geometry(ar, geom, model:).
+    - _source_snapshot_from_real_geometry(ar, geom, model: model)
+      uses the controller's model for both the SourceFingerprint
+      (host: model) and the transform context.
+    - _resolve_transform_context(active_facts:, model:)
+      handles BOTH the AnalyzersRunner production shape
+      (String keys 'transform' / 'pid_path' /
+      'pid_path_complete' / 'raw_with_nil' /
+      'structural_depth') AND the pre-coerced shape
+      (already-converted 16-float Arrays). The 'transform'
+      value is a LIVE Sketchup::Geom::Transformation
+      object on real SU -- we convert it to a 16-float
+      Array via .to_a (via _coerce_to_16floats which now
+      handles objects that respond to .to_a). The inverse
+      is extracted via t.inverse.to_a. We keep t_raw (the
+      original Object) separately so the inverse extraction
+      works on the live object (not the already-converted
+      Array). When active_facts has no 'transform' but the
+      model has edit_transform, we fall back to reading
+      model.edit_transform (with the same .to_a path) and
+      its inverse.
+    - SourceSnapshot MUST contain ONLY pure data -- no
+      live SketchUp objects. The deep-freeze + Float-only
+      assertions in the new production-path tests pin
+      this invariant.
+    - Removed the now-unused _host_edit_transform_16floats
+      helper (its logic was inlined into
+      _resolve_transform_context with the live-object
+      reference preserved).
+
+Fix -- V14-STAGE-BLOCK-002 (recovery + abort recheck):
+
+  core/working_mode_runner.rb:
+    - prepare: when prior workspace is :failed, try to
+      discard it FIRST (this is the UI's Rebuild recovery
+      path). If discard succeeds (transitions to
+      :discarded), proceed with the new build. If discard
+      ALSO fails (transitions to :failed again), refuse
+      + preserve the prior failed workspace (no overwrite,
+      handle_registry intact, last_error explains). The
+      user's escape hatch is the prior workspace's explicit
+      Discard / Rebuild call from the UI.
+    - prepare: when _build_derived_entities returns a
+      :failed workspace (mid-build failure), ABORT the
+      SU operation (not commit). The previous bug committed
+      on :failed, leaving surviving entities on the model.
+      The abort rolls back every entity created under the
+      operation (atomic cleanup). The :failed workspace
+      still carries the partial handle_registry for the
+      user's precise cleanup.
+    - _discard_if_present: NEVER clear @current_workspace
+      on exception. The prior code set it to nil, losing
+      the handle_registry. The fix preserves the workspace
+      AS-IS (workspace.discard's internal rescue handles
+      the disposal failures; this outer rescue is paranoid).
+
+  tests/_fake_ui.rb:
+    - FakeEntities.invalidate_all! now clears @groups (in
+      addition to erasing each group). The previous
+      implementation only marked groups as invalid (via
+      erase!) but did NOT clear @groups, so the `groups`
+      reader still returned the rolled-back groups. The
+      abort's "roll back every entity" contract is now
+      properly enforced in the FakeModel.
+
+New production-path tests (this commit):
+
+  tests/test_v14_stage_block_regression.rb (4 new tests):
+    BLOCK-001:
+      9. dialog_runner maps production AnalyzersRunner
+         facts to pure data transform_context -- the
+         'transform' live object is converted to a 16-float
+         Array via .to_a; pid_path / pid_path_complete /
+         raw_with_nil are preserved; the result is deeply
+         frozen.
+      10. full production path -- controller + analysis
+          result + model -> real transform_context in
+          SourceSnapshot. The REAL production path
+          (controller.model -> _source_snapshot_for ->
+          _source_snapshot_from_real_geometry ->
+          from_geometry_snapshot) is exercised end-to-end.
+      11. production path falls back to model.edit_transform
+          when facts has no transform -- the model's
+          edit_transform is read, and BOTH the forward and
+          inverse 16-float arrays are extracted.
+    BLOCK-002:
+      12. production Prepare mid-build failure ABORTS the
+          SU operation (no partial entities) -- verifies
+          the operation_log shows :start then :abort (NOT
+          :commit), model.entities.groups is empty after
+          abort, and the :failed workspace carries the
+          partial inventory for precise cleanup.
+      13. _discard_if_present NEVER clears workspace on
+          exception -- the prior failed workspace's
+          handle_registry is preserved even when the
+          discard path raises.
+
+Updated existing tests to the new contracts:
+
+  tests/test_v14_dangerous_failure_modes.rb:
+    - PHASE-3-MATRIX "failed state refuses new Prepare
+      until Discard completes" replaced with TWO tests:
+      1. "failed state auto-cleans-up" -- the runner tries
+         to discard the prior failed workspace first; when
+         the discard succeeds (transient-failure adapter),
+         the new build proceeds to :ready. This is the
+         UI's Rebuild button path -- the user MUST NOT be
+         stuck in the failed state.
+      2. "failed state REFUSES new Prepare when cleanup
+         fails" -- an always-failing adapter makes both
+         the Prepare AND the auto-cleanup fail; the runner
+         refuses the new build and preserves the prior
+         failed workspace (no overwrite, handle_registry
+         intact).
+
+  tests/test_v14_stage_block_regression.rb:
+    - "V14-STAGE-BLOCK-002: prepare refuses to overwrite a
+      :failed workspace" replaced with TWO tests:
+      1. "prepare auto-cleans-up the prior failed workspace
+         (recovery path)" -- the runner discards the prior
+         failed workspace and proceeds to :ready.
+      2. "prepare REFUSES to overwrite when cleanup itself
+         fails (handle_registry preservation)" -- the
+         runner preserves the prior failed workspace when
+         the auto-cleanup ALSO fails.
+
+Verification:
+  - Targeted: tests/run_all.rb "V14-STAGE-BLOCK-001" ->
+    8 tests, 8 pass, 0 fail, 0 error.
+    tests/run_all.rb "V14-STAGE-BLOCK-002" -> 9 tests,
+    9 pass, 0 fail, 0 error.
+  - Full Ruby: 644 tests, 644 pass, 0 fail, 0 error.
+  - Node DOM: 148/148 PASS.
+  - git diff --check: clean.
+
+RBZ rebuild:
+  Path:      D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:      438,607 bytes (was 432,162)
+  SHA256:    a698d837bd02f08ecef80ad597305e5b332b749f736da32f6c5f34499ca6a15a
+  Entries:   53
+  Modified:  2026-08-24 15:20
+  Verified:  Extracted su_ai_plugin/dialog_runner.rb
+             from the archive: _resolve_transform_context
+             present; production pid_path / pid_path_complete
+             mapping present; controller.model passed;
+             _coerce_to_16floats handles live objects.
+             Extracted su_ai_plugin/core/working_mode_runner.rb:
+             prepare ABORTS on :failed (commit: false path);
+             _discard_if_present NEVER clears workspace on
+             exception.
+
+What remains:
+  - CodeX V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 narrow
+    recheck #2 verdict (the production-path fixes).
+  - After CodeX PASS, a SU2020 narrow re-test of:
+      * Prepare success (no leftover)
+      * Mid-build failure no leftover (or leftover is
+        precisely cleanable)
+      * Discard / Retry recovery path
+      * Ctrl+Z reverts the whole Prepare (per the V14-9
+        contract change: operation is now whole-Prepare
+        not per-edge)
+      * Source unchanged
+    Per CodeX: "不能沿用旧 V14-9 证据直接放行".
+  - Owner Gate 2 V1.4 SU2020 evidence (commit f9bc321)
+    remains valid for the production-code HEAD 707273a
+    for the prior-passing subset (V14-1..V14-8, V14-10); the
+    new V14-9 narrow re-test is required because the
+    operation semantics changed.
+
+NEXT ACTION:
+  - DO NOT push, publish, install, or release.
+  - DO NOT enter V1.5 / V1.6 / V1.7 / V1.8 / V1.9.
+  - Wait for CodeX V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002
+    recheck #2 verdict.
 
 ## V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002
                             -- fix COMPLETE 2026-08-24
