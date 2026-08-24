@@ -2,6 +2,7 @@
 
 Date: 2026-08-24
 Scope: narrow real-SketchUp-2020 logging/recovery path only
+Commit: `875333d`
 
 ## Symptom
 
