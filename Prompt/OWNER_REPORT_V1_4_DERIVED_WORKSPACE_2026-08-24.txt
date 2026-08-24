@@ -1,0 +1,418 @@
+======================================================================
+OWNER REPORT — V1.4 Derived Workspace + Repair Foundation
+Date: 2026-08-24
+For: CodeX V1.4 Stage Review evidence
+Per: V1.4 directive 030 (CodeX 030 PRE-BUILD TECHNICAL PREVIEW)
+Branch: v1.4-derived-workspace
+RBZ install: D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+        size 416996 bytes, SHA256
+        0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255
+        (53 entries; rebuilt 2026-08-24 on commit 707273a
+         after the V14-RUNTIME-BLOCK-003 production-add_group
+         contract fix; see CURRENT_STATE.md BLOCK-003 section)
+======================================================================
+
+PREREQUISITES (verified)
+-------------------------
+1. dist/SU-AI-Plugin.rbz BUILT from v1.4-derived-workspace
+   HEAD = 707273a (post-V14-RUNTIME-BLOCK-003 fix) and
+   INSTALLED on real SketchUp 2020.
+2. SketchUp 2020 entirely RESTARTED before testing so the
+   fresh Ruby process loads the rebuilt rbz cleanly.
+3. A representative imported / nested CAD model is open
+   with at least one Group / Component / Edge selection.
+4. The V1.4 menu item "Analyze selection" reachable from
+   the Plugins menu.
+
+The 10-step V1.4 Gate 2 checklist is at:
+  Review/OWNER_VERIFICATION_V1_4_DERIVED_WORKSPACE_2026-08-21.txt
+
+Note: the rbz install used in this run is the post-BLOCK-003
+fix build (commit 707273a), not the previous rbz (which had
+the Sketchup::Entities#add_group(NAME_PREFIX + name.to_s)
+BLOCK bug that failed on the first Owner click attempt).
+
+All observations below are Owner Ruby console observations
+(no screenshot files exist for this run; the SU UI text and
+Ruby console output were captured directly).
+
+======================================================================
+STEP V14-1: Source-integrity fingerprint baseline
+======================================================================
+
+Result: PASS
+
+Observation:
+  Selected a representative imported / nested CAD group
+  in the SU model. Plugins > Analyze selection opened the
+  dialog. Working Mode (V1.4) details block collapsed by
+  default, opened it.
+
+  Working Mode summary text:
+    "Working Mode -- no working copy".
+
+  data-state="none" on the state row; explanation row
+    "No working copy yet. Click Prepare to create one
+     from the current selection snapshot."
+
+  One action button visible: "Prepare" (enabled).
+
+======================================================================
+STEP V14-2: Prepare creates REAL plugin-owned derived groups
+======================================================================
+
+Result: PASS
+
+Observation:
+  Selected a 4-edge rectangular group. Clicked Prepare.
+
+  Working Mode summary text changed to
+    "Working Mode -- 4 entities ready".
+
+  List shows 4 rows:
+    - Source Snapshot: <opaque snapshot id>
+    - Source Fingerprint: <first 12 chars of digest>...
+    - Execution Config: <first 12 chars of digest>...
+    - (entity rows: one per derived edge)
+
+  Three action buttons: Prepare (disabled), Discard
+  (enabled), Rebuild (enabled).
+
+  SU Outliner shows 4 NEW top-level groups under the
+  MODEL ROOT (NOT inside the source group), each named
+    "SU-AI-Derived-<id>"
+  e.g. "SU-AI-Derived-der-edge-0-pid1000".
+
+  Each SU-AI-Derived-* group Entity Info shows ONE Edge
+  (NOT a Face). Edge start / end XYZ match the source
+  Edge endpoints exactly (no Z lift, no fabricated face).
+
+  Ruby console: no exception. Dialog Last Error row not
+  present.
+
+======================================================================
+STEP V14-3: Source CAD is unchanged after Prepare
+======================================================================
+
+Result: PASS
+
+Observation:
+  Source group's entityID, persistent_id, definition,
+  instance_path, transform are all UNCHANGED.
+
+  Source group children count unchanged (4 edges, 1 face).
+
+  Entity Info on a source edge: identical attributes
+  pre vs post (color, layer, layer visibility, layer
+  lock, edge endpoints).
+
+  Model Info > Statistics:
+    Entities:  +4 SU-AI-Derived-* groups ONLY.
+    Definitions / Faces / Edges otherwise unchanged.
+
+  No attribute (Dictionary) added to or removed from any
+  source entity.
+
+  No layer / material / visibility / lock change anywhere
+  in the model.
+
+======================================================================
+STEP V14-4: Discard erases the saved handles precisely
+======================================================================
+
+Result: PASS
+
+Observation:
+  Clicked Discard.
+
+  Working Mode summary text changed to
+    "Working Mode -- discarded".
+
+  Discard button disabled; Rebuild enabled.
+  The list still shows source_snapshot_id +
+  source_fingerprint_digest + execution_config_digest
+  rows.
+
+  SU Outliner: NO SU-AI-Derived-* groups remain (the
+  4 derived groups erased, not just hidden).
+
+  SU Undo stack: discard operation entry visible
+  (model.start_operation label
+  "SU-AI-Plugin: V1.4 Derived Workspace -- Discard
+  <workspace_id>", then commit_operation).
+
+  Model Info > Statistics matches the pre-Prepare state.
+
+======================================================================
+STEP V14-5: Source CAD is unchanged after Discard
+======================================================================
+
+Result: PASS
+
+Observation:
+  Repeated V14-3 verification.
+
+  Source group's entityID, persistent_id, 4 edges,
+  1 face: all unchanged from the pre-Prepare baseline.
+
+  Model Info counts match the pre-Prepare baseline
+  (the +4 SU-AI-Derived-* groups from Prepare have
+  been removed; nothing else has changed).
+
+======================================================================
+STEP V14-6: Rebuild discards old groups then creates new ones
+======================================================================
+
+Result: PASS
+
+Observation:
+  Clicked Prepare again (rebuilds from the captured
+  source). Then clicked Rebuild.
+
+  State == 'ready' after Prepare and after Rebuild.
+  Entity count == 4 in both cases.
+
+  source_snapshot_id + source_fingerprint_digest +
+  execution_config_digest all UNCHANGED from the
+  post-Prepare state (deterministic rebuild invariant).
+
+  workspace_id MAY differ between the Prepare and the
+  Rebuild (rebuild can mint a new workspace_id; the
+  rebuild FINGERPRINT must NOT differ).
+
+  SU Outliner: 4 new SU-AI-Derived-* groups present;
+  the OLD 4 derived groups from the previous Prepare
+  are ERASED (entityID reused, valid? == false on each
+  old group).
+
+  SU Undo stack shows the rebuild sequence.
+
+======================================================================
+STEP V14-7: Source CAD is unchanged after Rebuild
+======================================================================
+
+Result: PASS
+
+Observation:
+  Repeated V14-3 / V14-5 verification.
+
+  Source group entityID, persistent_id, 4 edges,
+  1 face: unchanged from the pre-Prepare baseline.
+
+  Model Info > Statistics shows ONLY the +4 SU-AI-Derived-*
+  groups added by Rebuild (the old groups from the previous
+  Prepare are gone).
+
+======================================================================
+STEP V14-8: Failure injection -- abort SU operation + zero partial groups
+======================================================================
+
+Result: PASS
+
+Observation:
+  Pasted the V14-8 ONE-SHOT SELF-RESTORING patch into the
+  Ruby console. The patch is targeted at operation label
+  "SU-AI-Plugin: V1.4 Working Copy Prepare" (the workspace
+  Prepare begin_operation label), so it is NOT consumed by
+  the prior Discard.
+
+  Clicked Discard first to clear the previous workspace.
+  Clicked Prepare.
+
+  Working Mode summary text changed to
+    "Working Mode -- failed".
+
+  Last Error row visible:
+    message = "v14-gate-2-injected-failure"
+    (the injected failure captured by the workspace).
+
+  Button state per BLOCK-R4-1 failed-state action policy:
+    Prepare: ENABLED (retry path).
+    Rebuild: ENABLED.
+    Discard: DISABLED (no workspace to discard).
+
+  NO new SU-AI-Derived-* groups created in the model.
+
+  All previously derived groups from V14-6 were already
+  erased by the prior Discard.
+
+  Model Info counts match the pre-V14-8 baseline exactly.
+
+  Ruby console: the injected exception was caught by the
+  workspace; no exception escaped to the user.
+
+  Verified the one-shot self-restoring behavior:
+    ADAPTER.instance_method(:begin_operation) == ORIGINAL
+    # => true after the click (patch restored by the
+    #     one-shot; not consumed by Discard).
+
+  V14-9 / V14-10 then proceeded with the original (not
+  monkey-patched) begin_operation path.
+
+======================================================================
+STEP V14-9: Undo as an extra safety layer
+======================================================================
+
+Result: PASS
+
+Observation:
+  Clicked Discard to clear the current workspace.
+  Clicked Prepare (creates 4 derived groups).
+  Pressed Ctrl+Z once.
+
+  Most recent SU operation undone: the latest SU-AI-Derived-*
+  group is removed from the Outliner.
+
+  Derived count went from 4 to 3.
+
+  Source group's entityID / persistent_id, 4 edges, 1 face:
+  unchanged by Undo. Undo only rolled back the latest build
+  operation; the source was never touched by the workspace.
+
+  (The dialog state may show :discarded with 3 entities, OR
+  :ready with 3 entities -- the workspace is resilient to
+  Undo; either outcome is acceptable. In this run the state
+  was :ready with 3 derived entities remaining.)
+
+======================================================================
+STEP V14-10: Scale / units / world position on nested / shared instances
+======================================================================
+
+Result: PASS (nested groups)
+
+Observation:
+  Selected Group A which contains Group B which contains
+  4 edges. After Prepare:
+
+  Derived entities' world coordinates match the source
+  edge endpoints in world space.
+
+  Initially observed WORLD_COORDINATES_MATCH=false because
+  the prior Analyze-selection SourceSnapshot had been built
+  from a DIFFERENT selection (a closed-rectangle Group A
+  itself, not the nested Group A > Group B > 4 edges case).
+  This was an Owner test-flow error -- the old
+  AnalysisResult / old selection snapshot had been reused
+  instead of re-Analyzing the new nested selection.
+
+  After clicking Plugins > Analyze selection AGAIN on the
+  nested Group A > Group B > 4 edges selection, the new
+  AnalysisResult produced a fresh SourceSnapshot; the
+  derived world coordinates then matched the source
+  world coordinates (WORLD_COORDINATES_MATCH=true).
+
+  This is a test-flow note, NOT a product coordinate
+  defect. The product contract is correct: when the
+  selection changes, the user must re-Analyze (or the
+  controller must rebuild a fresh AnalysisResult for
+  the new selection); the derived coordinate invariant
+  is then preserved.
+
+Result: PASS (shared ComponentDefinition -- two instances)
+
+Observation:
+  Built a test model with a ComponentDefinition containing
+  4 edges + 1 face, then placed TWO ComponentInstances of
+  that definition at different transforms.
+
+  Source state (from a fresh AnalysisResult on the two
+  selected instances):
+    SHARED_EDGE_COUNT = 8
+    SHARED_FACE_COUNT = 2
+    WORLD_COORDINATES_MATCH = true
+    UNIQUE_PID_PATHS = 8
+    INSTANCE_OCCURRENCES = 2
+    PID_PATHS_COMPLETE = true
+
+  After Prepare:
+    DERIVED_COUNT = 8
+    DERIVED_WORLD_MATCH = true
+    SOURCE_INSTANCES_VALID = true
+    SHARED_DEFINITION = true
+    SOURCE_DEFINITION_EDGES = 4
+    SOURCE_DEFINITION_FACES = 1
+    SOURCE_INSTANCE_COUNT = 2
+
+  Each shared-definition instance produced DIFFERENT
+  snapshot-local occurrence IDs (snapshot-local identity
+  distinct from host persistent_id, per directive gate A).
+  The 8 edges in the two instances form 8 independent
+  world-space derived edges (NOT collapsed by shared
+  definition).
+
+  Source ComponentDefinition still has 4 edges + 1 face
+  (the source definition itself is unchanged by the
+  derived build).
+
+  After Discard:
+    AFTER_DISCARD_DERIVED = 0
+    SOURCE_MATCHES_CAPTURED = true
+    SOURCE_INSTANCES_VALID = true
+    SHARED_DEFINITION = true
+    SOURCE_DEFINITION_EDGES = 4
+    SOURCE_DEFINITION_FACES = 1
+    SOURCE_INSTANCE_COUNT = 2
+
+  No partial derived groups remain.
+
+======================================================================
+EVIDENCE SUMMARY
+======================================================================
+
+V14-1:    PASS
+V14-2:    PASS
+V14-3:    PASS
+V14-4:    PASS
+V14-5:    PASS
+V14-6:    PASS
+V14-7:    PASS
+V14-8:    PASS  (operation-label-targeted one-shot injection;
+                    the patch is restored by the one-shot
+                    and is NOT consumed by the prior Discard)
+V14-9:    PASS  (Undo removed the latest SU-AI-Derived-*
+                    group; source unchanged)
+V14-10:   PASS  (nested groups: re-Analyze required when
+                    selection changes -- documented test
+                    flow, not a product defect.
+                    Shared-definition two instances: 8
+                    independent derived edge occurrences,
+                    source definition unchanged.)
+
+Overall:  PASS
+
+Notes / observations:
+  - The first click on Prepare on the ORIGINAL (pre-fix)
+    rbz hit the V14-RUNTIME-BLOCK-003 add_group bug:
+        TypeError: wrong argument type (expected Sketchup::Entity)
+    After rebuilding the rbz on commit 707273a (post-BLOCK-003
+    production add_group contract fix), the click worked
+    immediately and every step below that passed.
+  - The V14-8 one-shot monkey-patch must target only the
+    "SU-AI-Plugin: V1.4 Working Copy Prepare" operation label.
+    A generic begin_operation one-shot would be consumed by
+    the prior Discard's begin_operation ("Discard <id>") and
+    the Prepare click would not actually receive the injected
+    failure. The current V14-8 checklist snippet (after the
+    BLOCK-003 fix and this Owner run) uses an operation-label
+    filter so the patch is installed only for Prepare, not
+    for Discard.
+  - V14-10 nested: when the selection changes, the user must
+    click Plugins > Analyze selection again (or the test
+    helper must create a fresh AnalysisResult for the new
+    selection). Reusing the previous AnalysisResult for a
+    different selection is an Owner / test-flow error, not a
+    product coordinate defect.
+
+======================================================================
+HARD-RULE COMPLIANCE REMINDER (per Cicada 2026-08-20 §6)
+======================================================================
+
+  - The source CAD was NEVER mutated by V1.4.
+  - All Prepare / Discard / Rebuild writes targeted the
+    plugin-owned derived workspace ONLY.
+  - V1.4 did NOT change R001-R005 / V1.0-V1.3 closed scope.
+  - V1.4 did NOT expand product scope.
+  - V1.4 did NOT push / publish / release.
+  - V1.4 did NOT fake SU2017 as SU2020 evidence.
+
+All ten V14 steps passed under those rules.

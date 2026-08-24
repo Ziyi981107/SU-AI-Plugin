@@ -1,17 +1,26 @@
 # CURRENT STATE
 
-Last updated: 2026-08-24 (V14-RUNTIME-BLOCK-003 fix COMPLETE
-on `v1.4-derived-workspace`, base = `bcfd348`).
-Full suite **622/622 Ruby + 148/148 Node.js DOM assertions
+Last updated: 2026-08-24 (V1.4 Owner Gate 2 PASS V14-1..V14-10
+on real SU2020 + Stage Review packet dispatched on
+`v1.4-derived-workspace`, base = `550eb74`, HEAD = `707273a`).
+Full suite **628/628 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
 dist/SU-AI-Plugin.rbz rebuilt (416996 bytes, 53 entries,
-SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`).
-BLOCK-003 closed; awaiting CodeX narrow-scope recheck of
-the BLOCK-003 fix (production adapter add_group contract +
-RBZ smoke test isolation). Owner Gate 2 V1.4 SU2020 NOT
-yet run on this rebuild. V1.0 candidate still FROZEN at
-tag `v1.0-candidate-2026-08-19` (commit `56ea611`). V1.2
-+ V1.3 stages remain CLOSED on SketchUp 2020 per CodeX 029.
+SHA256 `0fc5ee407c52a4c70ca469c6e9549f032dcd21cb4549bfade56aed49b1b7d255`,
+commit 707273a, post-V14-RUNTIME-BLOCK-003 production add_group
+contract fix).
+Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
+rbz. Evidence at
+`Prompt/OWNER_REPORT_V1_4_DERIVED_WORKSPACE_2026-08-24.txt`.
+Stage Review packet dispatched at
+`Review/CODEX_STAGE_REVIEW_REQUEST_V1_4_DERIVED_WORKSPACE_2026-08-24.md`.
+V1.5 Phase 1 plan + Pi Task prepared but NOT started (gated on
+CodeX V1.4 Stage Review PASS):
+  - `Review/V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md`
+  - `Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt`
+V1.0 candidate still FROZEN at tag `v1.0-candidate-2026-08-19`
+(commit `56ea611`). V1.2 + V1.3 stages remain CLOSED on
+SketchUp 2020 per CodeX 029.
 
 ## V14-RUNTIME-BLOCK-003 (real SU2020 Owner repro 2026-08-22)
                         -- fix COMPLETE 2026-08-24

@@ -302,72 +302,79 @@ the injected failure. This guarantees:
     Owner click could happen -- BLOCK-R3-3 forbids that).
 
 ======================================================================
-PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT)
+PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT, LABEL-TARGETED)
 ======================================================================
 
   # V14-8: inject a host failure into the production
-  # adapter's begin_operation. ONE-SOT self-restoring
-  # patch (BLOCK-R3-3): the FIRST begin_operation call
-  # restores the original method AND raises the injected
-  # failure. After that, V14-9 and V14-10 run against
-  # the original production adapter.
+  # adapter's begin_operation ONLY when the operation
+  # label corresponds to the Prepare path. Discard /
+  # Discard-cleanup operations also call begin_operation,
+  # and a generic one-shot patch would be CONSUMED by
+  # the prior Discard (the user clicks Discard first to
+  # clear the previous workspace), so the Prepare click
+  # would NOT actually receive the injection. The
+  # label-targeted patch (Working Copy Prepare) below
+  # matches only the workspace Prepare begin_operation,
+  # so the prior Discard's begin_operation runs the
+  # ORIGINAL method and the Prepare click triggers the
+  # one-shot injection.
+  #
+  # Ruby 2.2.4 / SketchUp 2017+ syntax: no &., no case/in,
+  # no pattern matching, no numbered params. String match
+  # on the operation label.
   #
   # ABSOLUTE PATHS -- replace `D:/Projects/SU-AI-Plugin`
-  # with the actual project root on your machine. The
-  # rbz install root is the SketchUp Plugins/<your-rbz-folder>/
-  # location; the `require_relative` here uses the project
-  # source path (the V1.4 plumbing path is identical in
-  # the rbz).
+  # with the actual project root on your machine.
   require 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
 
-  # Capture the original begin_operation.
   ADAPTER  = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
   ORIGINAL = ADAPTER.instance_method(:begin_operation)
+  TARGET_LABEL = 'SU-AI-Plugin: V1.4 Working Copy Prepare'
 
-  # Install the ONE-SOT self-restoring patch.
+  # Install the LABEL-TARGETED one-shot self-restoring
+  # patch. The patched method:
+  #   - If label.to_s.include?(TARGET_LABEL):
+  #       RESTORE the original method FIRST, then raise
+  #       the injected failure. Subsequent calls (V14-9,
+  #       V14-10, and any later Discard) run ORIGINAL.
+  #   - Else (Discard / Discard-cleanup / other labels):
+  #       call ORIGINAL.bind(self).call(model, label: label)
+  #       verbatim. No side effect.
   ADAPTER.class_eval do
-    define_method(:begin_operation) do |_model, label:|
-      # RESTORE FIRST so subsequent calls (V14-9, V14-10,
-      # anything after this click) run the ORIGINAL method.
-      ADAPTER.class_eval do
-        define_method(:begin_operation, ORIGINAL)
+    define_method(:begin_operation) do |model, label:|
+      if label.to_s.include?(TARGET_LABEL)
+        # RESTORE FIRST so subsequent calls run the original.
+        ADAPTER.class_eval do
+          define_method(:begin_operation, ORIGINAL)
+        end
+        # THEN raise the injected failure (one-shot).
+        raise StandardError, 'v14-gate-2-injected-failure'
+      else
+        # Not the Prepare label -- call the original method
+        # directly (this is the Discard / Discard-cleanup
+        # path; it MUST work normally).
+        ORIGINAL.bind(self).call(model, label: label)
       end
-      # THEN raise the injected failure (one-shot).
-      raise StandardError, 'v14-gate-2-injected-failure'
     end
   end
 
-  # At this point, the patch IS installed. Probe verification
-  # (without triggering the injection): the instance_method
-  # is NOT the original. You can check this in Ruby:
-  #   SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
-  #     .instance_method(:begin_operation) != ORIGINAL
+  # At this point, the patch IS installed for Prepare but
+  # NOT for other operation labels. Verify by reading the
+  # instance_method (it is now the patched closure, NOT
+  # the original):
+  #   ADAPTER.instance_method(:begin_operation) != ORIGINAL
   #     # => true (patch installed)
-
-  # Click "Discard" first (to clear any current workspace),
-  # then click "Prepare". Observe:
-  #   - dialog: state = "failed", last_error visible
-  #   - model: NO new SU-AI-Derived-* groups
-  #   - ruby: no exception escapes (the workspace caught it)
-  # The click triggers the injected failure ONCE. After the
-  # click, the patch is GONE -- V14-9 and V14-10 will run
-  # against the original method.
+  #
+  # Click "Discard" first (to clear any current workspace;
+  # the Discard begin_operation label is
+  # "SU-AI-Plugin: V1.4 Derived Workspace -- Discard <id>",
+  # which does NOT include TARGET_LABEL, so Discard runs
+  # the original begin_operation), then click "Prepare".
+  # The Prepare click triggers the one-shot injection.
 
   # Verification step (paste AFTER clicking Prepare):
   ADAPTER.instance_method(:begin_operation) == ORIGINAL
   # => true (patch has been restored by the one-shot)
-
-  # If you skip the verification step, the patch is still
-  # gone -- the one-shot self-restoring guarantee holds.
-  # NOTE on cross-session persistence: SketchUp is a
-  # single Ruby process; a monkey-patch installed at runtime
-  # lives in that process ONLY. When SketchUp is closed
-  # (or crashes), the process ends and the patch is
-  # discarded with it. The NEXT SketchUp session loads a
-  # fresh process from the rbz and starts with the
-  # un-patched production adapter. No manual restart is
-  # required for monkey-patch hygiene -- the process
-  # boundary IS the reset.
 
 ======================================================================
 EXPECTED OUTCOMES (V14-8)
@@ -487,10 +494,13 @@ sharing one definition, verify:
     - All edge endpoints in the derived groups match
       the source edge endpoints in world coordinates.
     - The derived groups have NO Z normalization.
-    - The two same-component instances produce derived
-      groups with DIFFERENT snapshot-local occurrence
-      ids but the SAME host persistent_id (snapshot-
-      local vs host identity is preserved correctly).
+    - The two ComponentInstances of the SAME shared
+      ComponentDefinition produce 8 independent
+      derived edge occurrences (2 instances x 4 edges
+      per definition). Each derived occurrence carries
+      a DIFFERENT snapshot-local source_occurrence_id.
+      See the SHARED DEFINITION WORDING NOTE below for
+      the exact occurrence-vs-definition phrasing.
 
 ======================================================================
 EVIDENCE TO CAPTURE
@@ -522,6 +532,79 @@ include:
 
 Drop the Owner report at:
   Prompt/OWNER_REPORT_V1_4_DERIVED_WORKSPACE_2026-08-XX.txt
+
+======================================================================
+STEP V14-10 -- SHARED DEFINITION WORDING NOTE
+======================================================================
+
+Per the V1.4 directive (gate A: snapshot-local occurrence
+identity distinct from host-resolvable identity) and the
+master plan §17.2 (two instances sharing one definition
+are not the same world-space geometry), the correct
+formulation is:
+
+  - Two ComponentInstance entities in the model SHARE one
+    ComponentDefinition. The shared ComponentDefinition is
+    the same source-side artifact. Each ComponentInstance
+    is a DIFFERENT OCCURRENCE of that definition in the
+    model: it has its OWN transform, its OWN host
+    persistent_id (each instance gets a unique persistent_id
+    when placed), and its OWN persistent_id_path.
+  - The Edges inside the shared ComponentDefinition are
+    the SAME in BOTH instances -- they live in the
+    definition's entities, not in the instance's entities.
+    BUT because each instance carries a different
+    transform / persistent_id_path, the WORLD-SPACE
+    occurrences of those edges in the two instances are
+    DIFFERENT occurrences.
+  - The V1.4 SourceSnapshot records the source edges AS
+    world-space OCCURRENCES (one per instance-edge pair),
+    each with its OWN source_occurrence_id derived from
+    the FULL persistent_id_path. Two same-definition
+    instances produce DIFFERENT snapshot-local occurrence
+    IDs for what is logically the same definition edge.
+  - The 8 derived edge groups in this scenario are 8
+    INDEPENDENT derived occurrences: 2 instances x 4
+    edges per definition = 8 world-space edge occurrences.
+    They are not collapsed to 4 by shared definition.
+
+Do NOT phrase this as "two instances with the SAME
+persistent_id" -- each ComponentInstance in the model
+gets its OWN persistent_id when placed. The thing they
+share is the ComponentDefinition (the source definition).
+
+======================================================================
+OWNER FLOW -- NEW SELECTION MUST RE-ANALYZE
+======================================================================
+
+The Working Mode surface operates on the SourceSnapshot
+captured at the time the user clicked "Analyze selection".
+When the selection CHANGES (new selection, different
+geometry, different test fixture), the Owner MUST click
+"Plugins > Analyze selection" AGAIN on the new selection
+to refresh the AnalysisResult and the SourceSnapshot
+before clicking Prepare.
+
+Reusing the previous AnalysisResult / SourceSnapshot
+for a different selection is an OWNER TEST-FLOW ERROR,
+not a product coordinate defect. The Owner observed this
+in V14-10 nested-groups case: the world-coordinate check
+returned false until the Owner clicked Analyze selection
+again on the new nested selection, after which it
+returned true.
+
+  - Test scripts must NOT reuse an AnalysisResult across
+    selections.
+  - Each new selection must produce a fresh AnalysisResult
+    (via the controller's selection -> Analyze selection
+    path) and a fresh SourceSnapshot.
+  - If a test helper is reused across two different
+    selections, the helper must construct a NEW
+    AnalysisResult for the second selection (and a NEW
+    SourceSnapshot derived from it). Re-using a stale
+    AnalysisResult will produce stale-derived coordinates
+    and is documented as a test-flow bug, not a product
+    bug.
 
 ======================================================================
 OUT OF V1.4 SCOPE (DO NOT test)

@@ -1,0 +1,151 @@
+======================================================================
+PI TASK V1.5 — HIGH-CONFIDENCE AUTO REPAIR (PHASE 1)
+======================================================================
+
+Dispatch: 2026-08-24
+For: Pi (Implementation Agent)
+Source plans:
+  E:\dnowload\SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt
+  D:\Projects\SU-AI-Plugin\Review\V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md
+Status: PENDING — DO NOT START until the gates below are met.
+
+======================================================================
+GATES — Pi MUST NOT begin production implementation until ALL are met
+======================================================================
+
+  GATE 1: CodeX V1.4 Stage Review has formally PASSED.
+          (See Prompt/OWNER_REPORT_V1_4_DERIVED_WORKSPACE_2026-08-24.txt
+          for the Owner Gate 2 evidence; see
+          Review/CODEX_STAGE_REVIEW_REQUEST_V1_4_DERIVED_WORKSPACE_2026-08-24.md
+          for the pending dispatch.)
+
+  GATE 2: CodeX has explicitly greenlit V1.5 Phase 1 scope in a
+          follow-up guidance file (Prompt/CODEX_GUIDANCE_*_V1_5_*).
+
+  GATE 3: No outstanding BLOCK on the V1.4 derived-workspace
+          foundation (BLOCK-001 / BLOCK-002 / BLOCK-003 all closed).
+
+If any gate is unmet, Pi MUST continue V1.4 closeout work or wait.
+Implementing V1.5 production code ahead of any gate violates the
+master plan §21 PI AUTONOMY boundary.
+
+======================================================================
+SCOPE (locked; the implementation-ready plan is the source of truth)
+======================================================================
+
+Vertical slice:
+  "In the DerivedGeometryWorkspace, auto-apply ONLY exact-duplicate
+   and reversed-exact-duplicate edge occurrences, with full
+   provenance, audit, and rollback. Do nothing else."
+
+Per master plan §5.5, §6, §8, §16, §17, §19, §20, §21.
+
+Inputs (read-only):
+  - Current SourceSnapshot (frozen).
+  - Current DerivedGeometryWorkspace (the only writable target).
+  - Captured ExecutionConfigSnapshot.
+  - Existing duplicate_edge_candidate IssueRegistry evidence
+    (NO new analyzer; reuse DuplicateDetector as-is).
+
+RepairAction schema:
+  - Existing RepairAction / RepairPlan lifecycle is sufficient.
+  - action_type = :remove_duplicate_edge ONLY (in Phase 1).
+  - confidence = 1.0 for exact/reversed-exact match.
+  - confidence_basis must be non-empty (no fake AI confidence).
+  - auto_applicable = true (the rule is strictly deterministic).
+
+Hard safety boundaries:
+  - NEVER touch source entities.
+  - NEVER auto-delete short edges.
+  - NEVER handle approximate duplicates.
+  - NEVER collapse distinct shared-component occurrences.
+  - NEVER silently change world coordinates.
+  - NEVER leave partial state on failure (atomic rollback).
+
+Behavior contract:
+  - Deterministic survivor rule (lexicographic derived_id).
+  - Repeated apply is idempotent.
+  - Action status / source_occurrence_ids / affected_derived_ids
+    / before_summary / proposed_after_summary / topology_impact
+    / validation_result are all auditable.
+  - source_fingerprint unchanged across successful or failed apply.
+
+Test matrix (must cover both "should repair" and "must not repair"):
+  - Forward exact, reversed exact, three identical.
+  - Short edge preserved, near-but-not-exact preserved.
+  - Same world coords, different provenance preserved.
+  - Self-match skipped.
+  - Nested transform preserved.
+  - Repeated apply idempotency.
+  - Mid-action failure rollback.
+  - Discard + rebuild after apply.
+  - Erased / invalid derived entity skipped.
+  - source fingerprint unchanged.
+
+======================================================================
+OWNER GATE
+======================================================================
+
+After Pi implementation + targeted regression tests pass:
+
+  - Build new dist/SU-AI-Plugin.rbz on the V1.5 Phase 1 HEAD.
+  - Dispatch the V1.5 Owner Gate 2 checklist
+    (Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_*.txt).
+  - Owner runs the V15-1..V15-N checklist on real SketchUp 2020.
+  - Owner report:
+    Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-XX.txt.
+
+======================================================================
+EXPLICIT NON-GOALS (V1.5 Phase 1 MUST NOT include)
+======================================================================
+
+  - Short edge removal (later V1.5.x).
+  - FaceRecord duplicate removal (later V1.5.x).
+  - Gap closure, weld, flatten, planar normalization (V1.6+).
+  - Loop / region reconstruction (V1.8).
+  - Site / road / AI / MCP / V2 (forbidden).
+
+======================================================================
+HARD RULES
+======================================================================
+
+  - Do NOT push. Do NOT publish. Do NOT install.
+  - Do NOT modify V1.0-V1.3 closed scope.
+  - Do NOT enter V1.6 / V1.7 / V1.8 / V1.9 ahead of CodeX review.
+  - Do NOT fake Owner test results.
+  - Do NOT depend on host APIs the V1.4 derived adapter does not
+    already use (no new SU API surface).
+  - Do NOT widen the survivor rule beyond lexicographic derived_id
+    without a documented deterministic tiebreaker.
+  - Do NOT add RepairAction types beyond :remove_duplicate_edge in
+    V1.5 Phase 1.
+
+======================================================================
+NEXT ACTION (Pi, after Gates 1+2+3 are met)
+======================================================================
+
+  1. Re-read this Pi Task file + the V1.5 implementation plan
+     from scratch (NOT from chat memory).
+  2. Confirm gates are still met (CodeX V1.4 stage review PASS;
+     V1.5 guidance file present; no outstanding BLOCK on V1.4).
+  3. Implement V1.5 Phase 1 per the plan's §6 implementation order.
+  4. Add the §5 test matrix to tests/test_v15_duplicate_repair.rb.
+  5. Run targeted regression + full Ruby suite + Node DOM.
+  6. Rebuild dist/SU-AI-Plugin.rbz on the V1.5 Phase 1 HEAD.
+  7. Dispatch V1.5 Owner Gate 2 checklist.
+  8. STOP at the Owner Gate boundary; do not enter V1.5 Phase 2
+     without a new Pi Task dispatch.
+
+======================================================================
+DO NOT START BEFORE GATES MET
+======================================================================
+
+Until Gates 1+2+3 are met, this file is documentation. Pi may
+update the implementation plan document (Review/V1_5_*_PLAN_*.md)
+in response to CodeX feedback, but MUST NOT begin production
+executor code.
+
+If any gate is unmet, route the question through the standard
+AIPM / Owner / CodeX review path.
+
+— end of Pi Task V1.5 Phase 1 dispatch —

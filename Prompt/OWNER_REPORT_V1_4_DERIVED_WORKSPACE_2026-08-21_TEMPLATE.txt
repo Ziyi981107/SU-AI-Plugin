@@ -196,29 +196,46 @@ original method AND raises the injected failure. NO `begin /
 ensure` block is required.
 
 ======================================================================
-PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT)
+PASTE-RUNNABLE RUBY CONSOLE SNIPPET (V14-8, ONE-SOT, LABEL-TARGETED)
 ======================================================================
+
+  # V14-8: label-targeted one-shot self-restoring patch on
+  # SketchupDerivedWorkspaceAdapter#begin_operation. The patch
+  # only triggers when the operation label matches the
+  # workspace Prepare path (TARGET_LABEL = 'SU-AI-Plugin:
+  # V1.4 Working Copy Prepare'); Discard / Discard-cleanup
+  # operations call begin_operation too, but their labels
+  # do NOT match, so the patch passes through to the ORIGINAL
+  # method. This guarantees the prior Discard (used to clear
+  # the previous workspace) does NOT consume the one-shot.
+  #
+  # Ruby 2.2.4 / SU2017+ syntax only.
 
   require 'D:/Projects/SU-AI-Plugin/extension/su_ai_plugin/compatibility/su_derived_workspace_adapter'
 
-  ADAPTER  = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
-  ORIGINAL = ADAPTER.instance_method(:begin_operation)
+  ADAPTER       = SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter
+  ORIGINAL      = ADAPTER.instance_method(:begin_operation)
+  TARGET_LABEL  = 'SU-AI-Plugin: V1.4 Working Copy Prepare'
 
   ADAPTER.class_eval do
-    define_method(:begin_operation) do |_model, label:|
-      ADAPTER.class_eval do
-        define_method(:begin_operation, ORIGINAL)
+    define_method(:begin_operation) do |model, label:|
+      if label.to_s.include?(TARGET_LABEL)
+        ADAPTER.class_eval do
+          define_method(:begin_operation, ORIGINAL)
+        end
+        raise StandardError, 'v14-gate-2-injected-failure'
+      else
+        ORIGINAL.bind(self).call(model, label: label)
       end
-      raise StandardError, 'v14-gate-2-injected-failure'
     end
   end
 
-  # At this point, the patch IS installed. Click "Discard"
-  # first (to clear any current workspace), then click
-  # "Prepare". Observe:
-  #   - dialog: state = "failed", last_error visible
-  #   - model: NO new SU-AI-Derived-* groups
-  #   - ruby: no exception escapes (the workspace caught it)
+  # Click "Discard" first (Discard begin_operation label is
+  # 'SU-AI-Plugin: V1.4 Derived Workspace -- Discard <id>',
+  # which does NOT match TARGET_LABEL -- Discard runs the
+  # ORIGINAL method), then click "Prepare". Prepare's
+  # begin_operation label matches TARGET_LABEL and triggers
+  # the one-shot injection.
 
   ADAPTER.instance_method(:begin_operation) == ORIGINAL
   # => true (patch has been restored by the one-shot)
@@ -280,19 +297,27 @@ one definition, verify:
 
   1. Open a model with a nested Group (Group A contains
      Group B which contains 4 edges). Select Group A.
-     Analyze selection. Open Working Mode. Prepare. The
+     Click Plugins > Analyze selection AGAIN on this
+     nested selection (do NOT reuse the prior
+     AnalysisResult). Open Working Mode. Prepare. The
      derived entities use world coordinates; the nested
      structure is preserved in the SourceSnapshot's
      transform_context.
 
-  2. Open a model with two Component Instances of the
-     same Component Definition (same persistent_id).
-     Select BOTH instances. Analyze selection. Open
+  2. Open a model with two ComponentInstances of the
+     same ComponentDefinition. The two ComponentInstances
+     SHARE the ComponentDefinition (the source
+     definition) but each ComponentInstance gets its OWN
+     host persistent_id when placed. Select BOTH
+     instances. Click Plugins > Analyze selection AGAIN
+     (do NOT reuse the prior AnalysisResult). Open
      Working Mode. Prepare. The derived entities carry
      DISTINCT snapshot-local occurrence ids (per
      directive gate A: snapshot-local identity separate
-     from host-resolvable identity). Two shared-definition
-     instances get DIFFERENT occurrence ids.
+     from host-resolvable identity). The 8 derived edge
+     occurrences (2 instances x 4 edges per definition)
+     are independent world-space occurrences -- NOT
+     collapsed to 4 by shared definition.
 
   3. Verify units: the source coordinates are in inches
      (SU internal length unit). The derived entities are
@@ -324,6 +349,26 @@ Notes / observations:
   _______________________________________________________________
   _______________________________________________________________
   _______________________________________________________________
+
+======================================================================
+NEW SELECTION MUST RE-ANALYZE (Owner / test flow)
+======================================================================
+
+When the SELECTION CHANGES (new selection, different
+geometry, different test fixture), the Owner MUST click
+Plugins > Analyze selection AGAIN on the new selection
+to refresh the AnalysisResult + SourceSnapshot BEFORE
+clicking Prepare.
+
+Reusing the previous AnalysisResult / SourceSnapshot
+across selections is an OWNER TEST-FLOW ERROR (a stale
+SourceSnapshot reflects the previous selection's world
+coordinates, not the new selection's), not a product
+coordinate defect.
+
+If a Ruby script automates this, it MUST construct a
+fresh AnalysisResult (and a fresh SourceSnapshot) for
+the new selection.
 
 ======================================================================
 HARD-RULE COMPLIANCE REMINDER
