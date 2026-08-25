@@ -1,26 +1,84 @@
 ======================================================================
-OWNER VERIFICATION CHECKLIST — V1.5 Phase 1: High-Confidence Auto Repair
-Date: 2026-08-25 (CodeX BLOCK-004 recheck #2 — auto-fixture, real hooks)
-For: CodeX V1.5 Phase 1 Owner Gate evidence
-Per: CodeX V1.5 BLOCK-003/004 recheck #2 (2026-08-25) + V1.5 plan §6
+!!!  ON HOLD — DO NOT RUN  !!!
+!!!  STATUS: BLOCKED — see Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md  !!!
+!!!  DO NOT install the V1.5 Phase 1 RBZ on SketchUp 2020.  !!!
+!!!  DO NOT paste any commands below into the Ruby Console.  !!!
+!!!  DO NOT generate Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.  !!!
+!!!  Awaiting Product Owner decision on BLOCK-003 (input reachability). !!!
 ======================================================================
 
-This checklist REPLACES the previous
+This checklist is preserved as-is for review only. The CodeX
+V1.5 BLOCK RECHECK #2 verdict (a8b7792) and the CodeX BLOCK
+RECHECK #3 attempt in the working tree are both held in
+escrow. CodeX has NOT closed BLOCK-003 (real production
+provenance unreachable on real SU2020) or BLOCK-004 (Owner
+checklist defects A-E).
+
+Until Product Owner decides between options A, B, and C in
+Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md,
+no Owner Gate is runnable.
+
+This file is intentionally NOT deleted — it is preserved so
+that when BLOCK-003 is resolved, the checklist can be either
+finalized (if a contract is chosen) or replaced (if a
+different vertical slice is chosen).
+
+The pre-existing content below is the recheck #3 rewrite of
+the recheck #2 file. It is preserved unchanged (per the
+"do not overwrite existing modifications" rule). Do not
+execute it as written.
+
+======================================================================
+OWNER VERIFICATION CHECKLIST — V1.5 Phase 1: High-Confidence Auto Repair
+Date: 2026-08-25 (CodeX BLOCK-003/004 recheck #3 — Owner checklist rewrite)
+For: CodeX V1.5 Phase 1 Owner Gate evidence
+Per: CodeX V1.5 BLOCK-003/004 recheck #3 (2026-08-25) + V1.5 plan §6
+======================================================================
+
+This checklist REPLACES the prior
 `OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt`. Every
 step is EITHER an exact GUI click on the real SketchUp 2020
 dialog OR an exact single-line paste into the Ruby Console.
 All test fixtures are AUTO-CREATED by the Ruby Console commands
 themselves; Owner NEVER manually constructs coincident SU edges.
 
+This revision (per CodeX BLOCK-004 recheck #3) fixes:
+
+  A. V15-2 now creates TWO ComponentInstances (two add_instance
+     calls), not one.
+  B. V15-2 uses a definition whose edges CAN produce
+     cross-instance coincidence (1 edge definition placed at
+     SAME transform) AND asserts the DuplicateDetector emits a
+     pair AND applied = 0. The previous version used a
+     definition with 4 distinct edges placed at DIFFERENT
+     transforms; it could not prove shared-definition isolation
+     because there was nothing to NOT repair.
+  C. V15-4 installs the class-level test hook BEFORE clicking
+     Prepare (the production adapter now exposes
+     `SketchupDerivedWorkspaceAdapter.class_test_hook=` exactly
+     for this). The previous version installed the hook AFTER
+     Prepare completed (when no runnable action remained).
+  D. V15-4 inspects the post-batch snapshot (state, last_error,
+     actions_failed, actions_applied, entity_count, source
+     fingerprint) and does NOT expect a Ruby Console exception.
+     The previous version relied on `WorkingModeRunner.run_
+     duplicate_repair_batch` to raise; the runner actually
+     rescues StandardError internally and returns a snapshot.
+  E. Each step explicitly cleans BOTH the source fixture AND
+     any SU-AI-Derived-* groups the prior batch may have left
+     behind. The previous version left derived groups behind,
+     which contaminated the next step's Ctrl+A selection.
+
 PREREQUISITES
 -------------
 1.  dist/SU-AI-Plugin.rbz has been BUILT from the V1.5 Phase 1
-    BLOCK-003/004 recheck HEAD. The Agent rebuilt the rbz before
-    dispatch; you do NOT need to rebuild.
+    BLOCK-003/004 recheck #3 HEAD. The Agent rebuilt the rbz
+    before dispatch; you do NOT need to rebuild.
 2.  The rbz is INSTALLED on a real SketchUp 2020.
-3.  A fresh, EMPTY SketchUp 2020 model is open.
+3.  A fresh, EMPTY SketchUp 2020 model is open (File > New).
 4.  Window > Ruby Console is open and pinned.
-6.  All commands below are SINGLE-LINE copy-paste-safe.
+5.  All commands below are SINGLE-LINE copy-paste-safe. Do NOT
+    modify, abbreviate, or guess; paste each one verbatim.
 
 DISCOVERY HELPERS (used in commands below):
 
@@ -40,37 +98,35 @@ STEP V15-0: Verify Phase 1 modules load through the real entry-point
 
 PASTE in the Ruby Console:
 
-  load File.join(File.expand_path('~'), 'AppData', 'Roaming', 'SketchUp', 'Sketchup 2020', 'SketchUp', 'Plugins', 'su_ai_plugin.rb'); defined?(SUAnalysis::Core::DuplicateRepairProposer) && defined?(SUAnalysis::Core::DuplicateRepairExecutor)
+    load File.join(File.expand_path('~'), 'AppData', 'Roaming', 'SketchUp', 'Sketchup 2020', 'SketchUp', 'Plugins', 'su_ai_plugin.rb'); defined?(SUAnalysis::Core::DuplicateRepairProposer) && defined?(SUAnalysis::Core::DuplicateRepairExecutor)
 
 EXPECTED output:
-  true
+    true
 
 If `defined?` returns nil for either module, STOP and report
 "V15-0 FAIL: <module-name> not defined".
 
 ======================================================================
-STEP V15-1: SHOULD REPAIR — Duplicate edge inside one ComponentInstance
+STEP V15-1: SHOULD REPAIR — Duplicate edges inside one parent
 ======================================================================
 
-PASTE in the Ruby Console to auto-create the fixture (a
-ComponentDefinition with 2 coincident edges, then ONE
-ComponentInstance of it):
+PASTE in the Ruby Console to auto-create the fixture
+(a single parent container with 2 coincident edges):
 
-  mod = Sketchup.active_model; defs = mod.definitions;
-  d = defs.add('V15_DupDef');
-  e1 = d.entities.add_line([0,0,0], [10,0,0]);
-  e2 = d.entities.add_line([0,0,0], [10,0,0]);
-  mod.active_entities.add_instance(d, Geom::Transformation.new);
-  nil
+    Sketchup.active_model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.name.to_s.start_with?('V15_') }; Sketchup.active_model.definitions.to_a.each { |d| d.instances.each(&:erase!) rescue nil; d.erase! rescue nil }; d = Sketchup.active_model.definitions.add('V15_DupDef'); d.entities.add_line([0,0,0],[10,0,0]); d.entities.add_line([0,0,0],[10,0,0]); Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new).tap { |i| i.name = 'V15_DupInst#1' }; nil
 
-  Note: e2 starts at [0,0,0] (the SAME start as e1) and ends at
-  [10,0,0] (the SAME end as e1). This is the CAD-import-duplicate
-  case the proposer detects.
+The fixture creates:
+  - 1 ComponentDefinition `V15_DupDef` with 2 byte-identical
+    edges (the CAD-import-duplicate case).
+  - 1 ComponentInstance of that definition at the origin.
+The two edges inside the definition have byte-identical
+endpoints AND live in the same parent container (the
+definition's entities collection). The proposer MUST see the
+same V1.5 container-occurrence and emit one removal.
 
-Now click in the dialog:
-
-  Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
-  Analyze selection. Wait for the dialog.
+Click in the dialog:
+    Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
+    Analyze selection. Wait for the dialog.
 
 In the dialog, scroll DOWN to "Working Mode (V1.4)" (the
 last details block). The Working Mode state should be "none".
@@ -79,200 +135,263 @@ Click "Prepare".
 
 EXPECTED:
   - Working Mode state becomes "ready".
-  - "Entities ready" number is 1 (the duplicate was removed).
+  - "Entities ready" number drops (the duplicate is removed).
   - "Duplicate repairs" row appears with text
     "Duplicate repairs: applied 1, skipped 0".
+  - The dialog summary's "Duplicate Candidates" count is 1.
+
+PASTE to inspect the post-state Hash (the Owner reads it
+straight from the dialog controller):
+
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot; [snap['state'], snap['entity_count'], snap['duplicate_repair']['actions_applied'], snap['duplicate_repair']['actions_skipped'], snap['source_fingerprint_digest'][0,12]]
+
+EXPECTED:
+    ["ready", 1, 1, 0, "<12-char hex prefix>"]
+
+PASTE to verify the source ComponentDefinition still has
+both edges (the executor only touches the derived copy):
+
+    Sketchup.active_model.definitions['V15_DupDef'].entities.grep(Sketchup::Edge).length
+
+EXPECTED: 2
+
+PASTE to clean up BOTH the derived groups AND the source
+fixture (note: cleanup runs BEFORE the next step):
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef'].instances.to_a.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef'].erase!; nil
+
+EXPECTED: `nil`. The next step's `Ctrl+A` will NOT pick up
+any leftover SU-AI-Derived-* groups.
+
+======================================================================
+STEP V15-2: MUST NOT REPAIR — Two ComponentInstances at the
+            SAME transform (shared-definition isolation)
+======================================================================
+
+PASTE in the Ruby Console to auto-create the fixture
+(1 ComponentDefinition + 2 ComponentInstances at the SAME
+transform; the cross-instance case):
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.name.to_s.start_with?('V15_') }; Sketchup.active_model.definitions.to_a.each { |d| d.instances.each(&:erase!) rescue nil; d.erase! rescue nil }; d = Sketchup.active_model.definitions.add('V15_SharedDef'); d.entities.add_line([0,0,0],[10,0,0]); i1 = Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new); i1.name = 'V15_SharedInst#A'; i2 = Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new); i2.name = 'V15_SharedInst#B'; nil
+
+The fixture creates:
+  - 1 ComponentDefinition `V15_SharedDef` with 1 edge.
+  - 2 ComponentInstances (`V15_SharedInst#A` and
+    `V15_SharedInst#B`) at the SAME identity transform --
+    the two instances OVERLAP in world space.
+The 2 instances share 1 edge definition but have DIFFERENT
+instance.persistent_id. The walk visits each instance's
+edges independently; the DuplicateDetector WILL emit a
+candidate pair (the edges coincide in world space) but the
+proposer MUST preserve the pair (different container paths).
+
+Click in the dialog:
+    Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
+    Analyze selection. Click Prepare.
+
+EXPECTED:
+  - "Duplicate repairs" row reports "applied 0, skipped 1".
+  - "Entities ready" is the same as the total edge count
+    (no duplicates removed).
   - The dialog summary's "Duplicate Candidates" count is 1
     (the DuplicateDetector's pre-fix observation).
 
-VERIFY in the model OUTSIDE the dialog:
-  PASTE:
-    inst = Sketchup.active_model.definitions['V15_DupDef'].instances.first;
-    inst.definition.entities.grep(Sketchup::Edge).length
+PASTE to read the post-state:
 
-  EXPECTED: 2 (the source edges are unchanged; only the
-            DERIVED groups were removed).
-
-If your model already contains entities, the command above may
-pick up the wrong instance. Use:
-  inst = Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef' }.instances.first
-
-PASTE to remove the test fixture from the model:
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef' }.instances.first.erase!;
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef' }.erase!;
-  nil
-
-======================================================================
-STEP V15-2: MUST NOT REPAIR — Two ComponentInstances of the SAME
-            definition (cross-instance shared-definition isolation)
-======================================================================
-
-PASTE in the Ruby Console to auto-create the fixture (a
-ComponentDefinition with NO internal duplicates, then TWO
-ComponentInstances of it -- the cross-instance case):
-
-  mod = Sketchup.active_model; defs = mod.definitions;
-  d = defs.add('V15_SharedDef');
-  d.entities.add_line([0,0,0], [10,0,0]);
-  d.entities.add_line([20,0,0], [30,0,0]);
-  d.entities.add_line([0,5,0], [10,5,0]);
-  d.entities.add_line([20,5,0], [30,5,0]);
-  mod.active_entities.add_instance(d, Geom::Transformation.new([1,0,0,0, 0,1,0,0, 0,0,1,0, 100,0,0,1]));
-  nil
-
-  This places a SECOND ComponentInstance offset by (100, 0, 0)
-  so its edges do NOT coincide with the first instance's edges.
-  The definition itself has NO internal duplicates -- it just
-  has 4 distinct edges. The cross-instance case (two
-  ComponentInstances sharing one definition) is the
-  must-not-repair scenario.
-
-Now click in the dialog:
-
-  Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
-  Analyze selection. Click Prepare.
+    snap = SUAnalysis::Core::WorkingModeRunner.snapshot; [snap['state'], snap['entity_count'], snap['duplicate_repair']['actions_applied'], snap['duplicate_repair']['actions_skipped']]
 
 EXPECTED:
-  - "Duplicate repairs" row reports "applied 0, skipped 0".
-  - "Entities ready" is the same as the total edge count (no
-    duplicates removed).
-  - The dialog summary's "Duplicate Candidates" count is 0
-    (no coincident edge pairs across the two instances).
+    ["ready", 2, 0, 1]
 
-PASTE to remove the test fixture:
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_SharedDef' }.instances.to_a.each(&:erase!);
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_SharedDef' }.erase!;
-  nil
+CRITICAL: `actions_applied == 0` and `actions_skipped == 1`
+proves the proposer PRESERVED the cross-instance pair (the
+fix for BLOCK-004 B).
+
+PASTE to clean up BOTH the derived groups AND the source
+fixture:
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.each(&:erase!); Sketchup.active_model.definitions['V15_SharedDef'].instances.to_a.each(&:erase!); Sketchup.active_model.definitions['V15_SharedDef'].erase!; nil
 
 ======================================================================
 STEP V15-3: Source fingerprint unchanged across Discard + Rebuild
 ======================================================================
 
-Re-create the V15-1 fixture:
+PASTE in the Ruby Console to re-create the V15-1 fixture:
 
-  mod = Sketchup.active_model; defs = mod.definitions;
-  d = defs.add('V15_DupDef_3');
-  d.entities.add_line([0,0,0], [10,0,0]);
-  d.entities.add_line([0,0,0], [10,0,0]);
-  mod.active_entities.add_instance(d, Geom::Transformation.new);
-  nil
+    Sketchup.active_model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.name.to_s.start_with?('V15_') }; Sketchup.active_model.definitions.to_a.each { |d| d.instances.each(&:erase!) rescue nil; d.erase! rescue nil }; d = Sketchup.active_model.definitions.add('V15_DupDef_3'); d.entities.add_line([0,0,0],[10,0,0]); d.entities.add_line([0,0,0],[10,0,0]); Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new).tap { |i| i.name = 'V15_DupInst#3' }; nil
 
-Edit > Select All -> Plugins > SU-AI-Plugin > Analyze selection.
+Click in the dialog:
+    Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
+    Analyze selection.
 
 In the dialog, click Prepare. The "Duplicate repairs" row
-appears. Capture the "Source Fingerprint" row's 12-char
-prefix (hover the row to see the full digest in the tooltip).
+appears with "applied 1, skipped 0".
 
-Click "Discard". The state becomes "discarded".
+PASTE to capture the Source Fingerprint prefix BEFORE Discard:
 
-Click "Rebuild". The state becomes "ready" again.
+    SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest'][0,12]
 
 EXPECTED:
-  - "Duplicate repairs" row is identical to the pre-Discard
-    state (same applied count).
-  - The "Source Fingerprint" 12-char prefix is BYTE-IDENTICAL
-    to the pre-Discard capture.
+    "<12-char hex prefix>"  (record this as `fp_before`)
 
-PASTE to remove the test fixture:
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef_3' }.instances.first.erase!;
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef_3' }.erase!;
-  nil
+Click "Discard" in the dialog. The state becomes "discarded".
 
-======================================================================
-STEP V15-4: Mid-action failure rolls back the WHOLE BATCH (Ruby Console)
-======================================================================
+Click "Rebuild" in the dialog. The state becomes "ready"
+again.
 
-Re-create the V15-1 fixture:
+PASTE to capture the Source Fingerprint prefix AFTER Rebuild:
 
-  mod = Sketchup.active_model; defs = mod.definitions;
-  d = defs.add('V15_DupDef_4');
-  d.entities.add_line([0,0,0], [10,0,0]);
-  d.entities.add_line([0,0,0], [10,0,0]);
-  mod.active_entities.add_instance(d, Geom::Transformation.new);
-  nil
+    SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest'][0,12]
 
-Edit > Select All -> Plugins > SU-AI-Plugin > Analyze selection.
-
-Click Prepare. Wait for the dialog to show "applied 1, skipped 0".
-
-PASTE in the Ruby Console to install a one-shot failure hook
-on the production adapter and re-run the batch:
-
-  ctl = SUAnalysis::Extension::DialogRunner.current_controller;
-  ws  = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test;
-  ad  = ws.instance_variable_get(:@adapter);
-  ad.instance_variable_set(:@__v15_one_shot_failure,
-    StandardError.new('v15-gate-injected-failure'));
-  begin
-    SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: ctl.result.registry);
-    'NO-ERROR-RAISED'
-  rescue => e
-    "RESCUED: #{e.class}: #{e.message}"
-  end
-
-EXPECTED (the `begin/rescue` captures the failure cleanly):
-  "RESCUED: StandardError: v15-gate-injected-failure"
-
-Then PASTE to read the post-state:
-
-  SUAnalysis::Core::WorkingModeRunner.snapshot
-
-EXPECTED (in the returned snapshot Hash):
-  - "state" = "failed"
-  - "last_error" contains "v15-gate-injected-failure"
-  - "entity_count" = 1 (NOT 0 -- the prior derived entity
-    is preserved because the batch failed and the SU
-    operation aborted)
-  - "duplicate_repair" key:
-    - "actions_failed" >= 1
-    - "actions_applied" = 0 (no partial removal)
-
-The one-shot hook is consumed automatically. A subsequent
-dispose() call works normally (no failure injection). The
-Owner can verify this by clicking "Discard" in the dialog:
-the discard should succeed without the injected failure
-recurring.
+EXPECTED: byte-identical to `fp_before`.
 
 PASTE to clean up:
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef_4' }.instances.first.erase!;
-  Sketchup.active_model.definitions.find { |d| d.name == 'V15_DupDef_4' }.erase!;
-  nil
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef_3'].instances.to_a.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef_3'].erase!; nil
+
+======================================================================
+STEP V15-4: Mid-action failure rolls back the WHOLE BATCH
+======================================================================
+
+This step is the BLOCK-004C / D recheck #3 fix. The hook is
+installed BEFORE the batch runs (so it fires on the FIRST
+dispose call). The runner catches StandardError internally and
+returns a snapshot; the Owner inspects the snapshot, NOT a
+Ruby Console exception.
+
+PASTE in the Ruby Console to re-create the V15-1 fixture
+(with TWO duplicate pairs so the executor has more than one
+disposable derived group):
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.name.to_s.start_with?('V15_') }; Sketchup.active_model.definitions.to_a.each { |d| d.instances.each(&:erase!) rescue nil; d.erase! rescue nil }; d = Sketchup.active_model.definitions.add('V15_DupDef_4'); d.entities.add_line([0,0,0],[10,0,0]); d.entities.add_line([0,0,0],[10,0,0]); d.entities.add_line([20,0,0],[30,0,0]); d.entities.add_line([20,0,0],[30,0,0]); Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new).tap { |i| i.name = 'V15_DupInst#4' }; nil
+
+PASTE in the Ruby Console to install the class-level test
+hook on the production adapter (this is the BLOCK-004C
+recheck #3 fix -- the hook MUST be installed BEFORE clicking
+Prepare so the FIRST dispose call inside the batch fires it):
+
+    SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.class_test_hook = StandardError.new('v15-gate-injected-failure'); nil
+
+EXPECTED: `nil`.
+
+Click in the dialog:
+    Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
+    Analyze selection.
+
+Click "Prepare". Wait for the dialog to show "ready" (the
+Prepare itself does NOT dispose anything; the hook does not
+fire during Prepare).
+
+Wait for the dialog to show "applied 2, skipped 0" (the two
+duplicate pairs are scheduled).
+
+PASTE in the Ruby Console to re-run the batch manually
+(the dialog's "Rebuild" button would NOT do this; we re-run
+directly to inject the failure mid-batch):
+
+    SUAnalysis::Extension::DialogRunner.current_controller.result.registry.tap { |r| snap = SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: r); SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.class_test_hook = nil; [snap['state'], snap['last_error'].to_s, snap['duplicate_repair']['actions_applied'], snap['duplicate_repair']['actions_failed'], snap['duplicate_repair']['actions_skipped'], snap['entity_count']] }
+
+EXPECTED:
+    ["failed", "...v15-gate-injected-failure...", 0, 1, 0, 4]
+
+CRITICAL ASSERTIONS:
+  - `state == "failed"`: the batch FAILED (not raise; not
+    silently succeed). The runner caught the StandardError
+    internally and returned a snapshot (this is the BLOCK-004D
+    recheck #3 fix -- no Ruby Console exception expected).
+  - `last_error` contains "v15-gate-injected-failure" (the
+    original error message survived the rollback).
+  - `actions_applied == 0`: NO partial removal.
+  - `actions_failed >= 1`: at least one action is recorded as
+    failed (the first dispose raised; the abort rolled back).
+  - `entity_count == 4`: all 4 derived records are preserved
+    (no partial pollution).
+
+PASTE to verify the class-level hook was AUTO-CONSUMED
+(one-shot by design; subsequent dispose() calls work normally):
+
+    SUAnalysis::Compatibility::SketchupDerivedWorkspaceAdapter.class_test_hook.nil?
+
+EXPECTED: `true`.
+
+Click "Discard" in the dialog (the discard path does NOT
+re-trigger the injected failure because the hook was consumed).
+
+PASTE to clean up:
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef_4'].instances.to_a.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef_4'].erase!; nil
 
 ======================================================================
 STEP V15-5: Discard precise cleanup + source unchanged
 ======================================================================
 
-In the dialog from V15-4 (or a fresh session), click "Discard".
+PASTE in the Ruby Console to re-create the V15-1 fixture:
+
+    Sketchup.active_model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.name.to_s.start_with?('V15_') }; Sketchup.active_model.definitions.to_a.each { |d| d.instances.each(&:erase!) rescue nil; d.erase! rescue nil }; d = Sketchup.active_model.definitions.add('V15_DupDef_5'); d.entities.add_line([0,0,0],[10,0,0]); d.entities.add_line([0,0,0],[10,0,0]); Sketchup.active_model.active_entities.add_instance(d, Geom::Transformation.new).tap { |i| i.name = 'V15_DupInst#5' }; nil
+
+Click in the dialog:
+    Edit > Select All (or Ctrl+A) -> Plugins > SU-AI-Plugin >
+    Analyze selection. Click Prepare. Wait for the dialog to
+    show "ready" with "applied 1, skipped 0".
+
+Click "Discard" in the dialog.
 
 EXPECTED:
   - Working Mode state = "discarded".
-  - "entity_count" = 0.
-  - The model has zero derived groups with the
-    "SU-AI-Derived-" name prefix.
+  - `entity_count` = 0.
 
 PASTE to verify:
-  Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.length
 
-EXPECTED: 0
+    [SUAnalysis::Core::WorkingModeRunner.snapshot['state'], SUAnalysis::Core::WorkingModeRunner.snapshot['entity_count'], Sketchup.active_model.entities.grep(Sketchup::Group).select { |g| g.name.start_with?('SU-AI-Derived-') }.length, Sketchup.active_model.definitions['V15_DupDef_5'].entities.grep(Sketchup::Edge).length]
 
-The source geometry is unchanged (the dialog's "Source
-Fingerprint" digest matches the pre-Prepare digest).
+EXPECTED:
+    ["discarded", 0, 0, 2]
+
+CRITICAL:
+  - The model has zero derived groups with the
+    "SU-AI-Derived-" name prefix.
+  - The source ComponentDefinition still has its 2 edges
+    (the source is UNTOUCHED).
+
+PASTE to clean up:
+
+    Sketchup.active_model.definitions['V15_DupDef_5'].instances.to_a.each(&:erase!); Sketchup.active_model.definitions['V15_DupDef_5'].erase!; nil
 
 ======================================================================
-STEP V15-6: Owner report
+STEP V15-6: Real-SU2020 reachability probe (BLOCK-003 evidence)
 ======================================================================
 
-After running V15-1 through V15-5, drop a report at
+The full BLOCK-003 probe is documented separately at
+`Review/V15_REAL_SU2020_REACHABILITY_PROBE_2026-08-25.md`.
+Run PROBE 1, PROBE 2, and PROBE 3 from that document, capture
+the output, and drop it at
+`Prompt/OWNER_REPORT_V15_REAL_SU2020_REACHABILITY_PROBE_2026-08-25.txt`.
+
+If PROBE 1 returns FAIL (SU auto-merges the two add_line
+calls), STOP and report BLOCK-003 unreachable -- the Product
+Owner must decide whether to drop V1.5 Phase 1 SHOULD-REPAIR
+or to relax the contract to "approximate duplicate"
+(forbidden by master plan §6).
+
+If PROBE 1 + 2 + 3 all return PASS, BLOCK-003 is closed.
+
+======================================================================
+STEP V15-7: Owner report
+======================================================================
+
+After running V15-0 through V15-6, drop a report at
 `Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt`:
 
-  [PASS/FAIL] V15-0: ...
-  [PASS/FAIL] V15-1: ... (include applied number from the row)
-  [PASS/FAIL] V15-2: ... (include applied=0 + skipped=0)
-  [PASS/FAIL] V15-3: ... (include fingerprint prefix before
+    [PASS/FAIL] V15-0: ...
+    [PASS/FAIL] V15-1: ... (include applied number from the row)
+    [PASS/FAIL] V15-2: ... (include applied=0 + skipped=1)
+    [PASS/FAIL] V15-3: ... (include fingerprint prefix before
                            and after discard+rebuild)
-  [PASS/FAIL] V15-4: ... (include the RESCUED string)
-  [PASS/FAIL] V15-5: ... (include the grep count = 0)
-  Notes: ...
+    [PASS/FAIL] V15-4: ... (include the post-batch snapshot Hash)
+    [PASS/FAIL] V15-5: ... (include the snapshot state +
+                           entity_count + derived-group count)
+    [PASS/FAIL] V15-6: ... (include the probe verdict + key output)
+    Notes: ...
 
 If ANY step FAILS, attach:
   - The exact Ruby Console output

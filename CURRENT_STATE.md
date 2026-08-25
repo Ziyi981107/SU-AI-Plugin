@@ -42,19 +42,158 @@ Auto-test baseline at V1.4 close:
   Node DOM: 148/148 PASS
   RBZ smoke: 8/8 PASS
 
-## V1.5 Phase 1 — CodeX BLOCK RECHECK #2 (BLOCK-003/004 re-opens), Owner Gate pending (2026-08-25)
+## V1.5 Phase 1 — BLOCK-003/004 HELD IN ESCROW (2026-08-25)
 
-CodeX V1.5 Phase 1 BLOCK RECHECK #2 VERDICT (2026-08-25):
+CodeX V1.5 Phase 1 BLOCK RECHECK #2 verdict (HEAD a8b7792, 2026-08-25):
   REVIEW MODE: BLOCK RECHECK
-  BASE/HEAD:   215152a..1ec7c00
+  BASE/HEAD:   1ec7c00..a8b7792
   VERDICT:     BLOCKED
   CLOSED:      BLOCK-001 (production load wiring)
               BLOCK-002 (Prepare/Rebuild production call chain + UI summary)
               BLOCK-005 (one-operation batch apply/abort implementation)
-  OPEN:        BLOCK-003 (real production provenance unreachable)
-              BLOCK-004 (Owner checklist not executable/correct)
+  OPEN:        BLOCK-003 (real production provenance unreachable on
+              real SU2020)
+              BLOCK-004 (Owner checklist defects A-E)
 
-Recheck #2 fix in progress. Implementation:
+After the forced exit on 2026-08-25 the working tree contained a
+"recheck #3" attempt (production code change to
+extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb,
+a rewrite of tests/test_v15_real_preflight_path.rb and
+tests/_fake_ui.rb, a rewrite of
+Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt,
+and a new file
+Review/V15_REAL_SU2020_REACHABILITY_PROBE_2026-08-25.md). That
+attempt is HELD IN ESCROW per the policy in the recovery
+instructions and per the on-hold banners now placed at the top
+of each Owner-runnable file.
+
+The recheck #3 attempt did NOT close BLOCK-003. It did not
+introduce real-SU2020 evidence; it tried to make the FakeSU
+topology reachability provable in tests, which CodeX explicitly
+rejected. The repository contains no real-SU2020 capture
+proving the topology is reachable. The Agent has not searched
+the host machine beyond the repository and the master plan file.
+
+### Held-in-escrow files (working tree, UNCOMMITTED)
+
+- extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+  - added `class_test_hook=` accessor + class-level hook
+    consumption in `dispose`. Production code; NOT approved
+    for production. Held in escrow.
+- tests/_fake_ui.rb
+  - added `add_line(*points)` method on FakeEntities with
+    "no auto-merge" semantics. Held in escrow; NOT a
+    substitute for real-SU evidence.
+- tests/test_v15_real_preflight_path.rb
+  - rewritten to use the FakeSU add_line API and a
+    Group-based fixture. Held in escrow; tests fail (see
+    test evidence below) because the Group-based fixture
+    does not exercise the walk's ComponentInstance path.
+- Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+  - recheck #3 rewrite. Marked DO NOT RUN at top of file.
+    Held in escrow.
+- Review/V15_REAL_SU2020_REACHABILITY_PROBE_2026-08-25.md
+  - recheck #3 new file. Marked DO NOT RUN at top of file.
+    Held in escrow.
+- Review/V15_OWNER_GATE_BLOCK_RECHECK_PACKET_2026-08-25.md
+  - recheck #3 packet. Marked DO NOT RUN at top of file.
+    Held in escrow.
+- CURRENT_STATE.md
+  - this file (now reflects held-in-escrow state).
+
+### New escalation artifacts (committed in this checkpoint)
+
+- Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md
+  - The canonical escalation document. Records the
+    repository audit, the "no real-SU evidence" finding,
+    and presents three product options (A: change the
+    vertical slice; B: relax the provenance contract;
+    C: audit-only Phase 1). The Agent does NOT pick.
+- Prompt/CODEX_DECISION_REQUEST_V15_BLOCK003_UNREACHABLE_INPUT_2026-08-25.txt
+  - Decision request sent to Product Owner + CodeX.
+
+### Repository audit summary (full detail in the escalation file)
+
+Audit restricted to D:/Projects/SU-AI-Plugin and the master
+plan file E:/dnowload/SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt.
+
+- Review/ documents: zero host captures from real SU2020
+  showing two coincident Sketchup::Edge entities coexisting
+  in one Entities collection.
+- tests/: only FakeUI / FakeModel / FakeSU fixtures; no
+  real-SU captures.
+- extension/: production code READS entities (selector-driven
+  walk) but never INSERTS them via add_line. Neutral on
+  reachability.
+- Prompt/ and Review/ for V1.5 Phase 1: no owner-captured
+  SU2020 output showing two coincident edges surviving
+  add_line.
+- Master plan §6 / §17: do NOT cite a real-SU2020 sample
+  of the topology; the implementation plan derives the
+  SHOULD-REPAIR path from a logical-deduction argument,
+  not a host capture.
+
+VERDICT: there is NO in-repo real-SU2020 evidence that the
+V1.5 Phase 1 SHOULD-REPAIR topology is reachable.
+
+### Test evidence at recovery (working tree, BEFORE this checkpoint's safe doc edits)
+
+  Ruby:    692/702 (10 failures, all in the recheck #3
+           uncommitted test rewrite: V15PC-003, V15RP-001a,
+           V15RP-001..006 — see below)
+  Node DOM:154/154 PASS
+  RBZ smoke: 8/8 PASS (committed baseline only; the new
+           failure-injection path cannot be smoke-tested
+           without a real SU host)
+  git diff --check: clean
+  working tree: NOT clean (held-in-escrow uncommitted changes)
+
+The committed state at a8b7792 (last CodeX-verified green
+subset for BLOCK-001/002/005) reported 700/700 Ruby. The
+10 failures in the current working tree are introduced by
+the uncommitted recheck #3 test rewrite (FakeSU topology
+that doesn't reproduce real-SU walk). They do NOT indicate
+a regression in the committed production code; they indicate
+that the recheck #3 test rewrite is itself incorrect and
+must not be committed.
+
+### Final V1.5 Phase 1 RBZ (status)
+
+  Last built (a8b7792 candidate):
+    Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+    Size:    504,298 bytes
+    Entries: 55
+    SHA256:  8C1162031C76B3E984906D821FBDB523D7241EC20D8400CF3C931061FBABD2D4
+  Status:  UNAPPROVED CANDIDATE — DO NOT install.
+  No new RBZ is built in this checkpoint (no production code
+    change is committed; the production change is held in the
+    working tree).
+
+### STOP. Awaiting Product Owner decision.
+
+The Product Owner must choose between options A, B, C in
+Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md.
+Until that decision lands:
+
+  - DO NOT install the V1.5 Phase 1 RBZ.
+  - DO NOT execute the held-in-escrow Owner checklist.
+  - DO NOT execute the held-in-escrow reachability probe.
+  - DO NOT commit the held-in-escrow production code change.
+  - DO NOT enter V1.5 Phase 2 / V1.6+ / V1.7+ / V1.8 / V1.9.
+  - DO NOT push, publish, install, or release.
+
+### Historical context (preserved): recheck #2 / a8b7792 commit
+
+The text below is the historical narrative of the recheck #2 commit
+that landed as a8b7792. It is preserved verbatim for traceability.
+The current V1.5 Phase 1 state supersedes this narrative; the
+actual committed state at a8b7792 is:
+  - 700/700 Ruby / 154/154 Node / 8/8 RBZ smoke
+  - BLOCK-001 / BLOCK-002 / BLOCK-005 CLOSED
+  - BLOCK-003 / BLOCK-004 OPEN (this is the basis for the
+    escalation above)
+
+Recheck #2 (committed as a8b7792). Implementation:
 - Branch: v1.5-high-confidence-auto-repair (cut from V1.4 closeout a7cedb4)
 - Implementation commits (pre-recheck #2):
     dbd8cd4  high-confidence duplicate-edge auto-repair vertical slice

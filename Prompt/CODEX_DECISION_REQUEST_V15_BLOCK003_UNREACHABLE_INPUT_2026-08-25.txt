@@ -1,0 +1,149 @@
+======================================================================
+CODEX + PRODUCT OWNER DECISION REQUEST — V1.5 Phase 1 BLOCK-003
+                  (Real Production Input Reachability)
+Date: 2026-08-25
+Branch: v1.5-high-confidence-auto-repair
+Last committed HEAD: a8b7792
+Decision owner: Product Owner (with CodeX re-review)
+======================================================================
+
+PURPOSE
+-------
+The V1.5 Phase 1 CodeX BLOCK-003 question (real production
+provenance unreachable) is NOT closed on the evidence in
+the repository. CodeX has NOT approved any SHOULD-REPAIR
+topology on real SU2020. The Agent has therefore halted
+the Phase 1 implementation path and is asking the Product
+Owner to choose between three product-level options.
+
+CANONICAL ESCALATION DOCUMENT
+-----------------------------
+Read this first (full context, repository audit, and
+option descriptions):
+
+    D:/Projects/SU-AI-Plugin/Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md
+
+RELATED (DO NOT RUN, held in escrow)
+------------------------------------
+    D:/Projects/SU-AI-Plugin/Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+    D:/Projects/SU-AI-Plugin/Review/V15_REAL_SU2020_REACHABILITY_PROBE_2026-08-25.md
+    D:/Projects/SU-AI-Plugin/Review/V15_OWNER_GATE_BLOCK_RECHECK_PACKET_2026-08-25.md
+
+THE QUESTION (in plain language)
+--------------------------------
+The V1.5 Phase 1 vertical slice tries to remove duplicate
+edges inside a single "parent container" (for example,
+inside one ComponentDefinition, or inside one
+ComponentInstance of a definition). The "duplicate" means
+two edges with the exact same endpoints.
+
+The proposal assumes that real SketchUp can hold two such
+edges in the same place. But SketchUp's official
+documentation says the native Line tool merges coincident
+edges, and the Ruby API `Entities#add_line` behaves the
+same way as the native tool.
+
+If real SU2020 merges coincident edges, then the input the
+vertical slice is meant to repair CANNOT EXIST in real
+models. The vertical slice becomes unreachable.
+
+The repository has NO real-SU2020 capture that proves the
+input is reachable. The Agent has not searched the
+machine beyond the repository and the master plan file,
+per the policy in the recovery instructions.
+
+THE THREE OPTIONS (Product Owner chooses ONE)
+---------------------------------------------
+
+OPTION A — Change the vertical slice
+    Drop the current SHOULD-REPAIR vertical slice; pick a
+    different repair type that is provably reachable on
+    real SU2020. New CodeX Pre-build Review required.
+
+OPTION B — Relax the provenance contract
+    Allow some cross-occurrence duplicates (for example:
+    two coincident edges that live in different
+    ComponentInstances of the same definition, in the
+    same world position). This CONFLICTS with master plan
+    §17.2, which currently forbids it. Requires a new
+    CodeX Pre-build Technical Preview BEFORE any
+    implementation. High source/data risk: it could
+    silently destroy intentional mirrored geometry.
+
+OPTION C — Audit-only Phase 1
+    Keep the proposer / detector but do NOT auto-apply.
+    Phase 1 becomes a report-only feature: the dialog
+    shows "would-remove N edges inside container X". No
+    mutation. Safe regardless of whether the input is
+    reachable. The user value is reduced (no auto-fix)
+    but the safety is total. New CodeX Pre-build Review
+    required for the audit-only re-scoping.
+
+DETAILED COMPARISON TABLE
+-------------------------
+
+| Aspect                    | Option A         | Option B         | Option C          |
+|---------------------------|------------------|------------------|-------------------|
+| User value (auto-fix)     | new slice        | wider scope      | none (audit only) |
+| Source / data risk        | low              | HIGH             | none              |
+| Conflicts with master §6  | likely (new)     | no               | yes               |
+| Conflicts with §17.2      | depends          | YES              | no                |
+| Scope of change           | new plan + impl  | contract change  | small rescope     |
+| Pre-build Review needed   | YES (new)        | YES (preview)    | YES (addendum)    |
+| Time-to-deliver            | medium           | large            | small             |
+| BLOCK-003 closure path    | by reslicing     | by re-proving    | by making moot    |
+| BLOCK-004 closure path    | rewrite          | rewrite          | rewrite (audit)   |
+
+DECISION FORMAT (please respond with one of these)
+--------------------------------------------------
+The Product Owner should reply (in plain text, in the
+matching Reply file at Prompt/OWNER_DECISION_2026-08-25.txt
+once the Owner has decided):
+
+    OPTION: A
+    NOTES: <any additional guardrails / scope notes>
+
+    -- OR --
+
+    OPTION: B
+    NOTES: <relaxation scope, opt-in flag, etc.>
+
+    -- OR --
+
+    OPTION: C
+    NOTES: <audit-only surface scope, dialog UX notes, etc.>
+
+Until this decision lands, the Agent holds the recheck #3
+attempt in escrow and will NOT commit any production code
+change.
+
+WHAT THE AGENT WILL DO ONCE A DECISION LANDS
+--------------------------------------------
+1. If OPTION A: open a new CodeX Pre-build Review for the
+   replacement vertical slice; do not implement until
+   approved.
+2. If OPTION B: open a new CodeX Pre-build Technical
+   Preview for the contract relaxation; do not implement
+   until approved; do not touch the cross-instance
+   guardrail until the preview closes.
+3. If OPTION C: open a new CodeX Pre-build Review for the
+   audit-only re-scoping; do not implement until approved.
+
+In ALL three cases, BLOCK-003 and BLOCK-004 are reopened
+under the new review and a fresh Owner Gate (if any) is
+defined in the new review.
+
+HARD LIMITS
+-----------
+- DO NOT install the V1.5 Phase 1 RBZ (a8b7792
+  candidate).
+- DO NOT paste the contents of the held-in-escrow
+  Reachability Probe into the Ruby Console.
+- DO NOT enter V1.5 Phase 2 / V1.6+ / V1.7+ / V1.8 /
+  V1.9.
+- DO NOT handle short edge / face / gap / weld /
+  flatten / AI / MCP / V2.
+- DO NOT push, publish, install, or release.
+- DO NOT modify V1.0–V1.4 closed scope.
+
+end of file
