@@ -1,5 +1,67 @@
 # CURRENT STATE
 
+## Reviewer Contract V3 Adopted (2026-08-25, untracked in Prompt/)
+
+Latest governance contract read:
+
+  Prompt/CODEX_REVIEWER_CONTRACT_V3_2026-08-25.txt
+  Status: ACTIVE REVIEW GOVERNANCE CONTRACT (per the file's own header)
+  Owner:   AIPM / Product Control
+  For:     Codex / GPT-5.6 Sol Technical Reviewer
+  Implementation owner: Pi
+  Final product owner:  Owner
+
+Per V3 §18 (CURRENT RESET INSTRUCTION FOR REVIEW 032):
+
+  1. Wait for Pi to complete one coherent fix packet for
+     Review 032 BLOCK-001..005 ........... **DONE**
+     (commit 0c43cf7 = fix(v1.5-stage4-block-recheck))
+  2. Run the re-review using GPT-5.6 Sol xHigh ......... Codex's job
+  3. Recheck the interacting high-risk seam:
+       - source identity / provenance;
+       - direct tolerance matcher;
+       - class membership safety;
+       - precomputed post-state;
+       - host transaction ordering;
+       - truthful validator / audit evidence;
+       - executable Owner verification draft.
+  4. Keep V1.0-V1.4 closed.
+  5. Do not review V1.6.
+  6. If PASS:
+       - close the active V1.5 BLOCK set;
+       - do not invent another Codex approval gate;
+       - return next-stage authority to AIPM / Owner.
+  7. If still BLOCKED:
+       - report only remaining / new causally related material BLOCKs;
+       - define minimum acceptable outcomes;
+       - request one narrow recheck after one complete fix.
+
+Pi's responsibility under V3:
+
+  - Pi has finished the fix packet.
+  - Pi does NOT manufacture a Codex gate.
+  - Pi does NOT start V1.6 until a later Codex Prompt says PASS and
+    AIPM / Owner dispatches the next stage.
+  - Pi MAY update CURRENT_STATE.md and write Review/ artifacts under the
+    V3 §15 naming contract for any NEW artifact created from this point
+    onward:
+        CODEX REVIEW  -> CODEX_REVIEW_<NNN>_<VERSION>_<SCOPE>_<DATE>.txt
+        PI TASK       -> PI_TASK_<VERSION>_<PHASE/SCOPE>_<DATE>.txt
+        OWNER REPORT  -> OWNER_REPORT_<VERSION>_<SCOPE>_<DATE>.txt
+    Old artifacts remain frozen (no bulk rename).
+
+Predetermined reasoning effort for the remaining V1.x (V3 §7):
+
+  V1.5 BLOCK FIX RE-REVIEW .... xHigh (current)
+  V1.6 Planar Normalization .. no review by default; High if reviewed;
+                                  xHigh ONLY if architecture risk
+  V1.7 Endpoint / Gap + Canonical Topology ... xHigh mandatory integration
+  V1.8 Polyline / Closed Loop / Region ..... no review by default; High if
+                                  reviewed; xHigh ONLY on architecture risk
+  V1.9 Final Release ......... xHigh mandatory final release
+
+Pi STOPs for the V1.5 xHigh re-review per V3 §18.1 / Guidance 031 §13.
+
 ## V1.5 Recovery + Derived Edge Canonicalization -- GUIDANCE 031 ACTIVE (2026-08-25)
 
 Active directive:
