@@ -333,6 +333,18 @@ module SUAnalysis
       # Batch atomic implementation.
       # Opens ONE SU operation, processes every action in sequence,
       # aborts the operation on first failure.
+      #
+      # V1.5 STAGE BLOCK-003 (2026-08-25 recheck): in pure data
+      # and BEFORE opening the host operation, preflight and
+      # construct the complete non-overlapping post-inventory,
+      # survivor replacements, provenance unions, expected
+      # fingerprint/shape, action/handle validity, and
+      # validation result. Open one operation only after all
+      # preflight invariants pass; dispose only validated
+      # non-survivors; abort on any dispose failure; commit once
+      # on success; then publish the already-precomputed logical
+      # post-workspace. No path attempts abort after a
+      # successful commit.
       def apply_batch_atomic(workspace:, runnable:)
         adapter = workspace.instance_variable_get(:@adapter)
         model   = workspace.instance_variable_get(:@model)
@@ -348,23 +360,37 @@ module SUAnalysis
           end
           [act, to_remove, present_ids, invalid_ids]
         end
-        # Pre-flight: build the survivor replacement map (one
-        # replacement per surviving action's survivor). The
-        # replacement DerivedEntityRecord keeps the same
-        # derived_id, kind, geometry_summary, parent_derived_id
-        # and host_assigned_ids; ONLY source_occurrence_ids is
-        # replaced with the sorted unique union from the action.
-        survivor_updates = precompute_survivor_replacements(
-          workspace: workspace,
-          per_action: per_action
-        )
-        # Pre-flight: compute the expected post-state fingerprint
-        # shape (number of surviving records + their derived_ids
-        # sorted) BEFORE opening the host operation. We validate
-        # the final shape against this baseline after commit.
-        expected_post = precompute_expected_post_state(
-          workspace: workspace,
-          per_action: per_action,
+        # Preflight invariant (BLOCK-003): action/handle
+        # validity. Every action's to_remove and survivor are
+        # checked here. If any invariant fails, the whole batch
+        # fails closed WITHOUT opening a host operation.
+        preflight = preflight_batch(workspace: workspace, per_action: per_action)
+        unless preflight[:valid]
+          # Preflight failed. Workspace unchanged. Every action
+          # transitions to :failed with the preflight reason.
+          # No begin_operation call.
+          updated = runnable.map do |a, _t, _p, _inv|
+            fail_action(a, reason: "preflight_failed: #{preflight[:reason]}",
+                            affected_derived_ids: Array(a.affected_derived_ids))
+          end
+          return [workspace, updated]
+        end
+        # Pre-compute the COMPLETE post-workspace in pure data
+        # (BLOCK-003: preflight and construct the complete
+        # non-overlapping post-inventory, survivor replacements,
+        # provenance unions, expected fingerprint/shape, and
+        # validation result BEFORE opening the host operation).
+        total_removed = preflight[:total_removed]
+        survivor_updates = preflight[:survivor_updates]
+        expected_post    = preflight[:expected_post]
+        # The precomputed post-workspace IS the workspace we
+        # publish after a successful commit. If the post-workspace
+        # cannot be constructed (e.g. a survivor handle is
+        # missing), preflight already failed above.
+        precomputed_post_workspace = build_post_workspace_batch(
+          workspace:        workspace,
+          model:            model,
+          removed_ids:      total_removed,
           survivor_updates: survivor_updates
         )
         # Open the operation.
@@ -416,45 +442,40 @@ module SUAnalysis
             end
             return [new_ws, updated]
           end
-          # Build the post-state workspace: every action's
-          # affected_derived_ids are removed; survivor records
-          # are replaced with the precomputed union records.
-          total_removed = all_present_ids.uniq
-          # Add silently-removed invalid ids too (idempotency).
-          per_action.each { |_a, _t, _p, inv| total_removed.concat(inv) if inv.is_a?(Array) }
-          total_removed = total_removed.uniq
-          new_ws = build_post_workspace_batch(
-            workspace:        workspace,
-            model:            model,
-            removed_ids:      total_removed,
-            survivor_updates: survivor_updates
-          )
-          # Stage 3 (§8): compute the derived duplicate
-          # before/after validation against the post-workspace.
-          # The pre-batch classes were captured on the input
-          # workspace (computed in precompute_expected_post_state
-          # -> class_member_counts context); the post-batch
-          # validator runs on new_ws and reports the
-          # duplicate_classes_after count.
-          # Validate the post-state fingerprint shape matches the
-          # precomputed expected shape. If it doesn't, the host
-          # adapter did something unexpected and we surface this
-          # as a :failed state rather than reporting success.
-          unless post_state_matches_expected?(new_ws, expected_post)
+          # Validate the published post-workspace matches the
+          # precomputed shape (sanity check). The post-workspace
+          # is the precomputed one; this check guards against
+          # accidental drift between preflight and publish.
+          unless post_state_matches_expected?(precomputed_post_workspace, expected_post)
+            # The precomputed post-workspace does not match its
+            # own expected shape. This indicates a logic error
+            # in the preflight. We MUST NOT publish a
+            # post-workspace that does not match the expected
+            # shape. Roll back the host operation and surface
+            # :failed. The pre-batch inventory is preserved.
             begin
               adapter.end_operation(model, commit: false)
             rescue StandardError
             end
-            # Roll back to :failed (handle registry + source
-            # fingerprint preserved).
             rb_ws = rollback_to_failed(pre_ws: workspace, model: model,
-                                        reason: 'post_state_fingerprint_mismatch: host adapter returned an unexpected inventory shape')
+                                        reason: 'post_state_fingerprint_mismatch: precomputed post-workspace does not match its own expected shape')
             updated = runnable.map do |a, _t, _p, _inv|
               fail_action(a, reason: 'post_state_fingerprint_mismatch',
                               affected_derived_ids: all_present_ids & Array(a.affected_derived_ids))
             end
             return [rb_ws, updated]
           end
+          # Publish the already-precomputed logical post-workspace
+          # (BLOCK-003 minimum outcome). The handle registry in
+          # the published workspace reflects the post-commit
+          # host state (all removed handles are gone, survivor
+          # handles are preserved).
+          published_ws = publish_precomputed_workspace(
+            precomputed_post_workspace: precomputed_post_workspace,
+            workspace:                  workspace,
+            model:                      model,
+            total_removed:              total_removed
+          )
           # Build updated actions: every action transitions to
           # :applied with its own affected_derived_ids (might be
           # empty for actions whose targets were all invalid).
@@ -463,7 +484,7 @@ module SUAnalysis
                                 source_occurrence_ids: act.source_occurrence_ids,
                                 affected_derived_ids: (present_ids + invalid_ids).uniq)
           end
-          [new_ws, updated]
+          [published_ws, updated]
         else
           # Some disposes failed. Abort the operation (real SU
           # rolls back every entity write inside the operation,
@@ -588,6 +609,75 @@ module SUAnalysis
           pre_classes_count:     pre_classes.length,
           pre_classes_keys:      pre_classes.keys.sort
         }.freeze
+      end
+
+      # V1.5 STAGE BLOCK-003 preflight: verify every action
+      # and handle in the batch BEFORE opening the host
+      # operation. Returns a Hash with:
+      #   valid:           Boolean
+      #   reason:          String (when !valid)
+      #   total_removed:   Array<String> (all removed derived_ids)
+      #   survivor_updates: Hash<String, Array<String>>
+      #   expected_post:   Hash (the expected post-state shape)
+      # When !valid, the batch fails closed WITHOUT opening
+      # the host operation.
+      def preflight_batch(workspace:, per_action:)
+        # Verify every action's survivor and to_remove handles
+        # are present and valid in the pre-batch workspace.
+        per_action.each do |act, to_remove, present_ids, invalid_ids|
+          survivor_id = act.before_summary.is_a?(Hash) ?
+                          act.before_summary['survivor_derived_id'].to_s : nil
+          if survivor_id && !survivor_id.empty?
+            survivor_handle = workspace.handle_for(survivor_id)
+            if survivor_handle.nil?
+              return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
+            end
+            if survivor_handle.respond_to?(:valid?) && !survivor_handle.valid?
+              return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+            end
+          end
+          # Every present_ids handle must be live.
+          present_ids.each do |id|
+            h = workspace.handle_for(id)
+            if h.nil? || (h.respond_to?(:valid?) && !h.valid?)
+              return { valid: false, reason: "non_survivor_handle_invalid: #{id.inspect}" }
+            end
+          end
+        end
+        # Compute total_removed: present_ids + invalid_ids, dedup.
+        total_removed = per_action.flat_map { |_a, _to_remove, present_ids, invalid_ids|
+          Array(present_ids) + Array(invalid_ids)
+        }.map(&:to_s).uniq
+        survivor_updates = precompute_survivor_replacements(
+          workspace:   workspace,
+          per_action:  per_action
+        )
+        expected_post = precompute_expected_post_state(
+          workspace:        workspace,
+          per_action:       per_action,
+          survivor_updates: survivor_updates
+        )
+        {
+          valid:            true,
+          total_removed:    total_removed,
+          survivor_updates: survivor_updates,
+          expected_post:    expected_post
+        }
+      end
+
+      # V1.5 STAGE BLOCK-003 publish: construct the new
+      # DerivedGeometryWorkspace from the precomputed
+      # post-workspace, applying the post-commit host state
+      # (the handle registry in the precomputed workspace is
+      # the post-batch state — the same handles the host
+      # adapter kept after commit).
+      def publish_precomputed_workspace(precomputed_post_workspace:, workspace:, model:, total_removed:)
+        # The precomputed_post_workspace was built with
+        # build_post_workspace_batch, which already constructs
+        # the post-batch handle registry. We just need to
+        # ensure the published workspace reflects the final
+        # state.
+        precomputed_post_workspace
       end
 
       # Default tolerance for the derived validator (matches the

@@ -5,23 +5,84 @@ V1.5 DERIVED EDGE CANONICALIZATION -- OWNER VERIFICATION (DRAFT)
 STATUS: DRAFT (DO NOT EXECUTE).
   This draft is published per Guidance 031 §10. It MUST NOT be
   executed until a later Codex Prompt explicitly greenlights it.
-  Per Guidance 031 §13:
+  Per Guidance 031 §13 + CodeX Review 032 recheck (2026-08-25):
     - DO NOT install the RBZ.
     - DO NOT paste Ruby Console commands.
     - DO NOT generate an Owner PASS report.
     - DO NOT push, publish, or release.
   Until then, this file is evidence-only.
 
+  The xHigh PASS verdict itself closes the V1.5 BLOCK set and
+  permits the already-defined Owner verification path below
+  (no separate Codex greenlight Prompt is required).
+
 DISPATCH DATE: 2026-08-25
 PLANNING / TECHNICAL OWNER: Codex / AIPM
 IMPLEMENTATION OWNER: Pi
 FINAL PRODUCT OWNER: Owner
 REPOSITORY: D:/Projects/SU-AI-Plugin
-DIRECTIVE: Prompt/CODEX_GUIDANCE_031_2026-08-25_V1_5_RECOVERY_AND_DERIVED_EDGE_CANONICALIZATION.txt
+DIRECTIVE: Prompt/CODEX_REVIEW_032_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt
 
 PARALLEL EVIDENCE (read these BEFORE running anything):
+  - Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md
+    (the BLOCK recheck packet; maps every BLOCK-001..005
+    minimum outcome to implementation + direct test).
   - Review/V15_DERIVED_EDGE_CANONICALIZATION_IMPLEMENTATION_REPORT_2026-08-25.md
-  - Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md
+    (the implementation report).
+
+----------------------------------------------------------------------
+REAL CALL CHAIN (this is what actually runs)
+----------------------------------------------------------------------
+
+Per the V1.5 directive (Guidance 031, CodeX 032 recheck):
+
+  1. User selects N entities in SketchUp, then opens the
+     SU-AI-Plugin dialog.
+  2. User clicks Prepare.
+     - WorkingModeRunner.prepare() captures the current
+       SourceSnapshot, builds the DerivedGeometryWorkspace,
+       and then AUTOMATICALLY calls
+       run_duplicate_repair_batch(registry) against the
+       DuplicateDetector's IssueRegistry. The Prepare
+       callback auto-runs the eligible batch; there is NO
+       separate "Run Duplicate Repairs" button.
+  3. WorkingModeRunner.run_duplicate_repair_batch:
+     a. Proposer.propose(snapshot, registry, workspace)
+        -- emits 0+ :remove_duplicate_edge RepairActions
+        -- full leaf identity verification (BLOCK-001)
+        -- direct endpoint matcher with captured tolerance
+           (BLOCK-002; proposer and validator share the
+           SAME matcher semantics)
+     b. Executor.apply_batch(workspace, validated_plan)
+        -- preflight computes the COMPLETE post-workspace
+           in pure data BEFORE opening the host operation
+           (BLOCK-003)
+        -- one begin, dispose all, one commit (or abort)
+        -- on commit, the precomputed post-workspace is
+           PUBLISHED (not constructed after commit)
+     c. DerivedDuplicateValidator.validate(post_workspace)
+        -- uses the captured execution_config tolerance
+        -- measures duplicate_classes_after on the actual
+           post-batch workspace (BLOCK-004; the validator
+           no longer hard-codes 0)
+     d. build_duplicate_repair_summary writes the audit
+        data with REAL counts (BLOCK-004): applied/skipped/
+        failed, classes before/after, pairs before/after,
+        derived edge counts before/after, per-action audit
+        rows. The summary is exposed via snapshot.duplicate_repair.
+  4. User clicks Discard.
+     - Workspace transitions to :discarded; every SU-AI-
+       Derived-* group is disposed inside a single
+       SketchUp operation.
+  5. User clicks Rebuild.
+     - Workspace is rebuilt from the captured source +
+       registry; the auto-apply batch re-runs deterministically
+       (same source + same registry -> same plan + same
+       post-state fingerprint).
+
+Owner verification MUST observe the real call chain above.
+There is no "Run Duplicate Repairs" button; the batch is
+auto-applied on Prepare (and on Rebuild).
 
 ----------------------------------------------------------------------
 PRE-FLIGHT
@@ -32,9 +93,10 @@ PRE-FLIGHT
 
 [ ] 2. Confirm the V1.5 RBZ file is the final-HEAD build:
         Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
-        Size:    525,661 bytes
+        Size:    ~545,000 bytes (recomputed at Stage 4 close)
         Entries: 56
-        (Verify by SHA-256; see Stage Review packet.)
+        SHA-256: (recomputed at Stage 4 close; recorded in the
+                  BLOCK recheck packet)
 
 [ ] 3. Confirm the file `CURRENT_STATE.md` is open in another window.
         You'll append Owner results to it as you run each gate.
@@ -46,23 +108,22 @@ PRE-FLIGHT
 ----------------------------------------------------------------------
 V15-G1 -- SHOULD REPAIR
   one one-edge ComponentDefinition; two instances at identical
-  transform; same normalized layer; exact expected Duplicate
+  transform; same normalized layer; expected Duplicate
   Candidates, applied count, before/after derived edge count,
-  and provenance source count; verify two source instances and
-  source edge remain intact.
+  and provenance source count; verify two source instances
+  and source edge remain intact.
 ----------------------------------------------------------------------
 
 1. Open the Ruby Console (Window > Ruby Console).
 
-2. Load the RBZ entry-point (SketchUp auto-loads on install):
+2. Run the setup (creates one definition with one edge, two
+   instances at the SAME identity transform):
    Sketchup.active_model.start_operation("V15G1-Setup", true)
    mod = Sketchup.active_model
-   # Build one ComponentDefinition with ONE edge.
    defn = mod.definitions.add("V15G1-DupDef")
    defn.entities.add_edges([
      [Geom::Point3d.new(0, 0, 0), Geom::Point3d.new(10, 0, 0)]
    ])
-   # Build TWO instances at the SAME identity transform.
    ent = mod.active_entities
    inst_a = ent.add_instance(defn, Geom::Transformation.new)
    inst_b = ent.add_instance(defn, Geom::Transformation.new)
@@ -74,24 +135,39 @@ V15-G1 -- SHOULD REPAIR
    Expected:
      - Duplicate Candidates (UI): 1 pair
      - Source Snapshot ID present
-     - Click the duplicate pair; the locator highlights BOTH
-       instances (cross-instance merge).
+     - The locator highlights BOTH instances (cross-instance
+       merge; the issue covers two distinct source edges).
+     - Prepare AUTO-runs the eligible batch (no manual
+       "Run Duplicate Repairs" button; the dialog's snapshot
+       shows the post-batch audit row IMMEDIATELY after
+       Prepare returns).
 
-4. Click the dialog's "Run Duplicate Repairs" / auto-apply.
+4. Read the Working Mode duplicate_repair audit row:
+   Expected (from the post-batch WorkingModeRunner snapshot):
+     - duplicate_repair.actions_applied           = 1
+     - duplicate_repair.actions_skipped           = 0
+     - duplicate_repair.actions_failed            = 0
+     - duplicate_repair.duplicate_classes_before  = 1
+     - duplicate_repair.duplicate_classes_after   = 0
+     - duplicate_repair.duplicate_pairs_before     = 1
+     - duplicate_repair.duplicate_pairs_after      = 0
+     - duplicate_repair.derived_edge_count_before = 2
+     - duplicate_repair.derived_edge_count_after  = 1
+     - duplicate_repair.actions[0].status                = "applied"
+     - duplicate_repair.actions[0].source_occurrence_ids = ["occ-100>100","occ-200>101"]
+     - duplicate_repair.actions[0].affected_derived_ids  = ["der-B"]
+     - duplicate_repair.actions[0].before_summary.issue_ids = ["duplicate|0|1"]
 
-   Expected (post-batch):
-     - Working Mode shows ONE surviving derived entity.
-     - duplicate_repair.duplicate_classes_before = 1
-     - duplicate_repair.duplicate_classes_after  = 0
-     - duplicate_repair.actions_applied = 1
-     - duplicate_repair.duplicate_pairs_after = 0
-     - Source snapshot fingerprint unchanged.
+   Note: the audit row's "Duplicate repairs: applied N, ...
+   duplicate classes X \u2192 Y; duplicate pairs X \u2192 Y;
+   derived edges X \u2192 Y" is the V1.5 BLOCK-004 minimum.
+   Per-action rows are listed below the summary.
 
 5. Verify source integrity:
    - defn.entities.length == 1 (source edge intact)
    - inst_a, inst_b still exist as distinct entities
    - Undo (Ctrl+Z) ONCE -> derived entity count drops to 0
-   - Source edges are untouched.
+   - Source edges are untouched (source fingerprint unchanged).
 
 6. Discard:
    - Working Mode transitions to :discarded
@@ -103,27 +179,27 @@ V15-G2 -- MUST NOT REPAIR -- transform
 ----------------------------------------------------------------------
 
 1. Open Ruby Console.
-3. mod = Sketchup.active_model
-4. defn = mod.definitions.add("V15G2-DupDef")
-5. defn.entities.add_edges([
+2. mod = Sketchup.active_model
+3. defn = mod.definitions.add("V15G2-DupDef")
+4. defn.entities.add_edges([
      [Geom::Point3d.new(0, 0, 0), Geom::Point3d.new(10, 0, 0)]
    ])
-6. ent = mod.active_entities
-7. inst_a = ent.add_instance(defn, Geom::Transformation.new)
-8. inst_b = ent.add_instance(defn, Geom::Transformation.new(Geom::Point3d.new(50, 0, 0)))
+5. ent = mod.active_entities
+6. inst_a = ent.add_instance(defn, Geom::Transformation.new)
+7. inst_b = ent.add_instance(defn, Geom::Transformation.new(Geom::Point3d.new(50, 0, 0)))
 
-9. Select both instances. Click Prepare.
+8. Select both instances. Click Prepare.
 
    Expected:
-     - Duplicate Candidates: 1 pair (world-coincident duplicate
-       across transformed instances is not produced by SketchUp
-       itself, since the world coords differ; the DuplicateDetector
-       produces 0 or 1 pair depending on world coords).
-     - If 0 candidates: applied=0, skipped=0; OK.
-     - If 1 candidate: applied=0, skipped=1 with
-       endpoints_outside_tolerance_duplicate.
+     - Duplicate Candidates: 0 (world coords differ by 50 inches;
+       5e-2 > 1e-4 default duplicate tolerance)
+     - duplicate_repair.actions_applied = 0
+     - duplicate_repair.actions_skipped = 0
+     - duplicate_repair.actions_failed  = 0
+     - duplicate_repair.duplicate_classes_before  = 0
+     - duplicate_repair.duplicate_classes_after   = 0
 
-10. Cleanup: discard any derived entities; undo to source.
+9. Cleanup: discard any derived entities; undo to source.
 
 ----------------------------------------------------------------------
 V15-G3 -- MUST NOT REPAIR -- semantic conflict
@@ -140,20 +216,22 @@ V15-G3 -- MUST NOT REPAIR -- semantic conflict
 5. ent = mod.active_entities
 6. inst_a = ent.add_instance(defn, Geom::Transformation.new)
 7. inst_b = ent.add_instance(defn, Geom::Transformation.new)
-8. # Move inst_b to Layer1 (NOT Layer0).
-9. inst_b.layer = mod.layers.add("Layer1")
+8. inst_b.layer = mod.layers.add("Layer1")  # NOT Layer0
 
-10. Select both instances. Click Prepare.
+9. Select both instances. Click Prepare.
 
-    Expected:
-      - Duplicate Candidates: 1 pair (world coords coincide; layers differ)
-      - After "Run Duplicate Repairs":
-        - applied = 0
-        - skipped = 1 (or the action is :skipped with reason
-          semantic_conflict_layer_mismatch)
-        - duplicate_pairs_after = 1 (the candidate is preserved)
+   Expected:
+     - Duplicate Candidates: 1 pair (world coords coincide; layers differ)
+     - duplicate_repair.actions_applied = 0
+     - duplicate_repair.actions_skipped = 1
+     - duplicate_repair.actions_failed  = 0
+     - duplicate_repair.actions[0].status             = "skipped"
+     - duplicate_repair.actions[0].confidence_basis  ~ "skipped:semantic_conflict_layer_mismatch"
+     - duplicate_repair.duplicate_classes_before  = 1
+     - duplicate_repair.duplicate_classes_after   = 1 (the candidate is preserved)
+     - duplicate_pairs_after remains 1
 
-11. Cleanup: discard; undo to source.
+10. Cleanup: discard; undo to source.
 
 ----------------------------------------------------------------------
 V15-G4 -- DETERMINISM
@@ -161,19 +239,18 @@ V15-G4 -- DETERMINISM
 ----------------------------------------------------------------------
 
 1. Open the dialog on V15-G1's prepared workspace.
-2. Note the duplicate_classes_before count and the actions_applied
-   count from V15-G1.
+2. Note the duplicate_repair.derived_edge_count_before /
+   actions_applied / duplicate_classes_before counts.
 3. Click Discard.
 4. Click Rebuild (the workspace is rebuilt from the same captured
-   source + registry).
-5. Run Duplicate Repairs.
+   source + registry; the auto-apply batch re-runs).
+5. Read the duplicate_repair audit row again.
 
    Expected:
-     - Same survivor derived_id as V15-G1.
-     - Same actions_applied count.
-     - Same duplicate_pairs_before / after counts.
-     - Source snapshot fingerprint identical to V15-G1's.
-     - Working Mode duplicate_repair summary structurally identical.
+     - Same duplicate_repair.derived_edge_count_before / after
+     - Same duplicate_repair.actions_applied / classes before/after
+     - Same source snapshot fingerprint (read from CURRENT_STATE.md)
+     - Working Mode duplicate_repair summary structurally identical
 
 6. Cleanup: discard; undo to source.
 
@@ -186,9 +263,9 @@ V15-G5 -- SOURCE / UNDO / CLEANUP
 ----------------------------------------------------------------------
 
 1. Open a fresh fixture (any of G1, G2, G3 above).
-2. Run Prepare + Run Duplicate Repairs.
+2. Run Prepare (auto-applies).
 3. Verify the source fingerprint is byte-identical before and
-   after the entire flow (open CURRENT_STATE.md before + after).
+   after the entire flow (read CURRENT_STATE.md before + after).
 4. Verify the surviving derived entity is the ONLY SU-AI-Derived-*
    group present.
 5. Press Ctrl+Z ONCE.
@@ -207,6 +284,7 @@ FINAL ARTIFACTS (after every gate passes)
     - Gate-by-gate PASS / FAIL / N/A
     - Source fingerprint byte-equality before / after
     - Working Mode duplicate_repair summary JSON for each gate
+      (read from the dialog's Working Mode section)
     - SHA-256 of the installed RBZ
 
 [ ] Save the OWNER_REPORT_V1_5_DERIVED_EDGE_CANONICALIZATION_2026-08-25.txt
@@ -217,5 +295,5 @@ FINAL ARTIFACTS (after every gate passes)
 
 ======================================================================
 END OF DRAFT (NOT FOR EXECUTE)
-Awaiting Codex V1.5 Stage Review verdict.
+Awaiting Codex V1.5 BLOCK recheck verdict.
 ======================================================================

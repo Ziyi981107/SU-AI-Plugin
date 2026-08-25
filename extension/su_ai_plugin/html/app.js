@@ -493,19 +493,13 @@
       // recorded (even on a discarded workspace), surface it as
       // a single 'Duplicate repairs' row so the user can see
       // the audit trail after Discard.
+      // V1.5 BLOCK-004 (2026-08-25 recheck): the audit row
+      // exposes actions_applied/skipped/failed, duplicate
+      // classes before/after, duplicate pairs before/after,
+      // and derived edge counts before/after. Per-action
+      // audit rows are also rendered when present.
       if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        var dr = ws.duplicate_repair;
-        var label = 'Duplicate repairs: applied ' +
-                    (typeof dr.actions_applied === 'number' ? dr.actions_applied : 0) +
-                    ', skipped ' +
-                    (typeof dr.actions_skipped === 'number' ? dr.actions_skipped : 0);
-        if (typeof dr.duplicate_classes_before === 'number' &&
-            typeof dr.duplicate_classes_after === 'number') {
-          label += '; duplicate classes ' +
-                   dr.duplicate_classes_before + ' \u2192 ' +
-                   dr.duplicate_classes_after;
-        }
-        addRow(listEl, 'none', 'Duplicate repairs', label, label);
+        renderDuplicateRepairAudit(listEl, 'none', ws.duplicate_repair);
       }
       // Prepare button enabled.
       addAction(actionsEl, 'Prepare', 'prepare_workspace', true);
@@ -524,24 +518,9 @@
                ws.execution_config_digest.substring(0, 12) + '\u2026',
                ws.execution_config_digest);
       }
-      // V1.5 Phase 1: surface the duplicate_repair summary as a
-      // single labelled 'Duplicate repairs' row when present.
-      // Stage 3 (§8): include the derived-duplicate class
-      // counts (before / after) so the user sees the
-      // validation seam's result.
+      // V1.5 BLOCK-004: per-state audit row with full counts.
       if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        var dr2 = ws.duplicate_repair;
-        var label2 = 'Duplicate repairs: applied ' +
-                     (typeof dr2.actions_applied === 'number' ? dr2.actions_applied : 0) +
-                     ', skipped ' +
-                     (typeof dr2.actions_skipped === 'number' ? dr2.actions_skipped : 0);
-        if (typeof dr2.duplicate_classes_before === 'number' &&
-            typeof dr2.duplicate_classes_after === 'number') {
-          label2 += '; duplicate classes ' +
-                    dr2.duplicate_classes_before + ' \u2192 ' +
-                    dr2.duplicate_classes_after;
-        }
-        addRow(listEl, state, 'Duplicate repairs', label2, label2);
+        renderDuplicateRepairAudit(listEl, state, ws.duplicate_repair);
       }
       if (state === 'failed' && ws.last_error) {
         addRow(listEl, 'failed', 'Last Error', ws.last_error, ws.last_error);
@@ -585,6 +564,50 @@
       row.appendChild(msgEl);
     }
     listEl.appendChild(row);
+  }
+
+  // V1.5 BLOCK-004 audit row renderer. Exposes every required
+  // technical audit field (applied/skipped/failed, classes
+  // before/after, pairs before/after, derived edge counts
+  // before/after) plus the per-action audit rows when the
+  // Ruby side populates them in `duplicate_repair.actions`.
+  function renderDuplicateRepairAudit(listEl, state, dr) {
+    var applied = (typeof dr.actions_applied === 'number') ? dr.actions_applied : 0;
+    var skipped = (typeof dr.actions_skipped === 'number') ? dr.actions_skipped : 0;
+    var failed  = (typeof dr.actions_failed === 'number')  ? dr.actions_failed  : 0;
+    // Summary label: applied/skipped/failed + classes + edges.
+    var label = 'Duplicate repairs: applied ' + applied +
+                ', skipped ' + skipped +
+                ', failed '  + failed;
+    if (typeof dr.duplicate_classes_before === 'number' &&
+        typeof dr.duplicate_classes_after === 'number') {
+      label += '; duplicate classes ' +
+               dr.duplicate_classes_before + ' \u2192 ' +
+               dr.duplicate_classes_after;
+    }
+    if (typeof dr.duplicate_pairs_before === 'number' &&
+        typeof dr.duplicate_pairs_after === 'number') {
+      label += '; duplicate pairs ' +
+               dr.duplicate_pairs_before + ' \u2192 ' +
+               dr.duplicate_pairs_after;
+    }
+    if (typeof dr.derived_edge_count_before === 'number' &&
+        typeof dr.derived_edge_count_after === 'number') {
+      label += '; derived edges ' +
+               dr.derived_edge_count_before + ' \u2192 ' +
+               dr.derived_edge_count_after;
+    }
+    addRow(listEl, state, 'Duplicate repairs', label, label);
+    // Per-action audit rows when present (BLOCK-004 minimum).
+    if (Array.isArray(dr.actions) && dr.actions.length > 0) {
+      dr.actions.forEach(function (act) {
+        if (!act || typeof act !== 'object') return;
+        var actLabel = 'action ' + (act.action_id || '?') +
+                      ' (' + (act.status || 'unknown') + '): ' +
+                      (act.explanation || act.confidence_basis || 'no detail');
+        addRow(listEl, state, 'Action audit', actLabel, actLabel);
+      });
+    }
   }
 
   // Helper: append an action button. `callback` is a SketchUp

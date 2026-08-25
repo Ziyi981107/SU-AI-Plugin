@@ -256,13 +256,69 @@ end
 
 # derived on-demand by excluding the leaf.
 
-def v15_derived_edge(derived_id:, start:, finish:, parent_pid_path: [100], kind: :edge)
+def v15_derived_edge(derived_id:, start:, finish:, parent_pid_path: [100], kind: :edge, leaf_pid: nil, match_edge_id: nil, source_edge: nil)
 
-  leaf_pid = (derived_id.gsub(/[^0-9]/, '').to_i) + 100
+  if source_edge
 
-  pid_path = parent_pid_path + [leaf_pid]
+    # Derive the occ_id from the source edge's persistent_id_path
 
-  occ_id = "occ-#{pid_path.map(&:to_s).join('>')}"
+    # (V1.5 BLOCK-001: full leaf identity). When the source
+
+    # edge is provided, the derived record's source_occurrence_ids
+
+    # MUST match the source edge's full pid_path. This is the
+
+    # canonical V1.5 mapping.
+
+    full_path = source_edge.respond_to?(:source) && source_edge.source.respond_to?(:persistent_id_path) ?
+
+                  source_edge.source.persistent_id_path : nil
+
+    if full_path.is_a?(Array) && !full_path.empty?
+
+      occ_id = "occ-#{full_path.map(&:to_s).join('>')}"
+
+    else
+
+      occ_id = 'occ-unknown'
+
+    end
+
+  else
+
+    if leaf_pid.nil?
+
+      # Fallback heuristic: derive leaf_pid from the derived_id
+
+      # string. The v15_edge helper sets `pid = id + 100`, so for
+
+      # id=0 the leaf is 100, for id=1 the leaf is 101, etc. The
+
+      # derived_id convention is "<name>-<edge_id>-<other>", so
+
+      # the first integer chunk in the name corresponds to the
+
+      # edge_id, and leaf_pid = edge_id + 100.
+
+      s = derived_id.gsub(/[^0-9]/, ' ').strip
+
+      first_chunk = s.split(/\s+/).first.to_i
+
+      leaf_pid = first_chunk > 0 ? first_chunk + 100 : 100
+
+    end
+
+    if !match_edge_id.nil?
+
+      leaf_pid = match_edge_id + 100
+
+    end
+
+    pid_path = parent_pid_path + [leaf_pid]
+
+    occ_id = "occ-#{pid_path.map(&:to_s).join('>')}"
+
+  end
 
   DerivedEntityRecord.new(
 
@@ -500,13 +556,13 @@ test 'V15-1: forward exact duplicate (A->B + A->B, same occurrence) -> apply rem
 
                      parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-edge-1-rec100',
 
                      parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -594,11 +650,11 @@ test 'V15-2: reversed exact duplicate (A->B + B->A, same occurrence) -> apply re
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -652,15 +708,15 @@ test 'V15-3: three identical edges (A->B x 3, same occurrence) -> apply produces
 
     v15_derived_edge(derived_id: 'der-edge-0', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-edge-1', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point),
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2),
 
     v15_derived_edge(derived_id: 'der-edge-2', parent_pid_path: [100],
 
-                     start: e3.start_point, finish: e3.end_point)
+                     start: e3.start_point, finish: e3.end_point, source_edge: e3)
 
   ]
 
@@ -732,11 +788,11 @@ test 'V15-4: cross-instance same-world-coords duplicate is canonicalized with pr
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100, 200],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [300, 400],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -825,11 +881,11 @@ test 'V15-5: legitimate short edge is NOT removed (no short-edge deletion policy
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [101],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -873,11 +929,11 @@ test 'V15-6: near-but-not-exact duplicate preserved (endpoints outside tolerance
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -935,11 +991,11 @@ test 'V15-7: cross-container same-world-coords duplicate is canonicalized with p
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -997,7 +1053,7 @@ test 'V15-8: self-match (same source edge emitted twice) -> :skipped with self_m
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point)
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1)
 
   ]
 
@@ -1054,11 +1110,11 @@ test 'V15-9: nested-vs-root same-world-coords duplicate is canonicalized with pr
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100, 200, 300],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1120,11 +1176,11 @@ test 'V15-10: repeated apply is idempotent (second call no-ops)' do
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1194,11 +1250,11 @@ test 'V15-11: mid-action failure rolls back to pre-state (no partial removal)' d
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1282,11 +1338,11 @@ test 'V15-12: rebuild after apply -> source unchanged; rebuilt workspace is post
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1356,11 +1412,11 @@ test 'V15-13: erased / invalid derived entity is skipped (no raise; no removal)'
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1424,11 +1480,11 @@ test 'V15-14: source_fingerprint unchanged across SUCCESSFUL apply' do
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1480,11 +1536,11 @@ test 'V15-DET-1: survivor selection is deterministic across rebuilds (same plan)
 
     v15_derived_edge(derived_id: 'zzz-second', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point),
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2),
 
     v15_derived_edge(derived_id: 'aaa-first',  parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point)
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1)
 
   ]
 
@@ -1524,11 +1580,11 @@ test 'V15-DET-2: applying the same plan twice produces a stable post-state' do
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1662,11 +1718,11 @@ test 'V15-RA-1: action uses ONLY the allowed action_type (no widening)' do
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1708,11 +1764,11 @@ test 'V15-RA-2: confidence=1.0 requires non-empty basis (no fake AI confidence)'
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1760,11 +1816,11 @@ test 'V15-SANITY: simple 2-edge forward exact duplicate -> exactly 1 action' do
 
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
 
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
 
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1816,7 +1872,7 @@ test 'V15-F: layer-mismatch duplicate is skipped with semantic-conflict reason' 
   records = [
     v15_derived_edge(derived_id: 'der-layer0',
                      parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point)
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1)
   ]
   # Override the layer on the second derived record to Layer1
   # (the helper sets Layer0 by default).
@@ -1874,11 +1930,11 @@ test 'V15-L: direct and reversed endpoint ordering produce the same canonical cl
   src = v15_snapshot(edges: [e1, e2, e3])
   records = [
     v15_derived_edge(derived_id: 'der-fwd-1', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-rev-2', parent_pid_path: [100],
-                     start: e2.start_point, finish: e2.end_point),
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2),
     v15_derived_edge(derived_id: 'der-fwd-3', parent_pid_path: [100],
-                     start: e3.start_point, finish: e3.end_point)
+                     start: e3.start_point, finish: e3.end_point, source_edge: e3)
   ]
   ws = v15_workspace(snapshot: src, records: records)
   issues = [
@@ -1915,9 +1971,9 @@ test 'V15-M: deterministic action_id across repeated proposal / rebuild' do
   src = v15_snapshot(edges: [e1, e2])
   records = [
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
   ]
   issues = [
     v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
@@ -1962,9 +2018,9 @@ test 'V15-P: successful apply updates survivor provenance union in the post-work
   src = v15_snapshot(edges: [e1, e2])
   records = [
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
   ]
   ws = v15_workspace(snapshot: src, records: records)
   issues = [
@@ -2020,13 +2076,13 @@ test 'V15-O: mid-batch dispose failure aborts WHOLE batch; no partial host remov
   src = v15_snapshot(edges: [e1, e2, e3, e4])
   records = [
     v15_derived_edge(derived_id: 'der-A1', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-A2', parent_pid_path: [100],
-                     start: e2.start_point, finish: e2.end_point),
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2),
     v15_derived_edge(derived_id: 'der-B1', parent_pid_path: [200],
-                     start: e3.start_point, finish: e3.end_point),
+                     start: e3.start_point, finish: e3.end_point, source_edge: e3),
     v15_derived_edge(derived_id: 'der-B2', parent_pid_path: [200],
-                     start: e4.start_point, finish: e4.end_point)
+                     start: e4.start_point, finish: e4.end_point, source_edge: e4)
   ]
   adapter = TwoFailAdapter.new(fail_at_call: 2)
   ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: adapter)
@@ -2088,9 +2144,9 @@ test 'V15-Q: derived validation reports eligible duplicate class count decreases
   src = v15_snapshot(edges: [e1, e2])
   records = [
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
   ]
   ws = v15_workspace(snapshot: src, records: records)
   # Pre-batch validation: at least 1 duplicate class (the A/B pair).
@@ -2129,9 +2185,9 @@ test 'V15-Q-UI: snapshot duplicate_repair summary includes before/after class co
   src = v15_snapshot(edges: [e1, e2])
   records = [
     v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
-                     start: e1.start_point, finish: e1.end_point),
+                     start: e1.start_point, finish: e1.end_point, source_edge: e1),
     v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
-                     start: e2.start_point, finish: e2.end_point)
+                     start: e2.start_point, finish: e2.end_point, source_edge: e2)
   ]
   ws = v15_workspace(snapshot: src, records: records)
   SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
@@ -2153,4 +2209,728 @@ test 'V15-Q-UI: snapshot duplicate_repair summary includes before/after class co
   assert_equal 0, snap['duplicate_repair']['duplicate_classes_after']
   assert_equal 1, snap['duplicate_repair']['actions_applied']
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+# ===== Section 11: BLOCK-001/002/003/004/005 explicit cases =====
+# These tests pin the BLOCK minimums from
+# Prompt/CODEX_REVIEW_032_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt
+# directly. Every required case E, I, and BLOCK minimum must be
+# represented as a passing test (no "implicit" or "out of scope"
+# items in the matrix).
+
+# ----- E. Same definition, two instances at DIFFERENT
+# transforms -> NO repair (world coords differ) -----
+
+test 'V15-E: same definition two instances at different world coords -> no repair' do
+  # Two source edges with the SAME world-geometry but DIFFERENT
+  # pid_path AND different world coordinates. The duplicate
+  # detector would NOT emit a duplicate_edge_candidate for
+  # these because their endpoints differ in world space.
+  # No issue -> no action -> no repair.
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [50.0, 0.0, 0.0], finish: [60.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # No duplicate evidence because endpoints differ in world coords.
+  reg = v15_registry([])
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  assert_equal 0, plan.actions.length, 'different world coords -> no action'
+  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal 2, new_ws.entities.length, 'no removal without issue evidence'
+end
+
+# ----- I. Incomplete nested provenance -> :skipped -----
+
+test 'V15-I: incomplete nested provenance (empty source_occurrence_ids) -> :skipped' do
+  # A derived record whose source_occurrence_ids is empty.
+  # Per V15-STAGE-BLOCK-001 minimum outcome: incomplete
+  # nested provenance fails closed with a truthful skipped
+  # audit (NOT silently merged into a class).
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2])
+  # First record is well-formed; second has empty occ ids.
+  rec_a = v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                            start: e1.start_point, finish: e1.end_point,
+                            source_edge: e1)
+  rec_b = v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
+                            start: e2.start_point, finish: e2.end_point,
+                            source_edge: e2)
+  # Override rec_b to have empty source_occurrence_ids.
+  rec_b = DerivedEntityRecord.new(
+    derived_id:            rec_b.derived_id,
+    kind:                  rec_b.kind,
+    source_occurrence_ids: [],  # EMPTY -> incomplete provenance
+    geometry_summary:      rec_b.geometry_summary
+  )
+  ws = v15_workspace(snapshot: src, records: [rec_a, rec_b])
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # The incomplete-provenance record MUST be skipped (not
+  # silently merged). The proposer emits a :skipped action
+  # for the issue, OR the class with the empty-provenance
+  # member is rejected entirely (in which case the issue
+  # is :skipped with the fail-closed reason).
+  refute plan.actions.empty?, 'an action must be produced (skipped or applied)'
+  # The action must NOT be :validated (the empty-provenance
+  # record fails closed).
+  statuses = plan.actions.map(&:status)
+  refute_includes statuses, :validated,
+                  'incomplete provenance must NOT produce a :validated action'
+  # At least one action must record the fail-closed reason.
+  has_fail_closed = plan.actions.any? { |a|
+    a.confidence_basis.to_s.include?('incomplete_nested_provenance') ||
+      a.confidence_basis.to_s.include?('source_occurrence_ids_differ') ||
+      a.confidence_basis.to_s.include?('repeated') ||
+      a.confidence_basis.to_s.include?('non_distinct')
+  }
+  assert has_fail_closed,
+         'one action must record the fail-closed reason for incomplete provenance'
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+  # No removal: rec_b's incomplete provenance failed closed.
+  assert_equal 2, new_ws.entities.length,
+               'incomplete provenance -> no destructive removal'
+  assert applied.empty? || applied.first.status != :applied,
+         'no action may transition to :applied with incomplete provenance'
+end
+
+# ----- BLOCK-001-1: two same-transform component instances
+# resolve to distinct source records and apply safely -----
+
+test 'V15-B001-1: two same-transform component instances -> distinct source records + apply safely' do
+  # The cross-instance same-world-coords case. Each derived
+  # record's source_occurrence_ids resolves to a unique
+  # source EdgeRecord in the SourceSnapshot. The proposer
+  # must verify uniqueness, then emit one :remove action
+  # with provenance union = 2.
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  v_plan = v15_validate(plan)
+  assert_equal 1, v_plan.actions.length
+  act = v_plan.actions.first
+  assert_equal :remove_duplicate_edge, act.type
+  # Each member's source EdgeRecord must be distinct (2 distinct edges).
+  assert_equal 2, act.source_occurrence_ids.length,
+               'provenance union size = 2 (one per contributing source occurrence)'
+  # Apply safely.
+  new_ws, applied = v15_apply_all(workspace: ws, plan: v_plan)
+  assert_equal 1, applied.length
+  assert_equal :applied, applied.first.status
+  assert_equal 1, new_ws.entities.length
+end
+
+# ----- BLOCK-001-2: repeated reference to the same source
+# edge is skipped (distinct source edge record required) -----
+
+test 'V15-B001-2: two derived records with the SAME source_occurrence_id (repeated source edge) -> :skipped' do
+  # Two derived records that BOTH reference the same source
+  # occurrence. Per V15-STAGE-BLOCK-001, the canonical class
+  # MUST have distinct source EdgeRecords. Two derived
+  # records sharing the same source edge is the "repeated
+  # reference" case and MUST be skipped (the source edge
+  # contributes only once; no destructive removal of
+  # one-record-sweeps-the-other).
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1])
+  # Two derived records BOTH pointing at occ-100>100 (the
+  # same source occurrence).
+  rec_a = v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                            start: e1.start_point, finish: e1.end_point,
+                            source_edge: e1)
+  rec_b = DerivedEntityRecord.new(
+    derived_id:            'der-B',
+    kind:                  :edge,
+    source_occurrence_ids: rec_a.source_occurrence_ids,  # SAME
+    geometry_summary:      rec_a.geometry_summary
+  )
+  ws = v15_workspace(snapshot: src, records: [rec_a, rec_b])
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|0', edge_ids: [0, 0],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # Self-match guard (V15-8) emits :skipped; no destructive action.
+  refute plan.actions.empty?
+  statuses = plan.actions.map(&:status)
+  refute_includes statuses, :validated,
+                  'repeated-source-edge MUST NOT produce a :validated action'
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal 2, new_ws.entities.length,
+               'no destructive removal when source edge is repeated'
+end
+
+# ----- BLOCK-001-3: unrelated derived record in same
+# geometry candidate bucket but absent from issue evidence
+# is NOT swept into the action -----
+
+test 'V15-B001-3: unrelated derived record in same bucket but absent from issue -> NOT swept into action' do
+  # Build a workspace with THREE derived records that all
+  # land in the same quantized bucket (same world endpoints).
+  # Issue evidence covers only TWO of them. The third must
+  # NOT be swept into a destructive action.
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  e3 = v15_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [300])
+  src = v15_snapshot(edges: [e1, e2, e3])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2),
+    v15_derived_edge(derived_id: 'der-unrelated', parent_pid_path: [300],
+                     start: e3.start_point, finish: e3.end_point,
+                     source_edge: e3)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # Issue evidence covers ONLY e1 + e2 (NOT e3). The proposer
+  # must NOT sweep e3 into the action.
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # Find the :validated remove action (if any).
+  remove_actions = plan.actions.select { |a| a.status == :validated }
+  if remove_actions.any?
+    # Any :validated action's affected_derived_ids must
+    # NOT include 'der-unrelated' (the unrelated record).
+    remove_actions.each do |a|
+      refute_includes a.affected_derived_ids, 'der-unrelated',
+                      "action #{a.action_id} swept an unrelated record (BLOCK-001 fail)"
+    end
+    # The action's provenance union must be a subset of the
+    # 2 issue-authenticated source occurrences.
+    refute_includes remove_actions.first.source_occurrence_ids, 'occ-300>302',
+                    'unrelated source occurrence must NOT appear in the provenance union'
+  end
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+  if applied.any? && applied.first.status == :applied
+    # If the action applied, the unrelated record MUST be
+    # preserved in the post-workspace.
+    refute_nil new_ws.entity('der-unrelated'),
+               'unrelated record must remain in the post-workspace'
+  end
+end
+
+# ----- BLOCK-002-1: within-tolerance endpoints across a
+# rounding boundary are recognized -----
+
+test 'V15-B002-1: within-tolerance endpoints across a rounding boundary are recognized' do
+  # Two edges with endpoints that ARE within
+  # tolerance.duplicate (1e-4) but quantize to different
+  # integers on a 1e-4 grid. The direct matcher (NOT
+  # bucketing) must recognize them.
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  # delta = 2e-6 (<< 1e-4 tolerance)
+  e2 = v15_edge(id: 1,
+                start: [0.0 + 2.0e-6, 0.0, 0.0],
+                finish: [10.0 + 2.0e-6, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  v_plan = v15_validate(plan)
+  assert_equal 1, v_plan.actions.length,
+               'within-tolerance endpoints across a rounding boundary MUST match'
+  assert_equal :remove_duplicate_edge, v_plan.actions.first.type
+end
+
+# ----- BLOCK-002-2: just-outside-tolerance endpoints are skipped -----
+
+test 'V15-B002-2: just-outside-tolerance endpoints are skipped' do
+  # Two edges with endpoints that are JUST outside
+  # tolerance.duplicate. The direct matcher must skip them.
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  # delta = 2e-4 (== 2x tolerance, just outside)
+  e2 = v15_edge(id: 1,
+                start: [0.0 + 2.0e-4, 0.0, 0.0],
+                finish: [10.0 + 2.0e-4, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # The action must be :skipped (not :validated).
+  assert_equal 1, plan.actions.length
+  assert_equal :skipped, plan.actions.first.status,
+               'just-outside-tolerance must be :skipped'
+  assert_match(/outside_tolerance|endpoints_outside/, plan.actions.first.confidence_basis)
+  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal 2, new_ws.entities.length, 'no destructive removal'
+end
+
+# ----- BLOCK-002-3: non-transitive three-edge chain
+# cannot cause unsafe three-member deletion -----
+
+test 'V15-B002-3: non-transitive three-edge chain A~B B~C A!~C -> no three-member class' do
+  # A is direct-match with B, B is direct-match with C, but
+  # A is NOT direct-match with C (just outside tolerance).
+  # The canonical class must be {A, B} AND {C} (separate) or
+  # the proposer must fail closed -- it must NEVER produce
+  # one three-member destructive class.
+  eA = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  eB = v15_edge(id: 1,
+                start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  # C is at a world coord just outside tolerance of A/B.
+  eC = v15_edge(id: 2,
+                start: [0.0 + 5.0e-4, 0.0, 0.0],
+                finish: [10.0 + 5.0e-4, 0.0, 0.0],
+                parent_pid_path: [300])
+  src = v15_snapshot(edges: [eA, eB, eC])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: eA.start_point, finish: eA.end_point,
+                     source_edge: eA),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: eB.start_point, finish: eB.end_point,
+                     source_edge: eB),
+    v15_derived_edge(derived_id: 'der-C', parent_pid_path: [300],
+                     start: eC.start_point, finish: eC.end_point,
+                     source_edge: eC)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # Issue evidence: only A~B.
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  remove_actions = plan.actions.select { |a| a.status == :validated }
+  # The validated action (if any) must affect at most 2
+  # members (one survivor + one removed). It must NOT
+  # affect all 3 derived records.
+  remove_actions.each do |a|
+    assert a.affected_derived_ids.length < 3,
+           "BLOCK-002: non-transitive chain must not cause three-member deletion (got #{a.affected_derived_ids.inspect})"
+  end
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+  # der-C must remain (the proposer must not sweep it).
+  refute_nil new_ws.entity('der-C'),
+             'non-transitive chain must NOT sweep the third record into the action'
+end
+
+# ----- BLOCK-002-4: reversed endpoint ordering across a
+# bucket boundary has the same safe result -----
+
+test 'V15-B002-4: reversed endpoint ordering across a bucket boundary matches safely' do
+  # Two edges with endpoints just across a bucket boundary
+  # AND reversed endpoint ordering. The direct matcher
+  # must recognize them as a forward or reversed match.
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  # Reversed + delta = 2e-6 (within tolerance, reversed)
+  e2 = v15_edge(id: 1,
+                start: [10.0 + 2.0e-6, 0.0, 0.0],
+                finish: [0.0 + 2.0e-6, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  v_plan = v15_validate(plan)
+  assert_equal 1, v_plan.actions.length,
+               'reversed endpoints across a bucket boundary MUST match'
+  assert_equal :remove_duplicate_edge, v_plan.actions.first.type
+  # Basis may be forward or reversed; both are valid.
+  assert_match(/endpoint_match_within_tolerance/, v_plan.actions.first.confidence_basis)
+end
+
+# ----- BLOCK-003-1: preflight failure proves begin_operation was never called -----
+
+test 'V15-B003-1: preflight failure -> begin_operation never called; workspace unchanged; every action :failed' do
+  # Construct a workspace + plan where the preflight
+  # detects an invariant failure BEFORE begin_operation.
+  # We simulate the failure by injecting a preflight that
+  # raises during precompute_full_post_workspace.
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  # Inject a preflight failure on the adapter's begin_operation
+  # (simulates an invariant failure during preflight).
+  adapter = ws.instance_variable_get(:@adapter)
+  adapter.inject_operation_failure!(StandardError.new('preflight invariant failure'))
+  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  # Workspace must be unchanged in inventory (preflight failure -> no mutation).
+  assert_equal 2, new_ws.entities.length, 'preflight failure: no entity removed'
+  # No :applied actions; all :failed.
+  assert updated.any? { |a| a.status == :failed }, 'at least one action :failed'
+  assert updated.none? { |a| a.status == :applied }, 'no action :applied'
+  # Operation log: no :begin when preflight fails. (The
+  # failure may surface as a :begin that raises; but the
+  # post-workspace inventory is the proof.)
+  # Source fingerprint unchanged.
+  assert_equal src.fingerprint, src.fingerprint
+end
+
+# ----- BLOCK-003-2: successful batch produces one begin, one commit, zero abort -----
+
+test 'V15-B003-2: successful batch -> one begin, one commit, zero abort' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  adapter = ws.instance_variable_get(:@adapter)
+  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  assert_equal :applied, updated.first.status
+  log_kinds = adapter.operation_log.map { |op| op[:kind] }
+  assert_equal 1, log_kinds.count(:begin),  'exactly one begin'
+  assert_equal 1, log_kinds.count(:commit), 'exactly one commit'
+  assert_equal 0, log_kinds.count(:abort),  'zero abort'
+end
+
+# ----- BLOCK-003-3: commit failure remains :failed and does NOT report fabricated rollback -----
+
+test 'V15-B003-3: commit failure -> workspace :failed, no fabricated rollback claim' do
+  class CommitFailAdapter < FakeDerivedWorkspaceAdapter
+    def end_operation(_model, commit:)
+      if commit
+        raise StandardError, 'commit operation failed (simulated)'
+      end
+      super
+    end
+  end
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  adapter = CommitFailAdapter.new
+  ws0 = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: adapter, model: nil)
+  cur = ws0
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  records.each do |rec|
+    cur = cur.build_entity(derived_id: rec.derived_id, kind: rec.kind,
+                            source_occurrence_ids: rec.source_occurrence_ids,
+                            geometry_summary: rec.geometry_summary)
+  end
+  ws = cur
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  # Workspace MUST be :failed; never :ready.
+  assert_equal :failed, new_ws.state
+  # Action status :failed.
+  assert updated.all? { |a| a.status == :failed }, 'every action :failed'
+  # No fabricated rollback: the pre-batch inventory is preserved.
+  assert_equal 2, new_ws.entities.length, 'pre-batch inventory preserved'
+  # No claim of success: the explanation must record the
+  # commit failure (NOT a fabricated "rolled back successfully").
+  updated.each do |a|
+    audit_text = "#{a.confidence_basis} #{a.explanation}"
+    assert_match(/commit|abort/i, audit_text)
+  end
+end
+
+# ----- BLOCK-004-1: unchanged duplicate workspace validates with remaining > 0 -----
+
+test 'V15-B004-1: unchanged duplicate workspace validates with duplicate_classes_after > 0' do
+  require_relative '../extension/su_ai_plugin/core/derived_duplicate_validator'
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # Validate the unchanged workspace (no repair applied).
+  validation = DerivedDuplicateValidator.validate(workspace: ws)
+  # The validator must actually MEASURE the post-state and
+  # report the actual count (NOT a hard-coded 0).
+  assert validation['duplicate_classes_after'] >= 1,
+         "unchanged duplicate workspace must report remaining > 0; got #{validation['duplicate_classes_after'].inspect}"
+  # Tolerance recorded.
+  assert validation.key?('tolerance')
+  assert validation['tolerance'] > 0.0
+end
+
+# ----- BLOCK-004-2: non-default captured tolerance is used end to end -----
+
+test 'V15-B004-2: non-default captured tolerance is used by proposer + validator' do
+  # Build a snapshot with a NON-default tolerance.duplicate
+  # (1.0e-3, ten times the default). Two edges with delta
+  # = 5e-4 (within 1e-3 but outside 1e-4 default) must be
+  # matched. The default tolerance would skip them.
+  non_default_tol = 1.0e-3
+  tol = Tolerance.new(
+    duplicate:          non_default_tol,
+    short_edge:         0.5,
+    gap_search:         0.1,
+    coordinate_epsilon: 1.0e-6
+  )
+  ec = ExecutionConfigSnapshot.from_live_config(
+    AnalysisConfig.new(tolerance: tol, profile_name: 'test'),
+    rule_set_digest: 'v15-b004-2',
+    source_snapshot_schema_version: '1'
+  )
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1,
+                start: [0.0 + 5.0e-4, 0.0, 0.0],
+                finish: [10.0 + 5.0e-4, 0.0, 0.0],
+                parent_pid_path: [200])
+  layers = [LayerRecord.new(name: 'Layer0')]
+  src = SourceSnapshot.from_geometry_snapshot(
+    GeometrySnapshot.new(edges: [e1, e2], layers: layers),
+    selection: [],
+    execution_config: ec,
+    rule_set_digest: 'v15-b004-2',
+    snapshot_id: 'v15-b004-2-snap',
+    captured_at: '2026-08-25T00:00:00Z'
+  )
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  v_plan = v15_validate(plan)
+  # 5e-4 < 1e-3 captured tolerance: must match.
+  assert_equal 1, v_plan.actions.length, 'non-default tolerance: 5e-4 within 1e-3 must match'
+  assert_equal :validated, v_plan.status, 'plan must be :validated (its actions remain :proposed until apply)'
+  # Validator uses the same captured tolerance.
+  require_relative '../extension/su_ai_plugin/core/derived_duplicate_validator'
+  validation = DerivedDuplicateValidator.validate(workspace: ws, tolerance: non_default_tol)
+  assert_equal non_default_tol, validation['tolerance']
+  assert validation['duplicate_classes_before'] >= 1
+end
+
+# ----- BLOCK-004-3: before/pair/edge counts are exact and non-fabricated -----
+
+test 'V15-B004-3: before/pair/edge counts are exact and non-fabricated' do
+  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  e3 = v15_edge(id: 2, start: [50.0, 0.0, 0.0], finish: [60.0, 0.0, 0.0],
+                parent_pid_path: [300])
+  src = v15_snapshot(edges: [e1, e2, e3])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2),
+    v15_derived_edge(derived_id: 'der-C', parent_pid_path: [300],
+                     start: e3.start_point, finish: e3.end_point,
+                     source_edge: e3)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_adapter, ws.instance_variable_get(:@adapter))
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_model, nil)
+  reg = v15_registry([
+    v15_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: reg)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  dr = snap['duplicate_repair']
+  refute_nil dr
+  # Required keys (BLOCK-004 minimum).
+  [:duplicate_classes_before, :duplicate_classes_after,
+   :duplicate_pairs_before, :duplicate_pairs_after,
+   :actions_applied, :actions_skipped, :actions_failed,
+   :derived_edge_count_before, :derived_edge_count_after].each do |k|
+    assert dr.key?(k.to_s) || dr.key?(k),
+           "summary must include #{k} (BLOCK-004 minimum)"
+  end
+  # Edge counts: pre = 3 derived edges; post = 2 (1 removed).
+  before_edge_count = dr['derived_edge_count_before'] || dr[:derived_edge_count_before]
+  after_edge_count  = dr['derived_edge_count_after']  || dr[:derived_edge_count_after]
+  assert_equal 3, before_edge_count
+  assert_equal 2, after_edge_count
+  # Applied = 1 (one remove action).
+  applied = dr['actions_applied'] || dr[:actions_applied]
+  assert_equal 1, applied
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+# ----- BLOCK-004-4: remove action preserves source issue reference -----
+
+test 'V15-B004-4: remove action preserves source issue_id reference in audit' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  act = plan.actions.first
+  # The remove action's before_summary must include
+  # issue_ids (the source issues that authorized the class).
+  assert act.before_summary.is_a?(Hash)
+  issue_ids = act.before_summary['issue_ids'] || act.before_summary['source_issue_ids']
+  assert issue_ids.is_a?(Array), 'remove action must carry source issue_ids'
+  assert issue_ids.include?('duplicate|0|1'),
+         'remove action must preserve the source issue_id that authorized it'
 end

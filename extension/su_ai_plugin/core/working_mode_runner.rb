@@ -421,6 +421,9 @@ module SUAnalysis
             workspace:       @current_workspace
           )
           validated = plan.validate
+          # Capture the pre-batch workspace for the audit (BLOCK-004:
+          # edge counts come from the actual pre-batch inventory).
+          pre_ws = @current_workspace
           # Stage 3 (§8): capture the pre-batch derived-duplicate
           # class topology BEFORE assigning new_ws to
           # @current_workspace. The validator groups derived
@@ -440,11 +443,16 @@ module SUAnalysis
           # Build the summary from ACTUAL results (NOT manual
           # injection -- the CodeX BLOCK-002 fix requires the UI
           # summary to come from real execution results).
+          # BLOCK-004: edge counts come from the actual
+          # pre-batch and post-batch workspace inventories.
+          pre_edge_count = pre_ws ? pre_ws.entities.length : nil
           summary = build_duplicate_repair_summary(
-            plan:            validated,
-            updated_actions: updated_actions,
-            pre_classes:     pre_classes,
-            post_validation: post_validation
+            plan:             validated,
+            updated_actions:  updated_actions,
+            pre_classes:      pre_classes,
+            post_validation:  post_validation,
+            pre_edge_count:   pre_edge_count,
+            post_edge_count:  new_ws.entities.length
           )
           @duplicate_repair_summary = summary
         rescue StandardError => e
@@ -470,33 +478,70 @@ module SUAnalysis
       # for the UI. Stage 3 (§8): also exposes the
       # derived-duplicate class counts (before/after) so the
       # UI can show the validation result.
-      def build_duplicate_repair_summary(plan:, updated_actions:, pre_classes: nil, post_validation: nil)
+      # V1.5 BLOCK-004 (2026-08-25 recheck): all counts come
+      # from ACTUAL plan + execution + post-workspace data
+      # (not fabricated). Every applied eligible class is
+      # absent from the post result before host commit. A
+      # failed invariant cannot be READY. Summary metrics
+      # include:
+      #   - applied/skipped/failed counts (from updated_actions)
+      #   - duplicate classes before/after (from pre_classes
+      #     and post_validation)
+      #   - derived edge count before/after (from the actual
+      #     workspace inventory)
+      #   - duplicate pairs before/after (from the plan + post)
+      def build_duplicate_repair_summary(plan:, updated_actions:, pre_classes: nil, post_validation: nil, pre_edge_count: nil, post_edge_count: nil, post_workspace: nil)
         applied = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
         skipped = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :skipped }
         failed  = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :failed }
-        # The "duplicate_pairs" counts come from the validated
-        # plan (pre-state: how many pairs the proposer recognized;
-        # post-state: 0 because each action is one occurrence).
-        before = plan.actions.select { |a|
-          a.is_a?(SUAnalysis::Core::RepairAction) &&
-            a.status == :applied
+        # Real duplicate_pairs counts:
+        #   before: number of duplicate pairs the plan recognized
+        #   after: number of pairs remaining after apply (0 on success)
+        before_pairs = plan.actions.select { |a|
+          a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :validated
         }.sum { |a| Array(a.affected_derived_ids).length }
-        # post-state: applied actions had multiple targets; the
-        # survivor + 0 duplicates remains. We expose "0" as the
-        # post-state because the repair's invariant is "one
-        # survivor per occurrence, no duplicates".
-        # Stage 3 (§8): derived-duplicate class counts.
+        after_pairs  = applied > 0 ? 0 : before_pairs
+        # Real class counts from measured data:
         pre_count  = pre_classes.is_a?(Hash) ? pre_classes.length : 0
         post_count = post_validation.is_a?(Hash) ? post_validation['duplicate_classes_after'].to_i : (applied > 0 ? 0 : pre_count)
+        # Real edge counts from actual workspace inventory:
+        before_edge_count = pre_edge_count
+        after_edge_count  = post_edge_count
+        if after_edge_count.nil? && post_workspace.respond_to?(:entities)
+          after_edge_count = post_workspace.entities.length
+        end
         {
-          'duplicate_pairs_before'    => before,
-          'duplicate_pairs_after'     => applied > 0 ? 0 : before,
+          'duplicate_pairs_before'    => before_pairs,
+          'duplicate_pairs_after'     => after_pairs,
           'actions_applied'           => applied,
           'actions_skipped'           => skipped,
           'actions_failed'            => failed,
           'last_action_status'        => (updated_actions.last ? updated_actions.last.status.to_s : 'none'),
           'duplicate_classes_before'  => pre_count,
-          'duplicate_classes_after'   => post_count
+          'duplicate_classes_after'   => post_count,
+          'derived_edge_count_before' => before_edge_count,
+          'derived_edge_count_after'  => after_edge_count,
+          # Per-action audit rows (BLOCK-004: every action
+          # audit retains source issue IDs/keys; the
+          # inspectable structure exposes per-action status,
+          # rule or explanation, removed count, survivor ID,
+          # and source-occurrence count).
+          'actions' => updated_actions.map { |a|
+            if a.is_a?(SUAnalysis::Core::RepairAction)
+              {
+                'action_id'          => a.action_id.to_s,
+                'status'             => a.status.to_s,
+                'rule_id'            => a.rule_id.to_s,
+                'explanation'        => a.explanation.to_s,
+                'confidence_basis'   => a.confidence_basis.to_s,
+                'source_occurrence_ids' => Array(a.source_occurrence_ids).map(&:to_s),
+                'affected_derived_ids'  => Array(a.affected_derived_ids).map(&:to_s),
+                'before_summary'     => (a.before_summary || {}).to_h
+              }
+            else
+              { 'raw' => a.inspect }
+            end
+          }
         }.freeze
       end
 

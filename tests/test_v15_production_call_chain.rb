@@ -180,7 +180,7 @@ end
 
 
 
-def v15pc_derived_edge(derived_id, parent_container_pid_path: [100], start:, finish:)
+def v15pc_derived_edge(derived_id, parent_container_pid_path: [100], start:, finish:, source_edge: nil)
 
   # Build the V1.4-format source_occurrence_id from the
 
@@ -190,13 +190,35 @@ def v15pc_derived_edge(derived_id, parent_container_pid_path: [100], start:, fin
 
   # the container path by excluding the leaf PID.
 
-  parent_container_pid_path = parent_container_pid_path || []
+  if source_edge
 
-  leaf_pid = (derived_id.gsub(/[^0-9]/, '').to_i) + 100
+    # V1.5 BLOCK-001: full leaf identity from the source edge.
 
-  pid_path = parent_container_pid_path + [leaf_pid]
+    full_path = source_edge.respond_to?(:source) && source_edge.source.respond_to?(:persistent_id_path) ?
 
-  occ_id = "occ-#{pid_path.map(&:to_s).join('>')}"
+                  source_edge.source.persistent_id_path : nil
+
+    if full_path.is_a?(Array) && !full_path.empty?
+
+      occ_id = "occ-#{full_path.map(&:to_s).join('>')}"
+
+    else
+
+      occ_id = 'occ-unknown'
+
+    end
+
+  else
+
+    parent_container_pid_path = parent_container_pid_path || []
+
+    leaf_pid = (derived_id.gsub(/[^0-9]/, '').to_i) + 100
+
+    pid_path = parent_container_pid_path + [leaf_pid]
+
+    occ_id = "occ-#{pid_path.map(&:to_s).join('>')}"
+
+  end
 
   DerivedEntityRecord.new(
 
@@ -518,11 +540,11 @@ test 'V15PC-003: WorkingModeRunner.run_duplicate_repair_batch runs proposer + ex
 
     v15pc_derived_edge('der-edge-0-rec100', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-edge-1-rec100', parent_container_pid_path: [100],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -644,7 +666,7 @@ test 'V15PC-004: no eligible actions -> ready + applied=0 (idempotent batch)' do
 
     v15pc_derived_edge('der-A', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point)
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1)
 
   ]
 
@@ -714,11 +736,11 @@ test 'V15PC-005: real-SketchUp constructible should-repair (same container path 
 
     v15pc_derived_edge('der-edge-0', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-edge-1', parent_container_pid_path: [100],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -778,11 +800,11 @@ test 'V15PC-006: cross-instance same-world-coords duplicate is canonicalized wit
 
     v15pc_derived_edge('der-A', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-B', parent_container_pid_path: [200],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -839,11 +861,11 @@ test 'V15PC-007: cross-container same-world-coords duplicate is canonicalized wi
 
     v15pc_derived_edge('der-A', parent_container_pid_path: [100, 200],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-B', parent_container_pid_path: [300, 400],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -957,19 +979,19 @@ test 'V15PC-008: batch atomicity -- N-th action failure rolls back all prior act
 
     v15pc_derived_edge('der-A1', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-A2', parent_container_pid_path: [100],
 
-                      start: e2.start_point, finish: e2.end_point),
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2),
 
     v15pc_derived_edge('der-B1', parent_container_pid_path: [200],
 
-                      start: e3.start_point, finish: e3.end_point),
+                      start: e3.start_point, finish: e3.end_point, source_edge: e3),
 
     v15pc_derived_edge('der-B2', parent_container_pid_path: [200],
 
-                      start: e4.start_point, finish: e4.end_point)
+                      start: e4.start_point, finish: e4.end_point, source_edge: e4)
 
   ]
 
@@ -1097,11 +1119,11 @@ test 'V15PC-009: Rebuild replay -> same post-state as first run' do
 
     v15pc_derived_edge('der-A', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-B', parent_container_pid_path: [100],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
@@ -1183,11 +1205,11 @@ test 'V15PC-010: Discard after batch -> source unchanged, workspace :discarded' 
 
     v15pc_derived_edge('der-A', parent_container_pid_path: [100],
 
-                      start: e1.start_point, finish: e1.end_point),
+                      start: e1.start_point, finish: e1.end_point, source_edge: e1),
 
     v15pc_derived_edge('der-B', parent_container_pid_path: [100],
 
-                      start: e2.start_point, finish: e2.end_point)
+                      start: e2.start_point, finish: e2.end_point, source_edge: e2)
 
   ]
 
