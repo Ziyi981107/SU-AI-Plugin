@@ -393,6 +393,31 @@ module SUAnalysis
           removed_ids:      total_removed,
           survivor_updates: survivor_updates
         )
+        # BLOCK-003 (CodeX 032 recheck 2026-08-25): the
+        # post-state-vs-expected check MUST run BEFORE we open
+        # the host operation. The previous implementation
+        # committed the host operation and then re-validated;
+        # a mismatch produced begin -> commit -> abort, which
+        # is logically wrong because a successfully committed
+        # host operation can NEVER be aborted again. Now the
+        # self-consistency check runs against the
+        # already-precomputed workspace (which is what we will
+        # publish after commit) BEFORE any begin/commit is
+        # issued. If the precomputed workspace does not match
+        # its own expected shape, the entire batch fails closed
+        # with no host operation at all.
+        unless post_state_matches_expected?(precomputed_post_workspace, expected_post)
+          # Logic error in the preflight — precomputed
+          # post-workspace does not match the expected
+          # fingerprint shape. Fail closed WITHOUT opening
+          # the host operation. The pre-batch inventory is
+          # preserved.
+          updated = runnable.map do |a, _t, _p, _inv|
+            fail_action(a, reason: 'post_state_fingerprint_mismatch: precomputed post-workspace does not match expected shape (BLOCK-003 pre-host guard); no host operation opened',
+                            affected_derived_ids: Array(a.affected_derived_ids))
+          end
+          return [workspace, updated]
+        end
         # Open the operation.
         begin
           adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.5 Duplicate Repair Batch')
@@ -426,14 +451,33 @@ module SUAnalysis
         end
         if action_errors.empty?
           # All disposes succeeded -> commit the operation.
+          # BLOCK-003: after a successful commit we DO NOT
+          # re-run post_state_matches_expected? — the
+          # self-consistency check already ran against the
+          # precomputed post-workspace BEFORE the host
+          # operation was opened, and the precomputed workspace
+          # IS the workspace we publish. A successful commit
+          # therefore means the expected post-state was
+          # already proven consistent; the only way the host
+          # state could diverge is if the adapter itself lies
+          # about dispose() success, which the
+          # adapter.end_operation(commit: true) success code
+          # path already guards against via its own rescue
+          # branch.
           begin
             adapter.end_operation(model, commit: true)
           rescue StandardError => e
-            begin
-              adapter.end_operation(model, commit: false)
-            rescue StandardError
-            end
             # Commit failed -> roll back to :failed workspace.
+            # NO follow-up end_operation(commit: false): the
+            # host either auto-rolled-back its own operation
+            # (real SU behaviour) or never opened a new one
+            # (fake adapter). Calling end_operation(commit:
+            # false) here would have been a no-op on real SU
+            # and would have produced a misleading
+            # begin -> commit -> abort sequence on a fake
+            # adapter that always raises on commit. We surface
+            # the workspace as :failed and let the next
+            # Discard/Rebuild clean up.
             new_ws = rollback_to_failed(pre_ws: workspace, model: model,
                                           reason: "commit_operation_failed: #{e.class}: #{e.message}")
             updated = runnable.map do |a, _t, _p, _inv|
@@ -441,29 +485,6 @@ module SUAnalysis
                               affected_derived_ids: all_present_ids & Array(a.affected_derived_ids))
             end
             return [new_ws, updated]
-          end
-          # Validate the published post-workspace matches the
-          # precomputed shape (sanity check). The post-workspace
-          # is the precomputed one; this check guards against
-          # accidental drift between preflight and publish.
-          unless post_state_matches_expected?(precomputed_post_workspace, expected_post)
-            # The precomputed post-workspace does not match its
-            # own expected shape. This indicates a logic error
-            # in the preflight. We MUST NOT publish a
-            # post-workspace that does not match the expected
-            # shape. Roll back the host operation and surface
-            # :failed. The pre-batch inventory is preserved.
-            begin
-              adapter.end_operation(model, commit: false)
-            rescue StandardError
-            end
-            rb_ws = rollback_to_failed(pre_ws: workspace, model: model,
-                                        reason: 'post_state_fingerprint_mismatch: precomputed post-workspace does not match its own expected shape')
-            updated = runnable.map do |a, _t, _p, _inv|
-              fail_action(a, reason: 'post_state_fingerprint_mismatch',
-                              affected_derived_ids: all_present_ids & Array(a.affected_derived_ids))
-            end
-            return [rb_ws, updated]
           end
           # Publish the already-precomputed logical post-workspace
           # (BLOCK-003 minimum outcome). The handle registry in

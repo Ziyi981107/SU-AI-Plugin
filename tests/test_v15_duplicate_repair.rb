@@ -2432,7 +2432,7 @@ test 'V15-B001-3: unrelated derived record in same bucket but absent from issue 
   reg = v15_registry(issues)
   plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
   # Find the :validated remove action (if any).
-  remove_actions = plan.actions.select { |a| a.status == :validated }
+  remove_actions = plan.actions.select { |a| [:proposed, :validated].include?(a.status) }
   if remove_actions.any?
     # Any :validated action's affected_derived_ids must
     # NOT include 'der-unrelated' (the unrelated record).
@@ -2572,7 +2572,7 @@ test 'V15-B002-3: non-transitive three-edge chain A~B B~C A!~C -> no three-membe
   ]
   reg = v15_registry(issues)
   plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
-  remove_actions = plan.actions.select { |a| a.status == :validated }
+  remove_actions = plan.actions.select { |a| [:proposed, :validated].include?(a.status) }
   # The validated action (if any) must affect at most 2
   # members (one survivor + one removed). It must NOT
   # affect all 3 derived records.
@@ -2631,8 +2631,10 @@ end
 test 'V15-B003-1: preflight failure -> begin_operation never called; workspace unchanged; every action :failed' do
   # Construct a workspace + plan where the preflight
   # detects an invariant failure BEFORE begin_operation.
-  # We simulate the failure by injecting a preflight that
-  # raises during precompute_full_post_workspace.
+  # Genuine preflight failure: the survivor handle is
+  # invalidated in the workspace before apply. Preflight
+  # must catch this and reject the batch WITHOUT opening
+  # the host operation.
   e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
                 parent_pid_path: [100])
   e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
@@ -2653,19 +2655,37 @@ test 'V15-B003-1: preflight failure -> begin_operation never called; workspace u
   ]
   reg = v15_registry(issues)
   plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
-  # Inject a preflight failure on the adapter's begin_operation
-  # (simulates an invariant failure during preflight).
+  # Mark the survivor handle as invalid (preflight_batch
+  # inspects handle.valid? and rejects). This is a GENUINE
+  # preflight failure: the handle is invalid before any
+  # host operation runs.
   adapter = ws.instance_variable_get(:@adapter)
-  adapter.inject_operation_failure!(StandardError.new('preflight invariant failure'))
+  begin_calls = 0
+  original_begin = adapter.method(:begin_operation)
+  adapter.define_singleton_method(:begin_operation) do |*args, **kw|
+    begin_calls += 1
+    original_begin.call(*args, **kw)
+  end
+  survivor_id = plan.actions.first
+  survivor_id = plan.actions.first.respond_to?(:before_summary) ?
+                  plan.actions.first.before_summary['survivor_derived_id'] : nil
+  # Invalidate the survivor handle on the adapter's
+  # created_handles registry (FakeGroup supports valid?).
+  survivor_handle = ws.handle_for(survivor_id)
+  refute_nil survivor_handle,
+             'fixture sanity: survivor handle must exist in the workspace'
+  survivor_handle[:valid] = false
   new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
   # Workspace must be unchanged in inventory (preflight failure -> no mutation).
   assert_equal 2, new_ws.entities.length, 'preflight failure: no entity removed'
   # No :applied actions; all :failed.
   assert updated.any? { |a| a.status == :failed }, 'at least one action :failed'
   assert updated.none? { |a| a.status == :applied }, 'no action :applied'
-  # Operation log: no :begin when preflight fails. (The
-  # failure may surface as a :begin that raises; but the
-  # post-workspace inventory is the proof.)
+  # Genuine preflight failure: begin_operation was NEVER
+  # called. This is the BLOCK-003 minimum outcome: preflight
+  # invariants reject the batch before any host boundary.
+  assert_equal 0, begin_calls,
+         'BLOCK-003: preflight failure must reject the batch BEFORE begin_operation (begin_calls=0)'
   # Source fingerprint unchanged.
   assert_equal src.fingerprint, src.fingerprint
 end

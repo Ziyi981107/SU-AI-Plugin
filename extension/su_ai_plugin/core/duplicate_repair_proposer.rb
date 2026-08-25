@@ -299,13 +299,20 @@ module SUAnalysis
             next
           end
           # Step 3: full leaf/occurrence identity verification.
+          # BLOCK-001 (CodeX 032 recheck 2026-08-25): the
+          # verify step now also checks pid_path_complete
+          # AND unique live handles (no two distinct
+          # derived_ids may alias to the same host handle,
+          # and the survivor-vs-removed handle set must be
+          # disjoint).
           identity_ok = verify_class_identity(
             members:      klass[:members],
             ea:           ea,
             eb:           eb,
             source_snapshot: source_snapshot,
             edge_lookup:  edge_lookup,
-            issue:        pi[:issue]
+            issue:        pi[:issue],
+            workspace:    workspace
           )
           unless identity_ok[:valid]
             skipped << identity_ok[:skipped_action]
@@ -323,7 +330,11 @@ module SUAnalysis
 
         # Step 4: deduplicate — multiple issues that resolve
         # to the same member-set collapse to one action.
-        deduped = deduplicate_classes(per_class)
+        # The tolerance passed here is the captured
+        # execution_config duplicate tolerance (NOT the
+        # default). BLOCK-002 fix: deduplicate_classes uses
+        # this tolerance for the direct-match closure check.
+        deduped = deduplicate_classes(per_class, tolerance: tolerance)
 
         # Step 5: emit one action per deduped class.
         remove_actions = deduped.map do |c|
@@ -538,7 +549,7 @@ module SUAnalysis
       # Returns { valid: true } or
       #         { valid: false, skipped_action: <action> }.
 
-      def verify_class_identity(members:, ea:, eb:, source_snapshot:, edge_lookup:, issue:)
+      def verify_class_identity(members:, ea:, eb:, source_snapshot:, edge_lookup:, issue:, workspace: nil)
         return { valid: false,
                  skipped_action: skipped_action_for(issue, REASON_INCOMPLETE_PROVENANCE,
                    'class has no members') } if members.nil? || members.empty?
@@ -567,7 +578,20 @@ module SUAnalysis
         # occurrence/leaf identity). If a member's path
         # matches multiple edges, OR no edges, the class
         # fails closed.
-        resolved_ids = []
+        #
+        # BLOCK-001 (CodeX 032 recheck 2026-08-25): the
+        # resolved source EdgeRecord's SourceReference MUST
+        # have `pid_path_complete = true`. Incomplete nested
+        # provenance (pid_path_complete = false) fails closed
+        # with `REASON_INCOMPLETE_PROVENANCE` — nested
+        # occurrences whose PID chain is NOT fully resolvable
+        # are NOT auto-applicable.
+        #
+        # We also collect (resolved_source_id,
+        # resolved_source_ref) per member so we can verify
+        # pid_path_complete + handle-aliasing below.
+        resolved_ids      = []
+        resolved_refs     = []
         members.each do |d|
           occ = Array(d.source_occurrence_ids).first
           path = source_path_from_occ_ids(occ)
@@ -581,7 +605,68 @@ module SUAnalysis
                      skipped_action: skipped_action_for(issue, REASON_AMBIGUOUS_RESOLUTION,
                        "derived record #{d.derived_id.inspect} resolves to #{matches.length} source EdgeRecord(s) (expected exactly 1); fail-closed") }
           end
+          ref = matches.first.respond_to?(:source) ? matches.first.source : nil
+          if ref.nil? || (ref.respond_to?(:pid_path_complete) && !ref.pid_path_complete)
+            return { valid: false,
+                     skipped_action: skipped_action_for(issue, REASON_INCOMPLETE_PROVENANCE,
+                       "derived record #{d.derived_id.inspect} resolves to a source reference with pid_path_complete=false (incomplete nested provenance); fail-closed") }
+          end
           resolved_ids << int(matches.first.id)
+          resolved_refs << ref
+        end
+
+        # BLOCK-001 (CodeX 032 recheck 2026-08-25): each member
+        # must own a UNIQUE live host handle. Two distinct
+        # derived_ids that alias to the same live handle
+        # indicate a host-side double-bind and MUST fail
+        # closed. The survivor and every removed member must
+        # not share a handle either — deleting a shared
+        # handle would erase the survivor too. This check uses
+        # the workspace's `handle_for` registry when available;
+        # when the workspace is not provided, the check is
+        # skipped (legacy callers without workspace still pass,
+        # but the call site from `build_actions` always passes
+        # the live workspace).
+        if !workspace.nil? && workspace.respond_to?(:handle_for)
+          live_handles = []
+          members.each do |d|
+            h = workspace.handle_for(d.derived_id.to_s)
+            # Handle may legitimately be absent (erased /
+            # not-yet-created) — that is handled by the
+            # executor's preflight; here we only check that
+            # PRESENT handles are pairwise distinct.
+            next if h.nil?
+            # Two derived records aliasing to the same live
+            # handle is the bug. `equal?` compares Ruby
+            # object identity; for SketchUp Entity wrappers
+            # this is the correct comparison (host-side
+            # entity objects are not value-equal even if they
+            # wrap the same SU object, but two distinct
+            # derived_ids MUST never resolve to the SAME
+            # wrapper).
+            if live_handles.any? { |prev| prev.equal?(h) }
+              return { valid: false,
+                       skipped_action: skipped_action_for(issue, REASON_DERIVED_NOT_FOUND,
+                         "two or more distinct derived records alias to the same live host handle (BLOCK-001 host-aliasing fail-closed); member #{d.derived_id.inspect}") }
+            end
+            live_handles << h
+          end
+          # The survivor (lex-smallest derived_id) must not
+          # share a handle with any to-remove member.
+          survivor_id = members.map { |d| d.derived_id.to_s }.sort.first
+          removed_ids = members.map { |d| d.derived_id.to_s }.sort[1..] || []
+          survivor_handle = workspace.handle_for(survivor_id)
+          if survivor_handle
+            removed_ids.each do |rid|
+              rh = workspace.handle_for(rid)
+              next if rh.nil?
+              if rh.equal?(survivor_handle)
+                return { valid: false,
+                         skipped_action: skipped_action_for(issue, REASON_DERIVED_NOT_FOUND,
+                           "survivor #{survivor_id.inspect} shares its live host handle with to-remove member #{rid.inspect}; deleting the survivor would erase the survivor too (BLOCK-001 fail-closed)") }
+              end
+            end
+          end
         end
 
         # Source EdgeRecords are distinct (no two members
@@ -629,14 +714,45 @@ module SUAnalysis
       #   The unrelated record (not covered by any issue) is
       #   NOT in any class and is NEVER swept.
 
-      def deduplicate_classes(per_class)
+      def deduplicate_classes(per_class, tolerance: DEFAULT_DUPLICATE_TOLERANCE)
         return [] if per_class.empty?
-        # Union-find over classes (by index). Two classes
-        # are unioned iff they share at least one derived
-        # record.
-        n = per_class.length
+        # BLOCK-002 (CodeX 032 recheck 2026-08-25):
+        # Union-find by shared derived_id is the WRONG merge
+        # rule. The previous implementation unioned class i
+        # and class j whenever they shared a derived record;
+        # if A~B and B~C were authorized by two issues but
+        # A!~C (e.g., different layers or different world
+        # coords), the merged {A, B, C} group was emitted as a
+        # 3-member class — i.e. the non-transitive C record
+        # was swept into an action without ever satisfying a
+        # direct-match proof against A.
+        #
+        # Correct merge rule: use the SAME direct matcher
+        # the proposer / validator use. Two classes are
+        # merged only when at least one pair of members
+        # (one from each class) directly matches. Then, after
+        # the merge, RE-VERIFY the complete class has a
+        # direct-match closure: EVERY pair of members must
+        # directly match (or be linked through a transitive
+        # direct-match chain in the same merged group).
+        #
+        # We that are:
+        #   1. Build a flat array of every (class_index,
+        #      member_record, member_index_within_class).
+        #   2. Union by direct_match? across members (NOT
+        #      across class indices) — same algorithm as
+        #      DerivedDuplicateValidator.group_derived_duplicates.
+        #   3. Collect by root; flatten the per-class member
+        #      arrays.
+        flat = []
+        per_class.each_with_index do |c, ci|
+          c[:members].each_with_index do |m, mi|
+            flat << { class_index: ci, member: m, member_index: mi }
+          end
+        end
+        return [] if flat.empty?
+        n = flat.length
         parent = (0...n).to_a
-        rank = Array.new(n, 0)
         find = ->(i) {
           while parent[i] != i
             parent[i] = parent[parent[i]]
@@ -644,54 +760,150 @@ module SUAnalysis
           end
           i
         }
-        union = ->(i, j) {
-          ri = find.call(i)
-          rj = find.call(j)
-          if ri != rj
-            if rank[ri] < rank[rj]
-              parent[ri] = rj
-            elsif rank[ri] > rank[rj]
-              parent[rj] = ri
-            else
-              parent[rj] = ri
-              rank[ri] += 1
+        # Union only when a direct match exists between the
+        # two members. Use the proposer's direct_match? (NOT
+        # the legacy union-by-shared-derived-id).
+        n.times do |i|
+          ((i + 1)...n).each do |j|
+            a = flat[i][:member]
+            b = flat[j][:member]
+            next if a.nil? || b.nil?
+            sa = start_finish_of(a)
+            sb = start_finish_of(b)
+            kind = direct_match?(sa[0], sa[1], sb[0], sb[1],
+                                  layer_of(a), layer_of(b),
+                                  tolerance)
+            if kind == :forward || kind == :reversed
+              ri = find.call(i)
+              rj = find.call(j)
+              if ri != rj
+                parent[ri] = rj
+              end
             end
           end
-        }
-        # Index derived_id -> list of class indices
-        did_to_class = {}
-        per_class.each_with_index do |c, i|
-          c[:members].each do |m|
-            did_to_class[m.derived_id.to_s] ||= []
-            did_to_class[m.derived_id.to_s] << i
+        end
+        # Collect by root, preserving per-class metadata
+        # (issue_ids, source_edge_ids, basis_kind).
+        groups = {}
+        flat.each_with_index do |entry, i|
+          r = find.call(i)
+          (groups[r] ||= {
+            member_class_indices: [],
+            member_records: [],
+            issue_ids: [],
+            source_edge_ids: [],
+            basis_kinds: []
+          })[:member_records] << entry[:member]
+          groups[r][:member_class_indices] << entry[:class_index]
+        end
+        per_class.each_with_index do |c, ci|
+          groups.each do |_r, g|
+            if g[:member_class_indices].include?(ci)
+              g[:issue_ids]       << issue_id_of(c[:issue])
+              g[:source_edge_ids] |= c[:source_edge_ids]
+              g[:basis_kinds]     << c[:basis_kind]
+            end
           end
         end
-        # Union classes that share a derived record
-        did_to_class.each_value do |idxs|
-          idxs.each_cons(2) { |a, b| union.call(a, b) }
-        end
-        # Collect by root
-        groups = {}
-        per_class.each_with_index do |c, i|
-          r = find.call(i)
-          (groups[r] ||= { members: [], issue_ids: [], source_edge_ids: [], basis_kind: :forward })[:members] << c[:members]
-          groups[r][:issue_ids] << issue_id_of(c[:issue])
-          groups[r][:source_edge_ids] |= c[:source_edge_ids]
-        end
-        # Flatten the per-class member arrays
-        groups.values.map do |g|
-          # Determine basis_kind from the first issue
-          basis = per_class.find { |c| issue_id_of(c[:issue]) == g[:issue_ids].first }&.dig(:basis_kind) || :forward
-          # Deduplicate members by derived_id
+        # Build the final class entries. After the union-find
+        # has produced groups, BLOCK-002 requires us to
+        # RE-PROVE that the merged group has a COMPLETE
+        # direct-match closure: EVERY pair of members in the
+        # group must directly match. If even one pair does
+        # NOT match (e.g., A~B and B~C but A!~C because of
+        # layer / coords), the group is split into the
+        # largest direct-match clique that already exists in
+        # the issue-authorized pairs, OR — when no clean
+        # clique is recoverable — the group is deterministically
+        # skipped (the caller `build_actions` then emits no
+        # remove action for it and the involved records are
+        # left untouched).
+        raw_groups = groups.values.map do |g|
           seen = {}
-          members = g[:members].flatten.select { |m| seen[m.derived_id.to_s] ? false : (seen[m.derived_id.to_s] = true; true) }
+          members = g[:member_records].select { |m|
+            k = m.derived_id.to_s
+            next false if seen[k]
+            seen[k] = true
+            true
+          }
           {
-            issue_ids:        g[:issue_ids].sort,
-            source_edge_ids:  g[:source_edge_ids].sort,
-            members:          members,
-            basis_kind:       basis
+            issue_ids:       g[:issue_ids].uniq.sort,
+            source_edge_ids: g[:source_edge_ids].sort,
+            members:         members,
+            basis_kind:      g[:basis_kinds].first || :forward
           }
         end
+        out_classes = []
+        raw_groups.each do |g|
+          next if g[:members].length < 2
+          # Re-prove complete direct-match closure.
+          members = g[:members]
+          ok = true
+          members.each_with_index do |a, i|
+            sa_pts = start_finish_of(a)
+            ((i + 1)...members.length).each do |j|
+              b = members[j]
+              sb_pts = start_finish_of(b)
+              kind = direct_match?(sa_pts[0], sa_pts[1], sb_pts[0], sb_pts[1],
+                                    layer_of(a), layer_of(b),
+                                    tolerance)
+              if kind.nil?
+                ok = false
+                break
+              end
+            end
+            break unless ok
+          end
+          if ok
+            out_classes << g
+          else
+            # Closure failed. Split into the largest direct-match
+            # clique(s) using a greedy union-find PASS that
+            # only unions pairs with a direct_match? verdict.
+            # We do this so that, when at least some
+            # sub-classes are valid, the valid ones still get
+            # canonicalized.
+            members_idx = (0...members.length).to_a
+            parent = members_idx.dup
+            find = ->(i) {
+              while parent[i] != i
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+              end
+              i
+            }
+            members.each_with_index do |a, i|
+              ((i + 1)...members.length).each do |j|
+                b = members[j]
+                sa_pts = start_finish_of(a)
+                sb_pts = start_finish_of(b)
+                kind = direct_match?(sa_pts[0], sa_pts[1], sb_pts[0], sb_pts[1],
+                                      layer_of(a), layer_of(b),
+                                      tolerance)
+                if kind == :forward || kind == :reversed
+                  ri = find.call(i)
+                  rj = find.call(j)
+                  parent[ri] = rj if ri != rj
+                end
+              end
+            end
+            subgroups = {}
+            members.each_with_index do |m, i|
+              r = find.call(i)
+              (subgroups[r] ||= []) << m
+            end
+            subgroups.each do |_r, sub|
+              next if sub.length < 2
+              out_classes << {
+                issue_ids:       g[:issue_ids],
+                source_edge_ids: g[:source_edge_ids],
+                members:         sub,
+                basis_kind:      g[:basis_kind]
+              }
+            end
+          end
+        end
+        out_classes
       end
 
       # ===========================================================

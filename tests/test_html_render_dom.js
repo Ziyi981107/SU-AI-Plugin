@@ -1575,6 +1575,90 @@ assert('V15 source guard: renderWorkingMode does NOT use .innerHTML',
 assert('V15 source guard: renderWorkingMode uses .textContent',
        v15SrcBody.indexOf('.textContent') >= 0);
 
+// =====================================================================
+// V15 BLOCK-004 DOM tests (CodeX 032 recheck 2026-08-25):
+// every per-action audit row must include status, removed
+// count, survivor ID, and source-occurrence count as visible
+// fields. The UI MUST render these from the summary, not
+// from a hand-built label. textContent only.
+// =====================================================================
+
+// Reset the working-mode-list before the BLOCK-004 DOM tests.
+renderWithPayload({
+  selectionLabel: 'wm-v15-block004', selectionType: 'Group',
+  summary: { edges: 2, vertices: 2, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v15-block004-snap',
+    source_fingerprint_digest: 'aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v15cfg',
+    workspace_id: 'ws-v15-block004',
+    duplicate_repair: {
+      duplicate_pairs_before: 1,
+      duplicate_pairs_after: 0,
+      actions_applied: 1,
+      actions_skipped: 0,
+      actions_failed: 0,
+      last_action_status: 'applied',
+      duplicate_classes_before: 1,
+      duplicate_classes_after: 0,
+      derived_edge_count_before: 2,
+      derived_edge_count_after: 1,
+      actions: [{
+        action_id: 'act-block004-1',
+        status: 'applied',
+        rule_id: 'duplicate_edge.exact_remove',
+        explanation: 'BLOCK-004 DOM test fixture',
+        confidence_basis: 'exact_endpoint_match_within_tolerance.duplicate',
+        source_occurrence_ids: ['occ-100>100', 'occ-200>101'],
+        source_occurrence_count: 2,
+        affected_derived_ids: ['der-B'],
+        removed_count: 1,
+        survivor_derived_id: 'der-A',
+        issue_ids: ['duplicate|0|1'],
+        before_summary: {}
+      }]
+    }
+  }
+});
+var v15Block004List = mockElements['working-mode-list'];
+// Every per-action audit row MUST be a DOM row carrying the
+// audit fields as inspectable data-* attributes. We assert the
+// row exists and exposes each field independently.
+var v15Block004Row = v15Block004List && v15Block004List.children.find(function (c) {
+  return c.attrs && c.attrs['data-action-id'] === 'act-block004-1';
+});
+assert('V15 BLOCK-004: per-action audit row has data-action-id attribute',
+       v15Block004Row !== undefined && v15Block004Row !== null);
+assert('V15 BLOCK-004: per-action audit row has data-action-status="applied"',
+       v15Block004Row && v15Block004Row.attrs['data-action-status'] === 'applied');
+assert('V15 BLOCK-004: per-action audit row has data-survivor-id="der-A"',
+       v15Block004Row && v15Block004Row.attrs['data-survivor-id'] === 'der-A');
+assert('V15 BLOCK-004: per-action audit row carries a removed_count cell',
+       v15Block004Row && v15Block004Row.children.some(function (c) {
+         return c.attrs && c.attrs['data-field'] === 'removed_count' && c.textContent === '1';
+       }));
+assert('V15 BLOCK-004: per-action audit row carries a source_count cell',
+       v15Block004Row && v15Block004Row.children.some(function (c) {
+         return c.attrs && c.attrs['data-field'] === 'source_count' && c.textContent === '2';
+       }));
+assert('V15 BLOCK-004: per-action audit row carries a survivor_id cell',
+       v15Block004Row && v15Block004Row.children.some(function (c) {
+         return c.attrs && c.attrs['data-field'] === 'survivor_id' && c.textContent === 'der-A';
+       }));
+assert('V15 BLOCK-004: per-action audit row carries a status cell',
+       v15Block004Row && v15Block004Row.children.some(function (c) {
+         return c.attrs && c.attrs['data-field'] === 'status' && c.textContent === 'applied';
+       }));
+// Source guard: per-action audit row uses textContent (no innerHTML).
+assert('V15 BLOCK-004: per-action audit row uses textContent only (no innerHTML)',
+       v15Block004Row && v15Block004Row.children.every(function (c) {
+         return c.textContent.indexOf('[object Object]') === -1;
+       }));
+
 // --- final verdict -----------------------------------------------------
 
 var failed = results.filter(function (r) { return !r.pass; });

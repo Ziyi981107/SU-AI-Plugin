@@ -598,13 +598,70 @@
                dr.derived_edge_count_after;
     }
     addRow(listEl, state, 'Duplicate repairs', label, label);
-    // Per-action audit rows when present (BLOCK-004 minimum).
+    // Per-action audit rows when present (BLOCK-004
+    // CodeX 032 recheck 2026-08-25 minimum): every action
+    // row must include status, removed count, survivor ID,
+    // and source-occurrence count as visible fields. The
+    // UI MUST render these from the summary, not from a
+    // hand-built label. textContent only (no innerHTML).
     if (Array.isArray(dr.actions) && dr.actions.length > 0) {
       dr.actions.forEach(function (act) {
         if (!act || typeof act !== 'object') return;
-        var actLabel = 'action ' + (act.action_id || '?') +
-                      ' (' + (act.status || 'unknown') + '): ' +
-                      (act.explanation || act.confidence_basis || 'no detail');
+        var status = act.status || 'unknown';
+        var actionId = act.action_id || '?';
+        var removedCount = (typeof act.removed_count === 'number') ? act.removed_count : 0;
+        var survivorId = act.survivor_derived_id || '';
+        var sourceCount = (typeof act.source_occurrence_count === 'number') ?
+                          act.source_occurrence_count : 0;
+        var ruleId = act.rule_id || '';
+        var basis = act.confidence_basis || act.explanation || 'no detail';
+        // Use a small table-style row so each audit field is
+        // independently inspectable from the DOM (DOM tests
+        // can assert each cell by its data-action-id +
+        // data-field attribute). textContent everywhere.
+        var row = document.createElement('div');
+        row.setAttribute('data-action-id', actionId);
+        row.setAttribute('data-action-status', status);
+        if (survivorId) row.setAttribute('data-survivor-id', survivorId);
+        row.setAttribute('class', 'action-audit-row');
+        var c1 = document.createElement('span');
+        c1.setAttribute('data-field', 'status');
+        c1.textContent = status;
+        row.appendChild(c1);
+        var c2 = document.createElement('span');
+        c2.setAttribute('data-field', 'action_id');
+        c2.textContent = actionId;
+        row.appendChild(c2);
+        var c3 = document.createElement('span');
+        c3.setAttribute('data-field', 'survivor_id');
+        c3.textContent = survivorId;
+        row.appendChild(c3);
+        var c4 = document.createElement('span');
+        c4.setAttribute('data-field', 'removed_count');
+        c4.textContent = String(removedCount);
+        row.appendChild(c4);
+        var c5 = document.createElement('span');
+        c5.setAttribute('data-field', 'source_count');
+        c5.textContent = String(sourceCount);
+        row.appendChild(c5);
+        var c6 = document.createElement('span');
+        c6.setAttribute('data-field', 'rule_id');
+        c6.textContent = ruleId;
+        row.appendChild(c6);
+        var c7 = document.createElement('span');
+        c7.setAttribute('data-field', 'basis');
+        c7.textContent = basis;
+        row.appendChild(c7);
+        listEl.appendChild(row);
+        // Also surface a compact human-readable summary for
+        // quick visual scan (kept for backward-compat with
+        // older Node DOM assertions).
+        var actLabel = 'action ' + actionId + ' (' + status +
+                      '): removed=' + removedCount +
+                      ', survivor=' + survivorId +
+                      ', sources=' + sourceCount +
+                      ', rule=' + ruleId +
+                      '; ' + basis;
         addRow(listEl, state, 'Action audit', actLabel, actLabel);
       });
     }

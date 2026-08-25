@@ -494,16 +494,48 @@ module SUAnalysis
         applied = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
         skipped = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :skipped }
         failed  = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :failed }
-        # Real duplicate_pairs counts:
-        #   before: number of duplicate pairs the plan recognized
-        #   after: number of pairs remaining after apply (0 on success)
-        before_pairs = plan.actions.select { |a|
-          a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :validated
-        }.sum { |a| Array(a.affected_derived_ids).length }
-        after_pairs  = applied > 0 ? 0 : before_pairs
+        # Real duplicate_pairs counts (BLOCK-004 CodeX 032
+        # recheck 2026-08-25): BOTH before and after are
+        # MEASURED. Before = sum of (members - 1) across every
+        # plan action's affected_derived_ids length (each
+        # class contributes N-1 removed records). After = sum
+        # of (members - 1) across the MEASURED post-batch
+        # classes from post_validation.class_member_counts
+        # (NOT a hardcoded 0). When applied successfully, the
+        # measured post-batch classes for the eligible classes
+        # go to zero, and the after value naturally reads as
+        # 0 because the MEASUREMENT says so, not because the
+        # formula assumes it.
+        before_pairs = if plan.respond_to?(:actions)
+                         plan.actions.select { |a|
+                           a.is_a?(SUAnalysis::Core::RepairAction)
+                         }.sum { |a| Array(a.affected_derived_ids).length }
+                       else
+                         0
+                       end
+        post_classes_count = post_validation.is_a?(Hash) ? post_validation['duplicate_classes_after'].to_i : nil
+        post_member_counts = post_validation.is_a?(Hash) ? Array(post_validation['class_member_counts']) : []
+        if post_classes_count.nil? && post_workspace.respond_to?(:entities)
+          # Re-measure from the post-workspace when
+          # post_validation wasn't passed (defensive fallback
+          # for callers that don't run the validator).
+          tol = SUAnalysis::Core::DerivedDuplicateValidator.resolve_tolerance(
+            post_workspace, nil
+          )
+          post_classes = SUAnalysis::Core::DerivedDuplicateValidator.group_derived_duplicates(
+            post_workspace, tol
+          )
+          post_classes_count = post_classes.length
+          post_member_counts = post_classes.values.map(&:length)
+        end
+        after_pairs = if post_classes_count.is_a?(Integer) && post_member_counts.is_a?(Array)
+                        post_member_counts.select { |n| n.to_i >= 2 }.sum { |n| n.to_i - 1 }
+                      else
+                        nil
+                      end
         # Real class counts from measured data:
         pre_count  = pre_classes.is_a?(Hash) ? pre_classes.length : 0
-        post_count = post_validation.is_a?(Hash) ? post_validation['duplicate_classes_after'].to_i : (applied > 0 ? 0 : pre_count)
+        post_count = post_classes_count.is_a?(Integer) ? post_classes_count : (pre_count == 0 ? 0 : nil)
         # Real edge counts from actual workspace inventory:
         before_edge_count = pre_edge_count
         after_edge_count  = post_edge_count
@@ -521,22 +553,40 @@ module SUAnalysis
           'duplicate_classes_after'   => post_count,
           'derived_edge_count_before' => before_edge_count,
           'derived_edge_count_after'  => after_edge_count,
-          # Per-action audit rows (BLOCK-004: every action
-          # audit retains source issue IDs/keys; the
-          # inspectable structure exposes per-action status,
-          # rule or explanation, removed count, survivor ID,
-          # and source-occurrence count).
+          # Per-action audit rows (BLOCK-004 CodeX 032 recheck
+          # 2026-08-25): every action audit retains source
+          # issue IDs/keys, AND the inspectable structure
+          # exposes per-action status, rule or explanation,
+          # removed count, survivor ID, and source-occurrence
+          # count as top-level fields (the UI reads these
+          # directly).
           'actions' => updated_actions.map { |a|
             if a.is_a?(SUAnalysis::Core::RepairAction)
+              removed_count = Array(a.affected_derived_ids).length
+              survivor_id = if a.before_summary.is_a?(Hash)
+                              a.before_summary['survivor_derived_id'].to_s
+                            else
+                              ''
+                            end
+              source_count = Array(a.source_occurrence_ids).length
+              issue_ids = if a.before_summary.is_a?(Hash)
+                            Array(a.before_summary['issue_ids']).map(&:to_s)
+                          else
+                            []
+                          end
               {
-                'action_id'          => a.action_id.to_s,
-                'status'             => a.status.to_s,
-                'rule_id'            => a.rule_id.to_s,
-                'explanation'        => a.explanation.to_s,
-                'confidence_basis'   => a.confidence_basis.to_s,
-                'source_occurrence_ids' => Array(a.source_occurrence_ids).map(&:to_s),
-                'affected_derived_ids'  => Array(a.affected_derived_ids).map(&:to_s),
-                'before_summary'     => (a.before_summary || {}).to_h
+                'action_id'              => a.action_id.to_s,
+                'status'                 => a.status.to_s,
+                'rule_id'                => a.rule_id.to_s,
+                'explanation'            => a.explanation.to_s,
+                'confidence_basis'       => a.confidence_basis.to_s,
+                'source_occurrence_ids'  => Array(a.source_occurrence_ids).map(&:to_s),
+                'source_occurrence_count'=> source_count,
+                'affected_derived_ids'   => Array(a.affected_derived_ids).map(&:to_s),
+                'removed_count'          => removed_count,
+                'survivor_derived_id'    => survivor_id,
+                'issue_ids'              => issue_ids,
+                'before_summary'         => (a.before_summary || {}).to_h
               }
             else
               { 'raw' => a.inspect }
