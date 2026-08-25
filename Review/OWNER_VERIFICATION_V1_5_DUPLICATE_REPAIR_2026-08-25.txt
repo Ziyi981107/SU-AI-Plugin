@@ -1,420 +1,233 @@
 ======================================================================
 OWNER VERIFICATION CHECKLIST — V1.5 Phase 1: High-Confidence Auto Repair
-Date: 2026-08-25
+Date: 2026-08-25 (CodeX BLOCK-004 recheck — real-SU2020 only steps)
 For: CodeX V1.5 Phase 1 Owner Gate evidence
-Per: V1.5 plan §6 + §5 (FIRST TEST MATRIX) + Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt
+Per: CodeX V1.5 BLOCK-004 recheck (2026-08-25) + V1.5 plan §6 + §5
 ======================================================================
 
-PURPOSE
--------
-Verify the V1.5 Phase 1 vertical slice on a real SketchUp
-2020 host. This checklist confirms:
-
-  - The dialog's "Working Mode" section now shows a
-    "Duplicate repairs" summary row when the
-    duplicate_repair metric is recorded;
-  - Prepare + Duplicate-repair auto-applies ONLY to
-    exact-duplicate / reversed-exact-duplicate edge
-    occurrences from the SAME source occurrence
-    (same persistent_id_path);
-  - Survivor selection is deterministic (lex-smaller
-    derived_id wins);
-  - Cross-occurrence duplicates (two distinct source
-    edges that happen to share world coordinates) are
-    PRESERVED (NOT removed);
-  - Near-but-not-exact duplicates are PRESERVED;
-  - Source CAD is NEVER mutated by the auto-repair;
-  - source_fingerprint is unchanged across successful
-    or failed apply;
-  - Repeated apply is idempotent;
-  - Discard + Rebuild work as expected;
-  - Erased / invalid derived entities are skipped safely.
-
-This checklist is intentionally aligned with the V1.5
-plan §5 test matrix (SHOULD REPAIR + MUST NOT REPAIR +
-APPLY SAFETY). Items out of V1.5 Phase 1 scope are
-explicitly marked.
+This checklist REPLACES the previous
+`OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt`. It only
+contains steps executable on real SketchUp 2020 with the GUI or a
+copy-paste Ruby Console command. No FakeGroup / pure-Ruby test
+concepts.
 
 PREREQUISITES
 -------------
-1. dist/SU-AI-Plugin.rbz has been BUILT from the
-   v1.5-high-confidence-auto-repair HEAD. The Agent
-   rebuilt the rbz before dispatch; you do NOT need
-   to rebuild yourself.
-2. The rbz is INSTALLED on a real SketchUp 2020 (NOT
-   SketchUp 2017; SU2017 is a separate release gate).
-4. A test model is ready that has BOTH:
-   - (a) the SAME source edge recorded twice in the
-     source data (creates 2 derived records with the
-     SAME source_occurrence_id -- SHOULD REPAIR case);
-   - (b) two DISTINCT source edges from DIFFERENT
-     component instances that happen to share world
-     coordinates (creates 2 derived records with
-     DIFFERENT source_occurrence_ids -- MUST NOT REPAIR
-     case).
-5. The V1.5 menu item "Analyze selection" is reachable
-   from the Plugins menu (same as V1.0-V1.4).
-
-The "V15-N" steps below mirror the V1.5 plan §5 test
-matrix (1..14). Each step has a single expected
-outcome. Mark PASS or FAIL per step on real SU2020.
-
-If the production-side `duplicate_repair` flow is not
-yet wired into the dialog's Prepare / Discard buttons
-(V1.5 Phase 1 keeps the executor as a pure-Ruby
-helper -- the dialog does NOT auto-trigger the apply),
-the Owner can verify the auto-repair via the V15-N
-steps by triggering it through a Ruby console or by
-the fact that the DuplicateDetector + DuplicateRepair
-Proposer + DuplicateRepairExecutor are all pure-Ruby
-helpers and the test suite has already proven the
-end-to-end behavior (21 tests in
-tests/test_v15_duplicate_repair.rb; 677/677 total).
+1.  dist/SU-AI-Plugin.rbz has been BUILT from the V1.5 Phase 1
+    HEAD (this commit's HEAD). The Agent rebuilt the rbz before
+    dispatch; you do NOT need to rebuild.
+2.  The rbz is INSTALLEDED on a real SketchUp 2020 (NOT 2017;
+    SU2017 is a separate release gate per master plan R006).
+3.  A representative test model is open in SU2020. The test
+    model needs:
+    - ONE ComponentDefinition that contains two SU Edges with
+      IDENTICAL world endpoints (the CAD-import-duplicate case
+      that V1.5 Phase 1 catches). Place a ComponentInstance of
+      that definition in the model.
+4.  A second ComponentDefinition with FOUR edges that are NOT
+    duplicates (the regression-check case).
+5.  The Plugins menu has "SU-AI-Plugin" -> "Analyze selection".
 
 ======================================================================
-STEP V15-1: SHOULD REPAIR — Forward exact duplicate
+STEP V15-0: Verify Phase 1 modules load through the real entry-point
 ======================================================================
 
-PREPARE:
-  - Select a source edge entity that is recorded TWICE
-    in the source data (same persistent_id_path; the
-    DuplicateDetector emits a `duplicate_edge_candidate`
-    issue).
-  - Verify the dialog summary text shows "Duplicate
-    Candidates: 1" (or more if there are additional
-    pairs).
-  - Click Prepare. Verify the workspace has 2 derived
-    records (one per source edge record) for the same
-    source occurrence.
+Open the Ruby Console (Window > Ruby Console). Paste this single
+line and press Enter:
 
-AUTO-REPAIR:
-  - Trigger the duplicate repair (via the dialog's
-    "Duplicate repairs" affordance if available, or via
-    a Ruby console call to
-    `SUAnalysis::Core::DuplicateRepairExecutor.apply(...)`).
-  - Verify: the workspace now has 1 derived record
-    (the survivor).
-  - Verify: the survivor's derived_id is the
-    LEX-SMALLER of the two pre-existing derived_ids
-    (deterministic rule).
-  - Verify: source CAD is unchanged (source_fingerprint
-    digest matches the pre-apply value).
+    Sketchup.register_extension(extension=nil, load_now=false) rescue nil;
+    load 'C:/Users/<YOUR_USERNAME>/AppData/Roaming/SketchUp/SketchUp 2020/SketchUp/Plugins/su_ai_plugin.rb';
+    defined?(SUAnalysis::Core::DuplicateRepairProposer) && defined?(SUAnalysis::Core::DuplicateRepairExecutor)
 
-  Expected: workspace entity_count drops from 2 to 1;
-            survivor = lex-smaller derived_id;
-            source unchanged.
-  Capture: pre/post source_fingerprint digest + entity
-           count + survivor derived_id.
+Expected output:
+    true
+
+(The first line is a no-op for the real SketchUp install; it
+silently rescues in case the registration API is not callable
+from the Console. The second line loads the entry-point from
+your installed Plugins folder. The third line asserts both
+modules are defined.)
+
+If `defined?` returns nil for either module, STOP and report:
+"V15-0 FAIL: <module-name> not defined".
 
 ======================================================================
-STEP V15-2: SHOULD REPAIR — Reversed exact duplicate
+STEP V15-1: SHOULD REPAIR — Duplicate edge inside one ComponentInstance
 ======================================================================
 
-PREPARE:
-  - Select two source edge records with the SAME
-    persistent_id_path but REVERSED endpoints (A->B
-    and B->A).
-  - Verify the DuplicateDetector emits a
-    `duplicate_edge_candidate` issue.
+PREPARE A REAL TEST FIXTURE:
 
-AUTO-REPAIR:
-  - Apply the repair. Verify: workspace has 1 derived
-    record (the survivor).
-  - Verify the action's `confidence_basis` is
-    `reversed_endpoint_match_within_tolerance.duplicate`
-    (NOT `exact_endpoint_match_within_tolerance.duplicate`).
+  1. Open your test model.
+  2. Select the entire model (Ctrl+A or Edit > Select All).
+  3. Plugins > SU-AI-Plugin > Analyze selection.
+  4. Wait for the dialog to render.
 
-  Expected: workspace has 1 survivor; basis names the
-            reversed match.
-  Capture: pre/post entity count + action confidence_basis.
+Inside the dialog, scroll DOWN to "Working Mode (V1.4)" (the
+last details block).
 
-======================================================================
-STEP V15-3: SHOULD REPAIR — Three identical edges
-======================================================================
+EXPECTED in the Working Mode list before any click:
+  state:        none
+  entities:     0
+  rows:         1 idle row "No working copy yet..."
+  Duplicate repairs row: NOT present
 
-PREPARE:
-  - Select THREE source edge records with the SAME
-    persistent_id_path and the same endpoints.
-  - Verify the DuplicateDetector emits C(3,2)=3 pairwise
-    issues (one per pair).
+CLICK "Prepare".
 
-AUTO-REPAIR:
-  - Apply the repair. Verify: workspace has 1 derived
-    record (the lex-smallest survivor).
-  - Verify the action emits ONE :remove_duplicate_edge
-    action (not 3) -- the proposer collapses same-
-    occurrence pairs into one action per occurrence.
+EXPECTED in the Working Mode list AFTER Prepare:
+  state:                  ready
+  entities:               (depends on your model)
+  Duplicate repairs row:  present with the text
+                         "Duplicate repairs: applied N, skipped M"
+                         where N >= 1 (the duplicate from your
+                         ComponentDefinition) and M >= 0.
 
-  Expected: workspace entity_count drops from 3 to 1;
-            ONE action emitted, removing 2 derived
-            records.
-  Capture: pre/post entity count + action count.
+The dialog's "Entities ready" number will be ONE LESS than the
+number of distinct world-coordinate edge occurrences in your
+selection, because Phase 1 removed the duplicate(s).
 
-======================================================================
-STEP V15-4: MUST NOT REPAIR — Shared-definition two instances
-======================================================================
+VERIFY in the model OUTSIDE the dialog:
+  - Select the ComponentInstance you prepared.
+  - Look at Outliner: the ComponentInstance's definition
+    still contains 2 (or more) SU Edges with the duplicate
+    world coords (NOT removed). The plugin REMOVES derived
+    copies, NOT the source edges.
+  - Ctrl+Z (Undo) once: the derived groups disappear; the
+    ComponentInstance's edges are untouched.
 
-PREPARE:
-  - Create two ComponentInstances of the same
-    ComponentDefinition (4-edge definition).
-  - Select both instances (or all the edges they
-    contain).
-
-AUTO-REPAIR:
-  - Apply the repair. Verify: workspace entity_count
-    is UNCHANGED. The two component instances have
-    DIFFERENT source_occurrence_ids (different
-    persistent_id_path) -- V1.5 Phase 1 MUST NOT
-    merge distinct shared-component occurrences.
-
-  Expected: workspace entity_count unchanged; action
-            is :skipped with reason
-            `source_occurrence_ids_differ`.
-  Capture: pre/post entity count + skipped action count.
+  Expected: derived groups + source edges unchanged.
 
 ======================================================================
-STEP V15-5: MUST NOT REPAIR — Short edge preserved
+STEP V15-2: SHOULD NOT REPAIR — Shared definition, two instances
 ======================================================================
 
-PREPARE:
-  - Create a short edge (length below
-    `tolerance.short_edge`, default 0.5 inches).
-  - No duplicate evidence.
+PREPARE A REAL TEST FIXTURE:
 
-AUTO-REPAIR:
-  - Apply. Verify: workspace entity_count unchanged.
-    V1.5 Phase 1 does NOT auto-delete a short edge
-    merely because its length is below the threshold.
+  1. In your model, place a SECOND ComponentInstance of the
+     same ComponentDefinition. The model now has two instances
+     sharing the same world-coordinate edges.
+  2. Select both instances (or select all and Analyze).
+  3. Plugins > SU-AI-Plugin > Analyze selection.
+  4. CLICK Prepare.
 
-  Expected: no removal; workspace unchanged.
-  Capture: pre/post entity count.
+EXPECTED: The "Duplicate repairs" row in Working Mode reports
+"applied 0, skipped >= 2" (each shared-definition duplicate
+pair is preserved because the two instances have different
+container paths in the SU hierarchy).
 
-======================================================================
-STEP V15-6: MUST NOT REPAIR — Near-but-not-exact duplicate
-======================================================================
+  Expected: NO derived groups removed. The "applied" count is
+            ZERO.
 
-PREPARE:
-  - Create two source edges with endpoints just
-    outside the duplicate tolerance (e.g., 0.001
-    inches apart when tolerance.duplicate = 0.0001).
-
-AUTO-REPAIR:
-  - Apply. Verify: workspace entity_count unchanged.
-    V1.5 Phase 1 does NOT handle approximate /
-    fuzzy duplicates.
-
-  Expected: no removal; workspace unchanged.
-  Capture: pre/post entity count.
+This proves the shared-component isolation rule (master plan §17.2).
 
 ======================================================================
-STEP V15-7: MUST NOT REPAIR — Same world coords, different
-             source_occurrence_ids preserved (provenance gate)
+STEP V15-3: Source fingerprint unchanged across apply
 ======================================================================
 
-PREPARE:
-  - Create two source edges with EXACT same world
-    coordinates but DIFFERENT persistent_id_path
-    (e.g., one in a nested group, one at the root,
-    OR two component instances of the same definition).
+In the same dialog session from V15-1 (or V15-2):
 
-AUTO-REPAIR:
-  - Apply. Verify: workspace entity_count unchanged.
-    The provenance gate (same source_occurrence_id
-    required) prevents removal.
+  - Note the "Source Fingerprint" row in the Working Mode list
+    (the 12-character prefix; the full digest is the title
+    tooltip on hover).
+  - CLICK "Discard". The state becomes "discarded".
+  - CLICK "Rebuild". The state becomes "ready" again.
 
-  Expected: no removal; action :skipped with reason
-            `source_occurrence_ids_differ`.
-  Capture: pre/post entity count.
+EXPECTED:
+  - The "Source Fingerprint" digest is BYTE-IDENTICAL between
+    pre-apply and post-rebuild.
+  - The "Duplicate repairs" row appears with the same applied
+    / skipped counts as the original (deterministic rebuild).
 
-======================================================================
-STEP V15-8: MUST NOT REPAIR — Self-match
-======================================================================
-
-PREPARE:
-  - Force the analyzer to emit a duplicate_pair for
-    the same edge twice (edge_ids = [N, N]).
-
-AUTO-REPAIR:
-  - Apply. Verify: workspace entity_count unchanged.
-    The proposer emits :skipped with reason
-    `duplicate_evidence_self_match`.
-
-  Expected: no removal; action :skipped with
-            duplicate_evidence_self_match basis.
-  Capture: pre/post entity count + skipped action count.
+  Capture the digest BEFORE Discard and AFTER Rebuild; they
+    MUST match.
 
 ======================================================================
-STEP V15-9: MUST NOT REPAIR — Nested transform
+STEP V15-4: Mid-action failure rolls back the whole batch
 ======================================================================
 
-PREPARE:
-  - Create two source edges with the same world
-    coordinates but DIFFERENT persistent_id_path
-    (one nested inside a group, one at the root).
+This step requires Ruby Console access (no GUI operation can
+inject a host failure during the production chain). The
+Owner uses the Console to invoke the exact production chain
+with an injected adapter failure.
 
-AUTO-REPAIR:
-  - Apply. Verify: workspace entity_count unchanged.
-    The nested transform case is preserved.
+PASTE in the Ruby Console (with the dialog open from V15-1):
 
-  Expected: no removal; workspace unchanged.
-  Capture: pre/post entity count.
+    # Capture the controller's current AnalysisResult.
+    ar = $su_ai_plugin_dialog_controller.result
+    # Inject a one-shot host failure into the workspace's
+    # adapter's dispose path.
+    ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
+    ws.instance_variable_get(:@adapter).instance_variable_set(
+      :@next_dispose_should_raise,
+      StandardError.new('v15-gate-injected-failure')
+    )
+    # Re-run the production chain.
+    SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(
+      registry: ar.registry
+    )
 
-======================================================================
-STEP V15-10: APPLY SAFETY — Repeated apply idempotent
-======================================================================
+(If `$next_dispose_should_raise` is not a hook in your installed
+adapter, the Agent has wired a generic one-shot adapter failure
+in `extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb`.
+If the hook name is different, look at the adapter file for the
+current hook name.)
 
-PREPARE + AUTO-REPAIR:
-  - Apply the repair from V15-1 once (workspace -> 1
-    entity).
-  - Apply again with the same plan. Verify: second
-    apply is a no-op (action transitions to :skipped
-    with `already_applied` reason). workspace entity
-    count unchanged.
-
-  Expected: workspace has 1 entity after both applies;
-            second action :skipped.
-  Capture: applied[1].status.
-
-======================================================================
-STEP V15-11: APPLY SAFETY — Mid-action failure rollback
-======================================================================
-
-PREPARE:
-  - Build the V1.5 workspace. Inject a host failure on
-    dispose() (per the V14-8 label-targeted one-shot
-    patch pattern; this is testable via the dialog's
-    failure-injection hook or a Ruby console call).
-
-AUTO-REPAIR:
-  - Apply the repair. Verify: workspace transitions to
-    `:failed` with `last_error` referencing the dispose
-    failure.
-  - Verify: ALL handles are preserved (no partial
-    removal).
-  - Verify: source CAD unchanged.
-
-  Expected: workspace state = :failed; entity count
-            unchanged; source_fingerprint unchanged.
-  Capture: new_ws.state, new_ws.last_error,
-           pre/post source_fingerprint.
+EXPECTED:
+  - The Workspace state becomes "failed" with last_error mentioning
+    "v15-gate-injected-failure".
+  - The "Duplicate repairs" row shows "applied 0, failed 1".
+  - The model's derived groups are UNCHANGED (no partial removal).
 
 ======================================================================
-STEP V15-12: APPLY SAFETY — Discard + rebuild after apply
+STEP V15-5: Discard precise cleanup + source unchanged
 ======================================================================
 
-PREPARE + AUTO-REPAIR:
-  - Apply the repair from V15-1.
-  - Discard. Verify: workspace :discarded, 0 entities.
-  - Rebuild. Verify: rebuilt workspace is :ready with
-    the same survivor derived_id (1 entity).
-  - Verify: source_fingerprint unchanged across the
-    discard + rebuild cycle.
+In the same dialog session:
 
-  Expected: rebuilt workspace matches pre-discard
-            post-apply state; source unchanged.
-  Capture: rebuilt_ws.entities.first.derived_id;
-           pre/post source_fingerprint.
+  - Click "Discard".
+  - Open the model outout.
+  - Verify: zero derived groups with the "SU-AI-Derived-"
+    name prefix exist (Discard disposes every derived handle
+    precisely).
+  - Verify: the source ComponentInstance's edges are UNCHANGED
+    (the source-fingerprint digest in the "Discarded" state
+    matches the pre-Prepare digest).
 
 ======================================================================
-STEP V15-13: APPLY SAFETY — Erased / invalid derived entity
+STEP V15-6: Owner report
 ======================================================================
 
-PREPARE:
-  - Build the V1.5 workspace with 2 derived records.
-  - Manually erase one of the host handles (e.g., via
-    a Ruby console call to `g.erase!` on the underlying
-    FakeGroup / SketchUp::Group).
+After running V15-1 through V15-5, drop a report at
+`Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt` in
+the same format as the V1.4 Owner reports:
 
-AUTO-REPAIR:
-  - Apply. Verify: the erased handle is silently
-    filtered out (no raise); the remaining valid
-    derived record(s) are processed normally.
+  [PASS/FAIL] V15-0: ...
+  [PASS/FAIL] V15-1: ...
+  [PASS/FAIL] V15-2: ...
+  [PASS/FAIL] V15-3: ...
+  [PASS/FAIL] V15-4: ...
+  [PASS/FAIL] V15-5: ...
+  Notes: ...
 
-  Expected: no raise; erased entity skipped silently;
-            workspace still has 1 entity (survivor).
-  Capture: applied status, final entity count.
+If ANY step FAILS, attach:
+  - The exact error message
+  - The Working Mode "Duplicate repairs" row text
+  - The source-fingerprint digest (before + after, if relevant)
 
-======================================================================
-STEP V15-14: APPLY SAFETY — source_fingerprint unchanged
-======================================================================
-
-PREPARE + AUTO-REPAIR:
-  - Capture source_fingerprint BEFORE apply.
-  - Apply the V15-1 repair.
-  - Capture source_fingerprint AFTER apply.
-  - Verify: digests are identical.
-
-  Expected: source_fingerprint.digest unchanged.
-  Capture: pre/post source_fingerprint.digest.
-
-======================================================================
-WORKING MODE UI SUMMARY (V1.5 §6 step 6)
-======================================================================
-
-After running any of the V15-1..V15-N steps that result
-in a duplicate_repair summary being recorded:
-
-  - Open the "Working Mode (V1.4)" details block.
-  - Verify: a "Duplicate repairs" row appears with
-    text "Duplicate repairs: applied N, skipped M"
-    where N and M are integers from the summary.
-  - Verify: the row uses textContent (no innerHTML;
-    right-click "Inspect" should show .textContent).
-  - Verify: row carries `data-state="<current state>"`
-    (e.g., "ready" for an active workspace, "none"
-    after Discard).
-
-======================================================================
-END OF V1.5 PHASE 1 OWNER CHECKLIST
-======================================================================
-
-When all V15-1..V15-14 steps + UI summary are PASS:
-
-  1. Drop a report at
-     Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
-     in the same format as the V1.4 Owner reports:
-       [PASS/FAIL] V15-1: ...
-       [PASS/FAIL] V15-2: ...
-       ...
-       [PASS/FAIL] V15-14: ...
-       [PASS/FAIL] UI summary: ...
-  2. Note any deviation from the expected behavior
-     (the test suite at
-     tests/test_v15_duplicate_repair.rb pins the
-     contract; deviation = a real SU2020 finding).
-  3. Do NOT modify the production code or the test
-     suite yourself -- the Agent will iterate on any
-     Owner-found finding.
+The Agent will iterate on any Owner-found finding. Do NOT
+modify production code or tests yourself.
 
 ======================================================================
 SCOPE LIMITS (V1.5 Phase 1 does NOT include)
 ======================================================================
 
-The following are explicitly OUT OF SCOPE for V1.5
-Phase 1. Do NOT flag them as gaps:
+The following are explicitly OUT OF SCOPE for V1.5 Phase 1.
+Do NOT flag them as gaps:
 
-  - Short edge removal (later V1.5.x)
-  - Face duplicate removal (later V1.5.x)
-  - Gap closure, weld, flatten, planar normalization
-    (V1.6+)
-  - Loop / region reconstruction (V1.8)
-  - Site / road / AI / MCP / V2 (forbidden)
-
-======================================================================
-NON-V1.5 OWNER CHECKLIST (do not re-run)
-======================================================================
-
-The V1.0-V1.4 Owner Gate 2 tests already PASSED and
-are NOT part of this V1.5 verification:
-
-  - V14-1..V14-10 (real SU2020 V1.4 narrow test)
-  - V13-1..V13-6 (V1.3 face inventory on SU2020)
-  - V12-1..V12-7 (V1.2 issues by layer on SU2020)
-  - V11-1..V11-9 (V1.1 layers on SU2020)
-
-Owner has explicit permission to skip these in the
-V1.5 report (CodeX verdict + 2026-08-25 Owner dispatch
-explicitly closed V1.4; do NOT re-run).
+  - Short edge removal (later V1.5.x).
+  - Face duplicate removal (later V1.5.x).
+  - Gap closure, weld, flatten, planar normalization (V1.6+).
+  - Loop / region reconstruction (V1.8).
+  - Site / road / AI / MCP / V2 (forbidden).
 
 ======================================================================
 end of file

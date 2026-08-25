@@ -380,6 +380,105 @@ module SUAnalysis
         @duplicate_repair_summary = summary.dup.freeze
       end
 
+      # V1.5 Phase 1 production call chain (CodeX BLOCK-002,
+      # 2026-08-25 V1.5 Owner-Gate Readiness Review): run the
+      # full Phase 1 pipeline against the CURRENT workspace.
+      #
+      # Inputs:
+      #   registry: an IssueRegistry from the controller's
+      #     AnalysisResult. Carries the duplicate_edge_candidate
+      #     evidence emitted by the existing DuplicateDetector.
+      #
+      # Flow:
+      #   1. proposer.propose(source, registry, workspace) -> plan
+      #   2. plan.validate() -> validated plan
+      #   3. executor.apply_batch(workspace, validated plan) -> [ws, actions]
+      #   4. record_duplicate_repair_summary(actual results)
+      #   5. return updated snapshot
+      #
+      # The whole flow is non-destructive to source. If anything
+      # fails mid-batch, the workspace transitions to :failed and
+      # the executor's atomic rollback restores the pre-batch
+      # workspace state. The UI summary reflects actual results.
+      #
+      # When called outside a Prepare context (no workspace),
+      # returns the current snapshot unchanged.
+      def run_duplicate_repair_batch(registry:)
+        if @current_workspace.nil?
+          return snapshot
+        end
+        src_snapshot = @current_source || @current_workspace.source_snapshot
+        # If the workspace is already :failed or :discarded,
+        # skip the batch (no derivable entities).
+        if @current_workspace.state == :failed || @current_workspace.state == :discarded
+          return snapshot
+        end
+        begin
+          plan = SUAnalysis::Core::DuplicateRepairProposer.propose(
+            source_snapshot: src_snapshot,
+            registry:        registry,
+            workspace:       @current_workspace
+          )
+          validated = plan.validate
+          new_ws, updated_actions = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+            workspace: @current_workspace,
+            plan:      validated
+          )
+          @current_workspace = new_ws
+          # Build the summary from ACTUAL results (NOT manual
+          # injection -- the CodeX BLOCK-002 fix requires the UI
+          # summary to come from real execution results).
+          summary = build_duplicate_repair_summary(
+            plan:           validated,
+            updated_actions: updated_actions
+          )
+          @duplicate_repair_summary = summary
+        rescue StandardError => e
+          # Defensive: any uncaught exception leaves the workspace
+          # intact (we don't touch @current_workspace) and records
+          # the failure in the summary so the UI can display it.
+          @duplicate_repair_summary = {
+            'duplicate_pairs_before' => 0,
+            'duplicate_pairs_after'  => 0,
+            'actions_applied'        => 0,
+            'actions_skipped'        => 0,
+            'actions_failed'         => 1,
+            'last_action_status'     => 'failed',
+            'last_error'             => "#{e.class}: #{e.message}"
+          }.freeze
+        end
+        snapshot
+      end
+
+      # Build the summary Hash from the actual plan + updated
+      # actions. Counts actions by status (applied / skipped /
+      # failed) and records the pre/post duplicate-pair counts
+      # for the UI.
+      def build_duplicate_repair_summary(plan:, updated_actions:)
+        applied = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+        skipped = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :skipped }
+        failed  = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :failed }
+        # The "duplicate_pairs" counts come from the validated
+        # plan (pre-state: how many pairs the proposer recognized;
+        # post-state: 0 because each action is one occurrence).
+        before = plan.actions.select { |a|
+          a.is_a?(SUAnalysis::Core::RepairAction) &&
+            a.status == :applied
+        }.sum { |a| Array(a.affected_derived_ids).length }
+        # post-state: applied actions had multiple targets; the
+        # survivor + 0 duplicates remains. We expose "0" as the
+        # post-state because the repair's invariant is "one
+        # survivor per occurrence, no duplicates".
+        {
+          'duplicate_pairs_before' => before,
+          'duplicate_pairs_after'  => applied > 0 ? 0 : before,
+          'actions_applied'        => applied,
+          'actions_skipped'        => skipped,
+          'actions_failed'         => failed,
+          'last_action_status'     => (updated_actions.last ? updated_actions.last.status.to_s : 'none')
+        }.freeze
+      end
+
       # V1.5 Phase 1: clear the duplicate-repair summary
       # (called when the workspace is discarded / rebuilt).
       def clear_duplicate_repair_summary

@@ -21,6 +21,68 @@
 #     (Array<String>; one entry per non-survivor)
 #   - source_occurrence_ids = [one occurrence_id (the dedup target)]
 #
+# ================================================================
+# PROVENANCE SEMANTICS (per CodeX V1.5 BLOCK-003 recheck, 2026-08-25)
+# ================================================================
+#
+# What "same source occurrence" means in production:
+#
+#   The PreflightRunner walks the user's selection tree. For
+#   every SU Edge entity it encounters, it appends the parent
+#   container's persistent_id (Group / ComponentInstance) to
+#   the path and yields ONE EdgeRecord with:
+#     - source.persistent_id       = leaf Edge entity's PID
+#     - source.persistent_id_path  = CONTAINER path WITHOUT leaf
+#                                    (Array<Integer>; [] for root)
+#
+#   occurrence_id_for(edge) computes:
+#     "occ-<container_pid_path_joined_by_'>"
+#
+#   So two EdgeRecord instances from the SAME parent component
+#   instance (same container chain) have the SAME occurrence_id.
+#   This corresponds to the realistic case where a CAD import
+#   accidentally produced two SU Edges with identical world
+#   endpoints INSIDE THE SAME component definition (a ComponentInstance
+#   whose definition contains duplicate edges).
+#
+# What "same source occurrence" does NOT mean:
+#
+#   - Same leaf Edge PID (different EdgeRecord.id from the same
+#     SU Edge): such pairs come from overlap-selected scopes
+#     (user selects an outer group AND its inner group); the
+#     two visits have DIFFERENT container paths even though the
+#     underlying SU Edge is the same. V1.5 Phase 1 deliberately
+#     does NOT merge these -- they represent two different
+#     analysis visits, not a CAD import duplicate.
+#   - Two SU Edges from two ComponentInstances of the SAME
+#     ComponentDefinition: each instance has its own
+#     instance.persistent_id, so the container paths differ
+#     even though the world coordinates are identical. V1.5
+#     Phase 1 deliberately does NOT merge these (master plan
+#     §17.2: shared-component-definition instances are
+#     physically separate geometry).
+#
+# Real-SketchUp constructible should-repair scenario:
+#
+#   1. Create a ComponentDefinition (4 edges, where 2 of them
+#      share world endpoints).
+#   2. Place a ComponentInstance of that definition in the model.
+#   3. Select the instance.
+#   4. Analyze selection -> the snapshot contains TWO EdgeRecords
+#      for the 2 overlapping edges (BOTH with persistent_id_path
+#      = [<instance_pid>]).
+#   5. DuplicateDetector emits a `duplicate_edge_candidate` pair.
+#   6. Proposer sees SAME occurrence_id -> emits one action.
+#   7. Executor removes 1 -> workspace has 3 derived records.
+#
+# Real-SketchUp constructible must-not-repair scenarios:
+#
+#   A. Two ComponentInstances of the same definition (different
+#      instance.persistent_id -> different container paths): the
+#      proposer emits :skipped with reason `source_occurrence_ids_differ`.
+#   B. Edges at world-coords with no relationship (random
+#      coincidence): same as A, different paths, skipped.
+#
 # Hard rules:
 #   - NEVER auto-delete a short edge merely because its length is
 #     below short_edge threshold. A "short edge" is NOT sufficient

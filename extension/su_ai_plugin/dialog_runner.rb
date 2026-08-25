@@ -144,6 +144,22 @@ module SUAnalysis
             adapter: _adapter_for(_host_safety_check: true),
             model:   _resolve_model_for(controller)
           )
+          # V1.5 Phase 1 production call chain (CodeX BLOCK-002,
+          # 2026-08-25): after Prepare builds the workspace, run
+          # the duplicate-repair batch against the IssueRegistry
+          # carried by the controller's AnalysisResult. The
+          # IssueRegistry already contains the existing
+          # duplicate_edge_candidate evidence from the
+          # DuplicateDetector (no new analyzer). The batch is
+          # atomic -- mid-batch failure rolls back the whole
+          # batch via the adapter's end_operation(commit: false).
+          ar = controller.result if controller
+          registry = (ar && ar.respond_to?(:registry)) ? ar.registry : nil
+          if registry
+            SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(
+              registry: registry
+            )
+          end
         end
       end
 
@@ -162,6 +178,19 @@ module SUAnalysis
             next
           end
           SUAnalysis::Core::WorkingModeRunner.rebuild
+          # V1.5 Phase 1 production call chain (CodeX BLOCK-002):
+          # Rebuild must RE-RUN the duplicate-repair batch with
+          # the SAME captured IssueRegistry (deterministic
+          # rebuild per master plan §19.1). The registry is
+          # rebuilt from the same source, so the post-rebuild
+          # post-state matches the prior post-repair state.
+          ar = controller.result if controller
+          registry = (ar && ar.respond_to?(:registry)) ? ar.registry : nil
+          if registry
+            SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(
+              registry: registry
+            )
+          end
         end
       end
 

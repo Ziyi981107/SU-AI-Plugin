@@ -246,6 +246,191 @@ module SUAnalysis
         )
       end
 
+      # Apply a RepairPlan as an atomic batch against the workspace.
+      # Per CodeX V1.5 BLOCK-005 (2026-08-25): the entire batch
+      # MUST be transactional. If any action in the batch fails,
+      # ALL prior successful dispose() calls must be rolled back
+      # (achieved by calling `adapter.end_operation(commit: false)`,
+      # which makes real SketchUp undo every entity write inside
+      # the batch's operation).
+      #
+      # Inputs:
+      #   workspace: a DerivedGeometryWorkspace (read; not mutated).
+      #   plan:      a validated RepairPlan (status :validated).
+      #
+      # Returns: [updated_workspace, [updated_actions...]]
+      #   - On full success: workspace is :ready (or :discarded if
+      #     the batch removed ALL entities); every action is
+      #     transitioned to :applied.
+      #   - On no valid action: workspace unchanged; every action
+      #     is :skipped (idempotent no-op).
+      #   - On mid-batch failure: workspace transitions to :failed
+      #     with last_error set; NO partial removal (all prior
+      #     disposes are rolled back via end_operation(commit: false));
+      #     every action is :failed.
+      def apply_batch(workspace:, plan:)
+        return [workspace, []] if workspace.nil?
+        return [workspace, []] if plan.nil?
+        actions = Array(plan.actions)
+        # Filter to only the runnable actions.
+        runnable = actions.select do |a|
+          a.is_a?(RepairAction) &&
+            a.type == :remove_duplicate_edge &&
+            [:validated, :proposed].include?(a.status)
+        end
+        if runnable.empty?
+          # Idempotent: nothing to apply.
+          return [workspace, []]
+        end
+        # Check idempotency at the BATCH level: if every action's
+        # affected_derived_ids are already gone, this is a no-op.
+        all_gone = runnable.all? do |a|
+          Array(a.affected_derived_ids).all? { |id| workspace.handle_for(id).nil? }
+        end
+        if all_gone
+          updated = runnable.map { |a| skip_action(a, reason: 'already_applied') }
+          return [workspace, updated]
+        end
+        # Atomic batch apply.
+        apply_batch_atomic(workspace: workspace, runnable: runnable)
+      end
+
+      # ---- internals ----------------------------------------------------
+
+      # Batch atomic implementation.
+      # Opens ONE SU operation, processes every action in sequence,
+      # aborts the operation on first failure.
+      def apply_batch_atomic(workspace:, runnable:)
+        adapter = workspace.instance_variable_get(:@adapter)
+        model   = workspace.instance_variable_get(:@model)
+        # Collect (action, to_remove_ids, present_ids, invalid_ids)
+        # for every action BEFORE opening the operation (atomic
+        # pre-flight).
+        per_action = runnable.map do |act|
+          to_remove = Array(act.affected_derived_ids).map(&:to_s).uniq
+          invalid_ids = to_remove.select { |id| h = workspace.handle_for(id); h.respond_to?(:valid?) ? !h.valid? : false }
+          present_ids = to_remove.reject do |id|
+            h = workspace.handle_for(id)
+            h.nil? || (h.respond_to?(:valid?) && !h.valid?)
+          end
+          [act, to_remove, present_ids, invalid_ids]
+        end
+        # Open the operation.
+        begin
+          adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.5 Duplicate Repair Batch')
+        rescue StandardError => e
+          # Could not open the operation. The workspace stays
+          # unchanged; every action is :failed.
+          updated = runnable.map do |a, _t, _p, _inv|
+            fail_action(a, reason: "begin_operation_failed: #{e.class}: #{e.message}",
+                            affected_derived_ids: Array(a.affected_derived_ids))
+          end
+          return [workspace, updated]
+        end
+        # Process each action sequentially inside the open
+        # operation. If ANY dispose fails, abort the operation
+        # and roll back the whole batch.
+        all_present_ids = []
+        action_errors   = []
+        per_action.each_with_index do |(act, _to_remove, present_ids, invalid_ids), idx|
+          present_ids.each do |id|
+            handle = workspace.handle_for(id)
+            begin
+              adapter.dispose(handle)
+              all_present_ids << id
+            rescue StandardError => e
+              action_errors << "action #{idx} (#{act.action_id}) #{id.inspect}: #{e.class}: #{e.message}"
+              # Stop processing further actions in this batch.
+              break
+            end
+          end
+          break unless action_errors.empty?
+        end
+        if action_errors.empty?
+          # All disposes succeeded -> commit the operation.
+          begin
+            adapter.end_operation(model, commit: true)
+          rescue StandardError => e
+            begin
+              adapter.end_operation(model, commit: false)
+            rescue StandardError
+            end
+            # Commit failed -> roll back to :failed workspace.
+            new_ws = rollback_to_failed(pre_ws: workspace, model: model,
+                                          reason: "commit_operation_failed: #{e.class}: #{e.message}")
+            updated = runnable.map do |a, _t, _p, _inv|
+              fail_action(a, reason: "commit_operation_failed: #{e.class}: #{e.message}",
+                              affected_derived_ids: all_present_ids & Array(a.affected_derived_ids))
+            end
+            return [new_ws, updated]
+          end
+          # Build the post-state workspace: every action's
+          # affected_derived_ids are removed.
+          total_removed = all_present_ids.uniq
+          # Add silently-removed invalid ids too (idempotency).
+          per_action.each { |_a, _t, _p, inv| total_removed.concat(inv) if inv.is_a?(Array) }
+          total_removed = total_removed.uniq
+          new_ws = build_post_workspace_batch(workspace: workspace, model: model,
+                                                 removed_ids: total_removed)
+          # Build updated actions: every action transitions to
+          # :applied with its own affected_derived_ids (might be
+          # empty for actions whose targets were all invalid).
+          updated = per_action.map do |act, _to_remove, present_ids, invalid_ids|
+            transition_action(act, to: :applied,
+                                source_occurrence_ids: act.source_occurrence_ids,
+                                affected_derived_ids: (present_ids + invalid_ids).uniq)
+          end
+          [new_ws, updated]
+        else
+          # Some disposes failed. Abort the operation (real SU
+          # rolls back every entity write inside the operation,
+          # which includes all the prior dispose() calls in this
+          # batch).
+          begin
+            adapter.end_operation(model, commit: false)
+          rescue StandardError
+          end
+          new_ws = rollback_to_failed(pre_ws: workspace, model: model,
+                                        reason: "batch_dispense_failed: #{action_errors.join('; ')}")
+          updated = per_action.map do |act, _t, present_ids, invalid_ids|
+            fail_action(act, reason: "batch_dispense_failed: #{action_errors.join('; ')}",
+                            affected_derived_ids: (present_ids - invalid_ids).uniq)
+          end
+          [new_ws, updated]
+        end
+      end
+
+      # Build a new workspace with the given derived_ids removed.
+      # Like build_post_workspace but takes the full union of
+      # removed_ids across all actions in the batch.
+      def build_post_workspace_batch(workspace:, model:, removed_ids:)
+        adapter = workspace.instance_variable_get(:@adapter)
+        src     = workspace.source_snapshot
+        removed_set = removed_ids.map(&:to_s).to_set rescue removed_ids.map(&:to_s).uniq
+        # to_set is Ruby 2.7+; fall back to manual uniq.
+        removed_set = removed_ids.map(&:to_s).uniq
+        kept_pairs = workspace.instance_variable_get(:@entity_pairs).reject do |id, _rec|
+          removed_set.include?(id.to_s)
+        end
+        kept_handles = workspace.instance_variable_get(:@handle_registry).reject do |id, _h|
+          removed_set.include?(id.to_s)
+        end.freeze
+        new_fp = workspace.send(:compute_fingerprint_from_pairs, kept_pairs)
+        new_state = kept_pairs.empty? ? :discarded : :ready
+        DerivedGeometryWorkspace.new_with_inventory(
+          workspace_id:    workspace.workspace_id,
+          source_snapshot: src,
+          adapter:         adapter,
+          model:           model,
+          state:           new_state,
+          entity_pairs:    kept_pairs,
+          handle_registry: kept_handles,
+          fingerprint:     new_fp,
+          last_error:      nil,
+          build_started_at: workspace.build_started_at
+        )
+      end
+
       # Transition an action to :applied (success).
       def transition_action(action, to:, source_occurrence_ids:, affected_derived_ids:)
         return action unless action.is_a?(RepairAction)

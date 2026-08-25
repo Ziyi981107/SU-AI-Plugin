@@ -42,50 +42,94 @@ Auto-test baseline at V1.4 close:
   Node DOM: 148/148 PASS
   RBZ smoke: 8/8 PASS
 
-## V1.5 Phase 1 — IMPLEMENTATION COMPLETE, Owner Gate pending (2026-08-25)
+## V1.5 Phase 1 — CodeX BLOCK-001/002/003/004/005 RECHECK, Owner Gate pending (2026-08-25)
 
-CodeX + Owner greenlit V1.5 Phase 1 on 2026-08-25.
-The vertical slice is locked to:
-  "In the DerivedGeometryWorkspace, auto-apply ONLY exact-duplicate
-   and reversed-exact-duplicate edge occurrences, with full
-   provenance, audit, and rollback. Do nothing else."
+CodeX V1.5 Phase 1 Owner-Gate Readiness Review VERDICT (2026-08-25):
+  REVIEW MODE: V1.5 PHASE 1 STAGE / OWNER-GATE READINESS
+  VERDICT:     BLOCKED
+  BLOCKS:      BLOCK-001 (production load wiring missing)
+              BLOCK-002 (auto-repair not in production call chain)
+              BLOCK-003 (provenance condition makes real product path unreachable)
+              BLOCK-004 (Owner checklist not executable)
+              BLOCK-005 (batch atomicity must be fixed)
 
-Implementation:
-- Branch: v1.5-high-confidence-auto-repair (cut from HEAD a7cedb4)
-- Implementation commits:
+Recheck fix in progress. Implementation:
+- Branch: v1.5-high-confidence-auto-repair (cut from V1.4 closeout a7cedb4)
+- Implementation commits (pre-recheck):
     dbd8cd4  high-confidence duplicate-edge auto-repair vertical slice
     a9a88c5  minimal Working Mode UI summary for duplicate repairs
-- New files:
-    extension/su_ai_plugin/core/duplicate_repair_proposer.rb
-    extension/su_ai_plugin/core/duplicate_repair_executor.rb
-    tests/test_v15_duplicate_repair.rb
-- Modified:
-    extension/su_ai_plugin/core/working_mode_runner.rb
-        (added record_duplicate_repair_summary + snapshot key)
-    extension/su_ai_plugin/html/app.js
-        (Duplicate repairs row in Working Mode summary)
-- Test evidence:
-    Ruby:        677/677 PASS (was 656/656; +21 V1.5 Phase 1)
-    Node DOM:    154/154 PASS (was 148/148; +6 V1.5 assertions)
+    215152a  Owner verification packet + implementation report + state update
+- Recheck fix (this commit):
+    BLOCK-001: extension/su_ai_plugin/main.rb boot! now requires
+      core/duplicate_repair_proposer + core/duplicate_repair_executor
+      (production load chain).
+    BLOCK-002: dialog_runner on_prepare_workspace + on_rebuild_workspace
+      now invoke WorkingModeRunner.run_duplicate_repair_batch(registry:)
+      automatically after Prepare/Rebuild. The UI summary comes from
+      REAL execution results, NOT manual record_duplicate_repair_summary.
+    BLOCK-003: proposer.rb header now documents the EXACT
+      provenance semantics ("same source occurrence" = same CONTAINER
+      path, NOT including leaf edge PID). Real-SU2020 constructible
+      scenario is documented (CAD-import duplicate edges within
+      one ComponentDefinition). Tests V15PC-005/006/007 pin the
+      shared-definition isolation, real-SU should-repair, and
+      same-coords-different-provenance preservation.
+    BLOCK-004: Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+      REWRITTEN to use ONLY real SketchUp 2020 operations:
+      - Step V15-0: paste-load the entry-point from the installed
+        Plugins folder and verify both modules are defined.
+      - Step V15-1: GUI clicks Prepare + read Working Mode
+        "Duplicate repairs" row.
+      - Step V15-2: Two shared-definition instances -- expect
+        applied=0, skipped>=2.
+      - Step V15-3: Discard + Rebuild -- source fingerprint
+        byte-identical.
+      - Step V15-4: Mid-action failure (Ruby Console inject) --
+        entire batch rolls back, applied=0, failed=1.
+      - Step V15-5: Discard -- zero derived groups remain,
+        source unchanged.
+    BLOCK-005: DuplicateRepairExecutor.apply_batch(workspace, plan)
+      opens ONE SU operation for the whole batch, processes every
+      action sequentially, aborts (commit: false) on first dispose
+      failure to roll back ALL prior dispose calls. WorkingModeRunner
+      calls apply_batch on the entire RepairPlan (per-occurrence
+      actions, deterministic order).
+
+- New files (recheck):
+    tests/test_v15_production_call_chain.rb (10 tests):
+      V15PC-001 main.rb boot loads proposer + executor (BLOCK-001)
+      V15PC-002 extracted RBZ entry-point loads proposer + executor
+      V15PC-003 run_duplicate_repair_batch runs proposer + executor
+      V15PC-004 no eligible actions -> ready + applied=0
+      V15PC-005 real-SketchUp constructible should-repair
+      V15PC-006 shared-definition two instances NOT merged
+      V15PC-007 same-world-coords-different-provenance preserved
+      V15PC-008 batch atomicity (N-th failure rolls back all)
+      V15PC-009 rebuild replay -> same post-state
+      V15PC-010 discard -> source unchanged
+
+Test evidence (recheck):
+    Ruby:        695/695 PASS (was 677/677; +18 V15PC + DANGER 7a fix)
+    Node DOM:    154/154 PASS (unchanged)
     RBZ smoke:    8/8 PASS
     git diff --check: clean
     working tree: clean
 
-Reports:
-  - Review/V1_5_PHASE1_IMPLEMENTATION_REPORT_2026-08-25.md
-  - Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
-    (V15-1..V15-14 Owner verification on real SK 2020; PENDING)
-
-Final V1.5 Phase 1 RBZ:
+Final V1.5 Phase 1 RBZ (to be rebuilt after recheck commit):
   Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
-  Size:    479,023 bytes
-  Entries: 55
+  Size:    ~480 KB
 
-STOP at Owner Gate. The next move is:
-  - Owner runs V15-1..V15-14 on real SketchUp 2020.
+Reports (recheck):
+  - Review/V15_OWNER_GATE_BLOCK_RECHECK_PACKET_2026-08-25.md
+    (BLOCK-001..005 fix evidence + recheck instructions)
+  - Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+    (REWRITTEN -- real SU2020 only steps)
+
+STOP. The next move is:
+  - CodeX re-reviews BLOCK-001..005 ONLY (no Phase 2, no widening).
+  - On PASS, Owner runs the rewritten checklist on real SU2020.
   - Owner drops Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
-  - Do NOT enter V1.5 Phase 2 / V1.6 / V1.7 / V1.8 / V1.9 ahead
-    of CodeX + Owner re-verdict.
+  - DO NOT install current RBZ (215152a) -- wait the recheck commit.
 
 ## V14-RUNTIME-BLOCK-005 (2026-08-24) — material collection compatibility fixed
 

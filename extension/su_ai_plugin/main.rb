@@ -49,6 +49,14 @@ module SUAnalysis
         require_relative 'core/issue_grouper'
         require_relative 'core/issue_locator_policy'
         require_relative 'core/analysis_result'
+        # V1.5 Phase 1 (per V1.5 plan §6 IMPLEMENTATION ORDER
+        # step 2 + 3): the proposer and executor modules MUST
+        # be loaded by the production boot chain so the dialog's
+        # Prepare callback can reach them. Loading them only from
+        # tests is NOT a substitute for production loading (CodeX
+        # BLOCK-001, 2026-08-25 V1.5 Owner-Gate Readiness Review).
+        require_relative 'core/duplicate_repair_proposer'
+        require_relative 'core/duplicate_repair_executor'
         require_relative 'analyzers_runner'
         require_relative 'issue_locator'
         require_relative 'display_unit_formatter'
