@@ -1446,6 +1446,101 @@ assert('V14-RUNTIME-BLOCK-001 source guard: addAction MUST NOT use window.SUAIP[
 assert('V14-RUNTIME-BLOCK-001 source guard: addAction MUST NOT use eval',
        addActionBody.indexOf('eval(') < 0);
 
+// =================================================================
+// V15 Phase 1: Duplicate repairs row in Working Mode summary
+// =================================================================
+// Per V1.5 Phase 1 plan §6 step 6: minimal Working Mode UI
+// summary addition. When derivedWorkspace.duplicate_repair is
+// present (and has actions_applied / actions_skipped integers),
+// a single labelled 'Duplicate repairs' row is rendered.
+
+renderWithPayload({
+  selectionLabel: 'wm-v15-ready', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v15-snap',
+    source_fingerprint_digest: 'aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v15cfg',
+    workspace_id: 'ws-v15-001',
+    duplicate_repair: {
+      duplicate_pairs_before: 2,
+      duplicate_pairs_after: 0,
+      actions_applied: 2,
+      actions_skipped: 0,
+      last_action_status: 'applied'
+    }
+  }
+});
+var v15ReadyList = mockElements['working-mode-list'];
+assert('V15: ready state with duplicate_repair renders a "Duplicate repairs" row',
+       v15ReadyList && v15ReadyList.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+                c.textContent.indexOf('applied 2') !== -1;
+       }));
+assert('V15: ready state duplicate_repair row uses data-state="ready"',
+       v15ReadyList && v15ReadyList.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+                c.attrs['data-state'] === 'ready';
+       }));
+assert('V15: ready state duplicate_repair row uses textContent (no innerHTML)',
+       v15ReadyList && v15ReadyList.children.every(function (c) {
+         return c.textContent.indexOf('[object Object]') === -1;
+       }));
+
+// In 'none' state with a recorded duplicate_repair summary
+// (audit trail survives Discard), the row still appears.
+renderWithPayload({
+  selectionLabel: 'wm-v15-discarded', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'none',
+    duplicate_repair: {
+      duplicate_pairs_before: 1,
+      duplicate_pairs_after: 0,
+      actions_applied: 1,
+      actions_skipped: 0,
+      last_action_status: 'applied'
+    }
+  }
+});
+var v15NoneList = mockElements['working-mode-list'];
+assert('V15: none state with duplicate_repair renders a "Duplicate repairs" row',
+       v15NoneList && v15NoneList.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+                c.textContent.indexOf('applied 1') !== -1;
+       }));
+
+// Without duplicate_repair, no Duplicate repairs row.
+renderWithPayload({
+  selectionLabel: 'wm-v15-no-dr', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: { state: 'none' }
+});
+var v15NoDrList = mockElements['working-mode-list'];
+assert('V15: no duplicate_repair -> no "Duplicate repairs" row',
+       v15NoDrList && !v15NoDrList.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1;
+       }));
+
+// Source guard: renderWorkingMode MUST NOT use innerHTML for
+// the duplicate_repair row (textContent only contract).
+var v15SrcMatch = appJsSrc.match(/function\s+renderWorkingMode\s*\([\s\S]*?\n  \}/);
+var v15SrcBody = v15SrcMatch ? v15SrcMatch[0] : appJsSrc;
+assert('V15 source guard: renderWorkingMode does NOT use .innerHTML',
+       v15SrcBody.indexOf('.innerHTML') === -1);
+assert('V15 source guard: renderWorkingMode uses .textContent',
+       v15SrcBody.indexOf('.textContent') >= 0);
+
 // --- final verdict -----------------------------------------------------
 
 var failed = results.filter(function (r) { return !r.pass; });

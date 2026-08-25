@@ -489,6 +489,18 @@
     // Per-state rows.
     if (state === 'none') {
       addRow(listEl, 'none', null, null, 'No working copy yet. Click Prepare to create one from the current selection snapshot.');
+      // V1.5 Phase 1: when a duplicate_repair summary has been
+      // recorded (even on a discarded workspace), surface it as
+      // a single 'Duplicate repairs' row so the user can see
+      // the audit trail after Discard.
+      if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
+        var dr = ws.duplicate_repair;
+        var label = 'Duplicate repairs: applied ' +
+                    (typeof dr.actions_applied === 'number' ? dr.actions_applied : 0) +
+                    ', skipped ' +
+                    (typeof dr.actions_skipped === 'number' ? dr.actions_skipped : 0);
+        addRow(listEl, 'none', 'Duplicate repairs', label, label);
+      }
       // Prepare button enabled.
       addAction(actionsEl, 'Prepare', 'prepare_workspace', true);
     } else {
@@ -505,6 +517,16 @@
         addRow(listEl, state, 'Execution Config',
                ws.execution_config_digest.substring(0, 12) + '\u2026',
                ws.execution_config_digest);
+      }
+      // V1.5 Phase 1: surface the duplicate_repair summary as a
+      // single labelled 'Duplicate repairs' row when present.
+      if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
+        var dr2 = ws.duplicate_repair;
+        var label2 = 'Duplicate repairs: applied ' +
+                     (typeof dr2.actions_applied === 'number' ? dr2.actions_applied : 0) +
+                     ', skipped ' +
+                     (typeof dr2.actions_skipped === 'number' ? dr2.actions_skipped : 0);
+        addRow(listEl, state, 'Duplicate repairs', label2, label2);
       }
       if (state === 'failed' && ws.last_error) {
         addRow(listEl, 'failed', 'Last Error', ws.last_error, ws.last_error);
