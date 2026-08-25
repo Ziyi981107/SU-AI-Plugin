@@ -1,5 +1,67 @@
 # CURRENT STATE
 
+## V1.4 Stage Review — OFFICIALLY CLOSED (2026-08-24, CodeX VERDICT: PASS, 0 BLOCKs)
+
+Real SU2020 narrow test V14-9 re-run on the post-BLOCK-005 RBZ PASSED:
+- Prepare normally produced 4 derived entities
+- Ctrl+Z once -> derived entities = 0, SOURCE_OK=true
+- Undo + Rebuild -> 4 derived entities back
+- Mid-build failure injection correctly entered :failed
+- Mid-build failure left NO partial derived entities and the source
+  was unchanged
+- One-shot failure patch auto-recovered
+- Rebuild/Retry successfully recovered
+- Final Discard -> derived entities = 0, source unchanged
+
+CodeX V1.4 Stage Review VERDICT (2026-08-24):
+  REVIEW MODE: V1.4 BLOCK RECHECK / STAGE CLOSE
+  VERDICT: PASS
+  BLOCKS: NONE
+
+As a result:
+  - V14-RUNTIME-BLOCK-004 closed
+  - V14-RUNTIME-BLOCK-005 closed
+  - V1.4 Stage Review formally PASSED
+  - V1.5 Phase 1 Gate 1 / Gate 2 / Gate 3 all satisfied
+  - V1.5 Phase 1 EXPLICITLY GREENLIT by CodeX + Owner
+
+Final V1.4 state:
+  Branch:    v1.4-derived-workspace (closeout)
+  HEAD:      92be2cb  (fix SketchUp::Materials compatibility)
+  Prev HEAD: 875333d  (V14-RUNTIME-BLOCK-004 safe host logging)
+  Working tree: clean
+
+Final V1.4 RBZ:
+  Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:    443,553 bytes
+  Entries: 53
+  SHA256:  4708569BEF45AF7C66945A78DA700CB61B73368BE09EC12D0F8CB0010E669705
+
+Auto-test baseline at V1.4 close:
+  Ruby:    656/656 PASS
+  Node DOM: 148/148 PASS
+  RBZ smoke: 8/8 PASS
+
+## V1.5 Phase 1 — PENDING START (CodeX + Owner greenlit)
+
+CodeX + Owner have explicitly greenlit V1.5 Phase 1 in the
+2026-08-25 Owner dispatch:
+- V1.5 plan: Review/V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md
+- V1.5 Pi Task: Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt
+
+Vertical slice (the ONLY allowed slice):
+  "In the DerivedGeometryWorkspace, auto-apply ONLY exact-duplicate
+   and reversed-exact-duplicate edge occurrences, with full
+   provenance, audit, and rollback. Do nothing else."
+
+Per V1.5 plan §6 IMPLEMENTATION ORDER.
+
+NEXT ACTION (this session):
+  - Create V1.4 closeout commit on v1.4-derived-workspace.
+  - Branch from HEAD into v1.5-high-confidence-auto-repair.
+  - Implement V1.5 Phase 1 per the plan.
+  - Stop at Owner Gate boundary.
+
 ## V14-RUNTIME-BLOCK-005 (2026-08-24) — material collection compatibility fixed
 
 The first clean V14-9 retry surfaced the original host error after BLOCK-004
@@ -10,8 +72,6 @@ Evidence: SourceFingerprint 7/7; full Ruby 656/656; Node DOM 148/148; RBZ
 smoke 8/8. New RBZ is 443,553 bytes, 53 entries, SHA256
 `4708569bef45af7c66945a78da700cb61b73368be09ec12d0f8cb0010e669705`.
 Review packet: `Review/V14_RUNTIME_BLOCK_005_FIX_PACKET_2026-08-24.md`.
-
-Next: install the new RBZ and retry the real SU2020 V14-9 narrow test.
 
 ## V14-RUNTIME-BLOCK-004 (2026-08-24) — implementation + automated verification complete
 
@@ -35,24 +95,22 @@ Evidence:
 Next gate: CodeX narrow recheck, then install this RBZ and rerun only the
 real SU2020 V14-9 narrow flow. V1.5 remains gated; do not publish/release.
 
-Last updated: 2026-08-24 (V1.4 Stage Review VERDICT: PASS
-WITH NITS — V14-STAGE-BLOCK-001 + V14-STAGE-BLOCK-002 BOTH
-CLOSED; one NIT (root-layer identity seed) addressed; final
-RBZ built; awaiting SU2020 narrow re-test of V14-9 before
-the V1.4 Stage Review is officially complete).
-Branch `v1.4-derived-workspace`.
-  - Production candidate HEAD (rbz built from): 707273a
-  - Review-packet HEAD (evidence + fixes): f9bc321
-  - BLOCK-recheck #1 HEAD (narrow fixes committed): f3eaa1e
-  - BLOCK-recheck #2 HEAD (narrow re-fixes committed): 6adbe70
-  - NIT-fix HEAD (root-layer identity seed): PENDING
+Last updated: 2026-08-25 (V1.4 Stage Review OFFICIALLY CLOSED —
+CodeX VERDICT: PASS, 0 BLOCKs; V1.5 Phase 1 GREENLIT).
+Branch `v1.4-derived-workspace` (V1.4 closeout commit pending this session).
+  - Production candidate HEAD (rbz built from): 92be2cb
   - Working tree: clean
 
-Full suite **646/646 Ruby + 148/148 Node.js DOM assertions
+Full suite **656/656 Ruby + 148/148 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
 dist/SU-AI-Plugin.rbz rebuilt (439,067 bytes, 53 entries,
 SHA256 `af3e8621ab37582ae711be337fd18ac846e4b564e2d84b4dbadb315e3550cf97`,
 committed with NIT fix + final production path fixes).
+
+NOTE: this 439,067-byte RBZ was superseded by the BLOCK-004 +
+BLOCK-005 narrow fixes; the final V1.4 RBZ is the
+443,553-byte build at HEAD 92be2cb. The earlier build is
+preserved here only for historical reference.
 
 Owner Gate 2 V1.4 SU2020: V14-1..V14-10 all PASS on the post-BLOCK-003
 rbz. Evidence at
