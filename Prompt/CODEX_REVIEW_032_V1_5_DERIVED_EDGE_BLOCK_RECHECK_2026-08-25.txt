@@ -1,0 +1,456 @@
+======================================================================
+SU-AI-PLUGIN -- CODEX TECHNICAL REVIEW 032
+V1.5 DERIVED EDGE CANONICALIZATION -- ACTIVE BLOCK RECHECK DIRECTIVE
+======================================================================
+
+STATUS: ACTIVE
+DATE: 2026-08-25
+REVIEW MODE: BLOCK RECHECK
+VERDICT: BLOCKED
+REASONING EFFORT: xHigh
+REASON: The re-review crosses high-risk provenance, direct-tolerance,
+        canonical-membership, transaction/recovery, and logical/SketchUp
+        host-state consistency boundaries.
+
+FINAL PRODUCT OWNER: Owner
+AIPM / PRODUCT CONTROL: ChatGPT / AIPM
+IMPLEMENTATION OWNER: Pi
+TECHNICAL REVIEWER: Codex
+
+REPOSITORY:
+  D:/Projects/SU-AI-Plugin
+
+AUTHORITATIVE REVIEW GOVERNANCE:
+  CODEX_REVIEWER_CONTRACT_V3_2026-08-25.txt
+
+STABLE PROJECT REFERENCES:
+  PROJECT_HANDOFF.txt
+  CURRENT_STATE.md
+  Prompt/CODEX_GUIDANCE_031_2026-08-25_V1_5_RECOVERY_AND_DERIVED_EDGE_CANONICALIZATION.txt
+
+REVIEWED BASE / HEAD:
+  base: 78f8500  docs(prompt): dispatch V1.5 recovery guidance 031
+  head: 9a5554d  docs(v1.5-stage4): implementation report + stage review packet + owner gate draft
+
+This file replaces the obsolete Review 032 active Prompt while preserving its
+technically valid V1.5 BLOCK contract. It is not a new technical review and
+therefore retains review sequence 032.
+
+Reviewer Contract V3 controls REVIEW PROCESS and ROLE AUTHORITY. Frozen
+product behavior and the technical safety outcomes below remain binding. If
+PROJECT_HANDOFF.txt, CURRENT_STATE.md, Guidance 031, or any older Prompt says
+that Codex owns Product Control, publishes every next project command, must
+approve every later version, or must create a later guidance file before Pi may
+proceed, that old governance wording is superseded. Historical evidence is not
+renamed or rewritten merely for cleanliness.
+
+This ACTIVE status is narrow: it governs closure of the current V1.5 BLOCK set
+only. It does not give Codex authority over the roadmap, normal implementation
+dispatch, Product/UX choices, or automatic approval of later stages.
+
+======================================================================
+0. ROLE AND DECISION BOUNDARIES
+======================================================================
+
+Owner is the Final Product Owner. ChatGPT / AIPM owns Product Control and
+next-stage dispatch with Owner. Pi owns implementation. Codex is Technical
+Reviewer only.
+
+Codex may identify and BLOCK unsafe, false, or unauditable technical outcomes
+and may define the minimum observable safety outcome needed to close a BLOCK.
+Codex does not become Product Owner, Product Control, or default workflow
+dispatcher by doing so.
+
+Route to AIPM / Owner:
+  - product/version scope and roadmap;
+  - visible UX flow, wording, layout, and information hierarchy when not
+    already frozen;
+  - changes to the user promise, recoverability promise, cost, or timeline;
+  - the next product stage after this BLOCK set closes.
+
+Route to Pi:
+  - ordinary helper/class/module/method design;
+  - compatible internal data structures and implementation order;
+  - local refactors, debugging, tests, and small UI/CSS implementation choices
+    inside frozen outcomes.
+
+Route to Codex:
+  - the one coherent V1.5 BLOCK recheck defined by this file;
+  - material provenance/identity, tolerance/topology, transaction/recovery,
+    logical/host-state, or truthful-evidence questions causally related to it.
+
+Prompt/ remains AIPM/Codex input and review-verdict space and is read-only to
+Pi. Review/ remains Pi's implementation/evidence space. Directory write
+ownership does not grant project authority. Codex does not use Prompt/ to
+manufacture future development gates.
+
+======================================================================
+1. CURRENT GATE, CLOSED SCOPE, AND REVIEW CADENCE
+======================================================================
+
+The current gate remains BLOCKED only because V15-STAGE-BLOCK-001..005 are
+material, interacting safety defects that genuinely require closure.
+
+PASSED / CLOSED SCOPE -- DO NOT REOPEN WITHOUT NEW EVIDENCE:
+  - all passed and unchanged V1.0-V1.4 scope;
+  - V1.4 Stage Review and its unchanged source/derived ownership foundation;
+  - Guidance 031 Stage 0 recovery and repository cleanup;
+  - absence of a production failure-injection hook;
+  - package contents/load smoke already evidenced at the reviewed head;
+  - the frozen product direction that distinct source occurrences remain
+    distinct while an eligible coincident DERIVED segment may canonicalize to
+    one survivor with a provenance union;
+  - unchanged out-of-scope exclusions, including short-edge-only repair,
+    face/gap/weld/flatten work, AI, MCP, site work, V2, and V1.6+ implementation.
+
+The upcoming re-review MUST use:
+  GPT-5.6 Sol -- reasoning effort: xHigh
+
+It must review only:
+  - original V15-STAGE-BLOCK-001..005;
+  - the directly related fix diff;
+  - direct regressions;
+  - adjacent seams materially changed by the fix.
+
+It must NOT restart a whole-repository review, reopen unchanged V1.0-V1.4,
+search unrelated stable code for NITs, or turn the recheck into V1.6 planning.
+
+Pi should submit one coherent fix packet after implementing and testing the
+complete interacting fix. Do not create one recheck request per tiny edit.
+
+At the reviewed head, the prior independent evidence was:
+  Ruby:             707/707 PASS
+  Node DOM:         155/155 PASS
+  RBZ smoke:        8/8 PASS
+  git diff --check: clean
+  working tree:     clean
+  RBZ size:         525,661 bytes
+  RBZ SHA-256:      7849BD3E7EF257743553E6DA3AA57410610EA2E31DE02EBED0A7BAFF143FFF03
+
+That evidence remains useful regression baseline evidence but does not close
+the BLOCKs. The reviewed RBZ is not approved for Owner verification.
+
+======================================================================
+2. ACTIVE BLOCKS
+======================================================================
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-001 -- AUTO-APPLY DOES NOT PROVE CANONICAL CLASS MEMBERSHIP
+---------------------------------------------------------------------
+
+Original locations:
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:187-260
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:212-226
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:426-474
+
+Problem:
+  Auto-apply does not prove that every derived class member resolves
+  unambiguously to one distinct current-snapshot source EdgeRecord and one
+  distinct live derived Edge record/handle. Container-only first-match lookup
+  is not full leaf/occurrence identity. One valid issue pair can authorize
+  additional records merely because they share a canonical bucket, without
+  proving that duplicate evidence covers the complete contributing source set.
+
+Why this matters:
+  An unrelated, stale, repeated, or ambiguously sourced derived record could be
+  swept into a destructive removal class. That violates source-occurrence
+  identity/provenance and can corrupt canonical class membership.
+
+Minimum acceptable outcome:
+  - Before an action is auto-applicable, EVERY derived member resolves to
+    exactly one current SourceSnapshot EdgeRecord using full occurrence/leaf
+    identity, with the existing deterministic transient-root fallback only
+    where the frozen snapshot contract permits it.
+  - Source EdgeRecords are distinct; derived records and live handles are
+    distinct. Repeated source identity, ambiguous lookup, missing handle,
+    self-match, repeated reference, or incomplete nested identity fails closed
+    with a truthful skipped audit.
+  - Valid duplicate_edge_candidate evidence covers the contributing source
+    EdgeRecord set for the complete class. One pair cannot silently authorize
+    unrelated additional members.
+  - Source occurrences remain immutable and distinct. Only after every guard
+    passes may the survivor carry the deterministic sorted provenance union.
+
+Recheck evidence required:
+  - two same-transform component instances resolve to distinct source records
+    and apply safely;
+  - repeated reference to the same source edge is skipped;
+  - an unrelated derived record in the same geometry candidate bucket but
+    absent from issue evidence is not swept into the action;
+  - ambiguous, missing, or non-full-leaf resolution is skipped;
+  - incomplete nested provenance is covered by an explicit fail-closed test.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-002 -- BUCKETING IS NOT THE DIRECT TOLERANCE CONTRACT
+---------------------------------------------------------------------
+
+Original locations:
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:352-370
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:406-423
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:77-99
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:101-140
+
+Problem:
+  round(coordinate / tolerance) is treated as the match rule. Within-tolerance
+  endpoints can straddle bucket boundaries, while records admitted only by
+  bucket membership are not necessarily a valid direct match. The proposer and
+  validator therefore can disagree with the locked duplicate rule, and a
+  non-transitive A~B, B~C, A!~C chain can form an unsafe destructive class.
+
+Why this matters:
+  Valid duplicates can be missed, invalid members can be deleted, and post-
+  validation can make a false correctness claim.
+
+Minimum acceptable outcome:
+  - Spatial buckets are candidate acceleration only.
+  - The same tested matcher performs forward/reversed direct endpoint
+    comparison with the CAPTURED execution-config duplicate tolerance for every
+    member admitted to an action and every class counted by validation.
+  - Adjacent buckets are handled deterministically.
+  - Non-transitive chains never become one destructive class unless every
+    required direct relationship of the chosen canonical-class rule is proven;
+    otherwise split deterministically or fail closed.
+  - Proposer and validator share exactly the same direct matcher semantics.
+
+Recheck evidence required:
+  - within-tolerance endpoints across a rounding boundary are recognized;
+  - just-outside-tolerance endpoints are skipped;
+  - a non-transitive three-edge chain cannot cause unsafe three-member deletion;
+  - reversed endpoint ordering across a bucket boundary has the same safe
+    result.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-003 -- LOGICAL POST-STATE CHECK OCCURS AFTER HOST COMMIT
+---------------------------------------------------------------------
+
+Original locations:
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:336-369
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:401-457
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:560-606
+
+Problem:
+  The SketchUp operation is committed before logical post-workspace
+  construction/checking. On later mismatch the code attempts abort after
+  commit, which cannot undo a successful committed host mutation. The method
+  can return pre-batch logical inventory as :failed even though SketchUp has
+  already deleted derived entities.
+
+Why this matters:
+  Logical state and SketchUp host state can diverge. Recovery or Discard may
+  then operate on stale handles and cannot truthfully establish what happened.
+
+Minimum acceptable outcome:
+  - In pure data and BEFORE opening the host operation, preflight and construct
+    the complete non-overlapping post-inventory, survivor replacements,
+    provenance unions, expected fingerprint/shape, action/handle validity, and
+    validation result.
+  - Open one operation only after all preflight invariants pass; dispose only
+    validated non-survivors; abort on any dispose failure; commit once on
+    success; then publish the already-precomputed logical post-workspace.
+  - No path attempts abort after a successful commit.
+  - Begin/commit/abort ordering and outcome are explicit. Commit/abort
+    uncertainty remains visible and recoverable and can never yield READY or a
+    fabricated rollback claim.
+
+Recheck evidence required:
+  - preflight failure proves begin_operation was never called;
+  - Nth dispose failure produces one begin, one abort, zero commit, and exact
+    pre-batch logical inventory/provenance;
+  - successful batch produces one begin, one commit, zero abort;
+  - a forced logical post-state/preflight mismatch cannot commit host deletion;
+  - commit failure remains :failed and does not report fabricated rollback.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-004 -- VALIDATION AND AUDIT EVIDENCE ARE FALSE OR INCOMPLETE
+---------------------------------------------------------------------
+
+Original locations:
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:55-70
+  extension/su_ai_plugin/core/working_mode_runner.rb:424-500
+  extension/su_ai_plugin/html/app.js:492-544
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:569-606
+
+Problem:
+  The validator reports duplicate_classes_after = 0 without measuring the
+  supplied workspace; validation can use a default instead of captured
+  tolerance; the reported before-pair count is derived from the wrong action
+  state; remove actions lose source issue references; and UI evidence omits
+  failed count, derived edge counts, and inspectable per-action audit rows.
+
+Why this matters:
+  The system can claim success or READY without measuring it. Owner cannot
+  distinguish success, skipped work, partial/transaction failure, or absent
+  evidence.
+
+Minimum acceptable outcome:
+  - Validation computes actual pre/post canonical class sets through the same
+    direct matcher and captured tolerance. An expected value is never presented
+    as an observed value.
+  - Every applied eligible class is absent from the precomputed post result
+    before host commit. A failed invariant cannot be READY.
+  - Summary metrics come from actual plan, execution, and post-workspace data:
+    applied/skipped/failed, classes before/after, derived edge count before/
+    after, and real pair/member-removal counts.
+  - Every action audit retains source issue IDs/keys.
+  - A read-only inspectable structure exposes per-action status, rule or
+    explanation, removed count, survivor ID, and source-occurrence count. Keep
+    safe text rendering; no innerHTML/eval.
+
+  Codex may require truthful, inspectable audit evidence. If the exact visible
+  fields/layout are not already frozen, Codex records the technical minimum and
+  routes the specific UX choice to AIPM / Owner rather than freezing it
+  unilaterally. Pi may implement ordinary UI details inside the approved choice.
+
+Recheck evidence required:
+  - unchanged duplicate workspace validates with remaining > 0;
+  - repaired post-workspace validates with 0;
+  - non-default captured tolerance is used end to end;
+  - before/pair/edge counts are exact and non-fabricated;
+  - applied/skipped/failed rows and all required technical audit data render in
+    the DOM or an AIPM/Owner-approved equally inspectable structure.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-005 -- REQUIRED MATRIX AND OWNER DRAFT ARE NOT EXECUTABLE
+---------------------------------------------------------------------
+
+Original locations:
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md:73-96
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt:1-220
+
+Problem:
+  Required cases E and I are mislabeled as out-of-scope/implicit. The Owner
+  draft refers to a nonexistent repair button, relies on non-executable or
+  repository-editing steps, and assigns Prompt ownership incorrectly.
+
+Why this matters:
+  Automated evidence does not cover the frozen safety matrix and Owner cannot
+  execute a truthful verification path in real SketchUp.
+
+Minimum acceptable outcome:
+  - Add explicit automated cases E and I and all direct tests required by
+    BLOCK-001..004. No required row is called implicit or out of scope.
+  - Rewrite the Owner draft around the real call chain: Analyze selection, then
+    Prepare auto-runs the eligible batch; Rebuild re-runs it.
+  - The checklist deterministically creates/selects its fixtures and states
+    exactly where each output is observed. Use copy/paste-safe Ruby Console
+    observation only where the approved UI cannot expose required evidence.
+  - Owner edits no repository file. Owner returns verification evidence through
+    the AIPM/Owner workflow in chat. Prompt remains read-only to Pi; Pi's draft
+    remains in Review/.
+  - While these BLOCKs remain open, the draft is marked DO NOT EXECUTE. The
+    xHigh PASS verdict itself closes this technical gate and permits the already
+    defined Owner verification path if technically ready; no separate Codex
+    guidance or greenlight Prompt is required.
+
+======================================================================
+3. IMPLEMENTATION BOUNDARY AND PI AUTONOMY
+======================================================================
+
+This is one coherent fix packet, not five micro-reviews.
+
+The following order is a risk-oriented outcome sequence, not a prescribed
+class/helper/method design:
+  1. Establish one exact direct matcher using captured tolerance.
+  2. Make canonical membership, source evidence, and provenance fail closed.
+  3. Precompute complete logical post-state and validation before opening the
+     host operation; enforce truthful transaction ordering.
+  4. Derive actual audit data from plan/execution/post-state evidence.
+  5. Complete direct boundary/failure tests and the executable Owner draft.
+  6. Run full suites, build one RBZ, write one recheck packet, and stop for the
+     single narrow BLOCK recheck.
+
+Pi may choose ordinary implementation mechanisms inside these frozen technical
+outcomes. This directive does not prescribe unnecessary classes, helpers,
+methods, or refactors. A mechanism is review-mandated only where the mechanism
+itself is required for provenance, matching, atomicity/recovery, or truthful
+evidence.
+
+Expected directly related surface, only as needed:
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb
+  extension/su_ai_plugin/core/working_mode_runner.rb
+  extension/su_ai_plugin/html/app.js
+  extension/su_ai_plugin/dialog_runner.rb
+  tests/test_v15_duplicate_repair.rb
+  tests/test_v15_production_call_chain.rb
+  tests/test_v15_real_preflight_path.rb
+  tests/test_html_render_dom.js
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+  CURRENT_STATE.md (implementation state only)
+
+If a direct dependency outside that surface must change, Pi records the causal
+reason in the recheck packet. Stable V1.0-V1.4 code is not refactored for
+cleanliness. A material unresolved provenance/transaction/product-authority
+issue is escalated once in Review/; ordinary engineering choices are not sent
+to Owner.
+
+======================================================================
+4. ONE COHERENT RECHECK PACKET
+======================================================================
+
+Before requesting re-review, evidence must include:
+  - full Ruby suite: 0 fail, 0 error;
+  - Node DOM suite: 0 fail;
+  - RBZ smoke: 0 fail;
+  - git diff --check: clean;
+  - working tree: clean;
+  - final RBZ size, entry count, and SHA-256;
+  - exact commit list and base/head;
+  - explicit mapping from each BLOCK minimum outcome to implementation and
+    direct tests;
+  - revised executable Owner verification draft, still not run while BLOCKED.
+
+Pi writes one packet:
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md
+
+Pi rewrites in place:
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+
+The prior implementation report and stage packet remain historical evidence;
+do not rewrite them to conceal the original defects.
+
+======================================================================
+5. PASS / BLOCKED CONSEQUENCES
+======================================================================
+
+UNTIL THE CURRENT BLOCK SET PASSES:
+  - do not install or execute the reviewed RBZ/Owner draft;
+  - do not claim V1.5 ready;
+  - do not enter V1.6 while the material V1.5 transaction/provenance/evidence
+    defects remain unresolved;
+  - do not reopen unchanged V1.0-V1.4;
+  - do not push, publish, or release this blocked candidate.
+
+IF THE xHigh BLOCK RECHECK PASSES:
+  - close V15-STAGE-BLOCK-001..005 and the V1.5 BLOCK set;
+  - permit the already-defined Owner verification path if technically ready;
+  - return next-stage/product workflow authority immediately to AIPM / Owner;
+  - Pi may proceed under an explicit AIPM/Owner task and the frozen Master Plan;
+  - do not create an additional Codex greenlight, guidance-file, or approval
+    prerequisite merely to enter V1.6;
+  - no additional V1.5 Codex gate remains unless new material evidence triggers
+    a risk review.
+
+IF THE RECHECK REMAINS BLOCKED:
+  - report only unresolved original BLOCKs or new material BLOCKs causally
+    created/revealed by the fix;
+  - state the causal relationship and minimum acceptable outcome;
+  - request one narrow recheck after one complete follow-up fix packet;
+  - do not restart a whole-repository review.
+
+Future mandatory review cadence remains governed by Reviewer Contract V3:
+V1.7 integration and V1.9 final release review. V1.6 has no separate Codex
+review by default; risk-triggered review remains possible only on a material
+high-risk condition.
+
+======================================================================
+NEXT REVIEW
+======================================================================
+
+RECHECK V15-STAGE-BLOCK-001..005 ONLY, after Pi submits one coherent fix
+packet. Use GPT-5.6 Sol with reasoning effort xHigh.
+
+======================================================================
+END OF ACTIVE DIRECTIVE
+======================================================================
