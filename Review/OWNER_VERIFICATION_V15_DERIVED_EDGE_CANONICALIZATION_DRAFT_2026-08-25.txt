@@ -1,0 +1,221 @@
+======================================================================
+V1.5 DERIVED EDGE CANONICALIZATION -- OWNER VERIFICATION (DRAFT)
+======================================================================
+
+STATUS: DRAFT (DO NOT EXECUTE).
+  This draft is published per Guidance 031 §10. It MUST NOT be
+  executed until a later Codex Prompt explicitly greenlights it.
+  Per Guidance 031 §13:
+    - DO NOT install the RBZ.
+    - DO NOT paste Ruby Console commands.
+    - DO NOT generate an Owner PASS report.
+    - DO NOT push, publish, or release.
+  Until then, this file is evidence-only.
+
+DISPATCH DATE: 2026-08-25
+PLANNING / TECHNICAL OWNER: Codex / AIPM
+IMPLEMENTATION OWNER: Pi
+FINAL PRODUCT OWNER: Owner
+REPOSITORY: D:/Projects/SU-AI-Plugin
+DIRECTIVE: Prompt/CODEX_GUIDANCE_031_2026-08-25_V1_5_RECOVERY_AND_DERIVED_EDGE_CANONICALIZATION.txt
+
+PARALLEL EVIDENCE (read these BEFORE running anything):
+  - Review/V15_DERIVED_EDGE_CANONICALIZATION_IMPLEMENTATION_REPORT_2026-08-25.md
+  - Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md
+
+----------------------------------------------------------------------
+PRE-FLIGHT
+----------------------------------------------------------------------
+
+[ ] 1. Confirm SketchUp 2020 is the ONLY host. SketchUp 2017 / 2018
+        are NOT covered by this gate.
+
+[ ] 2. Confirm the V1.5 RBZ file is the final-HEAD build:
+        Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+        Size:    525,661 bytes
+        Entries: 56
+        (Verify by SHA-256; see Stage Review packet.)
+
+[ ] 3. Confirm the file `CURRENT_STATE.md` is open in another window.
+        You'll append Owner results to it as you run each gate.
+
+[ ] 4. Each gate below starts from a clean fixture. NO state may
+        leak from a previous gate. If you accidentally reuse a
+        fixture, restart SketchUp and re-prepare.
+
+----------------------------------------------------------------------
+V15-G1 -- SHOULD REPAIR
+  one one-edge ComponentDefinition; two instances at identical
+  transform; same normalized layer; exact expected Duplicate
+  Candidates, applied count, before/after derived edge count,
+  and provenance source count; verify two source instances and
+  source edge remain intact.
+----------------------------------------------------------------------
+
+1. Open the Ruby Console (Window > Ruby Console).
+
+2. Load the RBZ entry-point (SketchUp auto-loads on install):
+   Sketchup.active_model.start_operation("V15G1-Setup", true)
+   mod = Sketchup.active_model
+   # Build one ComponentDefinition with ONE edge.
+   defn = mod.definitions.add("V15G1-DupDef")
+   defn.entities.add_edges([
+     [Geom::Point3d.new(0, 0, 0), Geom::Point3d.new(10, 0, 0)]
+   ])
+   # Build TWO instances at the SAME identity transform.
+   ent = mod.active_entities
+   inst_a = ent.add_instance(defn, Geom::Transformation.new)
+   inst_b = ent.add_instance(defn, Geom::Transformation.new)
+   mod.commit_operation
+
+3. Select both instances in the model. Open the SU-AI-Plugin
+   dialog. Click Prepare.
+
+   Expected:
+     - Duplicate Candidates (UI): 1 pair
+     - Source Snapshot ID present
+     - Click the duplicate pair; the locator highlights BOTH
+       instances (cross-instance merge).
+
+4. Click the dialog's "Run Duplicate Repairs" / auto-apply.
+
+   Expected (post-batch):
+     - Working Mode shows ONE surviving derived entity.
+     - duplicate_repair.duplicate_classes_before = 1
+     - duplicate_repair.duplicate_classes_after  = 0
+     - duplicate_repair.actions_applied = 1
+     - duplicate_repair.duplicate_pairs_after = 0
+     - Source snapshot fingerprint unchanged.
+
+5. Verify source integrity:
+   - defn.entities.length == 1 (source edge intact)
+   - inst_a, inst_b still exist as distinct entities
+   - Undo (Ctrl+Z) ONCE -> derived entity count drops to 0
+   - Source edges are untouched.
+
+6. Discard:
+   - Working Mode transitions to :discarded
+   - Zero SU-AI-Derived-* groups in the model
+
+----------------------------------------------------------------------
+V15-G2 -- MUST NOT REPAIR -- transform
+  same definition, two separated transforms; expected applied 0.
+----------------------------------------------------------------------
+
+1. Open Ruby Console.
+3. mod = Sketchup.active_model
+4. defn = mod.definitions.add("V15G2-DupDef")
+5. defn.entities.add_edges([
+     [Geom::Point3d.new(0, 0, 0), Geom::Point3d.new(10, 0, 0)]
+   ])
+6. ent = mod.active_entities
+7. inst_a = ent.add_instance(defn, Geom::Transformation.new)
+8. inst_b = ent.add_instance(defn, Geom::Transformation.new(Geom::Point3d.new(50, 0, 0)))
+
+9. Select both instances. Click Prepare.
+
+   Expected:
+     - Duplicate Candidates: 1 pair (world-coincident duplicate
+       across transformed instances is not produced by SketchUp
+       itself, since the world coords differ; the DuplicateDetector
+       produces 0 or 1 pair depending on world coords).
+     - If 0 candidates: applied=0, skipped=0; OK.
+     - If 1 candidate: applied=0, skipped=1 with
+       endpoints_outside_tolerance_duplicate.
+
+10. Cleanup: discard any derived entities; undo to source.
+
+----------------------------------------------------------------------
+V15-G3 -- MUST NOT REPAIR -- semantic conflict
+  two source containers with exact world segment but different
+  layers; expected skipped conflict, applied 0.
+----------------------------------------------------------------------
+
+1. Open Ruby Console.
+2. mod = Sketchup.active_model
+3. defn = mod.definitions.add("V15G3-DupDef")
+4. defn.entities.add_edges([
+     [Geom::Point3d.new(0, 0, 0), Geom::Point3d.new(10, 0, 0)]
+   ])
+5. ent = mod.active_entities
+6. inst_a = ent.add_instance(defn, Geom::Transformation.new)
+7. inst_b = ent.add_instance(defn, Geom::Transformation.new)
+8. # Move inst_b to Layer1 (NOT Layer0).
+9. inst_b.layer = mod.layers.add("Layer1")
+
+10. Select both instances. Click Prepare.
+
+    Expected:
+      - Duplicate Candidates: 1 pair (world coords coincide; layers differ)
+      - After "Run Duplicate Repairs":
+        - applied = 0
+        - skipped = 1 (or the action is :skipped with reason
+          semantic_conflict_layer_mismatch)
+        - duplicate_pairs_after = 1 (the candidate is preserved)
+
+11. Cleanup: discard; undo to source.
+
+----------------------------------------------------------------------
+V15-G4 -- DETERMINISM
+  Discard/Rebuild; same survivor/action/count/fingerprint.
+----------------------------------------------------------------------
+
+1. Open the dialog on V15-G1's prepared workspace.
+2. Note the duplicate_classes_before count and the actions_applied
+   count from V15-G1.
+3. Click Discard.
+4. Click Rebuild (the workspace is rebuilt from the same captured
+   source + registry).
+5. Run Duplicate Repairs.
+
+   Expected:
+     - Same survivor derived_id as V15-G1.
+     - Same actions_applied count.
+     - Same duplicate_pairs_before / after counts.
+     - Source snapshot fingerprint identical to V15-G1's.
+     - Working Mode duplicate_repair summary structurally identical.
+
+6. Cleanup: discard; undo to source.
+
+----------------------------------------------------------------------
+V15-G5 -- SOURCE / UNDO / CLEANUP
+  source fingerprint unchanged; one Undo reverts the whole
+  Prepare/apply operation as actually implemented; Discard
+  leaves zero SU-AI-Derived-* groups; every fixture cleanup
+  command is one-line and idempotent.
+----------------------------------------------------------------------
+
+1. Open a fresh fixture (any of G1, G2, G3 above).
+2. Run Prepare + Run Duplicate Repairs.
+3. Verify the source fingerprint is byte-identical before and
+   after the entire flow (open CURRENT_STATE.md before + after).
+4. Verify the surviving derived entity is the ONLY SU-AI-Derived-*
+   group present.
+5. Press Ctrl+Z ONCE.
+6. Verify the surviving derived entity is gone (zero
+   SU-AI-Derived-* groups).
+7. Discard.
+8. Verify zero SU-AI-Derived-* groups; one-line idempotent.
+9. Cleanup: undo the entire Prepare/apply chain to restore the
+   original source state.
+
+----------------------------------------------------------------------
+FINAL ARTIFACTS (after every gate passes)
+----------------------------------------------------------------------
+
+[ ] Append an Owner result section to CURRENT_STATE.md with:
+    - Gate-by-gate PASS / FAIL / N/A
+    - Source fingerprint byte-equality before / after
+    - Working Mode duplicate_repair summary JSON for each gate
+    - SHA-256 of the installed RBZ
+
+[ ] Save the OWNER_REPORT_V1_5_DERIVED_EDGE_CANONICALIZATION_2026-08-25.txt
+    at Prompt/OWNER_REPORT_V1_5_DERIVED_EDGE_CANONICALIZATION_2026-08-25.txt
+    (NOT in Review/ — Prompt/ is Owner-owned output).
+
+[ ] DO NOT push, publish, release, or enter V1.6.
+
+======================================================================
+END OF DRAFT (NOT FOR EXECUTE)
+Awaiting Codex V1.5 Stage Review verdict.
+======================================================================
