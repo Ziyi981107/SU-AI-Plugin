@@ -306,7 +306,24 @@ module SUAnalysis
       # an already-erased handle. The workspace invokes this
       # inside its discard operation; on partial failure the
       # workspace aborts the operation.
+      #
+      # V1.5 Phase 1 production test hook (per CodeX V1.5 BLOCK-004
+      # recheck #2): the adapter supports a narrowly-scoped,
+      # reversible one-shot failure injector that the Owner uses
+      # for the Owner Gate V15-4 mid-action-failure step. The
+      # hook is consumed automatically (one-shot): the FIRST
+      # dispose() call after the Owner sets @__v15_one_shot_failure
+      # raises, and the hook is reset to nil. Subsequent dispose()
+      # calls work normally without intervention. The Owner MUST
+      # use ensure { adapter.instance_variable_set(
+      # :@__v15_one_shot_failure, nil) } to restore in the rare
+      # case the dispose path is interrupted mid-batch.
       def dispose(handle)
+        hook = @__v15_one_shot_failure
+        if hook.is_a?(StandardError)
+          @__v15_one_shot_failure = nil
+          raise hook
+        end
         return true if handle.nil?
         # If the handle is no longer valid (already erased),
         # the cleanup is a no-op (success).

@@ -42,16 +42,105 @@ Auto-test baseline at V1.4 close:
   Node DOM: 148/148 PASS
   RBZ smoke: 8/8 PASS
 
-## V1.5 Phase 1 — CodeX BLOCK-001/002/003/004/005 RECHECK, Owner Gate pending (2026-08-25)
+## V1.5 Phase 1 — CodeX BLOCK RECHECK #2 (BLOCK-003/004 re-opens), Owner Gate pending (2026-08-25)
 
-CodeX V1.5 Phase 1 Owner-Gate Readiness Review VERDICT (2026-08-25):
-  REVIEW MODE: V1.5 PHASE 1 STAGE / OWNER-GATE READINESS
+CodeX V1.5 Phase 1 BLOCK RECHECK #2 VERDICT (2026-08-25):
+  REVIEW MODE: BLOCK RECHECK
+  BASE/HEAD:   215152a..1ec7c00
   VERDICT:     BLOCKED
-  BLOCKS:      BLOCK-001 (production load wiring missing)
-              BLOCK-002 (auto-repair not in production call chain)
-              BLOCK-003 (provenance condition makes real product path unreachable)
-              BLOCK-004 (Owner checklist not executable)
-              BLOCK-005 (batch atomicity must be fixed)
+  CLOSED:      BLOCK-001 (production load wiring)
+              BLOCK-002 (Prepare/Rebuild production call chain + UI summary)
+              BLOCK-005 (one-operation batch apply/abort implementation)
+  OPEN:        BLOCK-003 (real production provenance unreachable)
+              BLOCK-004 (Owner checklist not executable/correct)
+
+Recheck #2 fix in progress. Implementation:
+- Branch: v1.5-high-confidence-auto-repair (cut from V1.4 closeout a7cedb4)
+- Implementation commits (pre-recheck #2):
+    dbd8cd4  high-confidence duplicate-edge auto-repair vertical slice
+    a9a88c5  minimal Working Mode UI summary for duplicate repairs
+    215152a  Owner verification packet + implementation report + state update
+    1ec7c00  BLOCK-001/002/003/004/005 narrow-scope fixes (recheck #1)
+- Recheck #2 fix (this commit):
+    BLOCK-003: extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+      - occurrence_id_for now derives a V1.5 container-occurrence
+        by EXCLUDING the leaf edge PID (the last element of the
+        canonical persistent_id_path). The V1.0-V1.4 canonical
+        path is NOT mutated.
+      - build_occurrence_to_deriveds now reverses the V1.4-format
+        source_occurrence_ids from each derived record via
+        parse_v14_occurrence_to_container_path, then computes the
+        V1.5 container-occurrence for matching.
+      - Root-level edges (pid_path length 1 = [leaf_pid]) are
+        FAIL-CLOSED (no V1.5 repair) per CodeX BLOCK-003 guidance.
+      - New tests/test_v15_real_preflight_path.rb exercises the
+        REAL PreflightRunner.build_snapshot + AnalyzersRunner.run
+        + WorkingModeRunner.prepare + run_duplicate_repair_batch
+        pipeline with 5 cases (V15RP-001..005).
+      - Test fixtures (v15_edge / v15pc_edge) updated to use
+        parent_pid_path that auto-appends the leaf PID, matching
+        what real PreflightRunner produces.
+
+    BLOCK-004: Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+      REWRITTEN #2 with auto-creating Ruby Console commands:
+      - V15-0: paste-load entry-point, verify modules defined.
+      - V15-1: paste-create DupDef definition + 2 coincident edges
+                 + 1 instance. Click Prepare. Verify applied=1.
+      - V15-2: paste-create SharedDef definition with 4 unique edges
+                 + 2 instances offset by (100, 0, 0). Verify applied=0,
+                 skipped=0 (cross-instance case; each instance has
+                 distinct world coords).
+      - V15-3: Discard + Rebuild -> source fingerprint byte-identical.
+      - V15-4: paste-inject @__v15_one_shot_failure on the production
+                 adapter, re-run batch via SUAnalysis::Extension::
+                 DialogRunner.current_controller, capture the rescue.
+      - V15-5: Discard -> zero derived groups with SU-AI-Derived-
+                 prefix.
+      - V15-6: drop report at
+        Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
+    - extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+      dispose now reads @__v15_one_shot_failure. One-shot by
+      design: the FIRST dispose call after Owner sets it raises
+      and clears the hook; subsequent calls work normally.
+    - extension/su_ai_plugin/dialog_runner.rb adds
+      SUAnalysis::Extension::DialogRunner.current_controller
+      module-level accessor (set in show, cleared in on_close)
+      so Owner Ruby Console commands can access the live
+      controller without undefined globals.
+
+- New / modified files (recheck #2):
+    extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+        (V1.5 container-occurrence derivation)
+    extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+        (@__v15_one_shot_failure hook)
+    extension/su_ai_plugin/dialog_runner.rb
+        (current_controller accessor)
+    tests/test_v15_real_preflight_path.rb (new, 5 tests)
+    tests/test_v15_duplicate_repair.rb (fixtures updated)
+    tests/test_v15_production_call_chain.rb (fixtures updated)
+    Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+        (rewritten with auto-creating commands)
+    Review/V15_OWNER_GATE_BLOCK_RECHECK_PACKET_2026-08-25.md
+        (updated to recheck #2 evidence)
+
+Test evidence (recheck #2):
+    Ruby:        700/700 PASS (was 695/695; +5 V15RP)
+    Node DOM:    154/154 PASS (unchanged)
+    RBZ smoke:    8/8 PASS
+    git diff --check: clean
+    working tree: clean
+
+Final V1.5 Phase 1 RBZ (recheck #2):
+  Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:    504,298 bytes
+  Entries: 55
+  SHA256:  8C1162031C76B3E984906D821FBDB523D7241EC20D8400CF3C931061FBABD2D4
+
+STOP. The next move is:
+  - CodeX re-reviews BLOCK-003 + BLOCK-004 ONLY.
+  - On PASS, Owner runs the rewritten checklist on real SU2020.
+  - Owner drops Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
+  - DO NOT install current RBZ (1ec7c00) -- wait the recheck #2 commit.
 
 Recheck fix in progress. Implementation:
 - Branch: v1.5-high-confidence-auto-repair (cut from V1.4 closeout a7cedb4)

@@ -1,191 +1,170 @@
-# V1.5 Phase 1 — Owner-Gate BLOCK RECHECK PACKET (2026-08-25)
+# V1.5 Phase 1 — Owner-Gate BLOCK RECHECK PACKET #2 (2026-08-25)
 
 Date: 2026-08-25
 Branch: v1.5-high-confidence-auto-repair
-Base: V1.4 closeout a7cedb4
-HEAD: <this commit> (will be the new recheck fix commit)
-Review: CodeX V1.5 Phase 1 Owner-Gate Readiness Review
+Review: CodeX V1.5 Phase 1 BLOCK RECHECK #2 (BLOCK-003 + BLOCK-004 re-opens)
 
 ## Verdict addressed
 
-CodeX V1.5 Phase 1 Owner-Gate Readiness Review (2026-08-25):
-  REVIEW MODE: V1.5 PHASE 1 STAGE / OWNER-GATE READINESS
+CodeX V1.5 Phase 1 BLOCK RECHECK #2 (2026-08-25):
+  REVIEW MODE: BLOCK RECHECK
+  BASE/HEAD:   215152a..1ec7c00
   VERDICT:     BLOCKED
   BLOCKS:
-    BLOCK-001 (production load wiring missing)
-    BLOCK-002 (auto-repair not in production call chain)
-    BLOCK-003 (provenance condition makes real product path unreachable)
-    BLOCK-004 (Owner checklist not executable)
-    BLOCK-005 (batch atomicity must be fixed)
+    BLOCK-001 (production load wiring) -- CLOSED
+    BLOCK-002 (Prepare/Rebuild production call chain + UI summary) -- CLOSED
+    BLOCK-005 (one-operation batch apply/abort implementation) -- CLOSED
+    BLOCK-003 (real production provenance unreachable) -- OPEN
+    BLOCK-004 (Owner checklist not executable/correct) -- OPEN
 
-## Per-BLOCK recheck evidence
+This commit addresses BLOCK-003 and BLOCK-004.
 
-### BLOCK-001 — production load wiring
+## Per-BLOCK recheck #2 evidence
 
-**Fix:** `extension/su_ai_plugin/main.rb` `boot!` now requires
-the new modules at the production boot step:
+### BLOCK-003 — real production provenance
 
-    require_relative 'core/duplicate_repair_proposer'
-    require_relative 'core/duplicate_repair_executor'
+**Root cause (per CodeX):** The PreflightRunner's
+`walk_entity_world` appends every entity's PID to the
+pid_path INCLUDING the leaf edge PID. The V1.0-V1.4
+canonical `persistent_id_path` therefore includes the leaf
+edge PID as its last element. The previous proposer's
+`occurrence_id_for` used the full path, so two distinct
+duplicate edges in the SAME parent component had DIFFERENT
+V1.4 occurrence IDs (different leaf PIDs) and were never
+detected as duplicates.
 
-**Evidence:**
-- `tests/test_v15_production_call_chain.rb` V15PC-001 loads
-  `extension/su_ai_plugin/main.rb` directly and asserts
-  `SUAnalysis::Core::DuplicateRepairProposer` and
-  `SUAnalysis::Core::DuplicateRepairExecutor` are defined.
-- V15PC-002 extracts `dist/SU-AI-Plugin.rbz` into a temp dir,
-  loads the extracted entry-point, and asserts the same modules
-  are defined (production-evidence; not dev-tree).
+**Fix (per CodeX):** The proposer now derives a SEPARATE
+V1.5 container-occurrence identity by EXCLUDING the leaf
+PID (the last element of the canonical `persistent_id_path`).
+The canonical `persistent_id_path` is NOT mutated
+(V1.0-V1.4 contracts preserved). For each workspace's
+derived records, `build_occurrence_to_deriveds` reverses the
+V1.4 source_occurrence_ids back into the pid_path Array
+(via `parse_v14_occurrence_to_container_path`) and
+computes the V1.5 container-occurrence for matching.
 
-### BLOCK-002 — auto-repair production call chain
+**Top-level (root-level) edges:** The leaf is the ONLY
+element of the path. The container_path after exclusion is
+empty. Per CodeX fail-closed guidance, V1.5 Phase 1
+EXCLUDES root-level edges from auto-repair
+(`occurrence_id_for` returns nil). The repair is only
+meaningful within a non-root container (a Group or a
+ComponentInstance) where two duplicate edges indicate a
+CAD-import artifact inside one parent.
 
-**Fix:** `extension/su_ai_plugin/dialog_runner.rb`
-`on_prepare_workspace` and `on_rebuild_workspace` now invoke
-`WorkingModeRunner.run_duplicate_repair_batch(registry:)` after
-Prepare/Rebuild. The chain is:
+**Real-PreflightRunner regression tests added:**
+`tests/test_v15_real_preflight_path.rb` exercises the FULL
+production pipeline end-to-end:
 
-    Prepare (V1.4)
-      -> IssueRegistry from controller.result.registry
-      -> DuplicateRepairProposer.propose(source, registry, workspace)
-      -> plan.validate
-      -> DuplicateRepairExecutor.apply_batch(workspace, plan)
-      -> WorkingModeRunner snapshot.duplicate_repair = real results
+  V15RP-001: real PreflightRunner path -- duplicate edges
+             inside ONE ComponentInstance ARE repaired.
+             (proves the V1.5 container-occurrence catches
+             the CAD-import-duplicate case.)
 
-**Evidence:**
-- `tests/test_v15_production_call_chain.rb`:
-  - V15PC-003: WorkingModeRunner.run_duplicate_repair_batch runs
-    the full chain end-to-end through the production
-    SketchupDerivedWorkspaceAdapter + FakeModel; final
-    `actions_applied == 1` (real execution result, not manual).
-  - V15PC-004: no eligible actions -> ready + applied=0
-    (idempotent no-op).
-  - V15PC-009: Rebuild replay -> same post-state (deterministic).
-  - V15PC-010: Discard -> source unchanged.
+  V15RP-002: real PreflightRunner path -- two ComponentInstances
+             of the SAME definition are NOT cross-merged.
+             (proves the shared-component isolation is
+             preserved; each instance's duplicate pair is
+             repaired independently.)
 
-### BLOCK-003 — provenance semantics
+  V15RP-003: real PreflightRunner path -- no duplicates ->
+             applied=0, ready. (proves the no-op path.)
 
-**Fix:** `extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
-header now documents the EXACT provenance semantics:
+  V15RP-004: real PreflightRunner path -- root-level edges
+             have pid_path length 1 (leaf only) and are
+             correctly identified as fail-closed.
 
-  - `persistent_id_path` carried on the EdgeRecord's
-    SourceReference is the CONTAINER path (NOT including the leaf
-    Edge entity's own PID).
-  - Two EdgeRecords from the SAME parent container (same
-    `persistent_id_path`) = "same source occurrence".
-  - Real-SU2020 constructible should-repair scenario: a
-    ComponentDefinition containing two SU Edges with the same
-    world endpoints (a CAD import artifact). The two edges
-    share the instance's container path; the proposer detects
-    them as duplicates.
-  - Real-SU2020 constructible must-not-repair scenarios:
-    (a) Two ComponentInstances of the same definition (different
-        instance.persistent_id -> different paths): preserved.
-    (b) Selection-overlap of the same edge entity (different
-        container paths on each visit): preserved (different
-        analysis visits, not a CAD import duplicate).
+  V15RP-005: real PreflightRunner path -- source_fingerprint
+             unchanged across apply.
 
-The proposer does NOT loosen to "all same world coordinates":
-the master plan §17.2 (shared-component-definition instances
-are physically separate geometry) is honored.
+The test uses the REAL PreflightRunner.build_snapshot +
+AnalyzersRunner.run + WorkingModeRunner.prepare +
+run_duplicate_repair_batch pipeline (not hand-crafted
+EdgeRecords with fabricated equal pid_paths).
 
-**Evidence:**
-- `tests/test_v15_production_call_chain.rb`:
-  - V15PC-005: real-SketchUp constructible should-repair.
-  - V15PC-006: shared-definition two instances NOT merged.
-  - V15PC-007: same-world-coords-different-provenance preserved.
+**Test fixtures updated:**
+The helper `v15_edge` / `v15pc_edge` now accepts
+`parent_pid_path: [100, 200]` (the container path) and
+builds the full canonical pid_path
+`[parent_pid_path..., leaf_pid]`. This matches what
+real-SketchUp's PreflightRunner produces. The old
+fixtures that bypassed the leaf are now correct.
 
-### BLOCK-004 — Owner checklist
+### BLOCK-004 — Owner checklist executable
 
-**Fix:** `Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt`
-rewritten to use ONLY real SketchUp 2020 operations:
+**Root cause (per CodeX):** The previous checklist relied
+on (a) `$su_ai_plugin_dialog_controller` (which is never
+defined in production), (b) `@next_dispose_should_raise`
+(which is not a production adapter hook), (c) fixture
+construction that required Owner to manually create
+coincident SU edges.
 
-  - Step V15-0: paste-load the entry-point from the installed
-    Plugins folder (Ruby Console), verify both modules defined.
-  - Step V15-1: GUI clicks Prepare + reads the Working Mode
-    "Duplicate repairs" row in the dialog.
-  - Step V15-2: Two shared-definition instances -> expect
-    applied=0, skipped>=2.
-  - Step V15-3: Discard + Rebuild -> source fingerprint
-    byte-identical.
-  - Step V15-4: Mid-action failure (Ruby Console inject) ->
-    entire batch rolls back, applied=0, failed=1.
-  - Step V15-5: Discard -> zero derived groups, source
-    unchanged.
-  - Step V15-6: Drop report at
-    Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
+**Fixes:**
 
-**Evidence:**
-- The checklist is now executable: every step either clicks a
-  GUI button, reads a UI row, or pastes a single Ruby
-  Console command. No FakeGroup / pure-Ruby test concepts.
-- Every GUI step has an EXPECTED output.
-- The Ruby Console commands are full single-line (no Owner
-  Ruby authoring required).
+1. **`SUAnalysis::Extension::DialogRunner.current_controller`
+   module-level accessor.** The dialog's controller is
+   published when `show` is called and cleared in `on_close`.
+   Owner uses this from the Ruby Console instead of
+   undefined globals.
 
-### BLOCK-005 — batch atomicity
+2. **Production `dispose` one-shot failure hook.**
+   `SketchupDerivedWorkspaceAdapter#dispose` now reads
+   `@__v15_one_shot_failure`. When set to a
+   `StandardError` instance, the FIRST `dispose` call
+   raises and clears the hook (one-shot by design).
+   Subsequent calls work normally without intervention.
 
-**Fix:** `extension/su_ai_plugin/core/duplicate_repair_executor.rb`
-new method `apply_batch(workspace:, plan:)`:
+3. **Auto-creating test fixtures.** All V15-N steps use
+   Ruby Console commands that build their own Component
+   Definitions + Instances + edges. The Owner NEVER
+   manually constructs coincident SU edges.
 
-  1. Pre-flight every action (compute per-action to_remove /
-     present_ids / invalid_ids).
-  2. Open ONE SU operation via `adapter.begin_operation`.
-  3. Iterate actions in deterministic order; for each action,
-     dispose its valid handles. On first dispose failure,
-     break out of the loop.
-  4. If ALL disposes succeed: `end_operation(commit: true)` ->
-     build post-state workspace; every action :applied.
-  5. If ANY dispose failed: `end_operation(commit: false)` ->
-     the SU native operation rollback removes every entity
-     write inside the batch (including prior successful
-     disposes); workspace transitions to :failed; every action
-     :failed.
+4. **V15-2 contradiction fixed.** V15-2 uses a definition
+   with NO internal duplicates (4 distinct edges) and
+   places TWO ComponentInstances of it. The cross-instance
+   case has no candidate duplicates (different
+   world coords), so applied=0 and skipped=0.
 
-Source fingerprint is unchanged across successful or failed
-batch (the rollback restores the pre-batch workspace state).
+5. **Replaced placeholder `<YOUR_USERNAME>`** with an
+   inline Ruby expression: `File.expand_path('~')` returns
+   the Owner-specific path.
 
-The FakeAdapter (`FakeDerivedWorkspaceAdapter`) and FakeModel
-already model SU's sequential-operation semantics (per V1.4
-V14-STAGE-BLOCK-002): only ONE operation may be open at a time;
-calling commit/abort with no matching start raises. The batch
-test uses these fakes directly, so it cannot nest operations
-to hide the contract.
+6. **Per-step PASS outputs and cleanup commands.** Each
+   step lists the expected output and includes a
+   paste-cleanup command that removes the fixture from the
+   model.
 
-**Evidence:**
-- `tests/test_v15_production_call_chain.rb` V15PC-008: batch
-  atomicity. PartiallyFailingAdapter raises on dispose call
-  #2. The first action's dispose succeeds; the second
-  action's dispose raises; the batch aborts; the workspace
-  is :failed; ALL 4 entities preserved; FakeModel
-  `operation_log` shows `:start, :abort` (NOT `:commit`).
-- `tests/test_v15_production_call_chain.rb` V15PC-010: discard
-  after batch leaves source unchanged (source_fingerprint
-  digest matches pre-batch).
-
-## Test evidence (post-recheck, pre-RBZ rebuild)
+## Test evidence
 
 | Suite                       | Before    | After     |
 |-----------------------------|-----------|-----------|
-| Full Ruby (all)             | 677/677   | 695/695   |
-| V1.5 Phase 1 Ruby tests     | 21/21     | 31/31     |
+| Full Ruby (all)             | 695/695   | 700/700   |
+| V1.5 Phase 1 Ruby tests     | 31/31     | 36/36     |
+| V15 (pure-data)              | 21        | 21        |
+| V15PC (production chain)     | 10        | 10        |
+| V15RP (real Preflight path)  | (none)    | 5         |
 | Node DOM (all)              | 154/154   | 154/154   |
-| V1.5 Phase 1 Node DOM tests | 6/6       | 6/6       |
 | RBZ smoke                   | 8/8       | 8/8       |
 | git diff --check            | clean     | clean     |
 | working tree                | clean     | clean     |
 
-## Recheck STOP
+## Final V1.5 Phase 1 RBZ
 
-CodeX: please review BLOCK-001..005 ONLY. Do not widen scope,
-do not enter V1.5 Phase 2, do not request additional features
-beyond the locked vertical slice.
+  Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:    504,298 bytes
+  Entries: 55
+  SHA256:  8C1162031C76B3E984906D821FBDB523D7241EC20D8400CF3C931061FBABD2D4
 
 ## Hard limits inherited
 
 - NOT pushed / published / installed / released.
-- NOT modified V1.0-V1.4 closed scope (only minimal additions to
-  `working_mode_runner.rb` to expose the V1.5 metric + chain).
+- NOT modified V1.0-V1.4 closed scope.
 - NOT entered V1.5 Phase 2 / V1.6+ / V1.7+ / V1.8 / V1.9.
 - NOT handled short edge / approximate / face / gap / weld /
   flatten / AI / MCP / V2.
-- NOT asked Owner to install the previous RBZ (215152a).
+- NOT asked Owner to install the previous RBZ (1ec7c00).
+
+## STOP
+
+CodeX: please review BLOCK-003 + BLOCK-004 ONLY. Do not widen
+scope. On PASS, Owner runs the rewritten checklist on real SU2020.

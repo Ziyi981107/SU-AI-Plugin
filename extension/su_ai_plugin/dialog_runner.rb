@@ -38,6 +38,26 @@ module SUAnalysis
     module DialogRunner
       module_function
 
+      # V1.5 Phase 1 production accessor (per CodeX V1.5 BLOCK-004
+      # recheck #2): module-level handle to the currently-open
+      # dialog's controller. The Owner uses this in Ruby Console
+      # commands to access the AnalysisResult / registry for the
+      # V15-4 mid-action-failure test (instead of relying on a
+      # private global like `$su_ai_plugin_dialog_controller`).
+      # Only ONE dialog is open at a time (per Loader.keep_dialog!).
+      # The accessor is reset when the dialog closes.
+      def current_controller
+        @@current_controller
+      end
+
+      def set_current_controller(controller)
+        @@current_controller = controller
+      end
+
+      def clear_current_controller
+        @@current_controller = nil
+      end
+
       # Show the HtmlDialog for one AnalysisResult.
       # Returns the dialog instance (or nil in tests).
       def show(result, model: nil)
@@ -57,6 +77,9 @@ module SUAnalysis
         # Absolute path for relative CSS/JS resolution.
         index_path = File.expand_path('html/index.html', __dir__)
         dialog.set_file(index_path)
+        # V1.5 Phase 1 (BLOCK-004 recheck #2): publish the controller
+        # for Owner Ruby Console access. Cleared in on_close.
+        set_current_controller(controller)
         # Callbacks as BLOCKS (real SketchUp API). Keep references
         # alive via closures over controller/dialog so callbacks fire
         # on the correct controller instance.
@@ -730,6 +753,9 @@ module SUAnalysis
       def on_close(_dialog, controller)
         controller.release!
         Loader.release_dialog!
+        # V1.5 Phase 1 (BLOCK-004 recheck #2): clear the
+        # module-level controller handle when the dialog closes.
+        clear_current_controller
       end
     end
   end

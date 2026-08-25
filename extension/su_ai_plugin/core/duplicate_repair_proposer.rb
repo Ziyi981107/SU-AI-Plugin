@@ -264,19 +264,30 @@ module SUAnalysis
         h
       end
 
-      # Build occ_to_deriveds: Hash<String, Array<derived_id>>. Each
-      # occurrence maps to ALL derived records (potentially multiple)
-      # that originated from that occurrence. The workspace may have
-      # 2+ derived records for the same occurrence (the
-      # "duplicate within same occurrence" case).
+      # Build occ_to_deriveds: Hash<String, Array<derived_id>>.
+      # Each V1.5 container-occurrence maps to ALL derived
+      # records (potentially multiple) that originated from
+      # source edges sharing that container. The workspace may
+      # have 2+ derived records for the same V1.5
+      # container-occurrence (the "duplicate within same parent
+      # container" case -- the CAD-import artifact case).
+      #
+      # We reverse-parse each derived record's V1.4-format
+      # source_occurrence_ids back into the canonical pid-path
+      # Array, then derive the V1.5 container-occurrence by
+      # excluding the leaf PID. This keeps the V1.4 contract
+      # intact while letting the proposer match on the V1.5
+      # identity.
       def build_occurrence_to_deriveds(workspace)
         h = {}
         return h if workspace.nil?
         Array(workspace.respond_to?(:entities) ? workspace.entities : []).each do |rec|
           Array(rec.respond_to?(:source_occurrence_ids) ? rec.source_occurrence_ids : []).each do |occ|
-            key = occ.to_s
-            h[key] ||= []
-            h[key] << rec.derived_id.to_s
+            pid_path = parse_v14_occurrence_to_container_path(occ.to_s)
+            next if pid_path.nil? || pid_path.empty?
+            key = container_occurrence_for_path(pid_path)
+            next if key.nil?
+            (h[key] ||= []) << rec.derived_id.to_s
           end
         end
         # Deduplicate and freeze lists (preserve insertion order).
@@ -337,9 +348,28 @@ module SUAnalysis
         (0..2).all? { |i| (p[i].to_f - q[i].to_f).abs <= tol.to_f }
       end
 
-      # Derive the snapshot-local occurrence id from an EdgeRecord's
-      # SourceReference. Uses the same priority as the
-      # WorkingModeRunner: full PID path > instance path > record id.
+      # Derive the V1.5 CONTAINER-occurrence id from an
+      # EdgeRecord's SourceReference.
+      #
+      # CONTRACT (per CodeX V1.5 BLOCK-003 recheck #2):
+      # The canonical SourceReference.persistent_id_path
+      # (V1.0-V1.4 contract) is NOT mutated. The V1.5
+      # container-occurrence is a SEPARATE identity derived
+      # here by excluding the leaf edge PID (the last
+      # element of the canonical path). Two edges from the
+      # SAME parent container (e.g., two duplicate edges
+      # inside the same ComponentDefinition) share this
+      # identity; two edges from DIFFERENT containers
+      # (e.g., two ComponentInstances of the same definition)
+      # have DIFFERENT identities.
+      #
+      # Top-level (root-level) edges: their container_path
+      # would be empty after excluding the leaf. Per CodeX
+      # fail-closed guidance, V1.5 Phase 1 EXCLUDES top-level
+      # edges from auto-repair (returns nil). The repair is
+      # only meaningful within a non-root container (a Group
+      # or a ComponentInstance) where two duplicate edges
+      # indicate a CAD-import artifact inside one parent.
       def occurrence_id_for(edge)
         return nil if edge.nil?
         src = edge.respond_to?(:source) ? edge.source : nil
@@ -348,15 +378,89 @@ module SUAnalysis
         ipath    = (src.respond_to?(:instance_path) && src.instance_path) ? src.instance_path : nil
         complete = src.respond_to?(:pid_path_complete) ? src.pid_path_complete : true
         quality  = complete ? 'occ' : 'transient-occ'
-        if pid_path.is_a?(Array) && !pid_path.empty?
-          "#{quality}-#{pid_path.map(&:to_s).join('>')}"
+        # V1.5 container-occurrence: exclude the leaf PID
+        # (last element). The canonical persistent_id_path
+        # is read-only; we just slice it here.
+        if pid_path.is_a?(Array) && pid_path.length >= 2
+          container_path = pid_path[0..-2]
+          return "#{quality}-container-#{container_path.map(&:to_s).join('>')}"
+        elsif pid_path.is_a?(Array) && pid_path.length == 1
+          # Root-level edge (pid_path = [leaf_pid], no
+          # container). FAIL-CLOSED: no V1.5 repair.
+          return nil
         elsif ipath.is_a?(Array) && !ipath.empty?
-          "#{quality}-ipath-#{ipath.map(&:to_s).join('>')}"
+          # Fallback: instance_path only. The instance_path
+          # also does NOT include the leaf PID (it's the
+          # container path); so we can use it directly.
+          # NOTE: instance_path is the LABEL path (String
+          # entries), not the PID path; it identifies the
+          # container uniquely within the source snapshot
+          # but is NOT guaranteed stable across sessions.
+          # We treat it as a transient V1.5 identity.
+          "#{quality}-container-ipath-#{ipath.map(&:to_s).join('>')}"
         elsif edge.respond_to?(:id) && edge.id
-          "transient-occ-edge-#{edge.id}"
+          # Last-resort transient identity (analysis-local).
+          # Two edges with this identity in the SAME analysis
+          # would be merged; two in DIFFERENT analyses are
+          # not (they get different ids).
+          "transient-occ-container-edge-#{edge.id}"
         else
           nil
         end
+      end
+
+      # Reverse-parse a V1.4-format occurrence string (e.g.
+      # "occ-100>200>300" or "occ-container-ipath-Group>Comp")
+      # back into the container-pid-path Array (excluding the
+      # leaf). Used by build_occurrence_to_deriveds to map
+      # the workspace's V1.4 source_occurrence_ids into the
+      # V1.5 container-occurrence keys for matching.
+      #
+      # Returns nil if the string is not parseable.
+      def parse_v14_occurrence_to_container_path(occ_string)
+        return nil if occ_string.nil? || !occ_string.is_a?(String)
+        s = occ_string.to_s
+        # Strip the quality prefix.
+        rest = if s.start_with?('occ-')
+                s[4..-1]
+              elsif s.start_with?('transient-occ-')
+                s[14..-1]
+              else
+                nil
+              end
+        return nil if rest.nil?
+        # V1.5-prefixed (defensive: if the proposer itself
+        # already wrote a container-prefixed id, just strip
+        # the prefix and pass through).
+        if rest.start_with?('container-')
+          rest = rest[10..-1]
+        end
+        # Strip any ipath- prefix.
+        if rest.start_with?('ipath-')
+          return rest[6..-1].split('>')  # keep as-is; ipath is
+                                          # already container-only
+        end
+        if rest.start_with?('container-ipath-')
+          return rest[15..-1].split('>')
+        end
+        if rest.start_with?('container-edge-')
+          return nil  # transient edge id; cannot extract container
+        end
+        # Otherwise, this is a V1.4 pid-path. The leaf PID is
+        # the last element; we exclude it for the V1.5
+        # container-occurrence.
+        parts = rest.split('>').map { |x| Integer(x) rescue x }
+        return nil if parts.length < 2
+        # Exclude the leaf PID (last element).
+        parts[0..-2]
+      end
+
+      # Compute the V1.5 container-occurrence from a parsed
+      # pid-path Array. Centralized for symmetry with
+      # occurrence_id_for.
+      def container_occurrence_for_path(container_path, quality: 'occ')
+        return nil if container_path.nil? || container_path.empty?
+        "#{quality}-container-#{container_path.map(&:to_s).join('>')}"
       end
 
       # Build the :remove_duplicate_edge RepairAction (one per
