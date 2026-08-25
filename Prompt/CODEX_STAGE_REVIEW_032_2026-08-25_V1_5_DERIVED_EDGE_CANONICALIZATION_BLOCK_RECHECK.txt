@@ -1,0 +1,364 @@
+======================================================================
+CODEX / AIPM V1.5 STAGE REVIEW 032
+DERIVED EDGE CANONICALIZATION -- BLOCK RECHECK DIRECTIVE
+======================================================================
+
+STATUS: ACTIVE
+DATE: 2026-08-25
+REVIEW MODE: STAGE REVIEW -> NARROW BLOCK RECHECK
+VERDICT: BLOCKED
+IMPLEMENTATION OWNER: Pi
+TECHNICAL / PRODUCT OWNER: Codex / AIPM
+FINAL PRODUCT OWNER: Owner
+
+REPOSITORY:
+  D:/Projects/SU-AI-Plugin
+
+MASTER CONTRACT:
+  E:/dnowload/SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt
+
+REVIEWED BASE / HEAD:
+  base: 78f8500  docs(prompt): dispatch V1.5 recovery guidance 031
+  head: 9a5554d  docs(v1.5-stage4): implementation report + stage review packet + owner gate draft
+
+THIS IS THE ONLY ACTIVE NEXT-ACTION DIRECTIVE.
+
+It supersedes Guidance 031 only as the current action dispatch. The locked
+product/technical contract in Guidance 031 remains binding except where this
+review gives a more precise minimum fix for the BLOCKs below.
+
+Do not infer work from chat or older Prompt/Review files. Read, in order:
+  1. PROJECT_HANDOFF.txt
+  2. CURRENT_STATE.md (current top section only; older sections are history)
+  3. the fixed master contract above
+  4. Prompt/CODEX_GUIDANCE_031_2026-08-25_V1_5_RECOVERY_AND_DERIVED_EDGE_CANONICALIZATION.txt
+  5. this ACTIVE file
+  6. Review/V15_DERIVED_EDGE_CANONICALIZATION_IMPLEMENTATION_REPORT_2026-08-25.md
+  7. Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md
+
+======================================================================
+0. WORKFLOW OWNERSHIP -- UNCHANGED HARD RULE
+======================================================================
+
+Prompt/ is Codex/AIPM-owned input and READ-ONLY to Pi.
+  - Pi MUST NOT create, edit, rename, append, or delete Prompt files.
+
+Review/ is Pi-owned output for Codex/AIPM review.
+  - Pi writes its recheck packet and revised Owner-checklist draft here.
+
+Owner does not edit Prompt/, Review/, CURRENT_STATE.md, or source files during
+real-host verification. Owner returns console/UI evidence to Codex in chat.
+Codex/AIPM publishes every next command or verdict in Prompt/.
+
+======================================================================
+1. INDEPENDENT REVIEW EVIDENCE
+======================================================================
+
+At HEAD 9a5554d, Codex independently verified:
+
+  Ruby:          707/707 PASS
+  Node DOM:      155/155 PASS
+  RBZ smoke:     8/8 PASS (inside the Ruby suite)
+  git diff --check 78f8500..HEAD: clean
+  working tree:  clean
+  RBZ size:      525,661 bytes
+  RBZ SHA-256:   7849BD3E7EF257743553E6DA3AA57410610EA2E31DE02EBED0A7BAFF143FFF03
+
+These green tests are credible regression evidence, but they do not close the
+BLOCKs below. The current RBZ MUST NOT be installed.
+
+PASSED / CLOSED SCOPE (do not reopen without new evidence):
+  - Guidance 031 Stage 0 recovery and repository cleanup;
+  - PROJECT_HANDOFF.txt creation and Prompt/Review ownership contract;
+  - no production failure-injection hook;
+  - V1.0-V1.4 regression baseline and V1.4 Stage Review;
+  - package contents / load smoke;
+  - corrected product direction: source occurrences stay distinct while an
+    eligible exact/reversed-exact DERIVED segment may canonicalize to one
+    survivor with a provenance union;
+  - out-of-scope exclusions (short-edge-only repair, face/gap/weld/flatten,
+    AI/MCP/site/V2/V1.6+).
+
+======================================================================
+2. BLOCKS
+======================================================================
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-001 -- AUTO-APPLY DOES NOT PROVE DISTINCT SOURCE MEMBERS
+---------------------------------------------------------------------
+
+Locations:
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:187-260
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:212-226
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:426-474
+
+Problem:
+  Guidance 031 section 5 requires every class member to resolve to a distinct
+  source EdgeRecord and a distinct live derived Edge record/handle. The code
+  explicitly says it does NOT enforce distinct source records/occurrences.
+  One valid issue merely authorizes every derived record in the same canonical
+  bucket. The proposer does not prove that each member maps unambiguously to a
+  current-snapshot source edge or that all class members are covered by the
+  duplicate evidence. edge_for_occurrence_id also uses container-only matching
+  and returns the first edge, which is not an unambiguous leaf resolution.
+
+Why this matters:
+  Auto-delete may sweep an unrelated/stale/duplicated derived record into a
+  removal class. This is exactly the provenance/source-authority risk the guard
+  was intended to prevent.
+
+Minimum acceptable fix:
+  - Before emitting an auto-applicable class, resolve EVERY derived member to
+    exactly one current SourceSnapshot EdgeRecord using full occurrence/leaf
+    identity (with the existing deterministic transient-root fallback only
+    where the snapshot contract permits it).
+  - Require distinct source EdgeRecords and distinct live derived records /
+    handles. Repeated source identity, ambiguous lookup, missing handle, or
+    incomplete nested identity MUST fail closed with an explicit skipped audit.
+  - Require the valid duplicate_edge_candidate evidence for that canonical
+    class to cover the contributing source EdgeRecord set; one pair must not
+    silently authorize unrelated additional members.
+  - Keep both source occurrences immutable; survivor provenance is the sorted
+    union only after all guards pass.
+
+Recheck tests required:
+  - two same-transform component instances -> distinct source records -> apply;
+  - repeated reference to the same source edge -> skipped;
+  - extra unrelated derived record in the same geometry bucket but absent from
+    issue evidence -> not swept into the action;
+  - ambiguous/missing/full-leaf resolution -> skipped;
+  - incomplete nested provenance -> skipped (explicit test, not "implicit").
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-002 -- TOLERANCE BUCKET IS NOT THE MATCH CONTRACT
+---------------------------------------------------------------------
+
+Locations:
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:352-370
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:406-423
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:77-99
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:101-140
+
+Problem:
+  round(coordinate / tolerance) is used as if every pair within tolerance lands
+  in the same bucket. That is false at cell boundaries. Conversely, only the
+  source issue pair is directly reverified; every derived class member and the
+  validator are accepted solely by bucket membership.
+
+Why this matters:
+  Valid exact-within-tolerance duplicates may be missed, and the derived
+  validator may disagree with the actual locked duplicate rule. A chained
+  near-match must also not let non-matching endpoints join an unsafe class.
+
+Minimum acceptable fix:
+  - Treat spatial buckets only as candidate acceleration.
+  - Perform forward/reversed direct endpoint comparison with the CAPTURED
+    tolerance for every member admitted to an action and every class counted by
+    post-validation.
+  - Deterministically handle adjacent buckets. Do not merge a non-transitive
+    A~B, B~C, A!~C chain into one destructive class; split deterministically or
+    fail closed.
+  - Use the same tested matcher in proposer and derived validator so their
+    semantics cannot drift.
+
+Recheck tests required:
+  - within-tolerance endpoints straddling a rounding boundary -> recognized;
+  - just-outside tolerance -> skipped;
+  - non-transitive three-edge chain -> no unsafe three-member deletion;
+  - reversed ordering across a bucket boundary -> same safe result.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-003 -- POST-STATE CHECK OCCURS AFTER COMMIT
+---------------------------------------------------------------------
+
+Locations:
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:336-369
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:401-457
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb:560-606
+
+Problem:
+  The executor commits the SketchUp operation at line 404, constructs and
+  checks the logical post-workspace afterwards, and on mismatch tries to abort
+  at line 445. An abort after successful commit cannot undo the committed host
+  mutation. The method can therefore return the pre-batch logical inventory in
+  :failed while SketchUp has already deleted derived entities.
+
+Why this matters:
+  Host state and the plugin's source-of-truth inventory can diverge. Recovery /
+  Discard may then operate on stale handles, which is a material corruption and
+  recoverability risk.
+
+Minimum acceptable fix:
+  - Implement Guidance 031 section 7 literally: preflight and construct the
+    COMPLETE non-overlapping post-inventory, survivor replacement records,
+    expected fingerprint/shape, action/handle validity, and validation result
+    in pure data BEFORE opening the operation.
+  - Begin once, dispose only validated non-survivors, abort on any dispose
+    failure, commit once on success, then publish the already-precomputed
+    post-workspace.
+  - No code path may attempt abort after a successful commit.
+  - Commit/abort uncertainty must remain visible and recoverable; never claim
+    READY from an uncertain host transaction.
+
+Recheck tests required:
+  - preflight failure proves begin_operation was never called;
+  - Nth dispose failure -> one begin + one abort + zero commit and exact
+    pre-batch logical inventory/provenance;
+  - successful batch -> one begin + one commit + zero abort;
+  - forced logical post-state/preflight mismatch cannot commit host deletion;
+  - commit failure remains :failed and does not report a fabricated rollback.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-004 -- VALIDATION AND UI AUDIT REPORT FABRICATED / INCOMPLETE DATA
+---------------------------------------------------------------------
+
+Locations:
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb:55-70
+  extension/su_ai_plugin/core/working_mode_runner.rb:424-500
+  extension/su_ai_plugin/html/app.js:492-544
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb:569-606
+
+Problem:
+  - DerivedDuplicateValidator.validate reports duplicate_classes_after = 0
+    unconditionally, even when the supplied workspace still contains classes.
+  - WorkingModeRunner validates with a hardcoded/default tolerance rather than
+    the captured execution_config tolerance.
+  - duplicate_pairs_before selects :applied actions from the pre-apply validated
+    plan, so it evaluates to zero instead of the real before count.
+  - The remove action drops the source issue reference even though the report
+    claims it is retained.
+  - UI exposes applied/skipped and class counts only. It omits failed count,
+    derived edge count before/after, and inspectable per-action audit rows.
+
+Why this matters:
+  The UI can claim 0 remaining duplicate classes without measuring it. Owner
+  cannot distinguish real success, partial failure, or missing evidence.
+
+Minimum acceptable fix:
+  - Validation must compute actual pre/post class sets using the same direct
+    matcher and captured tolerance. Never hardcode an expected result as an
+    observed result.
+  - Assert every applied eligible class is absent from the precomputed post
+    result before host commit. A failed invariant cannot be reported READY.
+  - Produce summary metrics from actual plan/execution/post-workspace data:
+    applied/skipped/failed, classes before/after, derived edge count before/
+    after, real pair/member-removal counts.
+  - Preserve source issue IDs/keys in each action audit.
+  - Expose per-action status, rule/explanation, removed count, survivor ID, and
+    source-occurrence count in a read-only details block (or equally inspectable
+    structure). Continue to use textContent; no innerHTML/eval.
+
+Recheck tests required:
+  - validator on an unchanged duplicate workspace reports remaining > 0;
+  - validator on repaired post-workspace reports 0;
+  - non-default captured tolerance is used end-to-end;
+  - summary before/pairs/edge counts are non-fabricated and exact;
+  - applied/skipped/failed action rows and all required fields render in DOM.
+
+---------------------------------------------------------------------
+V15-STAGE-BLOCK-005 -- REQUIRED MATRIX AND OWNER DRAFT ARE NOT EXECUTABLE
+---------------------------------------------------------------------
+
+Locations:
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md:73-96
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt:1-220
+
+Problem:
+  The packet labels required cases E and I as out-of-scope/implicit even though
+  Guidance 031 explicitly requires both. The Owner draft asks Owner to click a
+  nonexistent "Run Duplicate Repairs" button (repair currently auto-runs during
+  Prepare/Rebuild), inspect a fingerprint via CURRENT_STATE.md, edit
+  CURRENT_STATE.md, and save an Owner report inside Prompt/. It also declares
+  Prompt Owner-owned, contradicting the frozen workflow.
+
+Minimum acceptable fix:
+  - Add explicit automated cases E and I plus the tests required by BLOCK-001..
+    BLOCK-004. No required row may be called implicit or out of scope.
+  - Rewrite the Owner draft around the actual GUI call chain: Analyze selection
+    -> Prepare auto-runs the eligible batch; Rebuild re-runs it.
+  - Provide copy/paste-safe Ruby Console observation commands only where UI
+    cannot expose required evidence. The checklist itself must create and select
+    its fixtures deterministically and must state exactly where each output is
+    read.
+  - Owner edits no repository file. Owner returns evidence to Codex in chat.
+  - Prompt remains Codex/AIPM-owned. Pi's revised draft remains in Review/ and
+    still says DO NOT EXECUTE until a later Codex PASS Prompt.
+
+======================================================================
+3. IMPLEMENTATION BOUNDARY / BEST PATH
+======================================================================
+
+This is ONE meaningful narrow follow-up, not five micro-reviews.
+
+Work in this order:
+  1. Freeze/reuse one exact derived matcher with captured tolerance.
+  2. Make proposer membership/evidence/provenance fail closed.
+  3. Make complete logical post-state + validation a pre-operation pure-data
+     result; then simplify the executor transaction ordering.
+  4. Derive actual audit payload + read-only details UI from execution results.
+  5. Add every missing boundary/failure test and repair the Owner draft.
+  6. Run full suites, build one new RBZ, write one recheck packet, STOP.
+
+Allowed implementation surface (only as needed):
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb
+  extension/su_ai_plugin/core/working_mode_runner.rb
+  extension/su_ai_plugin/html/app.js
+  extension/su_ai_plugin/dialog_runner.rb (only if actual audit exposure requires it)
+  tests/test_v15_duplicate_repair.rb
+  tests/test_v15_production_call_chain.rb
+  tests/test_v15_real_preflight_path.rb
+  tests/test_html_render_dom.js
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+  CURRENT_STATE.md (Pi records implementation state only)
+
+Do not modify source outside this surface unless a direct dependency makes it
+unavoidable. If so, record the reason in the recheck packet. Do not refactor
+stable V1.0-V1.4 code for cleanliness.
+
+Pi may make ordinary engineering decisions inside these locked outcomes. If a
+material source/provenance/transaction/product-authority blocker remains, write
+one Review/ESCALATION_V15_<TOPIC>_2026-08-25.md and STOP. Do not ask Owner to
+choose low-level implementation details.
+
+======================================================================
+4. ACCEPTANCE EVIDENCE
+======================================================================
+
+Required before returning:
+  - full Ruby suite: 0 fail, 0 error;
+  - Node DOM suite: 0 fail;
+  - RBZ smoke: 0 fail;
+  - git diff --check: clean;
+  - working tree: clean;
+  - new final RBZ size, entry count, SHA-256;
+  - exact commit list and base/head;
+  - an explicit mapping of every BLOCK minimum fix and every required new test.
+
+Pi writes:
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md
+
+Pi also rewrites in place (still DRAFT / DO NOT EXECUTE):
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+
+Do not rewrite the prior implementation report or stage packet to hide the
+original evidence; the recheck packet records corrections transparently.
+
+======================================================================
+5. HARD STOP
+======================================================================
+
+After implementation/tests/RBZ/recheck outputs:
+  - STOP for Codex BLOCK RECHECK of V15-STAGE-BLOCK-001..005.
+  - DO NOT ask Owner to install or run the draft.
+  - DO NOT push, publish, release, or enter V1.6/V1.7/V1.8/V1.9.
+  - DO NOT reopen passed unchanged V1.0-V1.4 scope.
+  - DO NOT write any Prompt file.
+
+The next permissible Owner action exists only after a later Codex Prompt says
+the BLOCK recheck passed and explicitly greenlights the revised Owner gate.
+
+======================================================================
+END OF ACTIVE DIRECTIVE
+======================================================================
