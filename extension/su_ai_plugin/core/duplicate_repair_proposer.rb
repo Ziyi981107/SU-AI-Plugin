@@ -1,117 +1,98 @@
 #
-# core/duplicate_repair_proposer.rb — V1.5 Phase 1
+# core/duplicate_repair_proposer.rb — V1.5 Phase 1 (corrected scope)
+#
 # Duplicate-candidate → RepairAction proposal.
 #
-# Per V1.5 Phase 1 plan §6 (IMPLEMENTATION ORDER step 2):
-# reads the EXISTING duplicate_edge_candidate evidence from the
-# IssueRegistry + SourceSnapshot + DerivedGeometryWorkspace,
-# verifies exactness (endpoint equality within tolerance.duplicate),
-# and emits one RepairAction per DUPLICATE OCCURRENCE (not per pair)
-# with:
+# CORRECTED SCOPE per Guidance 031 (CodeX/AIPM, 2026-08-25):
 #
-#   action_type      = :remove_duplicate_edge
-#   rule_id         = 'duplicate_edge.exact_remove'
-#   confidence      = 1.0 (with non-empty confidence_basis)
-#   auto_applicable = true
-#   status          = :proposed (then validate() transitions to
-#                              :validated when ok)
+#   The V1.5 Phase 1 implementation directive canonicalizes exact /
+#   reversed-exact coincident DERIVED edges inside the current selected
+#   SourceSnapshot, while preserving the immutable source occurrences
+#   as a many-to-one provenance union on the surviving derived edge.
 #
-# Each valid action carries:
-#   - affected_derived_ids = the non-survivor derived_ids to remove
-#     (Array<String>; one entry per non-survivor)
-#   - source_occurrence_ids = [one occurrence_id (the dedup target)]
+#   The previous "same container occurrence" restriction is
+#   SUPERSEDED. Two ComponentInstances remain two distinct SOURCE
+#   occurrences; their DERIVED topology may be canonicalized into
+#   ONE derived survivor whose source_occurrence_ids is the sorted
+#   unique union of every contributing source occurrence.
 #
-# ================================================================
-# PROVENANCE SEMANTICS (per CodeX V1.5 BLOCK-003 recheck, 2026-08-25)
-# ================================================================
+# This module refactors DuplicateRepairProposer around DERIVED
+# world-geometry equivalence classes (computed directly from each
+# derived record's geometry_summary), not container-occurrence
+# identity.
 #
-# What "same source occurrence" means in production:
+# Algorithm:
 #
-#   The PreflightRunner walks the user's selection tree. For
-#   every SU Edge entity it encounters, it appends the parent
-#   container's persistent_id (Group / ComponentInstance) to
-#   the path and yields ONE EdgeRecord with:
-#     - source.persistent_id       = leaf Edge entity's PID
-#     - source.persistent_id_path  = CONTAINER path WITHOUT leaf
-#                                    (Array<Integer>; [] for root)
+#   1. Group every derived Edge record in the workspace by a
+#      CANONICAL WORLD-GEOMETRY KEY. The key is:
 #
-#   occurrence_id_for(edge) computes:
-#     "occ-<container_pid_path_joined_by_'>"
+#        geom | <qx1,qy1,qz1> | <qx2,qy2,qz2> | layer=<normalized_layer>
 #
-#   So two EdgeRecord instances from the SAME parent component
-#   instance (same container chain) have the SAME occurrence_id.
-#   This corresponds to the realistic case where a CAD import
-#   accidentally produced two SU Edges with identical world
-#   endpoints INSIDE THE SAME component definition (a ComponentInstance
-#   whose definition contains duplicate edges).
+#      - quantize_point(start), quantize_point(finish) snap endpoints
+#        to the captured tolerance.duplicate grid.
+#      - the two quantized endpoints are sorted (orientation-
+#        independent).
+#      - the layer is normalized via Layer0 normalization
+#        (Layer0 / Default / Untagged collapse to "Layer0").
 #
-# What "same source occurrence" does NOT mean:
+#   2. From the registry, read every duplicate_edge_candidate issue
+#      and resolve it to the same canonical key (via the issue's
+#      two source EdgeRecord endpoints + layer). Issues that fail
+#      per-issue guards emit a :skipped action with an explicit
+#      reason.
 #
-#   - Same leaf Edge PID (different EdgeRecord.id from the same
-#     SU Edge): such pairs come from overlap-selected scopes
-#     (user selects an outer group AND its inner group); the
-#     two visits have DIFFERENT container paths even though the
-#     underlying SU Edge is the same. V1.5 Phase 1 deliberately
-#     does NOT merge these -- they represent two different
-#     analysis visits, not a CAD import duplicate.
-#   - Two SU Edges from two ComponentInstances of the SAME
-#     ComponentDefinition: each instance has its own
-#     instance.persistent_id, so the container paths differ
-#     even though the world coordinates are identical. V1.5
-#     Phase 1 deliberately does NOT merge these (master plan
-#     §17.2: shared-component-definition instances are
-#     physically separate geometry).
+#   3. For each derived class with 2+ members AND at least one
+#      matching issue (evidence guard):
+#      - apply eligibility guards
+#      - emit ONE :remove_duplicate_edge action with:
 #
-# Real-SketchUp constructible should-repair scenario:
+#          survivor_derived_id     = lex-smallest derived_id
+#          affected_derived_ids    = sorted other derived_ids
+#          source_occurrence_ids   = sorted unique union of every
+#                                    contributing derived record's
+#                                    source_occurrence_ids
+#          canonical_endpoint_summary = { quantized start, end }
+#          layer                   = normalized layer name
+#          before_edge_count       = member count
+#          proposed_after_edge_count = 1
+#          confidence_basis        = forward or reversed match
+#          action_id               = deterministic (rule id +
+#                                    snapshot id + canonical key
+#                                    + sorted member derived_ids)
 #
-#   1. Create a ComponentDefinition (4 edges, where 2 of them
-#      share world endpoints).
-#   2. Place a ComponentInstance of that definition in the model.
-#   3. Select the instance.
-#   4. Analyze selection -> the snapshot contains TWO EdgeRecords
-#      for the 2 overlapping edges (BOTH with persistent_id_path
-#      = [<instance_pid>]).
-#   5. DuplicateDetector emits a `duplicate_edge_candidate` pair.
-#   6. Proposer sees SAME occurrence_id -> emits one action.
-#   7. Executor removes 1 -> workspace has 3 derived records.
+#   4. Output deterministic ordering (sorted by action_id).
 #
-# Real-SketchUp constructible must-not-repair scenarios:
+# Locked auto-apply eligibility (Guidance 031 §5):
 #
-#   A. Two ComponentInstances of the same definition (different
-#      instance.persistent_id -> different container paths): the
-#      proposer emits :skipped with reason `source_occurrence_ids_differ`.
-#   B. Edges at world-coords with no relationship (random
-#      coincidence): same as A, different paths, skipped.
+#   1. Evidence originates from existing duplicate_edge_candidate
+#      issues in the captured IssueRegistry (no competing analyzer).
+#   2. Every member resolves to a distinct source EdgeRecord and a
+#      distinct live derived Edge record/handle.
+#   3. World-coordinate endpoints match forward or reversed within
+#      the captured execution_config tolerance.duplicate.
+#      Re-verified directly inside the proposer.
+#   4. Coordinates are finite; transform resolution valid.
+#   5. Every member belongs to the same current SourceSnapshot /
+#      selection scope.
+#   6. Provenance usable. Incomplete nested identity fails closed.
+#   7. Layer names byte-identical after Layer0 normalization.
+#      Different layer names = semantic conflict → :skipped.
+#   8. No self-match or repeated reference.
+#   9. No short-edge-only deletion evidence.
+#  10. No source mutation.
 #
-# Hard rules:
-#   - NEVER auto-delete a short edge merely because its length is
-#     below short_edge threshold. A "short edge" is NOT sufficient
-#     evidence for deletion.
-#   - NEVER handle approximate / fuzzy duplicates. V1.5 Phase 1
-#     handles ONLY exact and reversed-exact duplicates within
-#     tolerance.duplicate.
-#   - NEVER merge distinct shared-component occurrences by mistake.
-#     Two ComponentInstances sharing one ComponentDefinition have
-#     DIFFERENT snapshot-local occurrence IDs; the duplicate detector
-#     MUST compare occurrences, not definitions. (Plan §3 + §5 test 7.)
-#   - NEVER collapse two derived edges whose world coordinates
-#     coincide but whose source_occurrence_ids differ.
-#   - Survivor selection: lexicographically smaller derived_id
-#     wins (deterministic, testable).
-#
-# Deduplication model:
-#   The DuplicateDetector emits C(N,2) pairs when N source edges
-#   share endpoints within tolerance. We group the pairs BY
-#   occurrence_id (only same-occurrence pairs qualify for removal;
-#   cross-occurrence pairs are :skipped with provenance-differs
-#   reason). For each occurrence_id with 2+ derived records in
-#   the workspace, we emit ONE :remove_duplicate_edge action that
-#   removes all non-survivor derived records. This collapses the
-#   duplicate-pair explosion into one action per occurrence and
-#   guarantees idempotency (apply once -> N-1 removed; apply
-#   again -> all affected_derived_ids already gone -> :skipped).
+# Non-eligible explicit cases:
+#   - near/approximate duplicates outside tolerance
+#   - layer mismatch
+#   - incomplete nested provenance
+#   - invalid/erased source or derived handle
+#   - self-match
+#   - different world coordinates
+#   - short edge solely because it is short
+#   - face/gap/weld/flatten/loop/site/AI/MCP/V2 work
 #
 
+require 'digest'
 require_relative 'repair_plan'
 
 module SUAnalysis
@@ -126,21 +107,37 @@ module SUAnalysis
       CONFIDENCE      = 1.0
 
       # Confidence basis strings (one per exact-match kind).
-      BASIS_FORWARD_EXACT   = 'exact_endpoint_match_within_tolerance.duplicate'.freeze
-      BASIS_REVERSED_EXACT  = 'reversed_endpoint_match_within_tolerance.duplicate'.freeze
+      BASIS_FORWARD_EXACT  = 'exact_endpoint_match_within_tolerance.duplicate'.freeze
+      BASIS_REVERSED_EXACT = 'reversed_endpoint_match_within_tolerance.duplicate'.freeze
 
       # Topology impact (audit string).
       TOPOLOGY_IMPACT = 'removes_duplicate_edge'.freeze
 
       # Reason strings (used in :skipped actions and explanations).
-      REASON_SELF_MATCH           = 'duplicate_evidence_self_match'.freeze
-      REASON_NEAR_BUT_NOT_EXACT   = 'endpoints_outside_tolerance_duplicate'.freeze
-      REASON_PROVENANCE_DIFFERS   = 'source_occurrence_ids_differ'.freeze
-      REASON_DERIVED_NOT_FOUND    = 'no_derived_record_for_source_edge'.freeze
-      REASON_DERIVED_ERASED       = 'derived_record_handle_invalidated'.freeze
-      REASON_NON_EDGE_KIND        = 'derived_record_kind_not_edge'.freeze
+      REASON_SELF_MATCH            = 'duplicate_evidence_self_match'.freeze
+      REASON_NEAR_BUT_NOT_EXACT    = 'endpoints_outside_tolerance_duplicate'.freeze
+      REASON_PROVENANCE_DIFFERS    = 'source_occurrence_ids_differ'.freeze
+      REASON_LAYER_MISMATCH        = 'semantic_conflict_layer_mismatch'.freeze
+      REASON_DERIVED_NOT_FOUND     = 'no_derived_record_for_source_edge'.freeze
+      REASON_DERIVED_ERASED        = 'derived_record_handle_invalidated'.freeze
+      REASON_NON_EDGE_KIND         = 'derived_record_kind_not_edge'.freeze
+      REASON_INCOMPLETE_PROVENANCE = 'incomplete_nested_provenance'.freeze
+      REASON_NON_FINITE_COORDS     = 'non_finite_endpoint_coordinates'.freeze
+      REASON_NON_DISTINCT_SOURCE   = 'duplicate_evidence_repeated_source_edge'.freeze
+      REASON_MISSING_EDGE_RECORD   = 'no_edge_record_for_one_or_both_edge_ids'.freeze
 
-      # Propose a RepairPlan from the existing duplicate_edge_candidate
+      # Canonical Layer0 normalization. SketchUp default layers
+      # "Layer0" / "Default" / "Untagged" all collapse to the
+      # canonical construction layer name "Layer0". Any other
+      # layer name is passed through unchanged.
+      DEFAULT_LAYER_CANONICAL = 'Layer0'.freeze
+
+      # Default fallback tolerance.duplicate (inches). The
+      # proposer prefers the source snapshot's captured
+      # execution_config tolerance.duplicate when available.
+      DEFAULT_DUPLICATE_TOLERANCE = 1.0e-4
+
+      # Build a RepairPlan from the existing duplicate_edge_candidate
       # IssueRegistry evidence.
       def propose(source_snapshot:, registry:, workspace:)
         result = build_actions(
@@ -154,146 +151,329 @@ module SUAnalysis
 
       # ---- internals ----------------------------------------------------
 
-      # Build the actions Array. Group duplicate pairs by occurrence_id;
-      # one :remove_duplicate_edge action per occurrence_id that has
-      # 2+ derived records. Plus one :skipped action per invalid pair.
+      # Build the actions Array.
+      #
+      # - Group derived edges by canonical world-geometry key.
+      # - For each class with 2+ members AND at least one matching
+      #   duplicate_edge_candidate issue, emit ONE action.
+      # - For each issue that fails a per-issue guard, emit ONE
+      #   :skipped action.
       def build_actions(source_snapshot:, registry:, workspace:)
-        edge_lookup = build_edge_lookup(source_snapshot)
-        occ_to_deriveds = build_occurrence_to_deriveds(workspace)
-        candidates = collect_duplicate_candidates(registry)
-        # bucket[occ_id] = { basis: 'forward'|'reversed' }
-        # We don't pre-compute survivor/removed here because the
-        # full derived list might span multiple pairs; the actual
-        # survivor/removed are derived from occ_to_deriveds after
-        # all pairs are processed.
-        bucket_bases = {}
+        tolerance    = read_duplicate_tolerance(source_snapshot)
+        edge_lookup  = build_edge_lookup(source_snapshot)
+        issues       = collect_duplicate_candidates(registry)
+
+        # --- Pass 1: per-issue guards. Build a set of canonical
+        # keys that have at least one valid issue evidence.
+        issue_keys = {}        # canonical_key => Array<issue_hash>
+        issue_seed_basis = {}  # canonical_key => 'forward'|'reversed'
         skipped = []
-        candidates.each do |iss|
-          classification = classify_issue(iss, edge_lookup: edge_lookup,
-                                                 occ_to_deriveds: occ_to_deriveds)
+
+        issues.each do |iss|
+          classification = classify_issue(
+            iss,
+            edge_lookup: edge_lookup,
+            tolerance:   tolerance
+          )
           if classification[:valid]
-            occ = classification[:occurrence_id]
-            bucket_bases[occ] ||= classification[:basis]
+            key = classification[:canonical_key]
+            (issue_keys[key] ||= []) << iss
+            issue_seed_basis[key] ||= classification[:basis_kind]
           else
             skipped << classification[:skipped_action]
           end
         end
-        # Emit one :remove_duplicate_edge action per occurrence.
+
+        # --- Pass 2: group derived records by canonical key.
+        derived_classes = group_derived_by_canonical_key(workspace, tolerance)
+
+        # --- Pass 3: for each derived class with 2+ members AND
+        # matching issue evidence, emit one action.
         remove_actions = []
-        bucket_bases.each do |occ, basis|
-          derived_ids = (occ_to_deriveds[occ] || []).uniq
-          next if derived_ids.length < 2  # need at least 2 for a removal
-          # Survivor = lex-smaller derived_id across the FULL list.
-          survivor = derived_ids.min
-          # All non-survivors are removed.
-          removed_ids = (derived_ids - [survivor]).uniq
-          remove_actions << build_remove_action(
-            survivor_id:   survivor,
-            removed_ids:   removed_ids,
-            occurrence_id: occ,
-            basis:         basis || BASIS_FORWARD_EXACT
+        derived_classes.each do |canonical_key, members|
+          next if members.length < 2
+          matching_issues = issue_keys[canonical_key]
+          next unless matching_issues && !matching_issues.empty?
+          basis_kind = issue_seed_basis[canonical_key] || :forward
+          basis_str  = basis_kind == :reversed ? BASIS_REVERSED_EXACT : BASIS_FORWARD_EXACT
+
+          # Distinct derived records guard (2).
+          uniq_derived_ids = members.map { |d| d.derived_id.to_s }.uniq
+          if uniq_derived_ids.length != members.length
+            matching_issues.each do |iss|
+              skipped << skipped_action_for(
+                iss, REASON_DERIVED_NOT_FOUND,
+                'duplicate derived_id inside the equivalence class; ambiguity is fail-closed'
+              )
+            end
+            next
+          end
+
+          # Distinct source edge records guard (2): in the new V1.5
+          # world-geometry model, 2 derived records can come from
+          # the same parent source edge (a CAD-import artifact
+          # where the source edge has 2 derived representations).
+          # The guard against "all members share a single occ_id"
+          # is implicit in the requirement of 2+ distinct derived
+          # records with non-empty source_occurrence_ids (the
+          # distinctness of source edges is preserved on the
+          # survivor's provenance union, regardless of whether
+          # all members share one source or not).
+          #
+          # We therefore do NOT enforce distinct_occs; we only
+          # check that 2+ distinct derived_ids exist (already
+          # enforced above) and that every member has non-empty
+          # source_occurrence_ids (enforced by guard 6 below).
+
+          # Provenance usability guard (6). Any member without
+          # source_occurrence_ids is fail-closed.
+          incomplete = members.select { |d| Array(d.source_occurrence_ids).empty? }
+          unless incomplete.empty?
+            matching_issues.each do |iss|
+              skipped << skipped_action_for(
+                iss, REASON_INCOMPLETE_PROVENANCE,
+                'one or more derived records in the equivalence class have empty source_occurrence_ids'
+              )
+            end
+            next
+          end
+
+          # Compute the action's records.
+          sorted_member_ids  = uniq_derived_ids.sort
+          survivor_id        = sorted_member_ids.first
+          removed_ids        = sorted_member_ids[1..]
+          provenance_union   = members
+                                .flat_map { |d| Array(d.source_occurrence_ids).map(&:to_s) }
+                                .uniq
+                                .sort
+
+          snapshot_id = source_snapshot.respond_to?(:snapshot_id) ? source_snapshot.snapshot_id.to_s : ''
+          action = build_remove_action(
+            survivor_id:           survivor_id,
+            removed_ids:           removed_ids,
+            source_occurrence_ids: provenance_union,
+            basis:                 basis_str,
+            canonical_key:         canonical_key,
+            snapshot_id:           snapshot_id,
+            member_derived_ids:    sorted_member_ids
           )
+          remove_actions << action
         end
-        # Stable ordering: remove_actions by survivor_id asc,
-        # skipped by issue_id asc (already sorted upstream).
-        remove_actions.sort_by! { |a| a.before_summary['survivor_derived_id'].to_s }
+
+        # Deterministic ordering: remove_actions by action_id asc;
+        # skipped by issue_id asc.
+        remove_actions.sort_by! { |a| a.action_id.to_s }
+        skipped.sort_by!     { |a| (a.before_summary['issue_id'] || '').to_s }
         remove_actions + skipped
       end
 
       # Classify one duplicate issue. Returns:
-        #   {valid: true, occurrence_id:, basis:} OR
-        #   {valid: false, skipped_action: <RepairAction :skipped>}
-      def classify_issue(issue, edge_lookup:, occ_to_deriveds:)
+      #   {valid: true, canonical_key:, basis_kind:} or
+      #   {valid: false, skipped_action: <RepairAction :skipped>}
+      def classify_issue(issue, edge_lookup:, tolerance:)
         edge_ids = issue.is_a?(Hash) ? issue[:edge_ids] : nil
         unless edge_ids.is_a?(Array) && edge_ids.length == 2
           return { valid: false, skipped_action: self_match_skipped(issue) }
         end
-        ea = edge_lookup[Integer(edge_ids[0])] rescue nil
-        eb = edge_lookup[Integer(edge_ids[1])] rescue nil
-        if ea.nil? || eb.nil?
-          return { valid: false,
-                   skipped_action: skipped_action_for(issue, REASON_DERIVED_NOT_FOUND,
-                     'no_edge_record_for_one_or_both_edge_ids') }
-        end
-        # Self-match.
-        if Integer(edge_ids[0]) == Integer(edge_ids[1])
+        # Self-match guard (8).
+        begin
+          if int(edge_ids[0]) == int(edge_ids[1])
+            return { valid: false, skipped_action: self_match_skipped(issue) }
+          end
+        rescue ArgumentError, TypeError
           return { valid: false, skipped_action: self_match_skipped(issue) }
         end
-        # Endpoint exactness.
-        kind, basis = endpoint_match_kind(ea, eb)
+        ea = edge_lookup[int(edge_ids[0])] rescue nil
+        eb = edge_lookup[int(edge_ids[1])] rescue nil
+        if ea.nil? || eb.nil?
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_MISSING_EDGE_RECORD,
+                     'no edge record for one or both edge_ids in the source snapshot') }
+        end
+
+        # Guard 4: finite coordinates.
+        unless finite_point?(ea.start_point) && finite_point?(ea.end_point) &&
+               finite_point?(eb.start_point) && finite_point?(eb.end_point)
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_NON_FINITE_COORDS,
+                     'one or more endpoint coordinates are not finite') }
+        end
+
+        # Guard 7: layer names byte-identical after Layer0 normalization.
+        layer_a = normalize_layer(layer_name_of(ea))
+        layer_b = normalize_layer(layer_name_of(eb))
+        if layer_a != layer_b
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_LAYER_MISMATCH,
+                     "different normalized layer names: #{layer_a.inspect} vs #{layer_b.inspect}") }
+        end
+
+        # Guard 3: endpoint exactness (forward or reversed within
+        # tolerance.duplicate). Re-verified directly.
+        kind, _basis = endpoint_match_kind(ea, eb, tolerance)
         if kind.nil?
           return { valid: false,
                    skipped_action: skipped_action_for(issue, REASON_NEAR_BUT_NOT_EXACT,
                      'endpoints coincide outside tolerance.duplicate; not an exact duplicate') }
         end
-        # Provenance: same source occurrence required.
-        occ_a = occurrence_id_for(ea)
-        occ_b = occurrence_id_for(eb)
-        if occ_a.nil? || occ_b.nil?
-          return { valid: false,
-                   skipped_action: skipped_action_for(issue, REASON_PROVENANCE_DIFFERS,
-                     'no usable source occurrence id for one or both edges') }
-        end
-        if occ_a != occ_b
-          return { valid: false,
-                   skipped_action: skipped_action_for(issue, REASON_PROVENANCE_DIFFERS,
-                     "source occurrences differ (#{occ_a.inspect} vs #{occ_b.inspect}); not an occurrence-level duplicate") }
-        end
-        # Same occurrence. Verify the workspace has 2+ derived
-        # records for this occurrence (otherwise the pair is a
-        # no-op / self-match).
-        deriveds = occ_to_deriveds[occ_a.to_s] || []
-        if deriveds.length < 2
-          return { valid: false, skipped_action: self_match_skipped(issue) }
-        end
+
+        # Build the canonical key from the endpoints + layer.
+        canonical_key = canonical_geometry_key(
+          start:     ea.start_point,
+          finish:    ea.end_point,
+          layer:     layer_a,
+          tolerance: tolerance
+        )
+
         {
-          valid:          true,
-          occurrence_id:  occ_a.to_s,
-          basis:          basis
+          valid:         true,
+          canonical_key: canonical_key,
+          basis_kind:    kind
         }
       end
+
+      # ---- canonical geometry key ----
+
+      # Layer0 normalization: Layer0 / Default / Untagged collapse
+      # to "Layer0"; anything else passes through unchanged. Empty
+      # / nil maps to "Layer0" (the V1.0 fallback layer name).
+      def normalize_layer(name)
+        return DEFAULT_LAYER_CANONICAL if name.nil?
+        s = name.to_s
+        return DEFAULT_LAYER_CANONICAL if s.empty?
+        case s.downcase
+        when 'layer0', 'default', 'untagged'
+          DEFAULT_LAYER_CANONICAL
+        else
+          s
+        end
+      end
+
+      # Quantize a 3-Float point to a tolerance grid so points
+      # within tolerance.duplicate land in the same bucket.
+      def quantize_point(point, tolerance)
+        inv = 1.0 / tolerance.to_f
+        [
+          (point[0].to_f * inv).round,
+          (point[1].to_f * inv).round,
+          (point[2].to_f * inv).round
+        ]
+      end
+
+      # Orientation-independent canonical geometry key.
+      def canonical_geometry_key(start:, finish:, layer:, tolerance:)
+        s_q = quantize_point(start, tolerance)
+        f_q = quantize_point(finish, tolerance)
+        pair = [s_q, f_q].sort_by { |p| p.to_s }
+        norm_layer = normalize_layer(layer)
+        "geom|#{pair[0].join(',')}|#{pair[1].join(',')}|layer=#{norm_layer}"
+      end
+
+      # ---- basis detection ----
+
+      # Determine whether two source edges are exact (forward or
+      # reversed) duplicates within tolerance.duplicate. Returns
+      # [:forward|:reversed|:nil, basis_string].
+      def endpoint_match_kind(edge_a, edge_b, tolerance)
+        a_s = finite_float_triple(edge_a.start_point)
+        a_e = finite_float_triple(edge_a.end_point)
+        b_s = finite_float_triple(edge_b.start_point)
+        b_e = finite_float_triple(edge_b.end_point)
+        return [nil, nil] if a_s.nil? || a_e.nil? || b_s.nil? || b_e.nil?
+        if points_within?(a_s, b_s, tolerance) && points_within?(a_e, b_e, tolerance)
+          [:forward, BASIS_FORWARD_EXACT]
+        elsif points_within?(a_s, b_e, tolerance) && points_within?(a_e, b_s, tolerance)
+          [:reversed, BASIS_REVERSED_EXACT]
+        else
+          [nil, nil]
+        end
+      end
+
+      # ---- source-edge / derived-record bookkeeping ----
 
       # Build edge_lookup: Hash<Integer, EdgeRecord>.
       def build_edge_lookup(source_snapshot)
         h = {}
+        return h if source_snapshot.nil?
         Array(source_snapshot.respond_to?(:edges) ? source_snapshot.edges : []).each do |e|
           if e.respond_to?(:id) && !e.id.nil?
-            h[Integer(e.id)] = e
+            h[int(e.id)] = e
           end
         end
         h
       end
 
-      # Build occ_to_deriveds: Hash<String, Array<derived_id>>.
-      # Each V1.5 container-occurrence maps to ALL derived
-      # records (potentially multiple) that originated from
-      # source edges sharing that container. The workspace may
-      # have 2+ derived records for the same V1.5
-      # container-occurrence (the "duplicate within same parent
-      # container" case -- the CAD-import artifact case).
-      #
-      # We reverse-parse each derived record's V1.4-format
-      # source_occurrence_ids back into the canonical pid-path
-      # Array, then derive the V1.5 container-occurrence by
-      # excluding the leaf PID. This keeps the V1.4 contract
-      # intact while letting the proposer match on the V1.5
-      # identity.
-      def build_occurrence_to_deriveds(workspace)
-        h = {}
-        return h if workspace.nil?
-        Array(workspace.respond_to?(:entities) ? workspace.entities : []).each do |rec|
-          Array(rec.respond_to?(:source_occurrence_ids) ? rec.source_occurrence_ids : []).each do |occ|
-            pid_path = parse_v14_occurrence_to_container_path(occ.to_s)
-            next if pid_path.nil? || pid_path.empty?
-            key = container_occurrence_for_path(pid_path)
-            next if key.nil?
-            (h[key] ||= []) << rec.derived_id.to_s
-          end
+      # Group derived records by canonical world-geometry key.
+      # Reads each derived record's geometry_summary for the
+      # two endpoints + layer.
+      def group_derived_by_canonical_key(workspace, tolerance)
+        out = {}
+        return out if workspace.nil?
+        entities = workspace.respond_to?(:entities) ? workspace.entities : []
+        entities.each do |d|
+          geom = d.respond_to?(:geometry_summary) ? d.geometry_summary : nil
+          next unless geom.is_a?(Hash)
+          s = geom['start'] || geom[:start]
+          f = geom['end']   || geom[:end]
+          l = geom['layer'] || geom[:layer]
+          next unless finite_point?(s) && finite_point?(f)
+          key = canonical_geometry_key(start: s, finish: f, layer: l, tolerance: tolerance)
+          (out[key] ||= []) << d
         end
-        # Deduplicate and freeze lists (preserve insertion order).
-        h.each_value { |list| list.uniq! }
-        h
+        out
       end
+
+      # Resolve a V1.4-format source_occurrence_id back to a
+      # source EdgeRecord.
+      #
+      # CORRECTED V1.5 model (Guidance 031): the occurrence id
+      # encodes the FULL persistent_id_path joined by '>' (leaf
+      # included). For matching back to a source EdgeRecord we
+      # use the CONTAINER path (excluding the leaf PID). This
+      # is the canonical V1.5 mapping:
+      #
+      #   - Source edge with pid_path [parent..., leaf] maps
+      #     to derived record with occ_id "occ-parent>...>leaf"
+      #     by container path only.
+      #   - Multiple source edges in the same container map to
+      #     multiple derived records (one per leaf) — all
+      #     resolve to the same set of source edges.
+      #
+      # Returns the FIRST matching source EdgeRecord or nil
+      # when the path cannot be parsed or no EdgeRecord shares
+      # the container.
+      def edge_for_occurrence_id(occ_id, edge_lookup)
+        return nil if occ_id.nil? || !occ_id.is_a?(String)
+        s = occ_id.to_s
+        # Strip 'occ-' or 'transient-occ-' prefix.
+        rest = if s.start_with?('occ-')
+                 s[4..-1]
+        elsif s.start_with?('transient-occ-')
+                 s[14..-1]
+        else
+                 nil
+        end
+        return nil if rest.nil?
+        # ipath variant (transient): look up by first path element.
+        if rest.start_with?('ipath-')
+          rest = rest[6..-1]
+        end
+        # Parse the path: Array<Integer joined by '>'.
+        parts = rest.split('>').map { |x| Integer(x) rescue nil }.compact
+        return nil if parts.empty?
+        # Match by CONTAINER path (excluding the leaf PID).
+        container_path = parts[0..-2]
+        edge_lookup.each_value do |edge|
+          pid = edge.respond_to?(:source) && edge.source.respond_to?(:persistent_id_path) ?
+                  edge.source.persistent_id_path : nil
+          next unless pid.is_a?(Array)
+          next unless pid.map(&:to_i)[0..-2] == container_path
+          return edge
+        end
+        nil
+      end
+
+      # ---- registry / issue collection ----
 
       # Collect the duplicate_edge_candidate Issues from the
       # registry, sorted by issue_id (deterministic).
@@ -308,37 +488,32 @@ module SUAnalysis
         out.sort_by { |iss| iss[:issue_id].to_s }
       end
 
-      # Determine whether two edges are exact (forward or
-      # reversed) duplicates within tolerance.duplicate.
-      def endpoint_match_kind(edge_a, edge_b)
-        tol = read_duplicate_tolerance
-        a_s = endpoint(edge_a, :start_point)
-        a_e = endpoint(edge_a, :end_point)
-        b_s = endpoint(edge_b, :start_point)
-        b_e = endpoint(edge_b, :end_point)
-        return [nil, nil] if a_s.nil? || a_e.nil? || b_s.nil? || b_e.nil?
-        if points_within?(a_s, b_s, tol) && points_within?(a_e, b_e, tol)
-          [:forward, BASIS_FORWARD_EXACT]
-        elsif points_within?(a_s, b_e, tol) && points_within?(a_e, b_s, tol)
-          [:reversed, BASIS_REVERSED_EXACT]
-        else
-          [nil, nil]
+      # ---- tolerance / numeric helpers ----
+
+      # Read tolerance.duplicate from the SourceSnapshot's
+      # captured execution_config. Falls back to the conservative
+      # default 1.0e-4 inches.
+      def read_duplicate_tolerance(source_snapshot)
+        return DEFAULT_DUPLICATE_TOLERANCE if source_snapshot.nil?
+        ec = source_snapshot.respond_to?(:execution_config) ? source_snapshot.execution_config : nil
+        return DEFAULT_DUPLICATE_TOLERANCE if ec.nil?
+        vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
+        return DEFAULT_DUPLICATE_TOLERANCE unless vals.is_a?(Hash)
+        v = vals[:duplicate] || vals['duplicate']
+        v ? v.to_f : DEFAULT_DUPLICATE_TOLERANCE
+      end
+
+      # True iff `p` is a finite 3-Float Array.
+      def finite_point?(p)
+        return false unless p.is_a?(Array) && p.length == 3
+        p.all? do |v|
+          v.respond_to?(:finite?) && v.finite?
         end
       end
 
-      # Read tolerance.duplicate from the EdgeRecord metadata
-      # (DuplicateDetector writes it there). Fallback: 1.0e-4
-      # inches (the conservative default per Tolerance.default).
-      def read_duplicate_tolerance
-        1.0e-4
-      end
-
-      # Extract a 3-Float endpoint Array from an EdgeRecord.
-      def endpoint(edge, accessor)
-        return nil unless edge.respond_to?(accessor)
-        p = edge.send(accessor)
-        return nil unless p.is_a?(Array) && p.length == 3
-        return nil unless p.all? { |v| v.is_a?(Numeric) }
+      # Convert a point to a [Float x3] triple or nil when not finite.
+      def finite_float_triple(p)
+        return nil unless finite_point?(p)
         [p[0].to_f, p[1].to_f, p[2].to_f]
       end
 
@@ -348,141 +523,80 @@ module SUAnalysis
         (0..2).all? { |i| (p[i].to_f - q[i].to_f).abs <= tol.to_f }
       end
 
-      # Derive the V1.5 CONTAINER-occurrence id from an
-      # EdgeRecord's SourceReference.
-      #
-      # CONTRACT (per CodeX V1.5 BLOCK-003 recheck #2):
-      # The canonical SourceReference.persistent_id_path
-      # (V1.0-V1.4 contract) is NOT mutated. The V1.5
-      # container-occurrence is a SEPARATE identity derived
-      # here by excluding the leaf edge PID (the last
-      # element of the canonical path). Two edges from the
-      # SAME parent container (e.g., two duplicate edges
-      # inside the same ComponentDefinition) share this
-      # identity; two edges from DIFFERENT containers
-      # (e.g., two ComponentInstances of the same definition)
-      # have DIFFERENT identities.
-      #
-      # Top-level (root-level) edges: their container_path
-      # would be empty after excluding the leaf. Per CodeX
-      # fail-closed guidance, V1.5 Phase 1 EXCLUDES top-level
-      # edges from auto-repair (returns nil). The repair is
-      # only meaningful within a non-root container (a Group
-      # or a ComponentInstance) where two duplicate edges
-      # indicate a CAD-import artifact inside one parent.
-      def occurrence_id_for(edge)
-        return nil if edge.nil?
-        src = edge.respond_to?(:source) ? edge.source : nil
-        return nil if src.nil?
-        pid_path = (src.respond_to?(:persistent_id_path) && src.persistent_id_path) ? src.persistent_id_path : nil
-        ipath    = (src.respond_to?(:instance_path) && src.instance_path) ? src.instance_path : nil
-        complete = src.respond_to?(:pid_path_complete) ? src.pid_path_complete : true
-        quality  = complete ? 'occ' : 'transient-occ'
-        # V1.5 container-occurrence: exclude the leaf PID
-        # (last element). The canonical persistent_id_path
-        # is read-only; we just slice it here.
-        if pid_path.is_a?(Array) && pid_path.length >= 2
-          container_path = pid_path[0..-2]
-          return "#{quality}-container-#{container_path.map(&:to_s).join('>')}"
-        elsif pid_path.is_a?(Array) && pid_path.length == 1
-          # Root-level edge (pid_path = [leaf_pid], no
-          # container). FAIL-CLOSED: no V1.5 repair.
-          return nil
-        elsif ipath.is_a?(Array) && !ipath.empty?
-          # Fallback: instance_path only. The instance_path
-          # also does NOT include the leaf PID (it's the
-          # container path); so we can use it directly.
-          # NOTE: instance_path is the LABEL path (String
-          # entries), not the PID path; it identifies the
-          # container uniquely within the source snapshot
-          # but is NOT guaranteed stable across sessions.
-          # We treat it as a transient V1.5 identity.
-          "#{quality}-container-ipath-#{ipath.map(&:to_s).join('>')}"
-        elsif edge.respond_to?(:id) && edge.id
-          # Last-resort transient identity (analysis-local).
-          # Two edges with this identity in the SAME analysis
-          # would be merged; two in DIFFERENT analyses are
-          # not (they get different ids).
-          "transient-occ-container-edge-#{edge.id}"
-        else
-          nil
-        end
+      # Coerce a value to Integer or nil.
+      def int(v)
+        Integer(v) rescue nil
       end
 
-      # Reverse-parse a V1.4-format occurrence string (e.g.
-      # "occ-100>200>300" or "occ-container-ipath-Group>Comp")
-      # back into the container-pid-path Array (excluding the
-      # leaf). Used by build_occurrence_to_deriveds to map
-      # the workspace's V1.4 source_occurrence_ids into the
-      # V1.5 container-occurrence keys for matching.
-      #
-      # Returns nil if the string is not parseable.
-      def parse_v14_occurrence_to_container_path(occ_string)
-        return nil if occ_string.nil? || !occ_string.is_a?(String)
-        s = occ_string.to_s
-        # Strip the quality prefix.
-        rest = if s.start_with?('occ-')
-                s[4..-1]
-              elsif s.start_with?('transient-occ-')
-                s[14..-1]
-              else
-                nil
-              end
-        return nil if rest.nil?
-        # V1.5-prefixed (defensive: if the proposer itself
-        # already wrote a container-prefixed id, just strip
-        # the prefix and pass through).
-        if rest.start_with?('container-')
-          rest = rest[10..-1]
-        end
-        # Strip any ipath- prefix.
-        if rest.start_with?('ipath-')
-          return rest[6..-1].split('>')  # keep as-is; ipath is
-                                          # already container-only
-        end
-        if rest.start_with?('container-ipath-')
-          return rest[15..-1].split('>')
-        end
-        if rest.start_with?('container-edge-')
-          return nil  # transient edge id; cannot extract container
-        end
-        # Otherwise, this is a V1.4 pid-path. The leaf PID is
-        # the last element; we exclude it for the V1.5
-        # container-occurrence.
-        parts = rest.split('>').map { |x| Integer(x) rescue x }
-        return nil if parts.length < 2
-        # Exclude the leaf PID (last element).
-        parts[0..-2]
+      # ---- edge accessors ----
+
+      def layer_name_of(edge)
+        return nil unless edge.respond_to?(:layer)
+        edge.layer
       end
 
-      # Compute the V1.5 container-occurrence from a parsed
-      # pid-path Array. Centralized for symmetry with
-      # occurrence_id_for.
-      def container_occurrence_for_path(container_path, quality: 'occ')
-        return nil if container_path.nil? || container_path.empty?
-        "#{quality}-container-#{container_path.map(&:to_s).join('>')}"
+      # ---- deterministic action_id ----
+
+      # Build a deterministic action_id from the rule id, source
+      # snapshot identity, canonical geometry key, and the
+      # sorted member derived_ids. SHA256-based; reproducible
+      # and auditable. NEVER uses SecureRandom.
+      def deterministic_action_id(rule_id:, snapshot_id:, canonical_key:, sorted_member_ids:)
+        input = [
+          rule_id.to_s,
+          snapshot_id.to_s,
+          canonical_key.to_s,
+          Array(sorted_member_ids).map(&:to_s).sort.join('+')
+        ].join('|')
+        digest = Digest::SHA256.hexdigest(input)[0, 12]
+        "act-#{rule_id}-#{digest}"
       end
+
+      # ---- action builders ----
 
       # Build the :remove_duplicate_edge RepairAction (one per
-      # occurrence).
-      def build_remove_action(survivor_id:, removed_ids:, occurrence_id:, basis:)
+      # equivalence class).
+      def build_remove_action(survivor_id:, removed_ids:,
+                              source_occurrence_ids:, basis:,
+                              canonical_key:, snapshot_id:,
+                              member_derived_ids:)
+        action_id = deterministic_action_id(
+          rule_id:           RULE_ID,
+          snapshot_id:       snapshot_id,
+          canonical_key:     canonical_key,
+          sorted_member_ids: member_derived_ids
+        )
         before_summary = {
-          'survivor_derived_id' => survivor_id.to_s,
-          'removed_derived_ids' => removed_ids.map(&:to_s).freeze,
-          'duplicate_pairs'     => removed_ids.length
+          'survivor_derived_id'        => survivor_id.to_s,
+          'removed_derived_ids'        => removed_ids.map(&:to_s).freeze,
+          'duplicate_pairs'            => removed_ids.length,
+          'canonical_endpoint_summary' => canonical_endpoint_summary(canonical_key),
+          'layer'                      => layer_from_canonical_key(canonical_key),
+          'before_edge_count'          => member_derived_ids.length,
+          'proposed_after_edge_count'  => 1
         }.freeze
         proposed_after_summary = {
-          'survivor_derived_id' => survivor_id.to_s,
-          'removed_derived_ids' => [].freeze,
-          'duplicate_pairs'     => 0
+          'survivor_derived_id'        => survivor_id.to_s,
+          'removed_derived_ids'        => [].freeze,
+          'duplicate_pairs'            => 0,
+          'canonical_endpoint_summary' => canonical_endpoint_summary(canonical_key),
+          'layer'                      => layer_from_canonical_key(canonical_key),
+          'before_edge_count'          => member_derived_ids.length,
+          'proposed_after_edge_count'  => 1
         }.freeze
+        explanation = build_explanation(
+          basis:           basis,
+          member_count:    member_derived_ids.length,
+          source_occ_count: source_occurrence_ids.length
+        )
         RepairAction.new(
+          action_id:               action_id,
           type:                    ACTION_TYPE,
           rule_id:                 RULE_ID,
           confidence:              CONFIDENCE,
           confidence_basis:        basis.to_s,
-          explanation:             "Exact duplicate edge (#{basis}); survivor keeps the lex-smaller derived_id; #{removed_ids.length} derived record(s) to remove.",
-          source_occurrence_ids:   [occurrence_id.to_s].freeze,
+          explanation:             explanation,
+          source_occurrence_ids:   source_occurrence_ids.map(&:to_s).freeze,
           affected_derived_ids:    removed_ids.map(&:to_s).freeze,
           before_summary:          before_summary,
           proposed_after_summary:  proposed_after_summary,
@@ -497,15 +611,16 @@ module SUAnalysis
       # trail.
       def skipped_action_for(issue, reason, explanation)
         eids = issue.is_a?(Hash) ? issue[:edge_ids] : nil
+        iid = issue.is_a?(Hash) ? issue[:issue_id] : nil
         RepairAction.new(
           type:                    ACTION_TYPE,
           rule_id:                 RULE_ID,
           confidence:              CONFIDENCE,
           confidence_basis:        "skipped:#{reason}",
           explanation:             explanation.to_s,
-          source_occurrence_ids:   (eids.is_a?(Array) ? eids.map { |x| Integer(x) rescue x } : []).dup.freeze,
+          source_occurrence_ids:   (eids.is_a?(Array) ? eids.map { |x| int(x) } : []).compact.freeze,
           affected_derived_ids:    [].freeze,
-          before_summary:          { 'reason' => reason.to_s }.freeze,
+          before_summary:          { 'reason' => reason.to_s, 'issue_id' => iid.to_s }.freeze,
           proposed_after_summary:  { 'reason' => reason.to_s }.freeze,
           topology_impact:         'no_op',
           auto_applicable:         true,
@@ -517,6 +632,36 @@ module SUAnalysis
       def self_match_skipped(issue)
         skipped_action_for(issue, REASON_SELF_MATCH,
           'duplicate evidence references the same source edge twice; nothing to remove')
+      end
+
+      # ---- canonical-key accessors (audit only) ----
+
+      # Extract the canonical endpoint summary from a canonical
+      # key string. The key is opaque to callers; we expose only
+      # the layer and the presence of two quantized endpoints.
+      def canonical_endpoint_summary(canonical_key)
+        parts = canonical_key.to_s.split('|')
+        # parts: ["geom", "<qx1>", "<qx2>", "layer=<name>"]
+        {
+          'quantized_start' => parts[1],
+          'quantized_end'   => parts[2],
+          'format'          => 'canonical_geometry_key_v1'
+        }.freeze
+      end
+
+      def layer_from_canonical_key(canonical_key)
+        parts = canonical_key.to_s.split('|')
+        l = parts.find { |p| p.start_with?('layer=') }
+        l ? l.sub('layer=', '') : nil
+      end
+
+      # Build the explanation string for a remove action. Pure
+      # data; no live objects.
+      def build_explanation(basis:, member_count:, source_occ_count:)
+        basis_kind = basis.to_s.start_with?('reversed') ? 'reversed exact' : 'forward exact'
+        survivor_count = 1
+        removed_count  = member_count - survivor_count
+        "Exact duplicate edge (#{basis_kind}); #{member_count} source occurrences converge on one canonical derived segment; survivor keeps the lex-smallest derived_id; #{removed_count} derived record(s) to remove; provenance union size = #{source_occ_count}."
       end
     end
   end

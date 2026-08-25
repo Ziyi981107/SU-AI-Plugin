@@ -432,80 +432,70 @@ end
 
 
 
-test 'V15RP-002: real PreflightRunner path -- 2 instances of same def: NOT merged (shared isolation)' do
+test 'V15RP-002: real PreflightRunner path -- 2 instances of same def at SAME transform: ONE action with provenance union' do
 
-  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 
-  # Build a ComponentDefinition with 2 SU Edges sharing world
+    # Build a ComponentDefinition with 2 SU Edges sharing world
 
-  # endpoints.
+    # endpoints.
 
-  edges = [
+    edges = [
 
-    FakeSUEdge.new(902, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0]),
+      FakeSUEdge.new(902, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0]),
 
-    FakeSUEdge.new(903, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0])
+      FakeSUEdge.new(903, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0])
 
-  ]
+    ]
 
-  defn = FakeComponentDef.new('DupDef', 500, edges)
+    defn = FakeComponentDef.new('DupDef', 500, edges)
 
-  # Build TWO ComponentInstances of the SAME definition (different
+    # Build TWO ComponentInstances of the SAME definition at the
+    # SAME world transform. Under the corrected V1.5 model
+    # (Guidance 031, 2026-08-25) the two instances are distinct
+    # source occurrences whose DERIVED topology merges into ONE
+    # survivor with provenance union of all contributing source
+    # occurrences. Both source instances remain immutable.
+    inst_a = FakeSUComponentInstance.new('DupInst#A', 100, defn, FakeIdentityTransform.new)
 
-  # instance.persistent_id -> different container paths in the
+    inst_b = FakeSUComponentInstance.new('DupInst#B', 200, defn, FakeIdentityTransform.new)
 
-  # walk).
+    # Run the full pipeline.
 
-  inst_a = FakeSUComponentInstance.new('DupInst#A', 100, defn, FakeIdentityTransform.new)
+    registry, snap, wm_snap = v15pp_run_full_pipeline([inst_a, inst_b], FakeUI::FakeModel.new)
 
-  inst_b = FakeSUComponentInstance.new('DupInst#B', 200, defn, FakeIdentityTransform.new)
+    # The registry emits duplicate_edge_candidate issues; under
+    # the corrected model, the world-geometry equivalence class
+    # merges all 4 derived records (2 per instance) into ONE
+    # canonical class with ONE :remove_duplicate_edge action.
+    dups = registry.issues.select { |iss| iss[:issue_type] == 'duplicate_edge_candidate' }
 
-  # Run the full pipeline.
+    assert dups.length >= 2, 'expected 2+ duplicate pairs (one per instance)'
 
-  registry, snap, wm_snap = v15pp_run_full_pipeline([inst_a, inst_b], FakeUI::FakeModel.new)
+    dr = wm_snap['duplicate_repair']
 
-  # The registry DOES emit duplicate_edge_candidate issues (one
+    refute_nil dr
 
-  # pair per instance -- the two instances both contain the
+    # Corrected model: ONE action merging the class.
+    applied_count = dr['actions_applied']
 
-  # duplicate). Each pair is within one instance, so V1.5 SHOULD
+    assert_equal 1, applied_count,
 
-  # repair them. applied = 2 (one per instance).
+                 "expected applied == 1 (one world-geometry class merging both instances), got #{applied_count}"
 
-  dups = registry.issues.select { |iss| iss[:issue_type] == 'duplicate_edge_candidate' }
+    # Workspace has 1 surviving derived entity (the rest were
 
-  assert dups.length >= 2, 'expected 2 duplicate pairs (one per instance)'
+    # removed by the single batch action).
 
-  dr = wm_snap['duplicate_repair']
+    cur_ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
 
-  refute_nil dr
+    refute_nil cur_ws
 
-  # Each instance has its own duplicate pair; each should be
+    assert_equal 1, cur_ws.entities.length,
 
-  # repaired independently. The two instances DO NOT cross-merge
+                 'expected 1 surviving derived entity after canonicalization'
 
-  # (they have different container paths per the proposer's
-
-  # V1.5 container-occurrence identity).
-
-  applied = dr['actions_applied']
-
-  assert applied >= 2, "expected applied >= 2 (one per instance), got #{applied}"
-
-end
-
-
-
-
-
-# ================================================================
-
-# Test: real-PreflightRunner path -- non-duplicate selection produces
-
-# no action (idempotent / null-op path).
-
-# ================================================================
-
+  end
 
 
 test 'V15RP-003: real PreflightRunner path -- no duplicates -> applied=0, ready' do

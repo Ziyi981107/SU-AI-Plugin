@@ -706,16 +706,18 @@ end
 
 
 
-# ----- 4. Shared-definition two instances: duplicates across
+# ----- 4. Cross-instance same-world-coords duplicate is
+# canonicalized with provenance union (CORRECTED V1.5 model) -----
 
-# instances are NOT duplicates -----
+test 'V15-4: cross-instance same-world-coords duplicate is canonicalized with provenance union of 2' do
 
-test 'V15-4: shared-definition two instances: cross-instance duplicates preserved (different occurrences)' do
-
-  # Two edges with the same world coordinates but DIFFERENT
-
-  # persistent_id_path (different occurrence identity).
-
+  # Two source edges with the SAME world coordinates but DIFFERENT
+  # persistent_id_path (different source occurrences). Under the
+  # corrected V1.5 model (Guidance 031, 2026-08-25), the DERIVED
+  # topology is canonicalized to one survivor. Both source
+  # occurrences remain immutable; the survivor's provenance is
+  # the sorted unique union of every contributing source
+  # occurrence.
   e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
 
                 parent_pid_path: [100, 200])
@@ -752,21 +754,34 @@ test 'V15-4: shared-definition two instances: cross-instance duplicates preserve
 
   plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
 
-  # Plan: action is :skipped with reason 'source_occurrence_ids_differ'.
-
+  # Plan: 1 remove action with provenance union of 2 source occurrences.
   assert_equal :validated, plan.status
 
   assert_equal 1, plan.actions.length
 
-  assert_equal :skipped, plan.actions.first.status
+  act = plan.actions.first
 
-  assert_match(/source_occurrence_ids_differ|provenance/, plan.actions.first.confidence_basis)
+  assert_equal :remove_duplicate_edge, act.type
 
-  # Apply is a no-op for :skipped actions.
+  assert_equal 'der-A', act.before_summary['survivor_derived_id'],
 
-  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+               'survivor is the lex-smaller derived_id'
 
-  assert_equal 2, new_ws.entities.length
+  assert_equal ['der-B'], act.affected_derived_ids
+
+  refute act.source_occurrence_ids.empty?,
+
+         'source_occurrence_ids must be the union of both contributing source occurrences'
+
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+
+  assert_equal 1, applied.length
+
+  assert_equal :applied, applied.first.status
+
+  assert_equal 1, new_ws.entities.length
+
+  assert_equal 'der-A', new_ws.entities.first.derived_id
 
 end
 
@@ -894,14 +909,18 @@ end
 
 
 
-# ----- 7. Same world coordinates but different source_occurrence_ids preserved -----
+# ----- 7. Cross-container same-world-coords duplicate is
+# canonicalized with provenance union (CORRECTED V1.5 model) -----
 
-test 'V15-7: same world coords but different source_occurrence_ids preserved (provenance gate)' do
+test 'V15-7: cross-container same-world-coords duplicate is canonicalized with provenance union of 2' do
 
-  # Even when endpoints coincide EXACTLY (within tolerance),
-
-  # different source_occurrence_ids -> NOT a duplicate.
-
+  # Two source edges with the SAME world coordinates but DIFFERENT
+  # persistent_id_path (different parent containers). Under the
+  # corrected V1.5 model (Guidance 031, 2026-08-25), the DERIVED
+  # topology is canonicalized to one survivor. Both source
+  # occurrences remain immutable; the survivor's provenance is
+  # the sorted unique union of every contributing source
+  # occurrence.
   e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
 
                 parent_pid_path: [100])
@@ -938,15 +957,27 @@ test 'V15-7: same world coords but different source_occurrence_ids preserved (pr
 
   plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
 
+  assert_equal :validated, plan.status
+
   assert_equal 1, plan.actions.length
 
-  assert_equal :skipped, plan.actions.first.status
+  act = plan.actions.first
 
-  assert_match(/provenance|source_occurrence_ids_differ/, plan.actions.first.confidence_basis)
+  assert_equal :remove_duplicate_edge, act.type
 
-  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal 'der-A', act.before_summary['survivor_derived_id']
 
-  assert_equal 2, new_ws.entities.length
+  assert_equal ['der-B'], act.affected_derived_ids
+
+  refute act.source_occurrence_ids.empty?
+
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+
+  assert_equal 1, applied.length
+
+  assert_equal :applied, applied.first.status
+
+  assert_equal 1, new_ws.entities.length
 
 end
 
@@ -998,16 +1029,17 @@ end
 
 
 
-# ----- 9. Nested transform preserved (different persistent_id_path) -----
+# ----- 9. Nested vs root same-world-coords duplicate is
+# canonicalized with provenance union (CORRECTED V1.5 model) -----
 
-test 'V15-9: nested transform with same world coords but different persistent_id_path preserved' do
+test 'V15-9: nested-vs-root same-world-coords duplicate is canonicalized with provenance union of 2' do
 
-  # Same world coordinates but DIFFERENT pid_path (nested vs
-
-  # root). The proposer compares occurrence IDs, NOT world
-
-  # coordinates alone.
-
+  # Two source edges with the SAME world coordinates but DIFFERENT
+  # pid_path (root vs nested). Under the corrected V1.5 model
+  # (Guidance 031, 2026-08-25), the DERIVED topology is
+  # canonicalized to one survivor. Both source occurrences
+  # remain immutable; the survivor's provenance is the sorted
+  # unique union of every contributing source occurrence.
   e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
 
                 parent_pid_path: [100])
@@ -1044,13 +1076,27 @@ test 'V15-9: nested transform with same world coords but different persistent_id
 
   plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
 
+  assert_equal :validated, plan.status
+
   assert_equal 1, plan.actions.length
 
-  assert_equal :skipped, plan.actions.first.status
+  act = plan.actions.first
 
-  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal :remove_duplicate_edge, act.type
 
-  assert_equal 2, new_ws.entities.length
+  assert_equal 'der-A', act.before_summary['survivor_derived_id']
+
+  assert_equal ['der-B'], act.affected_derived_ids
+
+  refute act.source_occurrence_ids.empty?
+
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+
+  assert_equal 1, applied.length
+
+  assert_equal :applied, applied.first.status
+
+  assert_equal 1, new_ws.entities.length
 
 end
 
@@ -1748,4 +1794,152 @@ test 'V15-SANITY: simple 2-edge forward exact duplicate -> exactly 1 action' do
 
   assert_equal :applied, applied.first.status
 
+end
+
+# ===== Section 8: Guidance 031 §9 matrix additions (Stage 1) =====
+
+# ----- F. Same world segment but different layers -> :skipped
+# with semantic-conflict reason -----
+
+test 'V15-F: layer-mismatch duplicate is skipped with semantic-conflict reason' do
+  # Two source edges with EXACT same world endpoints but on
+  # DIFFERENT layers (after Layer0 normalization). Per
+  # Guidance 031 §5 guard 7, this is a semantic conflict and
+  # MUST be skipped (NOT canonicalized) -- collapsing a
+  # layer-A edge into a layer-B edge would lose the user's
+  # layer assignment.
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100], layer: 'Layer0')
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200], layer: 'Layer1')
+  src = v15_snapshot(edges: [e1, e2], layer_name: 'Layer0')
+  records = [
+    v15_derived_edge(derived_id: 'der-layer0',
+                     parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point)
+  ]
+  # Override the layer on the second derived record to Layer1
+  # (the helper sets Layer0 by default).
+  records[0] = DerivedEntityRecord.new(
+    derived_id:            'der-layer0',
+    kind:                  :edge,
+    source_occurrence_ids: records[0].source_occurrence_ids,
+    geometry_summary:      records[0].geometry_summary.merge('layer' => 'Layer0')
+  )
+  records << DerivedEntityRecord.new(
+    derived_id:            'der-layer1',
+    kind:                  :edge,
+    source_occurrence_ids: [
+      "occ-#{[200, 201].map(&:to_s).join('>')}"
+    ],
+    geometry_summary:      {
+      'layer'        => 'Layer1',
+      'length'       => 10.0,
+      'vertex_count' => 2,
+      'start'        => [0.0, 0.0, 0.0],
+      'end'          => [10.0, 0.0, 0.0]
+    }
+  )
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # Per-Issue-guard: the issue is :skipped with semantic-conflict.
+  assert_equal 1, plan.actions.length
+  assert_equal :skipped, plan.actions.first.status
+  assert_match(/semantic_conflict_layer_mismatch/, plan.actions.first.confidence_basis)
+  # No remove action: workspace unchanged.
+  new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
+  assert_equal 0, applied.length
+  assert_equal 2, new_ws.entities.length
+end
+
+# ----- L. Direct + reversed endpoint ordering produce the
+# same canonical class -----
+
+test 'V15-L: direct and reversed endpoint ordering produce the same canonical class' do
+  # Two issues, one referencing forward-exact and one
+  # referencing reversed-exact duplicates. They both belong
+  # to the same canonical world-geometry class -> ONE
+  # remove action (NOT two).
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [10.0, 0.0, 0.0], finish: [0.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e3 = v15_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2, e3])
+  records = [
+    v15_derived_edge(derived_id: 'der-fwd-1', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-rev-2', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point),
+    v15_derived_edge(derived_id: 'der-fwd-3', parent_pid_path: [100],
+                     start: e3.start_point, finish: e3.end_point)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|forward|0|1',
+                  edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    v15_dup_issue(issue_id: 'duplicate|reversed|0|2',
+                  edge_ids: [0, 2], location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # ONE class -- orientation-independent canonical key merges
+  # forward and reversed pairs into one equivalence class.
+  assert_equal :validated, plan.status
+  assert_equal 1, plan.actions.length,
+               'one canonical class regardless of forward/reversed ordering'
+  act = plan.actions.first
+  assert_equal :remove_duplicate_edge, act.type
+  # Survivor = lex-smaller derived_id among all 3.
+  assert_equal 'der-fwd-1', act.before_summary['survivor_derived_id']
+  assert_equal ['der-fwd-3', 'der-rev-2'].sort, act.affected_derived_ids.sort
+  # Provenance union includes all 3 contributing records.
+  assert_equal 3, act.source_occurrence_ids.length,
+               'provenance union size = 3 (one per contributing derived record)'
+end
+
+# ----- Determinism: same plan -> same action_id (regression
+# of Guidance 031 §6 deterministic action_id) -----
+
+test 'V15-M: deterministic action_id across repeated proposal / rebuild' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point)
+  ]
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  # First proposal.
+  plan1 = v15_propose(
+    workspace: v15_workspace(snapshot: src, records: records),
+    registry:  reg,
+    snapshot:  src
+  )
+  # Second proposal (rebuilt workspace).
+  plan2 = v15_propose(
+    workspace: v15_workspace(snapshot: src, records: records),
+    registry:  reg,
+    snapshot:  src
+  )
+  assert_equal plan1.actions.length, plan2.actions.length
+  assert_equal 1, plan1.actions.length
+  assert_equal plan1.actions.first.action_id, plan2.actions.first.action_id,
+               'action_id MUST be deterministic across rebuilds (no SecureRandom)'
+  # Sanity: the action_id embeds the rule id.
+  assert_match(/duplicate_edge\.exact_remove/, plan1.actions.first.action_id)
 end

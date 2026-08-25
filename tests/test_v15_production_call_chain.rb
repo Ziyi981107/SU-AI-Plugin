@@ -754,14 +754,14 @@ end
 
 
 
-test 'V15PC-006: shared-definition two instances are NOT merged (master plan §17.2)' do
+test 'V15PC-006: cross-instance same-world-coords duplicate is canonicalized with provenance union' do
 
-  # Real-SketchUp constructible must-not-repair: two component
-
-  # INSTANCES of the SAME definition (different instance pids).
-
-  # V1.5 Phase 1 must NOT merge them.
-
+  # CORRECTED V1.5 model (Guidance 031, 2026-08-25): two
+  # component INSTANCES of the same definition with the SAME
+  # world coordinates are canonicalized to one derived survivor.
+  # Both source instances remain immutable; the survivor's
+  # provenance is the sorted unique union of every contributing
+  # source occurrence.
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 
   e1 = v15pc_edge(id: 0, start: [0.0, 0.0, 0], finish: [10.0, 0.0, 0],
@@ -804,15 +804,12 @@ test 'V15PC-006: shared-definition two instances are NOT merged (master plan §1
 
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
 
-  # No removal: actions_applied == 0; the action is :skipped.
-
-  assert_equal 0, snap['duplicate_repair']['actions_applied']
-
-  # Workspace unchanged: 2 entities.
+  # Production call chain applies the canonicalization:
+  assert_equal 1, snap['duplicate_repair']['actions_applied']
 
   cur_ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
 
-  assert_equal 2, cur_ws.entities.length
+  assert_equal 1, cur_ws.entities.length
 
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 
@@ -820,10 +817,12 @@ end
 
 
 
-test 'V15PC-007: same-world-coords-different-provenance preserved' do
+test 'V15PC-007: cross-container same-world-coords duplicate is canonicalized with provenance union' do
 
-  # Same world coordinates but DIFFERENT pid_path -- preserved.
-
+  # CORRECTED V1.5 model (Guidance 031, 2026-08-25): same world
+  # coordinates but DIFFERENT pid_path are canonicalized to one
+  # derived survivor with provenance union of both source
+  # occurrences.
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 
   e1 = v15pc_edge(id: 0, start: [0.0, 0.0, 0], finish: [10.0, 0.0, 0],
@@ -866,11 +865,11 @@ test 'V15PC-007: same-world-coords-different-provenance preserved' do
 
   snap = SUAnalysis::Core::WorkingModeRunner.snapshot
 
-  assert_equal 0, snap['duplicate_repair']['actions_applied']
+  assert_equal 1, snap['duplicate_repair']['actions_applied']
 
   cur_ws = SUAnalysis::Core::WorkingModeRunner.current_workspace_for_test
 
-  assert_equal 2, cur_ws.entities.length
+  assert_equal 1, cur_ws.entities.length
 
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 
