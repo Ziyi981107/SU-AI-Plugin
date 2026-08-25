@@ -531,6 +531,61 @@ STOP. The next move is:
   - Owner drops Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
   - DO NOT install current RBZ (215152a) -- wait the recheck commit.
 
+## V1.5 STAGE BLOCK RECHECK (2026-08-25) — BLOCK-001..005 narrow-scope fixes
+
+Active directive (replaces the obsolete CODEX_STAGE_REVIEW_032_2026-08-25):
+  Prompt/CODEX_REVIEW_032_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt
+  Status: ACTIVE
+  Reviewer Contract: V3 (2026-08-25)
+  Recheck targets: V15-STAGE-BLOCK-001..005 only
+
+Implementation HEAD: 0c43cf7 (fix(v1.5-stage4-block-recheck))
+  base: 720e7c0 (docs(prompt): dispatch V1.5 BLOCK recheck directive 032)
+  head: 0c43cf7
+
+Surface changed (this fix packet):
+  - extension/su_ai_plugin/core/duplicate_repair_proposer.rb (BLOCK-001/002)
+  - extension/su_ai_plugin/core/derived_duplicate_validator.rb (BLOCK-002/004)
+  - extension/su_ai_plugin/core/duplicate_repair_executor.rb (BLOCK-003)
+  - extension/su_ai_plugin/core/working_mode_runner.rb (BLOCK-004)
+  - extension/su_ai_plugin/html/app.js (BLOCK-004)
+  - tests/test_v15_duplicate_repair.rb (BLOCK-001..005)
+  - tests/test_v15_production_call_chain.rb (BLOCK-001)
+  - Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+    (BLOCK-005; rewritten around the real call chain)
+  - Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md
+    (the recheck packet)
+
+Final V1.5 BLOCK-recheck RBZ:
+  Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:    548,540 bytes
+  Entries: 56
+  SHA-256: ECDC9A2798B118B86DD4600409885DE3DD78733CC882672AAD0664190C68E8AE
+
+Test evidence (recomputed at 0c43cf7):
+  Ruby:        723/723 PASS (707 baseline + 16 new BLOCK minimums)
+  Node DOM:    (re-run via run_all) PASS; unchanged
+  RBZ smoke:   8/8 PASS
+  git diff --check: clean
+  working tree: clean
+
+BLOCK recheck evidence map (full table in
+Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md):
+  BLOCK-001 -> V15-B001-1, V15-B001-2, V15-B001-3, V15-I
+  BLOCK-002 -> V15-B002-1, V15-B002-2, V15-B002-3, V15-B002-4
+  BLOCK-003 -> V15-B003-1, V15-B003-2, V15-B003-3 (+ existing V15-O)
+  BLOCK-004 -> V15-B004-1, V15-B004-2, V15-B004-3, V15-B004-4
+  BLOCK-005 -> V15-E, V15-I (matrix cases E and I now explicit),
+               Owner draft rewritten around the real call chain,
+               draft remains DO NOT EXECUTE while BLOCKED
+
+STOP. The next move is:
+  - CodeX re-reviews V15-STAGE-BLOCK-001..005 ONLY (no V1.6, no widening).
+  - On xHigh PASS: BLOCK-001..005 closed, Owner verification path
+    is permitted (no separate Codex greenlight Prompt is required).
+  - DO NOT install current RBZ (0c43cf7) until the xHigh recheck
+    verdict is PASS.
+
 ## V14-RUNTIME-BLOCK-005 (2026-08-24) — material collection compatibility fixed
 
 The first clean V14-9 retry surfaced the original host error after BLOCK-004
