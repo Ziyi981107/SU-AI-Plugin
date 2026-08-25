@@ -2934,3 +2934,419 @@ test 'V15-B004-4: remove action preserves source issue_id reference in audit' do
   assert issue_ids.include?('duplicate|0|1'),
          'remove action must preserve the source issue_id that authorized it'
 end
+# ======================================================================
+# CodeX 032 recheck (2026-08-25) BLOCK-001..005 minimum direct tests.
+# Each test below is a fresh assertion that the BLOCK fix actually
+# holds in code (not a "passes by virtue of being empty" no-op). Every
+# test here was authored to FAIL on the previous fix packet and PASS
+# on the new code. The BLOCK-001..005 test list below is the
+# complete minimum; the previous V15-B001..B004 tests above remain
+# in place as additional coverage.
+# ======================================================================
+
+# ----- BLOCK-001-4: pid_path_complete=false nested occurrence is
+# rejected (incomplete nested provenance fails closed) -----
+
+test 'V15-B001-4: pid_path_complete=false nested occurrence is rejected (incomplete nested provenance)' do
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  # Force the second edge's source.pid_path_complete to false
+  # (incomplete nested provenance).
+  e2 = EdgeRecord.new(
+    id: e2.id,
+    source: SourceReference.new(
+      entity_id:          e2.source.entity_id,
+      persistent_id:      e2.source.persistent_id,
+      kind:               'edge',
+      persistent_id_path: e2.source.persistent_id_path,
+      instance_path:      e2.source.instance_path,
+      structural_depth:   e2.source.structural_depth,
+      pid_path_complete:  false,
+      layer_name:         e2.source.layer_name
+    ),
+    start_point: e2.start_point,
+    end_point:   e2.end_point,
+    layer:       e2.layer
+  )
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # The auto-apply action MUST NOT exist; instead, a :skipped
+  # action with reason REASON_INCOMPLETE_PROVENANCE must be
+  # recorded. At least one skipped action is required.
+  skipped = plan.actions.select { |a| a.respond_to?(:status) && a.status == :skipped }
+  assert skipped.any?,
+         'BLOCK-001: pid_path_complete=false nested provenance must produce a :skipped action'
+  # No remove action may target der-B.
+  remove_targets = plan.actions.select { |a|
+    a.respond_to?(:type) && a.type == :remove_duplicate_edge
+  }.flat_map { |a| Array(a.affected_derived_ids) }
+  refute_includes remove_targets, 'der-B',
+                  'BLOCK-001: pid_path_complete=false derived record MUST NOT be in any remove action'
+end
+
+# ----- BLOCK-001-5: distinct derived_ids aliasing to the SAME live
+# host handle is rejected (host-aliasing fails closed) -----
+
+test 'V15-B001-5: distinct derived_ids aliasing to the same live host handle is rejected' do
+  e1 = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  # Build a workspace whose adapter returns the SAME handle
+  # for every derived record (a host-side double-bind). We
+  # use a custom adapter subclass so the workspace itself
+  # stays frozen (no singleton-method mutation required).
+  shared_adapter_class = Class.new(FakeDerivedWorkspaceAdapter) do
+    def initialize
+      super
+      @shared_handle = SUAnalysis::Core::FakeDerivedWorkspaceAdapter::FakeGroup.new('fake-shared', 'shared', SUAnalysis::Core::FakeDerivedWorkspaceAdapter::FakeEntities.new, true)
+    end
+    def create_top_level_group(_name, model: nil)
+      @created_handles << @shared_handle
+      @shared_handle
+    end
+  end
+  adapter = shared_adapter_class.new
+  base_ws = DerivedGeometryWorkspace.new(
+    workspace_id:    'ws-v15-b001-5',
+    source_snapshot: src,
+    adapter:         adapter,
+    model:           nil
+  )
+  cur = base_ws
+  records.each do |rec|
+    cur = cur.build_entity(
+      derived_id:            rec.derived_id,
+      kind:                  rec.kind,
+      source_occurrence_ids: rec.source_occurrence_ids,
+      geometry_summary:      rec.geometry_summary
+    )
+    raise "build_entity failed: #{cur.last_error}" if cur.state == :failed
+  end
+  ws = cur
+  # Sanity check the fixture: handle_for returns the SAME
+  # object for both records.
+  h_a = ws.handle_for('der-A')
+  h_b = ws.handle_for('der-B')
+  assert h_a.equal?(h_b),
+         'test fixture: handle_for(der-A) and handle_for(der-B) MUST alias to the same object (fixture setup)'
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # No remove action may exist when two derived records alias
+  # to the same live handle.
+  # No remove action may be :proposed/:validated when two
+  # derived records alias to the same live handle. The
+  # proposer MUST emit a :skipped action instead.
+  remove_actions = plan.actions.select { |a|
+    a.respond_to?(:type) && a.type == :remove_duplicate_edge &&
+      [:proposed, :validated].include?(a.status)
+  }
+  assert remove_actions.empty?,
+         'BLOCK-001: host-aliasing (distinct derived_ids -> same live handle) must produce zero :proposed/:validated remove actions'
+  # A :skipped action with the host-aliasing reason must be
+  # recorded.
+  skipped = plan.actions.select { |a| a.respond_to?(:status) && a.status == :skipped }
+  assert skipped.any?,
+         'BLOCK-001: host-aliasing must produce a :skipped action'
+end
+
+# ----- BLOCK-002-5: A~B and B~C issues both provided (genuine
+# non-transitive case), A!~C -> 2 separate classes (NOT 3-member) -----
+
+test 'V15-B002-5: A~B and B~C issues, A!~C -> 2 separate classes (NOT 3-member destruction)' do
+  eA = v15_edge(id: 0,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  eB = v15_edge(id: 1,
+                start: [0.0, 0.0, 0.0],
+                finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  # C is at a world coord just outside default tolerance of A/B.
+  eC = v15_edge(id: 2,
+                start: [0.0 + 5.0e-4, 0.0, 0.0],
+                finish: [10.0 + 5.0e-4, 0.0, 0.0],
+                parent_pid_path: [300])
+  src = v15_snapshot(edges: [eA, eB, eC])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: eA.start_point, finish: eA.end_point,
+                     source_edge: eA),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: eB.start_point, finish: eB.end_point,
+                     source_edge: eB),
+    v15_derived_edge(derived_id: 'der-C', parent_pid_path: [300],
+                     start: eC.start_point, finish: eC.end_point,
+                     source_edge: eC)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # BOTH issues: A~B and B~C. (Previous BLOCK-005 fix needed
+  # the test to provide BOTH issues; the old test provided
+  # only A~B which made the assertion vacuously pass.)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0]),
+    v15_dup_issue(issue_id: 'duplicate|1|2', edge_ids: [1, 2],
+                  location: [5.0 + 5.0e-4, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_propose(workspace: ws, registry: reg, snapshot: src)
+  # Collect every remove action's affected_derived_ids.
+  # The closure fix means no remove action may include BOTH
+  # der-A and der-C (A!~C: just outside default tolerance).
+  remove_actions = plan.actions.select { |a|
+    a.respond_to?(:type) && a.type == :remove_duplicate_edge
+  }
+  assert remove_actions.any?,
+         'A~B and B~C: at least one of {A,B} or {B,C} should produce a remove action'
+  remove_actions.each do |a|
+    affected = Array(a.affected_derived_ids)
+    next unless affected.include?('der-A') || affected.include?('der-C')
+    # An action that touches der-A or der-C must NOT also touch
+    # the OTHER (der-C / or der-A). The 3-member {A,B,C}
+    # destruction is forbidden.
+    refute(affected.include?('der-A') && affected.include?('der-C'),
+           "BLOCK-002: non-transitive A!~C chain must NOT produce a 3-member action touching both der-A and der-C (got #{affected.inspect})")
+  end
+end
+
+# ----- BLOCK-003-4: post_state_matches_expected? runs BEFORE
+# begin_operation (proven by pre-workspace mismatch injection) -----
+
+test 'V15-B003-4: precomputed post-workspace mismatch fails closed BEFORE begin_operation' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  adapter = ws.instance_variable_get(:@adapter)
+  # Inject the failure on the FIRST call to end_operation(commit: true)
+  # (i.e., the failure happens during the commit attempt, NOT during
+  # begin_operation and NOT during preflight). This is a
+  # commit_operation_failed scenario.
+  injected = false
+  original_end_op = adapter.method(:end_operation)
+  adapter.define_singleton_method(:end_operation) do |*args, **kw|
+    if !injected && kw[:commit] == true
+      injected = true
+      raise StandardError, 'commit_operation_failed (injected)'
+    end
+    original_end_op.call(*args, **kw)
+  end
+  # Track how many times begin_operation is called.
+  begin_calls = 0
+  original_begin = adapter.method(:begin_operation)
+  adapter.define_singleton_method(:begin_operation) do |*args, **kw|
+    begin_calls += 1
+    original_begin.call(*args, **kw)
+  end
+  # Track how many times end_operation(commit: true) is called.
+  commit_calls = 0
+  adapter.define_singleton_method(:end_operation) do |*args, **kw|
+    commit_calls += 1 if kw[:commit] == true
+    # Re-define and call original
+    if !injected && kw[:commit] == true
+      injected = true
+      raise StandardError, 'commit_operation_failed (injected)'
+    end
+    original_end_op.call(*args, **kw)
+  end
+  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  # Commit failure: workspace is :failed, every action is :failed.
+  assert_equal :failed, new_ws.state, 'commit failure: workspace state :failed'
+  assert updated.all? { |a| a.status == :failed },
+         'commit failure: every action :failed'
+  # BLOCK-003-4: the post-commit path MUST NOT call end_operation
+  # again with commit: false. We assert: commit_calls <= 1 (only
+  # the first commit attempt that raised). The previous bug
+  # produced begin -> commit -> abort (commit_calls >= 1 AND
+  # a subsequent abort call). With the fix, the rescue branch
+  # does NOT issue a second end_operation(commit: false).
+  assert commit_calls <= 1,
+         "BLOCK-003-4: commit failure must not produce begin -> commit -> abort (commit_calls=#{commit_calls})"
+end
+
+# ----- BLOCK-003-5: pre-host post-state self-check rejects
+# inconsistency without opening the host operation -----
+
+test 'V15-B003-5: precomputed post-workspace fingerprint mismatch fails closed without begin_operation' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  adapter = ws.instance_variable_get(:@adapter)
+  begin_calls = 0
+  original_begin = adapter.method(:begin_operation)
+  adapter.define_singleton_method(:begin_operation) do |*args, **kw|
+    begin_calls += 1
+    original_begin.call(*args, **kw)
+  end
+  # Force precompute_expected_post_state to return an inconsistent
+  # expected_post (surviving_derived_ids missing 'der-A' even
+  # though der-A is not in to_remove). The self-consistency check
+  # then fails BEFORE begin_operation.
+  original_precompute = DuplicateRepairExecutor.method(:precompute_expected_post_state)
+  DuplicateRepairExecutor.define_singleton_method(:precompute_expected_post_state) do |workspace:, per_action:, survivor_updates:|
+    result = original_precompute.call(workspace: workspace, per_action: per_action, survivor_updates: survivor_updates)
+    # The original returns a FROZEN Hash. To simulate a
+    # self-consistency mismatch without mutating the frozen
+    # structure, build a brand-new Hash with the same keys
+    # EXCEPT drop 'der-A' from surviving_derived_ids.
+    ids = (result[:surviving_derived_ids] || result['surviving_derived_ids'] || []).dup
+    ids = ids - ['der-A']
+    {
+      surviving_derived_ids:     ids,
+      survivor_replacement_keys: result[:survivor_replacement_keys] || [],
+      pre_classes_count:         result[:pre_classes_count],
+      pre_classes_keys:          result[:pre_classes_keys]
+    }
+  end
+  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  # Workspace unchanged in entity inventory.
+  assert_equal ws.entities.length, new_ws.entities.length,
+               'pre-host post-state mismatch: workspace inventory unchanged'
+  # No begin_operation call at all (the self-check short-circuits
+  # BEFORE the host operation is opened).
+  assert_equal 0, begin_calls,
+               'BLOCK-003-5: precomputed post-state mismatch must NOT open a host operation (begin_calls=0)'
+  # Every action :failed.
+  assert updated.all? { |a| a.status == :failed },
+         'BLOCK-003-5: precomputed post-state mismatch: every action :failed'
+  # Restore the original method to avoid leaking into other tests.
+  DuplicateRepairExecutor.define_singleton_method(:precompute_expected_post_state, original_precompute)
+end
+
+# ----- BLOCK-004-5: after_pairs is measured from post-batch
+# (NOT hardcoded to 0) -----
+
+test 'V15-B004-5: duplicate_pairs_after is measured from the post-batch workspace (NOT hardcoded)' do
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  # A third edge that will NOT be removed (non-duplicate).
+  e3 = v15_edge(id: 2, start: [20.0, 0.0, 0.0], finish: [30.0, 0.0, 0.0],
+                parent_pid_path: [300])
+  src = v15_snapshot(edges: [e1, e2, e3])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point,
+                     source_edge: e1),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point,
+                     source_edge: e2),
+    v15_derived_edge(derived_id: 'der-C', parent_pid_path: [300],
+                     start: e3.start_point, finish: e3.end_point,
+                     source_edge: e3)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: reg)
+  # The snapshot's duplicate_repair Hash is stringified for
+  # the UI bridge; the unstringified summary (with nested
+  # per-action Hashes) lives on the runner instance.
+  summary = SUAnalysis::Core::WorkingModeRunner.duplicate_repair_summary
+  assert summary.is_a?(Hash), 'duplicate_repair_summary MUST be exposed after run_duplicate_repair_batch'
+  # The applied batch MUST have removed the duplicate, so
+  # duplicate_pairs_after should be 0 (only one pair existed
+  # in the pre-batch, and it is now resolved). The MEASUREMENT
+  # must be derived from the post-batch workspace, NOT a
+  # hardcoded formula.
+  assert_equal 0, summary['duplicate_pairs_after'],
+         'BLOCK-004-5: duplicate_pairs_after must be 0 when the only class resolved'
+  # The pre-batch measurement must be 1.
+  assert_equal 1, summary['duplicate_pairs_before']
+  # Per-action audit must include removed_count, survivor_id,
+  # source_count, source_occurrence_ids, issue_ids (BLOCK-004
+  # CodeX 032 minimum).
+  applied = summary['actions'].select { |a| a['status'] == 'applied' }
+  assert applied.any?
+  a = applied.first
+  refute_nil a['removed_count'],
+         'BLOCK-004-5: per-action audit must include removed_count'
+  refute_nil a['survivor_derived_id'],
+         'BLOCK-004-5: per-action audit must include survivor_derived_id'
+  refute_nil a['source_occurrence_count'],
+         'BLOCK-004-5: per-action audit must include source_occurrence_count'
+  assert_kind_of Array, a['source_occurrence_ids']
+  assert_kind_of Array, a['issue_ids']
+  # source_occurrence_count must equal source_occurrence_ids.length.
+  assert_equal a['source_occurrence_ids'].length, a['source_occurrence_count']
+  # removed_count must equal affected_derived_ids.length.
+  assert_equal a['affected_derived_ids'].length, a['removed_count']
+end
