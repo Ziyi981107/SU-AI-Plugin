@@ -42,25 +42,50 @@ Auto-test baseline at V1.4 close:
   Node DOM: 148/148 PASS
   RBZ smoke: 8/8 PASS
 
-## V1.5 Phase 1 — PENDING START (CodeX + Owner greenlit)
+## V1.5 Phase 1 — IMPLEMENTATION COMPLETE, Owner Gate pending (2026-08-25)
 
-CodeX + Owner have explicitly greenlit V1.5 Phase 1 in the
-2026-08-25 Owner dispatch:
-- V1.5 plan: Review/V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_IMPLEMENTATION_PLAN_2026-08-24.md
-- V1.5 Pi Task: Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt
-
-Vertical slice (the ONLY allowed slice):
+CodeX + Owner greenlit V1.5 Phase 1 on 2026-08-25.
+The vertical slice is locked to:
   "In the DerivedGeometryWorkspace, auto-apply ONLY exact-duplicate
    and reversed-exact-duplicate edge occurrences, with full
    provenance, audit, and rollback. Do nothing else."
 
-Per V1.5 plan §6 IMPLEMENTATION ORDER.
+Implementation:
+- Branch: v1.5-high-confidence-auto-repair (cut from HEAD a7cedb4)
+- Implementation commits:
+    dbd8cd4  high-confidence duplicate-edge auto-repair vertical slice
+    a9a88c5  minimal Working Mode UI summary for duplicate repairs
+- New files:
+    extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+    extension/su_ai_plugin/core/duplicate_repair_executor.rb
+    tests/test_v15_duplicate_repair.rb
+- Modified:
+    extension/su_ai_plugin/core/working_mode_runner.rb
+        (added record_duplicate_repair_summary + snapshot key)
+    extension/su_ai_plugin/html/app.js
+        (Duplicate repairs row in Working Mode summary)
+- Test evidence:
+    Ruby:        677/677 PASS (was 656/656; +21 V1.5 Phase 1)
+    Node DOM:    154/154 PASS (was 148/148; +6 V1.5 assertions)
+    RBZ smoke:    8/8 PASS
+    git diff --check: clean
+    working tree: clean
 
-NEXT ACTION (this session):
-  - Create V1.4 closeout commit on v1.4-derived-workspace.
-  - Branch from HEAD into v1.5-high-confidence-auto-repair.
-  - Implement V1.5 Phase 1 per the plan.
-  - Stop at Owner Gate boundary.
+Reports:
+  - Review/V1_5_PHASE1_IMPLEMENTATION_REPORT_2026-08-25.md
+  - Review/OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-25.txt
+    (V15-1..V15-14 Owner verification on real SK 2020; PENDING)
+
+Final V1.5 Phase 1 RBZ:
+  Path:    D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+  Size:    479,023 bytes
+  Entries: 55
+
+STOP at Owner Gate. The next move is:
+  - Owner runs V15-1..V15-14 on real SketchUp 2020.
+  - Owner drops Prompt/OWNER_REPORT_V1_5_DUPLICATE_REPAIR_2026-08-25.txt.
+  - Do NOT enter V1.5 Phase 2 / V1.6 / V1.7 / V1.8 / V1.9 ahead
+    of CodeX + Owner re-verdict.
 
 ## V14-RUNTIME-BLOCK-005 (2026-08-24) — material collection compatibility fixed
 
@@ -95,13 +120,15 @@ Evidence:
 Next gate: CodeX narrow recheck, then install this RBZ and rerun only the
 real SU2020 V14-9 narrow flow. V1.5 remains gated; do not publish/release.
 
-Last updated: 2026-08-25 (V1.4 Stage Review OFFICIALLY CLOSED —
-CodeX VERDICT: PASS, 0 BLOCKs; V1.5 Phase 1 GREENLIT).
-Branch `v1.4-derived-workspace` (V1.4 closeout commit pending this session).
-  - Production candidate HEAD (rbz built from): 92be2cb
+Last updated: 2026-08-25 (V1.5 Phase 1 IMPLEMENTATION COMPLETE,
+Owner Gate pending).
+Branch `v1.5-high-confidence-auto-repair` (cut from V1.4 closeout
+HEAD a7cedb4).
+  - Implementation HEAD: a9a88c5
+  - V1.4 closeout HEAD: a7cedb4 (parent)
   - Working tree: clean
 
-Full suite **656/656 Ruby + 148/148 Node.js DOM assertions
+Full suite **677/677 Ruby + 154/154 Node.js DOM assertions
 + 8/8 RBZ smoke tests** PASS, 0 fail, 0 error.
 dist/SU-AI-Plugin.rbz rebuilt (439,067 bytes, 53 entries,
 SHA256 `af3e8621ab37582ae711be337fd18ac846e4b564e2d84b4dbadb315e3550cf97`,
