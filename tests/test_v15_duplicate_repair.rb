@@ -2071,3 +2071,86 @@ def refute_includes(coll, item, msg = nil)
   return unless coll.respond_to?(:include?) && coll.include?(item)
   raise msg || "expected #{coll.inspect} NOT to include #{item.inspect}"
 end
+
+
+# ===== Section 10: Stage 3 (Validation / Production Wiring / UI Audit) tests =====
+
+# ----- Q. Derived validation shows eligible duplicate count
+# decreases to zero -----
+
+test 'V15-Q: derived validation reports eligible duplicate class count decreases to 0 after successful apply' do
+  require_relative '../extension/su_ai_plugin/core/derived_duplicate_validator'
+
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  # Pre-batch validation: at least 1 duplicate class (the A/B pair).
+  pre_validation = DerivedDuplicateValidator.validate(workspace: ws)
+  assert pre_validation['duplicate_classes_before'] >= 1,
+         'pre-batch should report at least 1 duplicate class'
+  # Apply the repair.
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  # Post-batch validation: 0 duplicate classes (the survivor
+  # is unique in its class).
+  post_validation = DerivedDuplicateValidator.validate(workspace: new_ws)
+  assert_equal 0, post_validation['duplicate_classes_after'],
+               'post-batch should report 0 duplicate classes'
+  # The class keys before included the canonical key for the
+  # A/B pair; after apply that key is no longer present.
+  refute_includes post_validation['class_keys'], pre_validation['class_keys'].first
+end
+
+# ----- UI surface: duplicate_classes_before/after are exposed
+# in the snapshot via run_duplicate_repair_batch -----
+
+test 'V15-Q-UI: snapshot duplicate_repair summary includes before/after class counts' do
+  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_adapter, ws.instance_variable_get(:@adapter))
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_model, nil)
+  reg = v15_registry([
+    v15_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: reg)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  refute_nil snap['duplicate_repair']
+  assert snap['duplicate_repair'].key?('duplicate_classes_before'),
+         'snapshot must include duplicate_classes_before'
+  assert snap['duplicate_repair'].key?('duplicate_classes_after'),
+         'snapshot must include duplicate_classes_after'
+  assert_equal 1, snap['duplicate_repair']['duplicate_classes_before']
+  assert_equal 0, snap['duplicate_repair']['duplicate_classes_after']
+  assert_equal 1, snap['duplicate_repair']['actions_applied']
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end

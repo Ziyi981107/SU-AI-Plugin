@@ -32,6 +32,7 @@
 #
 
 require_relative 'derived_geometry_workspace'
+require_relative 'derived_duplicate_validator'
 
 module SUAnalysis
   module Core
@@ -420,17 +421,30 @@ module SUAnalysis
             workspace:       @current_workspace
           )
           validated = plan.validate
+          # Stage 3 (§8): capture the pre-batch derived-duplicate
+          # class topology BEFORE assigning new_ws to
+          # @current_workspace. The validator groups derived
+          # records by canonical world-geometry key.
+          pre_classes = SUAnalysis::Core::DerivedDuplicateValidator.group_derived_duplicates(
+            @current_workspace, nil
+          )
           new_ws, updated_actions = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
             workspace: @current_workspace,
             plan:      validated
           )
           @current_workspace = new_ws
+          # Stage 3 (§8): validate the post-batch workspace.
+          post_validation = SUAnalysis::Core::DuplicateRepairExecutor.validate_post_state(
+            workspace: new_ws
+          )
           # Build the summary from ACTUAL results (NOT manual
           # injection -- the CodeX BLOCK-002 fix requires the UI
           # summary to come from real execution results).
           summary = build_duplicate_repair_summary(
-            plan:           validated,
-            updated_actions: updated_actions
+            plan:            validated,
+            updated_actions: updated_actions,
+            pre_classes:     pre_classes,
+            post_validation: post_validation
           )
           @duplicate_repair_summary = summary
         rescue StandardError => e
@@ -453,8 +467,10 @@ module SUAnalysis
       # Build the summary Hash from the actual plan + updated
       # actions. Counts actions by status (applied / skipped /
       # failed) and records the pre/post duplicate-pair counts
-      # for the UI.
-      def build_duplicate_repair_summary(plan:, updated_actions:)
+      # for the UI. Stage 3 (§8): also exposes the
+      # derived-duplicate class counts (before/after) so the
+      # UI can show the validation result.
+      def build_duplicate_repair_summary(plan:, updated_actions:, pre_classes: nil, post_validation: nil)
         applied = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
         skipped = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :skipped }
         failed  = updated_actions.count { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :failed }
@@ -469,13 +485,18 @@ module SUAnalysis
         # survivor + 0 duplicates remains. We expose "0" as the
         # post-state because the repair's invariant is "one
         # survivor per occurrence, no duplicates".
+        # Stage 3 (§8): derived-duplicate class counts.
+        pre_count  = pre_classes.is_a?(Hash) ? pre_classes.length : 0
+        post_count = post_validation.is_a?(Hash) ? post_validation['duplicate_classes_after'].to_i : (applied > 0 ? 0 : pre_count)
         {
-          'duplicate_pairs_before' => before,
-          'duplicate_pairs_after'  => applied > 0 ? 0 : before,
-          'actions_applied'        => applied,
-          'actions_skipped'        => skipped,
-          'actions_failed'         => failed,
-          'last_action_status'     => (updated_actions.last ? updated_actions.last.status.to_s : 'none')
+          'duplicate_pairs_before'    => before,
+          'duplicate_pairs_after'     => applied > 0 ? 0 : before,
+          'actions_applied'           => applied,
+          'actions_skipped'           => skipped,
+          'actions_failed'            => failed,
+          'last_action_status'        => (updated_actions.last ? updated_actions.last.status.to_s : 'none'),
+          'duplicate_classes_before'  => pre_count,
+          'duplicate_classes_after'   => post_count
         }.freeze
       end
 

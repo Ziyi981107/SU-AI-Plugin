@@ -34,6 +34,7 @@
 
 require_relative 'repair_plan'
 require_relative 'derived_geometry_workspace'
+require_relative 'derived_duplicate_validator'
 
 module SUAnalysis
   module Core
@@ -428,6 +429,13 @@ module SUAnalysis
             removed_ids:      total_removed,
             survivor_updates: survivor_updates
           )
+          # Stage 3 (§8): compute the derived duplicate
+          # before/after validation against the post-workspace.
+          # The pre-batch classes were captured on the input
+          # workspace (computed in precompute_expected_post_state
+          # -> class_member_counts context); the post-batch
+          # validator runs on new_ws and reports the
+          # duplicate_classes_after count.
           # Validate the post-state fingerprint shape matches the
           # precomputed expected shape. If it doesn't, the host
           # adapter did something unexpected and we surface this
@@ -562,11 +570,29 @@ module SUAnalysis
         surviving_ids = workspace.instance_variable_get(:@entity_pairs).map { |id, _rec|
           id.to_s
         }.reject { |id| removed_set.include?(id) }.sort
+        # Pre-batch derived-duplicate class counts (Stage 3 §8):
+        # we capture the canonical class topology of the
+        # pre-batch workspace so the post-batch validator can
+        # produce a before/after audit row.
+        pre_classes = if defined?(DerivedDuplicateValidator)
+                        SUAnalysis::Core::DerivedDuplicateValidator.group_derived_duplicates(
+                          workspace,
+                          DEFAULT_DUPLICATE_TOLERANCE
+                        )
+                      else
+                        {}
+                      end
         {
           surviving_derived_ids: surviving_ids,
-          survivor_replacement_keys: (survivor_updates || {}).keys.sort
+          survivor_replacement_keys: (survivor_updates || {}).keys.sort,
+          pre_classes_count:     pre_classes.length,
+          pre_classes_keys:      pre_classes.keys.sort
         }.freeze
       end
+
+      # Default tolerance for the derived validator (matches the
+      # proposer's default).
+      DEFAULT_DUPLICATE_TOLERANCE = 1.0e-4
 
       # Verify the post-state matches the expected shape (Stage 2
       # §7). The host operation may have surfaced unexpected
@@ -577,6 +603,20 @@ module SUAnalysis
         return false if new_workspace.nil? || expected.nil?
         actual_ids = new_workspace.entities.map { |rec| rec.derived_id.to_s }.sort
         actual_ids == expected[:surviving_derived_ids]
+      end
+
+      # Stage 3 (§8): validate the post-batch workspace's
+      # derived-duplicate topology. Pure-data; reads each
+      # derived record's geometry_summary; reuses the
+      # canonical key contract.
+      def validate_post_state(workspace:, tolerance: nil)
+        return nil if workspace.nil?
+        tol = tolerance || DEFAULT_DUPLICATE_TOLERANCE
+        return nil unless defined?(DerivedDuplicateValidator)
+        SUAnalysis::Core::DerivedDuplicateValidator.validate(
+          workspace:  workspace,
+          tolerance:  tol
+        )
       end
 
       # Transition an action to :applied (success).

@@ -1532,6 +1532,40 @@ assert('V15: no duplicate_repair -> no "Duplicate repairs" row',
          return c.textContent.indexOf('Duplicate repairs') !== -1;
        }));
 
+// Stage 3 (§8): when duplicate_classes_before/after are present,
+// the row MUST surface the derived-duplicate class counts.
+renderWithPayload({
+  selectionLabel: 'wm-v15-classes', selectionType: 'Group',
+  summary: { edges: 2, vertices: 2, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v15-snap',
+    source_fingerprint_digest: 'aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v15cfg',
+    workspace_id: 'ws-v15-002',
+    duplicate_repair: {
+      duplicate_pairs_before: 1,
+      duplicate_pairs_after: 0,
+      actions_applied: 1,
+      actions_skipped: 0,
+      last_action_status: 'applied',
+      duplicate_classes_before: 1,
+      duplicate_classes_after: 0
+    }
+  }
+});
+var v15ClassesList = mockElements['working-mode-list'];
+assert('V15: duplicate_repair with class counts renders the validation suffix',
+       v15ClassesList && v15ClassesList.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+                c.textContent.indexOf('duplicate classes 1') !== -1 &&
+                c.textContent.indexOf('\u2192') !== -1 &&
+                c.textContent.indexOf(' 0') !== -1;
+       }));
+
 // Source guard: renderWorkingMode MUST NOT use innerHTML for
 // the duplicate_repair row (textContent only contract).
 var v15SrcMatch = appJsSrc.match(/function\s+renderWorkingMode\s*\([\s\S]*?\n  \}/);

@@ -499,6 +499,12 @@
                     (typeof dr.actions_applied === 'number' ? dr.actions_applied : 0) +
                     ', skipped ' +
                     (typeof dr.actions_skipped === 'number' ? dr.actions_skipped : 0);
+        if (typeof dr.duplicate_classes_before === 'number' &&
+            typeof dr.duplicate_classes_after === 'number') {
+          label += '; duplicate classes ' +
+                   dr.duplicate_classes_before + ' \u2192 ' +
+                   dr.duplicate_classes_after;
+        }
         addRow(listEl, 'none', 'Duplicate repairs', label, label);
       }
       // Prepare button enabled.
@@ -520,12 +526,21 @@
       }
       // V1.5 Phase 1: surface the duplicate_repair summary as a
       // single labelled 'Duplicate repairs' row when present.
+      // Stage 3 (§8): include the derived-duplicate class
+      // counts (before / after) so the user sees the
+      // validation seam's result.
       if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
         var dr2 = ws.duplicate_repair;
         var label2 = 'Duplicate repairs: applied ' +
                      (typeof dr2.actions_applied === 'number' ? dr2.actions_applied : 0) +
                      ', skipped ' +
                      (typeof dr2.actions_skipped === 'number' ? dr2.actions_skipped : 0);
+        if (typeof dr2.duplicate_classes_before === 'number' &&
+            typeof dr2.duplicate_classes_after === 'number') {
+          label2 += '; duplicate classes ' +
+                    dr2.duplicate_classes_before + ' \u2192 ' +
+                    dr2.duplicate_classes_after;
+        }
         addRow(listEl, state, 'Duplicate repairs', label2, label2);
       }
       if (state === 'failed' && ws.last_error) {
