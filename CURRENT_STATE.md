@@ -1,5 +1,177 @@
 # CURRENT STATE
 
+## V1.5 Recovery + Derived Edge Canonicalization -- GUIDANCE 031 ACTIVE (2026-08-25)
+
+Active directive:
+
+  Prompt/CODEX_GUIDANCE_031_2026-08-25_V1_5_RECOVERY_AND_DERIVED_EDGE_CANONICALIZATION.txt
+  Status: ACTIVE
+  Dispatch date: 2026-08-25
+  Owner of directive: Codex / AIPM
+  Implementation owner: Pi
+
+This section records the Stage 0 outcome of Guidance 031.
+Historical sections below remain evidence and are NOT erased.
+
+### Stage 0 -- Repository recovery (completed)
+
+Pre-recovery working tree contained the rejected "recheck #3" experiment
+as three modified files, exactly matching the documented failed experiment:
+
+  - extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+  - tests/_fake_ui.rb
+  - tests/test_v15_real_preflight_path.rb
+
+No additional dirty files were present. Per Guidance 031 section 3.B,
+these three uncommitted changes were discarded to HEAD via:
+
+  git checkout HEAD -- <three files>
+
+Branch and HEAD at recovery:
+
+  Branch: v1.5-high-confidence-auto-repair
+  HEAD:   78f8500  (docs(prompt): dispatch V1.5 recovery guidance 031)
+  Parent: 82df490  (docs(v1.5): escalate unreachable duplicate-input
+                     contract)
+  HEAD descends directly from 82df490 with one Codex-only guidance
+  dispatch commit (78f8500) that adds only the guidance file
+  (509 lines, no production/test change). This matches the expected
+  ancestry in Guidance 031 section 3.
+
+Baseline verified after recovery:
+
+  Ruby:        700/700 PASS
+  Node DOM:    154/154 PASS
+  git diff --check: clean
+  working tree: clean
+
+No additional dirty path observed, so the unexpected-worktree
+escalation branch (Guidance 031 section 3.D) was not exercised.
+
+The unapproved a8b7792 RBZ remains unapproved and MUST NOT be installed.
+The recheck #3 experiment is NOT preserved by committing it; its
+rationale is recorded in the 82df490 escalation documents.
+
+### Stage 0 -- PROJECT_HANDOFF.txt (created)
+
+Guidance 031 section 2 lists durable facts to include when creating
+PROJECT_HANDOFF.txt from scratch. PROJECT_HANDOFF.txt was absent at
+recovery and has now been created at the repository root using ONLY
+those facts:
+
+  - master plan path and ownership role;
+  - Prompt is Codex/AIPM input and read-only to Pi;
+  - Review is Pi output;
+  - CURRENT_STATE.md is the single current-state file;
+  - source CAD is immutable; repair happens only on derived geometry;
+  - V1.x excludes MCP/site/residential/AI work;
+  - passed unchanged scope remains closed;
+  - real-host evidence is required at meaningful gates;
+  - Pi may rollback a failed experiment to a verified checkpoint;
+  - mandatory reviews: V1.4 (closed), V1.7 integration (pending),
+    V1.9 final (pending), plus risk triggers.
+
+No new product scope was introduced.
+
+### Stage 0 -- Corrected V1.5 product scope (per Guidance 031 sections 4-8)
+
+The previous A/B/C decision framing (withdrawn by Guidance 031) is no
+longer in effect. The corrected V1.5 scope is:
+
+  Canonicalize exact/reversed-exact coincident DERIVED edges inside the
+  current selected SourceSnapshot, while preserving the immutable
+  source occurrences as a many-to-one provenance union on the surviving
+  derived edge.
+
+Identity rule (master-plan §17.2):
+
+  - Two ComponentInstances remain two distinct SOURCE occurrences.
+    Their identity is never merged, rewritten, or discarded.
+  - If their transformed edges occupy exactly the same world-space
+    segment and pass every eligibility guard, the PREPARED/DERIVED
+    topology may represent that segment once, with the survivor's
+    source_occurrence_ids equal to the deterministic union of every
+    contributing source occurrence.
+
+Auto-apply eligibility guards (Guidance 031 section 5):
+
+  1. Evidence originates from existing duplicate_edge_candidate issues
+     in the captured IssueRegistry. No competing analyzer added.
+  2. Every member resolves to a distinct source EdgeRecord and a
+     distinct live derived Edge record/handle.
+  3. World-coordinate endpoints match forward or reversed within the
+     captured execution_config tolerance.duplicate (re-verified directly).
+  4. Coordinates are finite; transform resolution valid.
+  5. Every member belongs to the same current SourceSnapshot/selection.
+  6. Provenance usable; incomplete nested identity fails closed.
+  7. Layer names byte-identical after Layer0 normalization; otherwise
+     skipped with explicit semantic-conflict reason.
+  8. No self-match or repeated reference.
+  9. No short-edge-only deletion evidence.
+ 10. No source mutation.
+
+Proposer / executor contracts (sections 6-7):
+
+  - Refactor DuplicateRepairProposer around derived world-geometry
+    equivalence classes, not same-container identity.
+  - One SketchUp operation for the entire batch; precomputed post-state
+    in pure data; atomic abort on any dispose failure preserving the
+    PRE-BATCH inventory, handle registry, and source fingerprint.
+  - Deterministic action_id, deterministic survivor (lexicographically
+    smallest derived_id), deterministic sorted-union
+    source_occurrence_ids.
+  - Repeated apply is a no-op; same source/config yields the same
+    classes, IDs, fingerprint.
+
+Validation / UI audit (section 8):
+
+  - Derived duplicate before/after validation; assert after == 0 for
+    every successfully applied eligible class.
+  - UI shows REAL execution evidence: applied/skipped/failed,
+    classes before/after, derived edge count before/after, per-action
+    audit rows. UI remains read-only and neutral.
+
+### Active task authority
+
+The active V1.5 implementation directive is, from this point onward,
+the corrected scope recorded above. The following prior files are
+withdrawn from future action (still historical evidence):
+
+  - Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt
+  - Prompt/CODEX_DECISION_REQUEST_V15_BLOCK003_UNREACHABLE_INPUT_2026-08-25.txt
+  - The implementation instructions embedded in on-hold V15 Review files.
+
+The A/B/C decision framing in
+Review/V15_PHASE1_UNREACHABLE_INPUT_ESCALATION_2026-08-25.md is
+WITHDRAWN as a decision menu. Its repository audit summary is preserved
+as evidence; it does not constrain the corrected scope.
+
+### Hard stop after Stage 4
+
+Per Guidance 031 section 13, after implementation, automated evidence,
+RBZ build, and Review outputs are complete, Pi STOPS for one Codex
+V1.5 Stage Review. Until a later Codex Prompt says PASS:
+
+  - DO NOT ask Owner to install the RBZ.
+  - DO NOT ask Owner to paste Ruby Console commands.
+  - DO NOT generate an Owner PASS report.
+  - DO NOT push, publish, release, or enter V1.6.
+  - DO NOT reopen passed unchanged V1.0-V1.4 scope.
+  - DO NOT touch short-edge-only removal, face repair, gaps, weld,
+    flatten, loops, site modeling, AI, MCP, or V2.
+
+### Required Review outputs (Guidance 031 section 12)
+
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_IMPLEMENTATION_REPORT_2026-08-25.md
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+
+Pi writes ONLY to Review/. Never to Prompt/.
+
+----------------------------------------------------------------------
+HISTORICAL CONTENT BELOW -- PRESERVED AS EVIDENCE, NOT SUPERSEDED
+----------------------------------------------------------------------# CURRENT STATE
+
 ## V1.4 Stage Review — OFFICIALLY CLOSED (2026-08-24, CodeX VERDICT: PASS, 0 BLOCKs)
 
 Real SU2020 narrow test V14-9 re-run on the post-BLOCK-005 RBZ PASSED:
