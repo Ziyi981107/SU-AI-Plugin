@@ -47,6 +47,9 @@ module SUAnalysis
       @current_adapter       = nil   # DerivedWorkspaceAdapter instance or nil
       @current_adapter_kind  = nil   # Symbol :real_su | :fake | nil
       @current_model         = nil   # SU model (for adapter operations); nil if absent
+      # V1.5 Phase 1: duplicate-repair summary Hash (or nil).
+      # Populated by record_duplicate_repair_summary; read by snapshot.
+      @duplicate_repair_summary = nil
 
       STATES = [:none, :building, :ready, :discarded, :failed].freeze
 
@@ -259,8 +262,13 @@ module SUAnalysis
       # with a fresh workspace regardless; the prior discarded
       # workspace is no longer the active one (snapshot will
       # report the new state on the next render).
+      #
+      # V1.5 Phase 1: discard also clears the duplicate-repair
+      # summary so the next snapshot doesn't report stale
+      # numbers from a discarded workspace.
       def discard
         _discard_if_present
+        @duplicate_repair_summary = nil
         # NOTE: do NOT clear @current_workspace here. The
         # discarded workspace carries the :discarded state
         # that the UI needs to render. The next prepare()
@@ -301,11 +309,17 @@ module SUAnalysis
       # CodeX BLOCK rework 2026-08-21: BLOCK 4 -- UI "N
       # entities ready" must match the actual derived record
       # count).
+      # V1.5 Phase 1 (per plan §6 step 5): adds duplicate_repair
+      # summary fields (duplicate_count_before / after + status)
+      # so the dialog can show a "Duplicate repairs" line without
+      # a UI redesign. The fields are populated ONLY when the
+      # runner has applied at least one duplicate-repair action;
+      # otherwise the keys are omitted (backward-compatible).
       # When the runner is idle (no workspace), returns the
       # "none" snapshot.
       def snapshot
         if @current_workspace.nil?
-          {
+          snap = {
             'state'                    => 'none',
             'source_snapshot_id'       => nil,
             'source_fingerprint_digest' => nil,
@@ -314,6 +328,13 @@ module SUAnalysis
             'last_error'               => nil,
             'entity_count'             => 0
           }
+          # V1.5 Phase 1: include duplicate_repair summary in the
+          # 'none' snapshot too when recorded (the summary is the
+          # audit trail; it survives even after Discard).
+          if @duplicate_repair_summary.is_a?(Hash) && !@duplicate_repair_summary.empty?
+            snap['duplicate_repair'] = stringify_duplicate_repair_summary(@duplicate_repair_summary)
+          end
+          snap
         else
           ws = @current_workspace
           src = @current_source || ws.source_snapshot
@@ -327,7 +348,7 @@ module SUAnalysis
             fp_digest = fp.digest.to_s
           end
           le = ws.respond_to?(:last_error) ? ws.last_error : nil
-          {
+          snap = {
             'state'                    => ws.state.to_s,
             'source_snapshot_id'       => src.snapshot_id.to_s,
             'source_fingerprint_digest' => fp_digest,
@@ -338,7 +359,38 @@ module SUAnalysis
             # the actual derived record count.
             'entity_count'             => ws.respond_to?(:entity_count) ? ws.entity_count : 0
           }
+          # V1.5 Phase 1 (per plan §6 step 6): include duplicate
+          # repairs summary when present. Backward-compatible
+          # (omitted when no duplicate repair has been applied
+          # yet so older callers do not see the new keys).
+          if @duplicate_repair_summary.is_a?(Hash) && !@duplicate_repair_summary.empty?
+            snap['duplicate_repair'] = stringify_duplicate_repair_summary(@duplicate_repair_summary)
+          end
+          snap
         end
+      end
+
+      # V1.5 Phase 1: record the duplicate-repair summary on the
+      # runner so the next snapshot() exposes it via
+      # `derivedWorkspace.duplicate_repair`. Pure data only --
+      # no live Sketchup objects.
+      def record_duplicate_repair_summary(summary)
+        return if summary.nil?
+        return unless summary.is_a?(Hash)
+        @duplicate_repair_summary = summary.dup.freeze
+      end
+
+      # V1.5 Phase 1: clear the duplicate-repair summary
+      # (called when the workspace is discarded / rebuilt).
+      def clear_duplicate_repair_summary
+        @duplicate_repair_summary = nil
+      end
+
+      # V1.5 Phase 1: read-only accessor for tests / Owner
+      # verification scripts. Returns the current summary Hash
+      # or nil.
+      def duplicate_repair_summary
+        @duplicate_repair_summary
       end
 
       # ---- internals ----
@@ -628,6 +680,10 @@ module SUAnalysis
           # handle_registry stays in scope for the user's
           # # explicit recovery attempt.
         end
+        # V1.5 Phase 1: clear the duplicate-repair summary on
+        # discard (the prior workspace's repair summary no longer
+        # applies).
+        @duplicate_repair_summary = nil
       end
 
       def _adapter_kind_of(adapter)
@@ -666,6 +722,28 @@ module SUAnalysis
         @current_adapter      = nil
         @current_adapter_kind = nil
         @current_model        = nil
+        @duplicate_repair_summary = nil
+      end
+
+      # V1.5 Phase 1 (internal): convert the duplicate-repair
+      # summary Hash into a JSON-safe String-keyed Hash for the
+      # UI bridge. Frozen at the boundary.
+      def stringify_duplicate_repair_summary(summary)
+        out = {}
+        summary.each do |k, v|
+          ks = k.to_s
+          out[ks] = case v
+                    when String, Numeric, TrueClass, FalseClass, NilClass
+                      v
+                    when Hash
+                      v.each_with_object({}) { |(kk, vv), h| h[kk.to_s] = vv }
+                    when Array
+                      v.map { |item| item.is_a?(String) ? item : item.to_s }
+                    else
+                      v.to_s
+                    end
+        end
+        out.freeze
       end
 
       # V1.4 CodeX BLOCK fix (Stage 4): test-only accessor

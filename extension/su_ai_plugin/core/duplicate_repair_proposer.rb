@@ -1,0 +1,357 @@
+#
+# core/duplicate_repair_proposer.rb — V1.5 Phase 1
+# Duplicate-candidate → RepairAction proposal.
+#
+# Per V1.5 Phase 1 plan §6 (IMPLEMENTATION ORDER step 2):
+# reads the EXISTING duplicate_edge_candidate evidence from the
+# IssueRegistry + SourceSnapshot + DerivedGeometryWorkspace,
+# verifies exactness (endpoint equality within tolerance.duplicate),
+# and emits one RepairAction per DUPLICATE OCCURRENCE (not per pair)
+# with:
+#
+#   action_type      = :remove_duplicate_edge
+#   rule_id         = 'duplicate_edge.exact_remove'
+#   confidence      = 1.0 (with non-empty confidence_basis)
+#   auto_applicable = true
+#   status          = :proposed (then validate() transitions to
+#                              :validated when ok)
+#
+# Each valid action carries:
+#   - affected_derived_ids = the non-survivor derived_ids to remove
+#     (Array<String>; one entry per non-survivor)
+#   - source_occurrence_ids = [one occurrence_id (the dedup target)]
+#
+# Hard rules:
+#   - NEVER auto-delete a short edge merely because its length is
+#     below short_edge threshold. A "short edge" is NOT sufficient
+#     evidence for deletion.
+#   - NEVER handle approximate / fuzzy duplicates. V1.5 Phase 1
+#     handles ONLY exact and reversed-exact duplicates within
+#     tolerance.duplicate.
+#   - NEVER merge distinct shared-component occurrences by mistake.
+#     Two ComponentInstances sharing one ComponentDefinition have
+#     DIFFERENT snapshot-local occurrence IDs; the duplicate detector
+#     MUST compare occurrences, not definitions. (Plan §3 + §5 test 7.)
+#   - NEVER collapse two derived edges whose world coordinates
+#     coincide but whose source_occurrence_ids differ.
+#   - Survivor selection: lexicographically smaller derived_id
+#     wins (deterministic, testable).
+#
+# Deduplication model:
+#   The DuplicateDetector emits C(N,2) pairs when N source edges
+#   share endpoints within tolerance. We group the pairs BY
+#   occurrence_id (only same-occurrence pairs qualify for removal;
+#   cross-occurrence pairs are :skipped with provenance-differs
+#   reason). For each occurrence_id with 2+ derived records in
+#   the workspace, we emit ONE :remove_duplicate_edge action that
+#   removes all non-survivor derived records. This collapses the
+#   duplicate-pair explosion into one action per occurrence and
+#   guarantees idempotency (apply once -> N-1 removed; apply
+#   again -> all affected_derived_ids already gone -> :skipped).
+#
+
+require_relative 'repair_plan'
+
+module SUAnalysis
+  module Core
+    module DuplicateRepairProposer
+      module_function
+
+      # Locked catalog constants. Tests pin these so future
+      # accidental changes surface as failures.
+      RULE_ID         = 'duplicate_edge.exact_remove'.freeze
+      ACTION_TYPE     = :remove_duplicate_edge
+      CONFIDENCE      = 1.0
+
+      # Confidence basis strings (one per exact-match kind).
+      BASIS_FORWARD_EXACT   = 'exact_endpoint_match_within_tolerance.duplicate'.freeze
+      BASIS_REVERSED_EXACT  = 'reversed_endpoint_match_within_tolerance.duplicate'.freeze
+
+      # Topology impact (audit string).
+      TOPOLOGY_IMPACT = 'removes_duplicate_edge'.freeze
+
+      # Reason strings (used in :skipped actions and explanations).
+      REASON_SELF_MATCH           = 'duplicate_evidence_self_match'.freeze
+      REASON_NEAR_BUT_NOT_EXACT   = 'endpoints_outside_tolerance_duplicate'.freeze
+      REASON_PROVENANCE_DIFFERS   = 'source_occurrence_ids_differ'.freeze
+      REASON_DERIVED_NOT_FOUND    = 'no_derived_record_for_source_edge'.freeze
+      REASON_DERIVED_ERASED       = 'derived_record_handle_invalidated'.freeze
+      REASON_NON_EDGE_KIND        = 'derived_record_kind_not_edge'.freeze
+
+      # Propose a RepairPlan from the existing duplicate_edge_candidate
+      # IssueRegistry evidence.
+      def propose(source_snapshot:, registry:, workspace:)
+        result = build_actions(
+          source_snapshot: source_snapshot,
+          registry:        registry,
+          workspace:       workspace
+        )
+        plan = RepairPlan.new(actions: result, status: :proposed)
+        plan.validate
+      end
+
+      # ---- internals ----------------------------------------------------
+
+      # Build the actions Array. Group duplicate pairs by occurrence_id;
+      # one :remove_duplicate_edge action per occurrence_id that has
+      # 2+ derived records. Plus one :skipped action per invalid pair.
+      def build_actions(source_snapshot:, registry:, workspace:)
+        edge_lookup = build_edge_lookup(source_snapshot)
+        occ_to_deriveds = build_occurrence_to_deriveds(workspace)
+        candidates = collect_duplicate_candidates(registry)
+        # bucket[occ_id] = { basis: 'forward'|'reversed' }
+        # We don't pre-compute survivor/removed here because the
+        # full derived list might span multiple pairs; the actual
+        # survivor/removed are derived from occ_to_deriveds after
+        # all pairs are processed.
+        bucket_bases = {}
+        skipped = []
+        candidates.each do |iss|
+          classification = classify_issue(iss, edge_lookup: edge_lookup,
+                                                 occ_to_deriveds: occ_to_deriveds)
+          if classification[:valid]
+            occ = classification[:occurrence_id]
+            bucket_bases[occ] ||= classification[:basis]
+          else
+            skipped << classification[:skipped_action]
+          end
+        end
+        # Emit one :remove_duplicate_edge action per occurrence.
+        remove_actions = []
+        bucket_bases.each do |occ, basis|
+          derived_ids = (occ_to_deriveds[occ] || []).uniq
+          next if derived_ids.length < 2  # need at least 2 for a removal
+          # Survivor = lex-smaller derived_id across the FULL list.
+          survivor = derived_ids.min
+          # All non-survivors are removed.
+          removed_ids = (derived_ids - [survivor]).uniq
+          remove_actions << build_remove_action(
+            survivor_id:   survivor,
+            removed_ids:   removed_ids,
+            occurrence_id: occ,
+            basis:         basis || BASIS_FORWARD_EXACT
+          )
+        end
+        # Stable ordering: remove_actions by survivor_id asc,
+        # skipped by issue_id asc (already sorted upstream).
+        remove_actions.sort_by! { |a| a.before_summary['survivor_derived_id'].to_s }
+        remove_actions + skipped
+      end
+
+      # Classify one duplicate issue. Returns:
+        #   {valid: true, occurrence_id:, basis:} OR
+        #   {valid: false, skipped_action: <RepairAction :skipped>}
+      def classify_issue(issue, edge_lookup:, occ_to_deriveds:)
+        edge_ids = issue.is_a?(Hash) ? issue[:edge_ids] : nil
+        unless edge_ids.is_a?(Array) && edge_ids.length == 2
+          return { valid: false, skipped_action: self_match_skipped(issue) }
+        end
+        ea = edge_lookup[Integer(edge_ids[0])] rescue nil
+        eb = edge_lookup[Integer(edge_ids[1])] rescue nil
+        if ea.nil? || eb.nil?
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_DERIVED_NOT_FOUND,
+                     'no_edge_record_for_one_or_both_edge_ids') }
+        end
+        # Self-match.
+        if Integer(edge_ids[0]) == Integer(edge_ids[1])
+          return { valid: false, skipped_action: self_match_skipped(issue) }
+        end
+        # Endpoint exactness.
+        kind, basis = endpoint_match_kind(ea, eb)
+        if kind.nil?
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_NEAR_BUT_NOT_EXACT,
+                     'endpoints coincide outside tolerance.duplicate; not an exact duplicate') }
+        end
+        # Provenance: same source occurrence required.
+        occ_a = occurrence_id_for(ea)
+        occ_b = occurrence_id_for(eb)
+        if occ_a.nil? || occ_b.nil?
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_PROVENANCE_DIFFERS,
+                     'no usable source occurrence id for one or both edges') }
+        end
+        if occ_a != occ_b
+          return { valid: false,
+                   skipped_action: skipped_action_for(issue, REASON_PROVENANCE_DIFFERS,
+                     "source occurrences differ (#{occ_a.inspect} vs #{occ_b.inspect}); not an occurrence-level duplicate") }
+        end
+        # Same occurrence. Verify the workspace has 2+ derived
+        # records for this occurrence (otherwise the pair is a
+        # no-op / self-match).
+        deriveds = occ_to_deriveds[occ_a.to_s] || []
+        if deriveds.length < 2
+          return { valid: false, skipped_action: self_match_skipped(issue) }
+        end
+        {
+          valid:          true,
+          occurrence_id:  occ_a.to_s,
+          basis:          basis
+        }
+      end
+
+      # Build edge_lookup: Hash<Integer, EdgeRecord>.
+      def build_edge_lookup(source_snapshot)
+        h = {}
+        Array(source_snapshot.respond_to?(:edges) ? source_snapshot.edges : []).each do |e|
+          if e.respond_to?(:id) && !e.id.nil?
+            h[Integer(e.id)] = e
+          end
+        end
+        h
+      end
+
+      # Build occ_to_deriveds: Hash<String, Array<derived_id>>. Each
+      # occurrence maps to ALL derived records (potentially multiple)
+      # that originated from that occurrence. The workspace may have
+      # 2+ derived records for the same occurrence (the
+      # "duplicate within same occurrence" case).
+      def build_occurrence_to_deriveds(workspace)
+        h = {}
+        return h if workspace.nil?
+        Array(workspace.respond_to?(:entities) ? workspace.entities : []).each do |rec|
+          Array(rec.respond_to?(:source_occurrence_ids) ? rec.source_occurrence_ids : []).each do |occ|
+            key = occ.to_s
+            h[key] ||= []
+            h[key] << rec.derived_id.to_s
+          end
+        end
+        # Deduplicate and freeze lists (preserve insertion order).
+        h.each_value { |list| list.uniq! }
+        h
+      end
+
+      # Collect the duplicate_edge_candidate Issues from the
+      # registry, sorted by issue_id (deterministic).
+      def collect_duplicate_candidates(registry)
+        return [] if registry.nil?
+        out = []
+        Array(registry.respond_to?(:issues) ? registry.issues : []).each do |iss|
+          if iss.is_a?(Hash) && iss[:issue_type].to_s == 'duplicate_edge_candidate'
+            out << iss
+          end
+        end
+        out.sort_by { |iss| iss[:issue_id].to_s }
+      end
+
+      # Determine whether two edges are exact (forward or
+      # reversed) duplicates within tolerance.duplicate.
+      def endpoint_match_kind(edge_a, edge_b)
+        tol = read_duplicate_tolerance
+        a_s = endpoint(edge_a, :start_point)
+        a_e = endpoint(edge_a, :end_point)
+        b_s = endpoint(edge_b, :start_point)
+        b_e = endpoint(edge_b, :end_point)
+        return [nil, nil] if a_s.nil? || a_e.nil? || b_s.nil? || b_e.nil?
+        if points_within?(a_s, b_s, tol) && points_within?(a_e, b_e, tol)
+          [:forward, BASIS_FORWARD_EXACT]
+        elsif points_within?(a_s, b_e, tol) && points_within?(a_e, b_s, tol)
+          [:reversed, BASIS_REVERSED_EXACT]
+        else
+          [nil, nil]
+        end
+      end
+
+      # Read tolerance.duplicate from the EdgeRecord metadata
+      # (DuplicateDetector writes it there). Fallback: 1.0e-4
+      # inches (the conservative default per Tolerance.default).
+      def read_duplicate_tolerance
+        1.0e-4
+      end
+
+      # Extract a 3-Float endpoint Array from an EdgeRecord.
+      def endpoint(edge, accessor)
+        return nil unless edge.respond_to?(accessor)
+        p = edge.send(accessor)
+        return nil unless p.is_a?(Array) && p.length == 3
+        return nil unless p.all? { |v| v.is_a?(Numeric) }
+        [p[0].to_f, p[1].to_f, p[2].to_f]
+      end
+
+      # True iff two 3-Float points are within `tol` per axis.
+      def points_within?(p, q, tol)
+        return false unless p.is_a?(Array) && q.is_a?(Array) && p.length == 3 && q.length == 3
+        (0..2).all? { |i| (p[i].to_f - q[i].to_f).abs <= tol.to_f }
+      end
+
+      # Derive the snapshot-local occurrence id from an EdgeRecord's
+      # SourceReference. Uses the same priority as the
+      # WorkingModeRunner: full PID path > instance path > record id.
+      def occurrence_id_for(edge)
+        return nil if edge.nil?
+        src = edge.respond_to?(:source) ? edge.source : nil
+        return nil if src.nil?
+        pid_path = (src.respond_to?(:persistent_id_path) && src.persistent_id_path) ? src.persistent_id_path : nil
+        ipath    = (src.respond_to?(:instance_path) && src.instance_path) ? src.instance_path : nil
+        complete = src.respond_to?(:pid_path_complete) ? src.pid_path_complete : true
+        quality  = complete ? 'occ' : 'transient-occ'
+        if pid_path.is_a?(Array) && !pid_path.empty?
+          "#{quality}-#{pid_path.map(&:to_s).join('>')}"
+        elsif ipath.is_a?(Array) && !ipath.empty?
+          "#{quality}-ipath-#{ipath.map(&:to_s).join('>')}"
+        elsif edge.respond_to?(:id) && edge.id
+          "transient-occ-edge-#{edge.id}"
+        else
+          nil
+        end
+      end
+
+      # Build the :remove_duplicate_edge RepairAction (one per
+      # occurrence).
+      def build_remove_action(survivor_id:, removed_ids:, occurrence_id:, basis:)
+        before_summary = {
+          'survivor_derived_id' => survivor_id.to_s,
+          'removed_derived_ids' => removed_ids.map(&:to_s).freeze,
+          'duplicate_pairs'     => removed_ids.length
+        }.freeze
+        proposed_after_summary = {
+          'survivor_derived_id' => survivor_id.to_s,
+          'removed_derived_ids' => [].freeze,
+          'duplicate_pairs'     => 0
+        }.freeze
+        RepairAction.new(
+          type:                    ACTION_TYPE,
+          rule_id:                 RULE_ID,
+          confidence:              CONFIDENCE,
+          confidence_basis:        basis.to_s,
+          explanation:             "Exact duplicate edge (#{basis}); survivor keeps the lex-smaller derived_id; #{removed_ids.length} derived record(s) to remove.",
+          source_occurrence_ids:   [occurrence_id.to_s].freeze,
+          affected_derived_ids:    removed_ids.map(&:to_s).freeze,
+          before_summary:          before_summary,
+          proposed_after_summary:  proposed_after_summary,
+          topology_impact:         TOPOLOGY_IMPACT,
+          auto_applicable:         true,
+          status:                  :proposed
+        )
+      end
+
+      # Build a :skipped RepairAction (no removal) with the given
+      # reason. The action still records the reason for the audit
+      # trail.
+      def skipped_action_for(issue, reason, explanation)
+        eids = issue.is_a?(Hash) ? issue[:edge_ids] : nil
+        RepairAction.new(
+          type:                    ACTION_TYPE,
+          rule_id:                 RULE_ID,
+          confidence:              CONFIDENCE,
+          confidence_basis:        "skipped:#{reason}",
+          explanation:             explanation.to_s,
+          source_occurrence_ids:   (eids.is_a?(Array) ? eids.map { |x| Integer(x) rescue x } : []).dup.freeze,
+          affected_derived_ids:    [].freeze,
+          before_summary:          { 'reason' => reason.to_s }.freeze,
+          proposed_after_summary:  { 'reason' => reason.to_s }.freeze,
+          topology_impact:         'no_op',
+          auto_applicable:         true,
+          status:                  :skipped
+        )
+      end
+
+      # Self-match shortcut.
+      def self_match_skipped(issue)
+        skipped_action_for(issue, REASON_SELF_MATCH,
+          'duplicate evidence references the same source edge twice; nothing to remove')
+      end
+    end
+  end
+end
