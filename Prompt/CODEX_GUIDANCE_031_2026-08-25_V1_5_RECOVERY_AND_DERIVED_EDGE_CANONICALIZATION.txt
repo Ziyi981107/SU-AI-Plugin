@@ -1,0 +1,509 @@
+======================================================================
+CODEX / AIPM GUIDANCE 031
+V1.5 RECOVERY + REACHABLE EXACT-DUPLICATE DERIVED CANONICALIZATION
+======================================================================
+
+STATUS: ACTIVE
+DISPATCH DATE: 2026-08-25
+PLANNING / TECHNICAL OWNER: Codex / AIPM Product Control
+IMPLEMENTATION OWNER: Pi
+FINAL PRODUCT OWNER: Owner
+REPOSITORY: D:/Projects/SU-AI-Plugin
+
+MASTER CONTRACT:
+  E:/dnowload/SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt
+
+THIS IS THE ONLY ACTIVE V1.5 IMPLEMENTATION DIRECTIVE.
+
+It supersedes, for future action only:
+  - Prompt/PI_TASK_V1_5_HIGH_CONFIDENCE_AUTO_REPAIR_PHASE1_2026-08-24.txt
+  - Prompt/CODEX_DECISION_REQUEST_V15_BLOCK003_UNREACHABLE_INPUT_2026-08-25.txt
+  - the implementation instructions embedded in the on-hold V15 Review files
+
+It does NOT erase history and does NOT supersede the V1.x master plan.
+
+The prior A/B/C decision framing is withdrawn. It incorrectly assumed the only
+way to satisfy V1.5 was to find two independent coincident source Edges inside
+one SketchUp::Entities collection. The master plan requires exact/reversed
+duplicate cleanup on DERIVED geometry. It does not require the two source
+occurrences to share one container. The corrected path below preserves distinct
+source identities while canonicalizing their exactly coincident DERIVED edge
+representation.
+
+======================================================================
+0. WORKFLOW OWNERSHIP -- HARD RULE
+======================================================================
+
+Prompt/ is Codex/AIPM-owned input to Pi.
+  - Pi MUST treat every file under Prompt/ as read-only.
+  - Pi MUST NOT create, rewrite, append, rename, or delete Prompt files.
+  - Pi MUST NOT place a Pi question, implementation report, decision request,
+    Owner report template, or test result in Prompt/.
+
+Review/ is Pi-owned output for Codex/AIPM review.
+  - Pi writes implementation plans, progress reports, escalation questions,
+    test evidence, Owner-checklist drafts, and stage-review packets here.
+  - A Pi escalation belongs in Review/ESCALATION_*.md, never Prompt/.
+
+Codex/AIPM reads Review output and publishes the next command/verdict in Prompt.
+The Owner executes only a checklist explicitly greenlit by a later Codex Prompt.
+
+Do not infer the active task by scanning old chat or choosing a convenient old
+file. STATUS: ACTIVE in this file is authoritative. Historical Prompt/Review
+files remain evidence only.
+
+Pi must work through a meaningful stage before returning for review. Do not
+create tiny edit -> review -> tiny edit loops. Escalate early only for a material
+source/provenance/recovery/identity/compatibility/product-authority risk.
+
+======================================================================
+1. FIXED ENVIRONMENT -- NO DISCOVERY
+======================================================================
+
+Do not run find /, full-disk searches, Wine discovery, Ruby discovery,
+SketchUp executable discovery, dependency installation, or network setup.
+
+Repository:
+  D:/Projects/SU-AI-Plugin
+
+Bundled Ruby:
+  ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe
+
+Full Ruby suite:
+  ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+
+Node DOM suite:
+  node tests/test_html_render_dom.js
+
+Real SketchUp operations remain Owner-executed. Pi does not start or control SU.
+
+======================================================================
+2. REQUIRED READ ORDER
+======================================================================
+
+From D:/Projects/SU-AI-Plugin read:
+
+  1. PROJECT_HANDOFF.txt if present.
+  2. CURRENT_STATE.md (this repository uses .md for the current-state record).
+  3. The V1.x master contract at the fixed E:/ path above.
+  4. This ACTIVE guidance file.
+  5. git status, git log -10, git show --stat HEAD, git diff --check.
+  6. Only the V1.4/V1.5 source and tests needed for this task.
+
+Do not reconstruct project truth from old chat.
+
+If PROJECT_HANDOFF.txt is absent, create it during Stage 0 using ONLY these
+durable facts (do not invent new product scope):
+  - master-plan path and role ownership;
+  - Prompt is Codex/AIPM input and read-only to Pi;
+  - Review is Pi output;
+  - CURRENT_STATE.md is the single current-state file;
+  - source CAD is immutable; repair happens only on derived geometry;
+  - V1.x excludes MCP/site/residential/AI work;
+  - passed unchanged scope remains closed;
+  - real-host evidence is required at meaningful gates;
+  - Pi may rollback a failed experiment to a verified checkpoint;
+  - mandatory reviews: V1.4, V1.7 integration, V1.9 final, plus risk triggers.
+
+======================================================================
+3. RECOVERY / REPOSITORY HYGIENE
+======================================================================
+
+Expected committed ancestry at dispatch:
+  branch: v1.5-high-confidence-auto-repair
+  required parent/baseline:
+    82df490 docs(v1.5): escalate unreachable duplicate-input contract
+
+HEAD may be a later Codex-only guidance dispatch commit containing this ACTIVE
+Prompt file. That is valid only if HEAD descends directly from 82df490 and adds
+no production/test change.
+
+Expected uncommitted failed experiment:
+  M extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+  M tests/_fake_ui.rb
+  M tests/test_v15_real_preflight_path.rb
+
+Those three uncommitted changes are the rejected recheck-3 experiment:
+  - production-only class test hook;
+  - FakeUI add_line semantics that falsely claim no auto-merge;
+  - tests that fail and still cannot prove real-SU behavior.
+
+Recovery procedure:
+
+  A. Inspect git status and the exact diff first.
+  B. If and only if the dirty set is exactly the three files above and matches
+     the documented failed experiment, discard only those three uncommitted
+     changes and return them to HEAD 82df490.
+  C. Do not reset, clean, stash, or touch any other path.
+  D. If any additional dirty file exists, preserve it and write
+     Review/ESCALATION_V15_UNEXPECTED_WORKTREE_2026-08-25.md before continuing.
+
+After recovery, run the baseline suites. Expected committed baseline:
+  - Ruby: 700/700 PASS
+  - Node DOM: 154/154 PASS
+  - git diff --check: clean
+
+The old a8b7792 RBZ remains unapproved and MUST NOT be installed.
+
+Do not preserve the failed experiment by committing it. Its rationale is already
+recorded in the 82df490 escalation documents and Git history is not being erased.
+
+======================================================================
+4. CODEX PRE-BUILD ADDENDUM VERDICT
+======================================================================
+
+VERDICT: PASS TO IMPLEMENT
+REVIEW MODE: NARROW PRE-BUILD / RISK-ESCALATION RESOLUTION
+
+Approved V1.5 product slice:
+
+  Canonicalize exact/reversed-exact coincident DERIVED edges inside the current
+  selected SourceSnapshot, while preserving the immutable source occurrences as
+  a many-to-one provenance union on the surviving derived edge.
+
+This is a correction of the V1.5 sub-plan, not a master-plan scope expansion.
+It directly implements master-plan V1.5:
+  - exact/reversed duplicate cleanup on DERIVED geometry;
+  - deterministic high-confidence repair;
+  - explanation/provenance;
+  - before/after metrics;
+  - applied/skipped/failed results;
+  - source remains untouched.
+
+Important identity rule:
+
+  Two ComponentInstances remain two distinct SOURCE occurrences. Their identity
+  is never merged, rewritten, or discarded. If their transformed edges occupy
+  exactly the same world-space segment and pass every eligibility guard, the
+  PREPARED/DERIVED topology may represent that segment once, with the survivor's
+  source_occurrence_ids equal to the deterministic union of every contributing
+  source occurrence.
+
+This satisfies master-plan section 17.2: shared-definition instances are not
+treated as the same source/world occurrence. Canonical derived topology and
+source identity are separate concepts. Many-to-one provenance preserves that
+distinction.
+
+The prior same-container-only restriction is SUPERSEDED. It was an over-narrow
+implementation choice that made the auto-repair input unreachable on real SU.
+
+======================================================================
+5. LOCKED AUTO-APPLY ELIGIBILITY
+======================================================================
+
+A duplicate-edge equivalence class is auto-applicable only when ALL are true:
+
+  1. Evidence originates from existing duplicate_edge_candidate issues in the
+     captured IssueRegistry. Do not add a competing analyzer.
+  2. Every member resolves to a distinct source EdgeRecord and a distinct live
+     derived Edge record/handle in the current workspace.
+  3. World-coordinate endpoints match forward or reversed within the CAPTURED
+     execution_config tolerance.duplicate. Re-verify directly; bucket membership
+     alone is never sufficient.
+  4. Coordinates are finite and transform resolution was valid.
+  5. Every member belongs to the same current SourceSnapshot/selection scope.
+  6. Provenance is usable. Incomplete nested identity fails closed.
+  7. Layer names are byte-identical after the existing Layer0 normalization.
+     Different layer names/semantic sources are ambiguous and MUST be skipped.
+  8. No member is a self-match or a repeated reference to the same source edge.
+  9. No member depends on short-edge status as deletion evidence.
+ 10. No source entity is written, erased, moved, relayered, transformed, or
+     reparented.
+
+Any failed guard produces an auditable skipped action/reason. It must not silently
+drop the issue or guess user intent.
+
+Explicit non-eligible cases:
+  - near/approximate duplicates outside tolerance;
+  - layer mismatch;
+  - incomplete nested provenance;
+  - invalid/erased source or derived handle;
+  - self-match;
+  - different world coordinates, including normal shared-definition instances
+    at different transforms;
+  - short edge solely because it is short;
+  - face/gap/weld/flatten/loop/site/AI/MCP/V2 work.
+
+======================================================================
+6. PROPOSER CONTRACT
+======================================================================
+
+Refactor DuplicateRepairProposer around derived world-geometry equivalence, not
+same-container identity.
+
+Requirements:
+
+  - Consume only duplicate_edge_candidate registry evidence.
+  - Build deterministic equivalence classes, not one action per pair. N exact
+    coincident edges produce ONE action removing N-1 derived records.
+  - Prevent overlapping actions: one derived_id may belong to only one action.
+  - Canonical geometry key is orientation-independent and based on the captured
+    world endpoints plus the required direct tolerance verification.
+  - Deterministic survivor: lexicographically smallest derived_id.
+  - Deterministic source provenance union: sorted unique source_occurrence_ids
+    from every contributing derived record.
+  - Deterministic action_id derived from rule id + snapshot identity + canonical
+    geometry key + sorted member derived_ids. Do not use SecureRandom for actions
+    that must be reproducible/auditable.
+  - The action records:
+      survivor_derived_id;
+      removed derived IDs;
+      complete source_occurrence_ids union;
+      canonical endpoint summary;
+      layer;
+      before edge count;
+      proposed after edge count;
+      confidence_basis;
+      explanation;
+      topology_impact;
+      status and validation result.
+
+Confidence remains evidence-based, not an AI score. Exact/reversed exact with all
+guards satisfied may be confidence 1.0. Guard failure is skipped, not a lower
+automatic confidence.
+
+======================================================================
+7. EXECUTOR / ATOMICITY / PROVENANCE CONTRACT
+======================================================================
+
+Keep one SketchUp operation for the entire batch. Do not add a production test
+hook. Failure injection belongs in FakeDerivedWorkspaceAdapter tests.
+
+Before opening the host operation, preflight the complete post-state in pure data:
+
+  - validate every action and handle;
+  - construct the replacement survivor DerivedEntityRecord(s);
+  - replacement survivor keeps the same derived_id, kind, geometry summary,
+    parent_derived_id and host_assigned_ids;
+  - replacement survivor source_occurrence_ids becomes the sorted unique union;
+  - construct the complete non-overlapping post-inventory;
+  - compute/validate the expected derived fingerprint shape.
+
+Then:
+
+  1. begin one operation;
+  2. dispose only non-survivor derived handles;
+  3. on any dispose failure, abort the operation and return a :failed workspace
+     preserving the PRE-BATCH inventory/handle registry and source fingerprint;
+  4. on success, commit once;
+  5. publish the already-precomputed post-workspace inventory;
+  6. transition all successful actions to :applied.
+
+Do not mutate the survivor host geometry. Only its pure-data provenance record is
+replaced after the host removal batch succeeds.
+
+Repeated apply must be a no-op. Rebuild from the same source/config must produce
+the same equivalence classes, survivor IDs, provenance unions, action IDs, counts,
+and derived fingerprint.
+
+Commit/abort errors must remain visible and recoverable. Never report READY after
+an uncertain host transaction.
+
+======================================================================
+8. POST-REPAIR VALIDATION AND UI AUDIT
+======================================================================
+
+The V1.5 exit gate requires evidence that duplicate issues decrease against the
+derived result. Add the smallest pure-core derived validation seam needed:
+
+  - project current derived Edge records from geometry_summary start/end/layer;
+  - re-run or reuse the existing exact duplicate rule against that projection;
+  - compute duplicate classes before and after;
+  - assert after == 0 for every successfully applied eligible class;
+  - do not overwrite the immutable source IssueRegistry;
+  - keep source issue references in the action audit.
+
+The UI must expose actual execution evidence, not manually injected numbers:
+
+  - applied / skipped / failed;
+  - duplicate classes before / after;
+  - derived edge count before / after;
+  - per-action audit rows or an equivalent inspectable details block containing
+    status, rule/explanation, removed count, survivor ID and source count.
+
+Keep the UI read-only and neutral. No new repair-confirmation UX is required for
+this high-confidence slice. Ambiguous/skipped actions remain visible.
+
+======================================================================
+9. REQUIRED TEST MATRIX
+======================================================================
+
+Tests must use real-host-representable source structures. Do not create two
+coincident independent loose Edges in one Fake Entities collection and claim that
+proves SU behavior.
+
+SHOULD REPAIR:
+
+  A. Reachable SU shape: one ComponentDefinition containing one Edge; two
+     ComponentInstances at the SAME transform. Analysis sees two distinct source
+     occurrences with exact same world endpoints. Prepare/apply -> one derived
+     survivor, provenance union size 2, both source instances unchanged.
+  B. Reversed exact: two independent source containers whose derived world segment
+     endpoints are reversed -> one survivor, provenance union preserved.
+  C. Three exact coincident source occurrences -> one equivalence-class action,
+     one survivor, provenance union size 3, no pair explosion.
+  D. Nested transforms that resolve to the same world segment -> repair only when
+     every transform/provenance guard is complete.
+
+MUST NOT REPAIR:
+
+  E. Same definition, two instances at different transforms -> no candidate/apply.
+  F. Same world segment but different normalized layer names -> skipped with an
+     explicit semantic-conflict reason.
+  G. Near but outside captured tolerance -> skipped.
+  H. Self-match/repeated source edge evidence -> skipped.
+  I. Incomplete nested provenance -> skipped.
+  J. Invalid/erased derived handle -> safe skip/failure per existing contract;
+     never crash the batch or touch source.
+  K. Legitimate short edge without additional exact-duplicate evidence -> kept.
+
+SAFETY / DETERMINISM:
+
+  L. Direct and reversed endpoint ordering produce the same canonical class.
+  M. Deterministic action_id and survivor across repeated proposal/rebuild.
+  N. Repeated apply no-op.
+  O. Nth-dispose failure aborts whole batch; no partial host removal; pre-batch
+     inventory/provenance restored; source fingerprint unchanged.
+  P. Successful apply updates survivor provenance union and derived fingerprint.
+  Q. Derived validation shows eligible duplicate count decreases to zero.
+  R. Discard removes all plugin-owned derived groups; source remains unchanged.
+  S. Existing V1.0-V1.4 regression suite remains green.
+  T. UI payload/DOM renders actual audit metrics without innerHTML/eval.
+
+Do not add production-only failure injection APIs merely to make an Owner command
+possible. Automated failure tests plus the already-passed V1.4 real-host recovery
+evidence are sufficient for this internal batch seam until the next integration
+review, unless real SU exposes a new failure.
+
+======================================================================
+10. REAL SU2020 OWNER GATE DRAFT
+======================================================================
+
+Pi must write a DRAFT checklist in Review, but MUST NOT tell Owner to install or
+run it. A later Codex Prompt will greenlight it after Stage Review PASS.
+
+The draft must use auto-created, reachable fixtures:
+
+  V15-G1 SHOULD REPAIR:
+    - one one-edge ComponentDefinition;
+    - two instances at identical transform;
+    - same normalized layer;
+    - exact expected Duplicate Candidates, applied count, before/after derived
+      edge count and provenance source count;
+    - verify two source instances and source edge remain intact.
+
+  V15-G2 MUST NOT REPAIR -- transform:
+    - same definition, two separated transforms;
+    - expected applied 0.
+
+  V15-G3 MUST NOT REPAIR -- semantic conflict:
+    - two source containers with exact world segment but different layers;
+    - expected skipped conflict, applied 0.
+
+  V15-G4 DETERMINISM:
+    - Discard/Rebuild;
+    - same survivor/action/count/fingerprint.
+
+  V15-G5 SOURCE / UNDO / CLEANUP:
+    - source fingerprint unchanged;
+    - one Undo reverts the whole Prepare/apply operation as actually implemented;
+    - Discard leaves zero SU-AI-Derived-* groups;
+    - every fixture cleanup command is one-line and idempotent.
+
+Each gate must start from a clean fixture and clean its own source + derived state.
+No step may depend on leftovers from an earlier step.
+
+======================================================================
+11. IMPLEMENTATION STAGES -- CONTINUE AUTONOMOUSLY
+======================================================================
+
+STAGE 0 -- RECOVER AND FREEZE THE CONTRACT
+  - perform the exact three-file failed-experiment cleanup;
+  - restore 700/700 + 154/154 baseline;
+  - create PROJECT_HANDOFF.txt if absent using section 2 only;
+  - update CURRENT_STATE.md with this ACTIVE guidance and corrected V1.5 scope;
+  - do not request a micro-review.
+
+STAGE 1 -- PROPOSER / ACTION MODEL
+  - implement reachable derived equivalence classes;
+  - deterministic IDs/survivor/provenance union;
+  - all eligibility/skipped reasons;
+  - targeted pure-core tests.
+
+STAGE 2 -- EXECUTOR / ATOMIC POST-STATE
+  - precompute merged survivor records and post-inventory;
+  - one-operation batch removal;
+  - atomic rollback and idempotency;
+  - focused failure tests using fake adapter only.
+
+STAGE 3 -- VALIDATION / PRODUCTION WIRING / UI AUDIT
+  - keep Prepare/Rebuild production call chain;
+  - derived duplicate before/after validation;
+  - expose real audit data in UI;
+  - Node DOM tests.
+
+STAGE 4 -- INTEGRATION / PACKAGE / REVIEW OUTPUT
+  - targeted V1.5 tests;
+  - full Ruby suite;
+  - full Node DOM suite;
+  - RBZ smoke;
+  - git diff --check;
+  - rebuild RBZ from final HEAD;
+  - report size, entry count, SHA-256;
+  - clean git status;
+  - one meaningful implementation checkpoint commit (or a small number of
+    coherent stage commits if rollback safety requires it; no tiny review loop).
+
+Pi may make ordinary helper/class choices autonomously inside this contract.
+If an approach fails, rollback to the Stage 0 stable checkpoint and choose a
+simpler route. Do not wait for Owner on ordinary implementation details.
+
+======================================================================
+12. REQUIRED PI OUTPUT -- REVIEW ONLY
+======================================================================
+
+Pi writes these outputs under Review/ (never Prompt/):
+
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_IMPLEMENTATION_REPORT_2026-08-25.md
+  Review/V15_DERIVED_EDGE_CANONICALIZATION_STAGE_REVIEW_PACKET_2026-08-25.md
+  Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt
+
+The implementation report must state:
+  - base/head and commits;
+  - exact product behavior;
+  - files changed;
+  - provenance union design;
+  - semantic-conflict guard;
+  - atomicity/recovery behavior;
+  - derived validation result;
+  - tests and RBZ evidence;
+  - known NIT/DEBT;
+  - explicit non-goals.
+
+The Stage Review packet must map every section 5-10 requirement to code, tests,
+and evidence. Do not include unsupported PASS claims.
+
+If a genuine material blocker appears, write one
+Review/ESCALATION_V15_<TOPIC>_2026-08-25.md with evidence and the smallest product
+question, then stop. Do not write the question into Prompt/.
+
+======================================================================
+13. HARD STOP / RELEASE BOUNDARY
+======================================================================
+
+After implementation, automated evidence, RBZ build and Review outputs:
+
+  STOP for one Codex V1.5 Stage Review.
+
+Until a later Codex Prompt says PASS and dispatches the Owner Gate:
+  - do not ask Owner to install the RBZ;
+  - do not ask Owner to paste Ruby Console commands;
+  - do not generate an Owner PASS report;
+  - do not push, publish, release, or enter V1.6;
+  - do not reopen passed unchanged V1.0-V1.4 scope;
+  - do not touch short-edge-only removal, face repair, gaps, weld, flatten,
+    loops, site modeling, AI, MCP or V2.
+
+======================================================================
+END OF ACTIVE GUIDANCE 031
+======================================================================
