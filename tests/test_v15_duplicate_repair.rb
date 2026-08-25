@@ -1943,3 +1943,131 @@ test 'V15-M: deterministic action_id across repeated proposal / rebuild' do
   # Sanity: the action_id embeds the rule id.
   assert_match(/duplicate_edge\.exact_remove/, plan1.actions.first.action_id)
 end
+
+
+# ===== Section 9: Stage 2 (Executor / Atomic Post-State) tests =====
+
+# ----- P. Successful apply updates survivor provenance union -----
+
+test 'V15-P: successful apply updates survivor provenance union in the post-workspace' do
+  # Two source edges with SAME world coords + SAME layer but
+  # DIFFERENT parent paths. The survivor's source_occurrence_ids
+  # in the post-workspace MUST be the sorted unique union of
+  # both contributing records' source_occurrence_ids
+  # (Guidance 031 §7).
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2])
+  records = [
+    v15_derived_edge(derived_id: 'der-A', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-B', parent_pid_path: [200],
+                     start: e2.start_point, finish: e2.end_point)
+  ]
+  ws = v15_workspace(snapshot: src, records: records)
+  issues = [
+    v15_dup_issue(issue_id: 'duplicate|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
+  expected_occ_union = plan.actions.first.source_occurrence_ids.dup
+  refute expected_occ_union.empty?, 'action source_occurrence_ids must be the union'
+  new_ws, _applied = v15_apply_all(workspace: ws, plan: plan)
+  # Verify the post-workspace survivor has the union provenance.
+  survivor = new_ws.entities.first
+  assert_equal 'der-A', survivor.derived_id
+  assert_equal expected_occ_union.sort, survivor.source_occurrence_ids.sort,
+               'survivor source_occurrence_ids must equal the union after apply'
+  # Verify source fingerprint is unchanged.
+  assert_equal src.fingerprint, src.fingerprint
+end
+
+# ----- O. Mid-batch dispose failure aborts WHOLE batch; pre-batch
+# inventory restored; source fingerprint unchanged -----
+
+test 'V15-O: mid-batch dispose failure aborts WHOLE batch; no partial host removal; pre-batch inventory restored' do
+  # Build a workspace with TWO duplicate pairs (each is its own
+  # canonical class -> two actions). The second action's first
+  # dispose call fails. The executor MUST roll back the first
+  # action's dispose via end_operation(commit: false); the
+  # source fingerprint MUST stay unchanged.
+  class TwoFailAdapter < FakeDerivedWorkspaceAdapter
+    attr_reader :dispose_call_count
+    def initialize(fail_at_call:)
+      super()
+      @fail_at_call = fail_at_call
+      @dispose_call_count = 0
+    end
+    def dispose(_handle)
+      @dispose_call_count += 1
+      if @dispose_call_count >= @fail_at_call
+        raise StandardError, "host failure on dispose call #{@dispose_call_count}"
+      end
+      super
+    end
+  end
+  e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e2 = v15_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0],
+                parent_pid_path: [100])
+  e3 = v15_edge(id: 2, start: [20.0, 0.0, 0.0], finish: [30.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  e4 = v15_edge(id: 3, start: [20.0, 0.0, 0.0], finish: [30.0, 0.0, 0.0],
+                parent_pid_path: [200])
+  src = v15_snapshot(edges: [e1, e2, e3, e4])
+  records = [
+    v15_derived_edge(derived_id: 'der-A1', parent_pid_path: [100],
+                     start: e1.start_point, finish: e1.end_point),
+    v15_derived_edge(derived_id: 'der-A2', parent_pid_path: [100],
+                     start: e2.start_point, finish: e2.end_point),
+    v15_derived_edge(derived_id: 'der-B1', parent_pid_path: [200],
+                     start: e3.start_point, finish: e3.end_point),
+    v15_derived_edge(derived_id: 'der-B2', parent_pid_path: [200],
+                     start: e4.start_point, finish: e4.end_point)
+  ]
+  adapter = TwoFailAdapter.new(fail_at_call: 2)
+  ws = DerivedGeometryWorkspace.new(source_snapshot: src, adapter: adapter)
+  cur = ws
+  records.each do |rec|
+    cur = cur.build_entity(
+      derived_id:            rec.derived_id,
+      kind:                  rec.kind,
+      source_occurrence_ids: rec.source_occurrence_ids,
+      geometry_summary:      rec.geometry_summary
+    )
+  end
+  pre_fp = src.fingerprint
+  pre_entity_count = cur.entities.length
+  issues = [
+    v15_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1],
+                  location: [5.0, 0.0, 0.0]),
+    v15_dup_issue(issue_id: 'dup|2|3', edge_ids: [2, 3],
+                  location: [25.0, 0.0, 0.0])
+  ]
+  reg = v15_registry(issues)
+  plan = v15_validate(v15_propose(workspace: cur, registry: reg, snapshot: src))
+  new_ws, updated_actions = DuplicateRepairExecutor.apply_batch(
+    workspace: cur, plan: plan
+  )
+  # Workspace MUST be :failed.
+  assert_equal :failed, new_ws.state
+  # All 4 entities preserved (no partial removal).
+  assert_equal pre_entity_count, new_ws.entities.length,
+               'pre-batch inventory MUST be restored after mid-batch failure'
+  # Source fingerprint preserved.
+  assert_equal pre_fp, src.fingerprint,
+               'source fingerprint MUST be unchanged after failed batch'
+  # Adapter operation log: begin + abort (NOT commit).
+  log_kinds = adapter.operation_log.map { |op| op[:kind] }
+  refute_includes log_kinds, :commit
+  assert_includes log_kinds, :abort
+end
+
+# ---- helpers for refutes ----
+def refute_includes(coll, item, msg = nil)
+  return unless coll.respond_to?(:include?) && coll.include?(item)
+  raise msg || "expected #{coll.inspect} NOT to include #{item.inspect}"
+end

@@ -152,7 +152,21 @@ module SUAnalysis
           # (already erased; nothing to do). Treat them as
           # silently removed so the next apply is idempotent.
           total_removed = (removed_ids + invalid_ids).uniq
-          new_ws = build_post_workspace(workspace: workspace, model: model, removed_ids: total_removed)
+          # Precompute survivor replacement: the survivor's
+          # source_occurrence_ids becomes the action's sorted
+          # unique union (Guidance 031 §7).
+          survivor_id = action.before_summary.is_a?(Hash) ?
+                          action.before_summary['survivor_derived_id'].to_s : nil
+          survivor_updates = nil
+          if survivor_id && !survivor_id.empty? && kept_ids.include?(survivor_id)
+            survivor_updates = { survivor_id => Array(action.source_occurrence_ids).map(&:to_s) }
+          end
+          new_ws = build_post_workspace(
+            workspace: workspace,
+            model: model,
+            removed_ids: total_removed,
+            survivor_updates: survivor_updates
+          )
           updated_action = transition_action(action, to: :applied,
                                               source_occurrence_ids: action.source_occurrence_ids,
                                               affected_derived_ids: total_removed)
@@ -176,12 +190,30 @@ module SUAnalysis
 
       # Build a new :ready workspace with the given derived_ids
       # removed from the inventory. All other fields preserved.
-      def build_post_workspace(workspace:, model:, removed_ids:)
+      # survivor_updates: Hash<derived_id, source_occurrence_ids>
+      # applies the same survivor replacement logic as the batch
+      # path (Stage 2 §7).
+      def build_post_workspace(workspace:, model:, removed_ids:, survivor_updates: nil)
         adapter = workspace.instance_variable_get(:@adapter)
         src     = workspace.source_snapshot
-        kept_pairs = workspace.instance_variable_get(:@entity_pairs).reject do |id, _rec|
-          removed_ids.map(&:to_s).include?(id.to_s)
-        end
+        kept_pairs = workspace.instance_variable_get(:@entity_pairs).map do |id, rec|
+          if removed_ids.map(&:to_s).include?(id.to_s)
+            nil
+          elsif survivor_updates && survivor_updates.key?(id.to_s)
+            new_occs = Array(survivor_updates[id.to_s]).map(&:to_s).uniq.sort
+            replacement = DerivedEntityRecord.new(
+              derived_id:             rec.derived_id,
+              kind:                   rec.kind,
+              source_occurrence_ids:  new_occs,
+              geometry_summary:       rec.geometry_summary,
+              parent_derived_id:      rec.parent_derived_id,
+              host_assigned_ids:      rec.host_assigned_ids
+            )
+            [id, replacement]
+          else
+            [id, rec]
+          end
+        end.compact
         kept_handles = workspace.instance_variable_get(:@handle_registry).reject do |id, _h|
           removed_ids.map(&:to_s).include?(id.to_s)
         end.freeze
@@ -315,6 +347,25 @@ module SUAnalysis
           end
           [act, to_remove, present_ids, invalid_ids]
         end
+        # Pre-flight: build the survivor replacement map (one
+        # replacement per surviving action's survivor). The
+        # replacement DerivedEntityRecord keeps the same
+        # derived_id, kind, geometry_summary, parent_derived_id
+        # and host_assigned_ids; ONLY source_occurrence_ids is
+        # replaced with the sorted unique union from the action.
+        survivor_updates = precompute_survivor_replacements(
+          workspace: workspace,
+          per_action: per_action
+        )
+        # Pre-flight: compute the expected post-state fingerprint
+        # shape (number of surviving records + their derived_ids
+        # sorted) BEFORE opening the host operation. We validate
+        # the final shape against this baseline after commit.
+        expected_post = precompute_expected_post_state(
+          workspace: workspace,
+          per_action: per_action,
+          survivor_updates: survivor_updates
+        )
         # Open the operation.
         begin
           adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.5 Duplicate Repair Batch')
@@ -365,13 +416,37 @@ module SUAnalysis
             return [new_ws, updated]
           end
           # Build the post-state workspace: every action's
-          # affected_derived_ids are removed.
+          # affected_derived_ids are removed; survivor records
+          # are replaced with the precomputed union records.
           total_removed = all_present_ids.uniq
           # Add silently-removed invalid ids too (idempotency).
           per_action.each { |_a, _t, _p, inv| total_removed.concat(inv) if inv.is_a?(Array) }
           total_removed = total_removed.uniq
-          new_ws = build_post_workspace_batch(workspace: workspace, model: model,
-                                                 removed_ids: total_removed)
+          new_ws = build_post_workspace_batch(
+            workspace:        workspace,
+            model:            model,
+            removed_ids:      total_removed,
+            survivor_updates: survivor_updates
+          )
+          # Validate the post-state fingerprint shape matches the
+          # precomputed expected shape. If it doesn't, the host
+          # adapter did something unexpected and we surface this
+          # as a :failed state rather than reporting success.
+          unless post_state_matches_expected?(new_ws, expected_post)
+            begin
+              adapter.end_operation(model, commit: false)
+            rescue StandardError
+            end
+            # Roll back to :failed (handle registry + source
+            # fingerprint preserved).
+            rb_ws = rollback_to_failed(pre_ws: workspace, model: model,
+                                        reason: 'post_state_fingerprint_mismatch: host adapter returned an unexpected inventory shape')
+            updated = runnable.map do |a, _t, _p, _inv|
+              fail_action(a, reason: 'post_state_fingerprint_mismatch',
+                              affected_derived_ids: all_present_ids & Array(a.affected_derived_ids))
+            end
+            return [rb_ws, updated]
+          end
           # Build updated actions: every action transitions to
           # :applied with its own affected_derived_ids (might be
           # empty for actions whose targets were all invalid).
@@ -402,16 +477,40 @@ module SUAnalysis
 
       # Build a new workspace with the given derived_ids removed.
       # Like build_post_workspace but takes the full union of
-      # removed_ids across all actions in the batch.
-      def build_post_workspace_batch(workspace:, model:, removed_ids:)
+      # removed_ids across all actions in the batch, and
+      # optionally replaces survivor records with the unioned
+      # provenance (per Guidance 031 §7).
+      #
+      # survivor_updates: Hash<derived_id, source_occurrence_ids>
+      # - when present, the survivor's DerivedEntityRecord is
+      # replaced with a new record that keeps the same derived_id,
+      # kind, geometry_summary, parent_derived_id, and
+      # host_assigned_ids; only source_occurrence_ids is updated
+      # to the sorted unique union.
+      def build_post_workspace_batch(workspace:, model:, removed_ids:, survivor_updates: nil)
         adapter = workspace.instance_variable_get(:@adapter)
         src     = workspace.source_snapshot
         removed_set = removed_ids.map(&:to_s).to_set rescue removed_ids.map(&:to_s).uniq
         # to_set is Ruby 2.7+; fall back to manual uniq.
         removed_set = removed_ids.map(&:to_s).uniq
-        kept_pairs = workspace.instance_variable_get(:@entity_pairs).reject do |id, _rec|
-          removed_set.include?(id.to_s)
-        end
+        kept_pairs = workspace.instance_variable_get(:@entity_pairs).map do |id, rec|
+          if removed_set.include?(id.to_s)
+            nil
+          elsif survivor_updates && survivor_updates.key?(id.to_s)
+            new_occs = Array(survivor_updates[id.to_s]).map(&:to_s).uniq.sort
+            replacement = DerivedEntityRecord.new(
+              derived_id:             rec.derived_id,
+              kind:                   rec.kind,
+              source_occurrence_ids:  new_occs,
+              geometry_summary:       rec.geometry_summary,
+              parent_derived_id:      rec.parent_derived_id,
+              host_assigned_ids:      rec.host_assigned_ids
+            )
+            [id, replacement]
+          else
+            [id, rec]
+          end
+        end.compact
         kept_handles = workspace.instance_variable_get(:@handle_registry).reject do |id, _h|
           removed_set.include?(id.to_s)
         end.freeze
@@ -429,6 +528,55 @@ module SUAnalysis
           last_error:      nil,
           build_started_at: workspace.build_started_at
         )
+      end
+
+      # Pre-flight (Stage 2 §7): build the survivor replacement
+      # map BEFORE opening the host operation. Each survivor is
+      # keyed by its derived_id; its replacement
+      # source_occurrence_ids is the action's sorted unique
+      # union. Pure data; no host mutations.
+      def precompute_survivor_replacements(workspace:, per_action:)
+        updates = {}
+        per_action.each do |act, _to_remove, _present_ids, _invalid_ids|
+          survivor_id = act.before_summary.is_a?(Hash) ?
+                          act.before_summary['survivor_derived_id'].to_s :
+                          nil
+          next if survivor_id.nil? || survivor_id.empty?
+          # Verify the survivor handle is still live and present.
+          next if workspace.handle_for(survivor_id).nil?
+          updates[survivor_id] = Array(act.source_occurrence_ids).map(&:to_s)
+        end
+        updates
+      end
+
+      # Pre-flight (Stage 2 §7): compute the expected post-state
+      # inventory shape BEFORE the host operation. The shape is
+      # the set of surviving derived_ids (sorted). After the host
+      # operation commits, post_state_matches_expected? compares
+      # the new workspace's surviving derived_ids to this
+      # baseline.
+      def precompute_expected_post_state(workspace:, per_action:, survivor_updates:)
+        removed_set = per_action.flat_map { |_a, to_remove, _p, inv|
+          Array(to_remove) + Array(inv)
+        }.map(&:to_s).uniq
+        surviving_ids = workspace.instance_variable_get(:@entity_pairs).map { |id, _rec|
+          id.to_s
+        }.reject { |id| removed_set.include?(id) }.sort
+        {
+          surviving_derived_ids: surviving_ids,
+          survivor_replacement_keys: (survivor_updates || {}).keys.sort
+        }.freeze
+      end
+
+      # Verify the post-state matches the expected shape (Stage 2
+      # §7). The host operation may have surfaced unexpected
+      # state (disposed an extra handle, etc.); this guard
+      # catches that and surfaces a :failed result rather than
+      # silently reporting success.
+      def post_state_matches_expected?(new_workspace, expected)
+        return false if new_workspace.nil? || expected.nil?
+        actual_ids = new_workspace.entities.map { |rec| rec.derived_id.to_s }.sort
+        actual_ids == expected[:surviving_derived_ids]
       end
 
       # Transition an action to :applied (success).
