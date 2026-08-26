@@ -34,51 +34,44 @@ by any V1.5 code path.
 
   Branch:        v1.5-stage-round3-fix
   Round 2 base:  7283a830c0eb8979ad5c78ced30d8cffc790bc75
-  Round 3 head:  (this packet) — see commit list below.
+  Round 3 head:  5ac83ea — fix(v1.5-stage4-block-recheck): CodeX
+                BLOCK-001..005 narrow-scope fixes (round 3)
 
-Round 3 commit list (in chronological order, oldest first):
+Round 3 commit list (in chronological order):
 
-  (Round 3 work in progress at packet submission time; the
-   commit list is recorded at the moment of submission via
-   `git log --oneline 7283a83..HEAD`. At packet authoring time
-   the Round 3 fix is in the working tree, uncommitted, and
-   verified against 7283a83; the precise commit will be
-   appended below when Pi commits the Round 3 packet itself.)
+  5ac83ea  fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005
+           narrow-scope fixes (round 3)
 
-   [Pi author note: per V3 §18, Pi does NOT auto-dispatch a
-    recheck before the packet is committed; the packet is
-    committed FIRST, then the recheck is requested. The
-    commit list below is therefore `7283a83..<round3-commit>`.]
+(The Round 3 packet was committed as ONE atomic commit. No
+ micro-fix commits, no progress markers, no unrelated changes.)
 
-   — To be appended at commit time below.
-
-Exact git status at packet authoring (pre-commit):
+Exact git status at submission:
 
   Branch: v1.5-stage-round3-fix
-  HEAD:   7283a830c0eb8979ad5c78ced30d8cffc790bc75
+  HEAD:   5ac83ea (the Round 3 commit above)
 
-  Tracked changes (uncommitted at packet authoring):
+  Tracked (committed in Round 3 commit):
 
     M  CURRENT_STATE.md
+    A  Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md
+    A  Review/V1_5_STAGE_BLOCK_RECHECK_ROUND2_EVIDENCE_RECONFIRM_2026-08-26.md
     M  extension/su_ai_plugin/core/analyzers/duplicate_detector.rb
+    A  extension/su_ai_plugin/core/derived_duplicate_topology.rb
     M  extension/su_ai_plugin/core/derived_duplicate_validator.rb
     M  extension/su_ai_plugin/core/duplicate_repair_proposer.rb
 
-  Untracked (created during this Round 3 work):
-
-    ?? extension/su_ai_plugin/core/derived_duplicate_topology.rb
-
-  Untracked Codex inputs (NOT created by Pi, READ-ONLY per
-  PROJECT_HANDOFF §2):
+  Untracked (Codex inputs; READ-ONLY for Pi per PROJECT_HANDOFF §2,
+  NOT modified by Pi):
 
     ?? Prompt/CODEX_REVIEWER_CONTRACT_V3_2026-08-25.txt
     ?? Prompt/CODEX_REVIEW_033_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt
     ?? Prompt/CODEX_V15_ROUND3_FIX_GUIDANCE_2026-08-26.txt
     ?? Prompt_Stage.txt
-    ?? Review/V1_5_STAGE_BLOCK_RECHECK_ROUND2_EVIDENCE_RECONFIRM_2026-08-26.md
 
+  Working tree (vs. committed HEAD): clean.
   git diff --check HEAD:        clean (exit 0)
   git diff --check (worktree): clean (exit 0)
+  Working tree is clean modulo the four untracked Codex inputs.
 
 ----------------------------------------------------------------------
 2. Changed files (Round 3 diff boundary)
@@ -640,10 +633,44 @@ packet. The commit message will be:
 The post-commit Round 3 head SHA, commit message, and
 final git status will be appended here.)
 
-POST-COMMIT (TO BE FILLED IN AT COMMIT TIME):
-  HEAD (post-commit): <sha>
-  git status:        clean
-  Round 3 commits:   <sha> fix(v1.5-stage4-block-recheck) ...
+POST-COMMIT (FILLED IN):
+
+  HEAD (post-commit): 5ac83ea
+  git status:         clean (modulo 4 untracked Codex-owned Prompt/ + Prompt_Stage.txt files)
+  Round 3 commits:    5ac83ea fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005 narrow-scope fixes (round 3)
+
+  Round 3 commit ancestry:
+    5ac83ea (HEAD) fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005 narrow-scope fixes (round 3)
+    7283a83       fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005 narrow-scope fixes (round 2)
+    b97d11d       tests: strip trailing whitespace + CR from new test additions
+    47cdf8f       docs(state): record Reviewer Contract V3 adoption and V1.5 STOP gate
+    f6efb48       docs(state): record V1.5 BLOCK-001..005 fix packet at 0c43cf7
+
+  Round 3 commit author / committer: Pi
+  Commit message subject:
+    fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005 narrow-scope fixes (round 3)
+
+  Post-commit verification (re-run after commit):
+
+    ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb V15
+    -> 65 tests: 65 pass, 0 fail, 0 error
+
+    ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+    -> 729 tests: 729 pass, 0 fail, 0 error
+
+    node tests/test_html_render_dom.js
+    -> 163 assertions PASS
+
+    git diff --check HEAD
+    -> clean (exit 0)
+
+    git diff --check (worktree)
+    -> clean (exit 0)
+
+    dist/SU-AI-Plugin.rbz rebuilt after the commit:
+      size = 596443 bytes
+      SHA-256 = d555024353b4e0e312f338e4a5af12655da71ba5b85114888a317054a1043089
+      entries = 57
 ----------------------------------------------------------------------
 END OF V1.5 ROUND 3 FIX PI RECHECK PACKET
 ----------------------------------------------------------------------
