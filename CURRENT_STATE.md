@@ -4248,6 +4248,76 @@ per WORKFLOW_PROTOCOL). All 5 R### files updated to Status: ANSWERED.
 
 
 
+## V1.5 STAGE ROUND-3 FIX PACKET (2026-08-26)
+
+**Active directive:**
+  - `Prompt/CODEX_V15_ROUND3_FIX_GUIDANCE_2026-08-26.txt`
+    (STATUS: ACTIVE)
+  - `Prompt/CODEX_REVIEW_033_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt`
+    (VERDICT: BLOCKED, 5 V15-STAGE-BLOCK-001..005)
+
+**Active V1.5 BLOCK set:** V15-STAGE-BLOCK-001..005 (Round 3 set).
+
+**Branch:** v1.5-stage-round3-fix
+**Round 2 base:** 7283a830c0eb8979ad5c78ced30d8cffc790bc75
+**Round 3 HEAD:** fae3518 (docs commit) on top of 5ac83ea (Round 3 fix commit).
+
+**Stable test state (post-commit, after Round 3 commit):**
+  - Targeted V15 (BLOCK): 20/20 PASS
+  - Full V15: 65/65 PASS
+  - Full Ruby suite: 729/729 PASS
+  - Node DOM: 163/163 assertions PASS
+  - git diff --check HEAD: clean (exit 0)
+  - git diff --check worktree: clean (exit 0)
+  - Working tree: clean (modulo 4 untracked Codex-owned
+    Prompt/ + Prompt_Stage.txt files; see
+    Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md).
+  - Final RBZ: dist/SU-AI-Plugin.rbz, 596443 bytes, 57
+    entries, SHA-256
+    d555024353b4e0e312f338e4a5af12655da71ba5b85114888a317054a1043089.
+
+**Round 3 fix summary:**
+  - BLOCK-002 detector fix: per-endpoint independent cell-
+    boundary enumeration; bounded to 1 + 6 single-axis shift
+    keys per edge (vs. prior 3^6 = 729-key worst case).
+    Eliminates the TC-10 regression observed in the full suite.
+  - BLOCK-002 validator/proposer shared topology: new
+    `extension/su_ai_plugin/core/derived_duplicate_topology.rb`
+    is the single source of truth for direct_match?,
+    layer-0 normalization, tolerance resolution, finite-point
+    helpers, direct-match graph construction, and
+    Bron-Kerbosch maximal-clique enumeration.
+  - BLOCK-001 + BLOCK-002 proposer fix: deduplicate_classes
+    now partitions each connected component into MAXIMAL
+    direct-match CLIQUES via Bron-Kerbosch-with-pivot.
+    Each maximal clique is then verified by
+    verify_final_merged_class_identity BEFORE any action is
+    emitted. Verify-fail-closed results are routed through
+    an `out_skipped` side-channel and converted to :skipped
+    audit rows by build_actions. No result is silently dropped.
+  - BLOCK-003 + BLOCK-004: Round 2 fixes stand; Round 3
+    introduces no regression. Re-confirmed via V15-B003-1..5
+    and V15-B004-1..5.
+  - BLOCK-005: Pi recheck packet
+    (`Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md`)
+    is the truthful Round 3 record. Owner verification draft
+    remains DO NOT EXECUTE until Codex PASS.
+
+**External gates:**
+  - Codex narrow recheck: PENDING (Pi has submitted the packet
+    via Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md;
+    Pi does NOT auto-request recheck).
+  - Owner verification: BLOCKED on Codex PASS.
+
+**Pi STOP posture:**
+  Pi has completed the Round 3 fix packet and is at the
+  V15-STAGE Codex recheck gate. Pi does NOT start V1.6. Pi
+  does NOT run Owner verification. Pi does NOT claim
+  approved / ready / release.
+
+**Stable commit:** 5ac83ea (Round 3 fix) + fae3518 (post-commit
+  packet update). Both commits are recorded in
+  Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md.
 ## CODEX REVIEW 018 (2026-08-18) �� GATE B RECHECK: ALL 6 BLOCKs CLOSED
 
 
