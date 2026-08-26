@@ -1,0 +1,512 @@
+======================================================================
+STATUS: SUPERSEDED / HISTORICAL - NOT ACTIVE
+======================================================================
+This artifact records historical V1.5 execution/review context.
+Do not use it as current implementation authority.
+Current state is defined by repository-root CURRENT_STATE.md.
+Current governance is AGENTS.md + PROJECT_HANDOFF.md +
+PROJECT_MASTER_PLAN_V1X.md.
+The original historical body follows unchanged.
+
+======================================================================
+SU-AI-PLUGIN — V1.5 ROUND 3 FIX GUIDANCE
+======================================================================
+
+FILE: CODEX_V15_ROUND3_FIX_GUIDANCE_2026-08-26.txt
+DATE: 2026-08-26
+STATUS: ACTIVE IMPLEMENTATION GUIDANCE
+
+FINAL PRODUCT OWNER: Owner
+AIPM / PRODUCT CONTROL: ChatGPT / AIPM
+IMPLEMENTATION OWNER: Pi
+TECHNICAL REVIEWER: Codex
+
+CURRENT TECHNICAL VERDICT: BLOCKED
+ACTIVE BLOCKS: V15-STAGE-BLOCK-001..005
+
+本文件基于：
+
+- Prompt/CODEX_REVIEW_033_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt
+  （STATUS: COMPLETE；VERDICT: BLOCKED；REVIEW EXECUTED: 2026-08-26）
+- Review/V1_5_STAGE_BLOCK_RECHECK_ROUND2_EVIDENCE_RECONFIRM_2026-08-26.md
+- Prompt/CODEX_REVIEWER_CONTRACT_V3_2026-08-25.txt
+- PROJECT_HANDOFF.txt
+- CURRENT_STATE.md 顶部活跃 V1.5 状态
+- Git branch v1.5-high-confidence-auto-repair，当前提交 7283a83
+
+本文件是一个单一 Round 3 修复任务。它不改变产品范围，不改变冻结 UX，
+不启动 V1.6，也不创建新的 Codex 治理权或额外 greenlight gate。
+
+======================================================================
+1. CURRENT STATE AND EVIDENCE BOUNDARY
+======================================================================
+
+Round 2 当前提交：
+
+  Branch: v1.5-high-confidence-auto-repair
+  HEAD:   7283a830c0eb8979ad5c78ced30d8cffc790bc75
+  Subject: fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005
+           narrow-scope fixes (round 2)
+
+Round 2 独立复核结果：
+
+  Targeted V15: 65/65 PASS
+  Full Ruby:     729/729 PASS
+  Node DOM:      163 assertions PASS
+  Tracked diff:  none
+
+这些绿色测试只证明 7283a83 的旧状态可重复。Review 033 已使用独立探针复现
+五个材料性失败，因此上述测试不能关闭任何当前 BLOCK。
+
+Round 3 fix diff 的默认 base 是 7283a83。提交复核包时必须填写实际完整
+base/head、Round 3 commit list、changed files 和真实 git status。Review 033 的
+历史 review base 720e7c0 仅保留为上下文，不应把 Round 3 diff 边界写错。
+
+======================================================================
+2. HARD PROHIBITIONS UNTIL PASS
+======================================================================
+
+Pi 在 Round 3 期间必须遵守：
+
+1. 不修改、删除、移动、变层、重建或重新挂接任何 source CAD entity。
+   所有 repair 只作用于 derived geometry。
+2. 不进入或评审 V1.6；不触碰 V1.0-V1.4 已关闭范围。
+3. 不运行 Owner verification draft，不要求 Owner 安装候选 RBZ，也不要求
+   Owner 执行 Ruby Console 步骤。
+4. 不把当前 candidate 称为 approved、ready for owner、release candidate
+   或 formal release。
+5. 不 push、publish 或 release。
+6. 不写入 Prompt/。Pi 的实施报告、复核包和 Owner draft 只写 Review/；
+   CURRENT_STATE.md 只在有真实状态变化时更新。
+7. 不把五个 BLOCK 拆成五次 micro-fix / micro-review。必须形成一个相互一致、
+   一次提交复核的 coherent packet。
+8. 不进行与五个 BLOCK 无直接因果关系的全仓库重构、命名清理、V1.6 规划或
+   UI 产品重设计。
+9. 不伪造 PASS、pair count、class count、rollback、READY、RBZ metadata、
+   working-tree clean 或 Owner 可观测性。
+
+======================================================================
+3. BLOCK FIX REQUIREMENTS
+======================================================================
+
+---------------------------------------------------------------------
+3.1 [V15-STAGE-BLOCK-001]
+Final destructive classes bypass complete identity and live-handle
+uniqueness proof
+---------------------------------------------------------------------
+
+Location:
+
+- extension/su_ai_plugin/core/duplicate_repair_proposer.rb:552-691
+- extension/su_ai_plugin/core/duplicate_repair_proposer.rb:717-906
+- extension/su_ai_plugin/core/duplicate_repair_proposer.rb:913-1006
+
+Problem:
+
+当前实现只在合并前验证两成员 issue class。deduplicate/merge 形成最终 class 后
+没有重新验证完整成员集合。A-B 与 B-C 可分别通过局部验证，但 A 与 C 可能解析
+到同一 live host handle。此时删除 der-C 可能实际擦除 survivor der-A 的宿主实体，
+随后发布一个指向失效 handle 的逻辑 READY workspace。
+
+Minimum acceptable fix:
+
+在创建任何最终 runnable action 之前，对 COMPLETE FINAL action class 重新证明：
+
+- 每个成员恰好解析到一个当前 SourceSnapshot EdgeRecord；
+- 每个成员具有不同的 derived_id；
+- 每个成员具有不同、有效、仍存活的 derived host handle；
+- survivor handle 集与 removal handle 集不相交；
+- issue evidence 覆盖最终 source member set；
+- survivor 选择与 source_occurrence_ids 排序并集保持确定性；
+- 缺失、stale、invalid、ambiguous、incomplete、repeated 或 aliased identity
+  一律 fail closed；
+- fail-closed 结果必须保留真实、可检查的 skipped/failed audit row，不能静默丢弃。
+
+Pi 保留普通实现设计权；只要上述可观察技术结果成立，不强制指定具体 helper、
+class 或数据结构。
+
+Recheck evidence:
+
+1. 三个 exact members，issue evidence 为 A-B 与 B-C，A/C 指向同一 live handle：
+   不产生 runnable remove action，并产生明确 fail-closed audit row。
+2. 三个 exact members 且三个 live handles 均不同：产生一个安全、确定性的 action，
+   survivor/removed members 完整，source_occurrence_ids 为完整排序并集。
+3. 非 survivor handle missing/invalid：直接、非真空 fail-closed 测试。
+4. survivor/removal handle alias：直接、非真空 fail-closed 测试。
+5. 测试必须检查最终完整 class，包括 survivor 与 removed members；不能只断言
+   affected_derived_ids 而遗漏 survivor。
+
+---------------------------------------------------------------------
+3.2 [V15-STAGE-BLOCK-002]
+Non-transitive classes and bucket-boundary candidates remain unsafe or
+incomplete
+---------------------------------------------------------------------
+
+Location:
+
+- extension/su_ai_plugin/core/duplicate_repair_proposer.rb:717-906
+- extension/su_ai_plugin/core/derived_duplicate_validator.rb:90-136
+- extension/su_ai_plugin/core/analyzers/duplicate_detector.rb:42-112
+- tests/test_v15_duplicate_repair.rb:3113-3168
+
+Problem:
+
+当前 closure-failure 分支再次使用 union-find。union-find 形成 connected component，
+不是 complete-direct-match clique，因此 A~B、B~C、A!~C 仍可能合成 A/B/C 三成员
+destructive class。validator 使用了相同的传递连通语义。
+
+DuplicateDetector 还只用一个共享三维偏移同时移动 start/end bucket coordinates，
+没有枚举首尾端点独立跨 bucket boundary 的组合，所以合法 tolerance 内匹配可能漏检。
+
+Minimum acceptable fix:
+
+- 使用确定性的 complete-direct-match class 规则，例如确定性 clique partition；
+  或者让整个 non-transitive connected component fail closed。
+- 不允许通过仅与中间成员匹配，把不在 survivor tolerance 内的成员加入删除 action。
+- candidate enumeration 必须保证所有 forward/reversed endpoint pairs 在 captured
+  tolerance 内时都会被比较；bucket 只能是 acceleration，不能改变语义结果。
+- start/end 两端跨界必须独立处理，包括不同轴、相反方向和 reversed endpoints。
+- proposer、validator 和 detector 必须共享同一个 direct predicate 和同一个 class
+  semantics，不能由不同算法得出相互矛盾的 before/action/after 结果。
+
+Recheck evidence:
+
+1. 真正的非传递链：A=0、B=0.75*tol、C=1.5*tol，issues A-B/B-C；
+   必须证明没有三成员 action，并检查 survivor 加 removed members 的完整集合。
+2. 仅 start 跨 cell boundary：仍检出正确 issue。
+3. 仅 end 跨 cell boundary：仍检出正确 issue。
+4. start/end 向相反 bucket 跨界、不同坐标轴跨界：仍检出正确 issue。
+5. reversed endpoints 跨界：仍检出正确 issue。
+6. just-outside tolerance 的对应样例保持 absent。
+7. validator 报告的 class split 与 proposer 实际 action class 完全一致。
+
+---------------------------------------------------------------------
+3.3 [V15-STAGE-BLOCK-003]
+Complete post-state validation occurs after host commit
+---------------------------------------------------------------------
+
+Location:
+
+- extension/su_ai_plugin/core/duplicate_repair_executor.rb:378-420
+- extension/su_ai_plugin/core/duplicate_repair_executor.rb:608-632
+- extension/su_ai_plugin/core/duplicate_repair_executor.rb:713-730
+- extension/su_ai_plugin/core/working_mode_runner.rb:424-470
+
+Problem:
+
+precompute_expected_post_state / post_state_matches_expected 只充分比较 surviving IDs，
+没有在 host operation 前完成 provenance、geometry、fingerprint、handle shape、
+captured-tolerance 与 applied-class absence 的完整验证。完整 validate_post_state 仍在
+apply_batch commit/publish 后调用；若此时失败，runner 记录 failed summary，但
+@current_workspace 可继续保持 :ready。
+
+Minimum acceptable fix:
+
+在 begin_operation 之前：
+
+- 纯数据构建完整 post workspace；
+- 使用 captured execution tolerance 执行完整 post validation；
+- 比较 inventory、provenance unions、geometry/fingerprint、survivor/handle shape、
+  以及所有已应用 eligible class 均已消失；
+- 任何 preflight、预计算或 validation mismatch 均不得打开 host operation，且不得
+  返回 READY；
+- 成功路径只能执行一次 begin、验证后的 disposals、一次 commit，然后发布那个
+  已完整预验证的逻辑 workspace；
+- Nth dispose failure 必须 abort 整批，并保留 exact pre-batch logical inventory、
+  provenance、handle registry 与 source fingerprint；
+- commit failure 或 commit outcome uncertainty 必须进入 :failed，并给出明确恢复路径，
+  不得声称 rollback 已成功，不得显示 READY。
+
+Recheck evidence:
+
+1. 强制 post-validation/provenance mismatch：begin_calls=0。
+2. 强制 fingerprint mismatch：begin_calls=0。
+3. Nth dispose failure：begin=1、abort=1、commit=0；exact pre-batch logical state 保留。
+4. Success：begin=1、commit=1、abort=0；published state 与完整 prevalidated result 相等。
+5. Commit failure/uncertainty：workspace=:failed，绝不 READY；恢复动作和 audit 真实。
+
+---------------------------------------------------------------------
+3.4 [V15-STAGE-BLOCK-004]
+Production validation and audit data remain false or incomplete
+---------------------------------------------------------------------
+
+Location:
+
+- extension/su_ai_plugin/core/working_mode_runner.rb:407-595
+- extension/su_ai_plugin/core/duplicate_repair_executor.rb:304-328
+- extension/su_ai_plugin/core/duplicate_repair_executor.rb:723-730
+- extension/su_ai_plugin/core/derived_duplicate_validator.rb:63-177
+- extension/su_ai_plugin/html/app.js:459-668
+
+Problem:
+
+- production pre_classes 与 post validation 可退回硬编码 1e-4，未使用 captured
+  execution tolerance；
+- executor 过滤 :skipped plan actions；无 runnable action 时返回空结果，使 summary
+  丢失 skipped counts/rows；
+- duplicate_pairs_before 用 removed member 数量 N-1 代替真实 issue pair/class evidence；
+- post validation 失败后 workspace 仍可能是 :ready，UI 同时显示 entities ready 与
+  actions_failed=1；
+- Owner 无法从当前结果审计实际发生了什么。
+
+Minimum acceptable fix:
+
+- captured execution tolerance 必须贯穿 production preflight、proposer、validator、
+  executor 与 summary；禁止在已有 captured value 时静默替换为默认值。
+- 将所有 plan outcomes 与 execution outcomes 合并，完整保存 applied/skipped/failed
+  counts 和 per-action rows；没有 runnable action 也不能抹掉 skipped evidence。
+- 明确定义 pair count、class count、edge count 各自含义，并从真实 issue/class evidence
+  计算 before/after；禁止用 N-1 或常量伪装 pair metric。
+- 任一 required invariant/validation 失败都不能返回 READY，也不能在 UI 显示 ready。
+- relevant audit rows 必须保留 issue IDs、action status、survivor/removed IDs、
+  source provenance 与真实 reason。
+- 必须提供 truthful、inspectable technical structure；具体可见布局和措辞仍由
+  AIPM/Owner 决定，本任务不冻结新 UX。
+
+Recheck evidence:
+
+1. captured tolerance=0.001、endpoint delta=0.0005：before=1，安全 apply，after=0。
+2. semantic layer conflict：skipped=1，存在一个可检查 skipped row 和真实 reason。
+3. 三个 identical edges：报告经过明确定义、由真实 evidence 计算的 pair count。
+4. forced validation failure：failed/non-ready；UI 与 summary 均不能声称 ready。
+5. no-runnable-action 但有 skipped plan outcome：skipped evidence 仍完整保留。
+6. issue IDs/provenance 从 proposer 到最终可观察 audit structure 保持一致。
+
+---------------------------------------------------------------------
+3.5 [V15-STAGE-BLOCK-005]
+Owner verification draft and Pi evidence packet are not executable or
+truthful
+---------------------------------------------------------------------
+
+Location:
+
+- Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt:
+  23,169-199,251-264,304-328
+- Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md:
+  34-53,286-302
+- extension/su_ai_plugin/core/working_mode_runner.rb:475-595
+- extension/su_ai_plugin/html/app.js:569-668
+
+Problem:
+
+- G1/G5 对第一、第二次 Undo 的预期错误：撤销一条 derived deletion 应先恢复两条
+  derived edges；再一次 Undo 才撤销 Prepare result。
+- G3 修改 ComponentInstance layer，但 PreflightRunner 记录 definition Edge 自身的 layer，
+  因而 fixture 没有创建声明中的 source-edge layer conflict。
+- checklist 要求读取 issue_ids 和完整 summary JSON，但 UI 不显示这些字段，draft 也未
+  提供 copy/paste-safe observation command。
+- draft 使用旧角色标签，不符合 Reviewer Contract V3。
+- Pi packet 遗留 RBZ size/entries/hash 占位，缺少 exact base/head/commit list，并曾在
+  存在 untracked files 时声称 working tree clean。
+
+Minimum acceptable fix:
+
+- 使用真实 SketchUp 2020 / PreflightRunner 语义设计 Owner fixtures 和步骤。
+- 修正两次 Undo 的准确、可观察预期，并区分 repair operation 与 Prepare operation。
+- layer conflict 必须落到 PreflightRunner 实际读取的 source Edge layer 上。
+- 每个 Owner 需要回传的数据都必须有真实观测路径：已批准 UI 字段，或在 UI 未暴露
+  时提供 copy/paste-safe Ruby Console command。
+- Owner 不编辑 repository 文件；Owner 只在 chat 中回传证据。
+- 使用固定角色标签：FINAL PRODUCT OWNER、AIPM / PRODUCT CONTROL、
+  IMPLEMENTATION OWNER、TECHNICAL REVIEWER。
+- 重写 Pi packet，填写 exact base/head/commit list、changed files、test outputs、
+  final RBZ metadata 和准确 git status；禁止 placeholders 和过度声明。
+
+Recheck evidence:
+
+1. Owner checklist 静态审计通过，并有 FakeSU/真实 production-call-chain 覆盖。
+2. real-SU2020 G1、G3、Undo 指令语义正确且可执行。
+3. 每个 requested Owner datum 都有已演示的 observation path。
+4. checklist 不要求 Owner 修改 repo 文件。
+5. review submission boundary 的 git status 与 packet 逐字意义一致。
+6. RBZ metadata 来自最终实际 artifact，不从旧 packet 复制。
+
+======================================================================
+4. ONE COHERENT ROUND 3 PACKET
+======================================================================
+
+Pi 必须把以上五个 BLOCK 作为一个相互作用的系统修复，原因是：
+
+  detector candidate completeness
+    -> proposer final class safety
+    -> prevalidated logical post-state
+    -> host transaction/commit
+    -> validator result
+    -> audit/UI truthfulness
+    -> Owner verification observability
+
+任何一层使用不同 tolerance/class semantics，或在错误的 transaction 时序执行，都会
+重新制造 source/derived 或 logical/host-state divergence。
+
+允许修改的默认范围仅包括为关闭 BLOCK 直接必要的：
+
+- duplicate_detector.rb
+- duplicate_repair_proposer.rb
+- derived_duplicate_validator.rb
+- duplicate_repair_executor.rb
+- working_mode_runner.rb
+- app.js，以及确有必要的直接 UI bridge/call-chain seam
+- 对应 V1.5、production call-chain、DOM、failure-injection tests
+- Owner verification draft
+- 一个完整 Pi recheck packet
+- CURRENT_STATE.md 的准确状态更新
+
+如修复必须扩大到另一文件，Pi 应在 packet 中说明与原 BLOCK 的直接因果关系；不得借机
+重开已关闭模块或扩展产品范围。
+
+Round 3 implementation completion 标准：
+
+1. 五个 Minimum acceptable fix 同时成立。
+2. 所有 Recheck evidence 都有直接、非真空、可失败的测试或静态证据。
+3. proposer/detector/validator 使用同一 tolerance/predicate/class contract。
+4. prevalidation、host operation、commit、logical publish 顺序安全且可恢复。
+5. plan/execution/summary/UI/Owner evidence 对 applied/skipped/failed 与 metrics 叙述一致。
+6. source fingerprint 在成功、失败、abort、discard/rebuild 所需路径均按合同保持不变。
+7. 一个 complete packet 提交后再请求一次 recheck；不要中途为小改动反复请求 Codex。
+
+======================================================================
+5. REQUIRED TEST, RBZ, AND PACKET EVIDENCE
+======================================================================
+
+Pi 自测至少包括：
+
+A. Targeted BLOCK tests
+
+- BLOCK-001 final merged class identity/handle alias/missing handle cases。
+- BLOCK-002 genuine non-transitive chain 与所有独立 endpoint bucket boundaries。
+- BLOCK-003 pre-begin full validation、Nth-dispose abort、success、commit uncertainty。
+- BLOCK-004 captured tolerance、skipped preservation、真实 pair/class metrics、non-ready failure。
+- BLOCK-005 executable checklist/static audit/production call-chain observation paths。
+
+B. Relevant regressions
+
+- 完整 V15 targeted suite。
+- 完整 Ruby suite，使用项目内置 Ruby：
+  ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+- Node DOM：
+  node tests/test_html_render_dom.js
+- RBZ smoke suite。
+- git diff --check 对 worktree 与实际 base..head 均为 clean。
+
+C. Test credibility
+
+- 测试不得只断言空集合、错误 fixture、默认 tolerance 或遗漏 survivor 的局部数组。
+- 每个危险测试要能在旧 7283a83 上复现相应失败，或明确说明为何它直接覆盖缺陷。
+- tests 不得写真实用户模型、配置、凭据或生产数据。
+- 自动 suite PASS 不能代替正式 gate 所需的 real SketchUp 2020 Owner evidence；但 Owner
+  evidence 在本轮 Codex PASS 前不得执行。
+
+D. Final RBZ evidence
+
+修复、测试和文档稳定后重建一次最终 Round 3 candidate RBZ，并记录：
+
+- absolute path
+- byte size
+- entry count
+- SHA-256
+- package/load smoke result
+- packaged extension files 与提交 tree 的一致性证据
+
+不得沿用旧 RBZ metadata，不得留 placeholder，不得在后续代码变化后继续使用早先 hash。
+
+E. Pi recheck packet mandatory fields
+
+- STATUS：READY FOR NARROW CODEX RECHECK；不得写 PASS/APPROVED。
+- Branch。
+- Exact Round 3 base/head full SHA。
+- Ordered Round 3 commit list。
+- Exact changed files/subsystems。
+- BLOCK-001..005 每项 fix-to-test evidence map。
+- Targeted/full/DOM/RBZ/diff-check 的命令、结果和执行时间。
+- Final RBZ path/size/entries/SHA-256。
+- Exact git status；tracked/untracked 必须分别说明。
+- Owner draft 路径与静态可执行性证据，并保持 DO NOT EXECUTE 直到 Codex PASS。
+- 明确声明 V1.0-V1.4 未重开、V1.6 未进入、source CAD 无写路径。
+
+======================================================================
+6. NITS TO HANDLE WITH THE PACKET
+======================================================================
+
+NIT-1 — Working-tree snapshot wording
+
+最新 evidence 文件列出三个 untracked 输入文件，但文件创建后实际状态包含该 evidence
+文件自身。下一 packet 应明确区分 pre-artifact status 与 final submission status，避免把
+“生成 packet 前的状态”称为提交边界的当前状态。
+
+NIT-2 — CURRENT_STATE accuracy
+
+CURRENT_STATE.md 当前活跃段仍记录 0c43cf7，而 round-2 final HEAD 是 7283a83。
+Round 3 packet 应更新为真实 base/head、active BLOCK、测试和 STOP 状态，不复制过时数字。
+
+NIT-3 — Stable Master Plan path
+
+approved V1.x Master Plan 目前仍只存在于外部 E:/dnowload/... 路径。根据 Reviewer
+Contract V3 section 14，AIPM/Owner 应把 approved copy 放入稳定 project-local 路径，
+供未来 artifact 引用。旧历史文件无需批量改名或重写。本 NIT 不阻塞 Round 3 技术修复。
+
+DEBT: NONE required for this packet.
+
+QUESTIONS FOR AIPM / PRODUCT OWNER:
+
+- NONE required to resolve the five technical BLOCKs。
+- 精确 audit 布局和可见措辞仍属于 AIPM/Owner；Pi 只需提供 truthful、inspectable
+  evidence，并遵守既有 UX contract。
+
+======================================================================
+7. NEXT REVIEW BOUNDARY
+======================================================================
+
+NEXT REVIEW:
+
+- ONE narrow BLOCK RECHECK of V15-STAGE-BLOCK-001..005 after Pi submits ONE
+  complete Round 3 packet。
+- Review scope：原五个 BLOCK、Round 3 fix diff、直接依赖与相关 regression evidence。
+- V1.0-V1.4 保持关闭；不审 V1.6；不启动 full-repo audit。
+- Reasoning effort：High by default。只有 Round 3 再次实质改变 provenance、identity、
+  transaction、recovery 或 logical/host-state architecture 时才升级到 xHigh。
+- 若仍 BLOCKED：仅报告剩余或由修复直接引入的因果相关 material BLOCK，再请求一个完整
+  修复后的窄 recheck；不得转成无边界循环。
+- 若 PASS：关闭 V1.5 active BLOCK set，允许定义好的 Owner verification path；下一阶段
+  调度权返回 AIPM/Owner。不得再增加“Codex 必须 greenlight V1.6”的额外 gate。
+
+======================================================================
+8. TELEMETRY RECORD
+======================================================================
+
+Telemetry source attempted:
+
+- 当前 Codex task 的 platform tool catalog 检索。
+- get_goal telemetry call。
+
+Start observation timestamp: 2026-08-26 10:47:20.404 +08:00
+End observation timestamp:   2026-08-26 10:52:56.054 +08:00
+
+MiniMax API-console exact token usage by Agent/Goal:
+
+  unavailable
+
+Source result:
+
+  当前环境未暴露 MiniMax API-console 或可信 Agent/Goal token console。
+  不推断，不估算。
+
+Primary GPT weekly allowance at Goal start:
+
+  unavailable
+
+Primary GPT weekly allowance at Goal end:
+
+  unavailable
+
+Percentage-point change:
+
+  unavailable
+
+Source result:
+
+  get_goal 返回 goal=null、remainingTokens=null、completionBudgetReport=null；
+  当前环境没有可信 weekly allowance percentage 来源。不推断，不估算。
+
+======================================================================
+END OF V1.5 ROUND 3 FIX GUIDANCE
+======================================================================

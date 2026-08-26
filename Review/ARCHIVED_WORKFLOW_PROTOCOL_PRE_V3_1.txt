@@ -1,3 +1,11 @@
+======================================================================
+STATUS: SUPERSEDED / HISTORICAL - NOT ACTIVE
+======================================================================
+Do not use this file as current Review routing authority.
+Current workflow is defined by AGENTS.md, PROJECT_HANDOFF.md,
+PROJECT_MASTER_PLAN_V1X.md, and CURRENT_STATE.md.
+The original historical body follows unchanged.
+
 ============================================================
 Review Workflow Protocol
 Project: D:\Projects\SU-AI-Plugin  (PI_TASK_001)

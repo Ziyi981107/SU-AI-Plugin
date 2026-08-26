@@ -1,0 +1,388 @@
+======================================================================
+SU-AI-PLUGIN -- CODEX TECHNICAL REVIEW 033
+V1.5 DERIVED EDGE CANONICALIZATION -- BLOCK RECHECK
+======================================================================
+
+STATUS: COMPLETE
+ARTIFACT DATE: 2026-08-25 (filename/date requested by the review dispatch)
+REVIEW EXECUTED: 2026-08-26
+REVIEW MODE: BLOCK RECHECK
+
+VERDICT:
+  BLOCKED
+
+REASONING EFFORT:
+  xHigh
+  Reason: the active fixes cross provenance/identity, destructive class
+  membership, tolerance-boundary matching, host transaction ordering, and
+  logical-versus-SketchUp-state consistency.
+
+FINAL PRODUCT OWNER: Owner
+AIPM / PRODUCT CONTROL: ChatGPT / AIPM
+IMPLEMENTATION OWNER: Pi
+TECHNICAL REVIEWER: Codex
+
+======================================================================
+SCOPE REVIEWED:
+======================================================================
+
+- Repository: D:/Projects/SU-AI-Plugin
+- Branch: v1.5-high-confidence-auto-repair
+- Review base: 720e7c0
+- Review head: 7283a830c0eb8979ad5c78ced30d8cffc790bc75
+- Commits reviewed: 0c43cf7, f6efb48, 47cdf8f, b97d11d, 7283a83
+- Active BLOCKs rechecked:
+  V15-STAGE-BLOCK-001..005 only.
+- Changed/directly related implementation inspected:
+  extension/su_ai_plugin/core/analyzers/duplicate_detector.rb
+  extension/su_ai_plugin/core/duplicate_repair_proposer.rb
+  extension/su_ai_plugin/core/derived_duplicate_validator.rb
+  extension/su_ai_plugin/core/duplicate_repair_executor.rb
+  extension/su_ai_plugin/core/working_mode_runner.rb
+  extension/su_ai_plugin/html/app.js
+  extension/su_ai_plugin/dialog_runner.rb (actual Prepare/Rebuild seam)
+  extension/su_ai_plugin/compatibility/su_derived_workspace_adapter.rb
+  tests/test_v15_duplicate_repair.rb
+  tests/test_v15_production_call_chain.rb
+  tests/test_html_render_dom.js
+  current Pi recheck packet and Owner verification draft.
+- V1.0-V1.4 and unrelated V1.5 scope were not reopened.
+- No V1.6 review was performed.
+
+======================================================================
+INDEPENDENT EVIDENCE:
+======================================================================
+
+Repository / artifact:
+- Current HEAD is 7283a83; 720e7c0 is an ancestor; range contains 5 commits.
+- git diff --check 720e7c0..HEAD: PASS (exit 0).
+- working-tree diff check: PASS, but the working tree was NOT clean before
+  this verdict artifact was created:
+    ?? Prompt/CODEX_REVIEWER_CONTRACT_V3_2026-08-25.txt
+    ?? Prompt_Stage.txt
+- Current RBZ:
+    Path: D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    Size: 569,950 bytes
+    Entries: 56
+    SHA-256: 1A72599AD28CAC377A6204952AC0E3A98A46FA03A4117553B00922BF86888382
+- All 56 packaged extension files were independently compared byte-for-byte
+  with the current extension/ tree: 56 checked, 0 missing, 0 mismatched.
+
+Automated suites independently run:
+- Full Ruby: 729/729 PASS, 0 fail, 0 error.
+- Node DOM: 163 assertions PASS; exit 0.
+- RBZ smoke: 8/8 PASS.
+
+The green suites do not close the BLOCKs because independent probes using the
+repository's own V1.5 helpers reproduced these material failures:
+
+1. Genuine non-transitive chain (tol=1e-4):
+   direct matcher returned A~B=:forward, B~C=:forward, A~C=nil, but the
+   proposer emitted one action with survivor der-A and affected ids
+   [der-B, der-C]. This is a three-member destructive class.
+
+2. Detector bucket boundary:
+   two edges directly matched within tolerance, with only one endpoint
+   straddling a 2*tolerance cell boundary; DuplicateDetector returned 0 issues.
+
+3. Final merged-class handle alias:
+   three exact members used issue evidence A-B and B-C; A and C resolved to
+   the same live host handle while A-B and B-C were pairwise-distinct. The
+   proposer still emitted survivor der-A with affected [der-B, der-C].
+
+4. Captured non-default tolerance:
+   with captured tolerance=0.001 and endpoint delta=0.0005, production runner
+   applied one action but reported duplicate_classes_before=0 and after=0.
+
+5. Post-validation failure ordering:
+   a forced DerivedDuplicateValidator.validate failure occurred after the fake
+   host log recorded [:begin, :commit]. The published snapshot remained
+   state=ready with one entity while the summary reported actions_failed=1.
+
+6. Skipped audit:
+   a semantic layer conflict produced a proposer plan with one :skipped action,
+   but production summary reported applied=0, skipped=0, failed=0 and zero
+   action rows while one duplicate class remained.
+
+7. Pair metrics:
+   three coincident edges produced three source duplicate-pair issues, but the
+   production summary reported duplicate_pairs_before=2.
+
+No real-SketchUp Owner verification was run because the current Owner draft is
+still gated and is not executable as written (BLOCK-005 below).
+
+======================================================================
+PASSED / CLOSED SCOPE:
+======================================================================
+
+- Passed and unchanged V1.0-V1.4 scope remains CLOSED.
+- Package structure/load smoke for the current RBZ passed and remains closed.
+- The direct forward/reversed endpoint predicate itself rejects non-finite
+  coordinates, checks normalized layers, and uses the tolerance supplied to
+  it. The unresolved defects are candidate enumeration, final class formation,
+  production tolerance propagation, and transaction/audit integration.
+- No direct source-CAD write was found in the reviewed V1.5 repair diff; repair
+  disposal targets derived handles. This does not close BLOCK-001 because the
+  selected derived membership can still be unsafe.
+
+The active V1.5 BLOCK set is NOT closed.
+
+======================================================================
+BLOCKS:
+======================================================================
+
+1. [V15-STAGE-BLOCK-001] Final destructive classes bypass complete identity
+   and live-handle uniqueness proof.
+
+   Location:
+   - extension/su_ai_plugin/core/duplicate_repair_proposer.rb:552-691
+   - extension/su_ai_plugin/core/duplicate_repair_proposer.rb:717-906
+   - extension/su_ai_plugin/core/duplicate_repair_proposer.rb:913-1006
+
+   Problem:
+   verify_class_identity checks only each two-member issue class before
+   deduplicate_classes merges those classes. The final merged class is not
+   rechecked. A and C can therefore alias the same live handle while A-B and
+   B-C each pass their local check. The reproduced exact-three-member case
+   emitted survivor der-A and removed der-C even though they shared one handle.
+
+   Why it matters:
+   Disposing der-C can erase the survivor's host entity and then publish a
+   logical :ready survivor backed by an invalid/stale handle. This is the
+   destructive host/logical divergence BLOCK-001 was intended to prevent.
+
+   Minimum acceptable outcome:
+   Re-prove the COMPLETE FINAL action class immediately before action creation:
+   every member resolves exactly once to a distinct current SourceSnapshot
+   EdgeRecord, distinct derived_id, and distinct valid live handle; survivor
+   and removal handle sets are disjoint; issue evidence covers the final source
+   member set. Missing, stale, ambiguous, incomplete, repeated, or aliased
+   identity fails closed with a truthful audit result.
+
+   Recheck evidence:
+   - Three exact members, evidence A-B/B-C, with A/C handle alias => no runnable
+     remove action and an explicit fail-closed audit row.
+   - Three exact members with distinct handles => one safe deterministic action
+     with complete sorted provenance union.
+   - Missing/invalid non-survivor handle and survivor/removal alias are direct,
+     non-vacuous tests against the final merged class.
+
+2. [V15-STAGE-BLOCK-002] Non-transitive classes and bucket-boundary candidates
+   remain unsafe/incomplete.
+
+   Location:
+   - extension/su_ai_plugin/core/duplicate_repair_proposer.rb:717-906
+   - extension/su_ai_plugin/core/derived_duplicate_validator.rb:90-136
+   - extension/su_ai_plugin/core/analyzers/duplicate_detector.rb:42-112
+   - tests/test_v15_duplicate_repair.rb:3113-3168
+
+   Problem:
+   The closure-failure branch calls union-find again. Union-find produces
+   connected components, not cliques, so A~B and B~C still merge A/B/C when
+   A!~C. The validator uses the same transitive connected-component rule.
+   Separately, DuplicateDetector shifts both endpoint bucket coordinates by one
+   shared 3-D vector; it does not enumerate independent start/end boundary
+   combinations, so a valid match can be missed when only one endpoint crosses
+   a cell boundary.
+
+   The new V15-B002-5 test is not a genuine proof: B is colocated with A and C
+   is shifted by 5e-4, so B~C is outside the 1e-4 tolerance. Its assertion also
+   examines only affected_derived_ids; it cannot see lexicographic survivor
+   der-A, so it does not prove the action has at most two members.
+
+   Why it matters:
+   The proposer can delete a member that is outside tolerance from the chosen
+   survivor, while the production detector can miss a valid duplicate. The
+   proposer/validator/detector therefore do not implement one truthful
+   canonical matching contract.
+
+   Minimum acceptable outcome:
+   Use a deterministic complete-direct-match class rule (clique partition) or
+   fail the entire non-transitive component closed. Candidate enumeration must
+   guarantee that every forward/reversed endpoint pair within captured
+   tolerance is compared; buckets remain acceleration only. Proposer and
+   validator must share both direct predicate and class semantics.
+
+   Recheck evidence:
+   - Genuine A=0, B=0.75*tol, C=1.5*tol with issues A-B and B-C proves no
+     three-member action (inspect survivor plus removed members).
+   - Boundary cases where only start, only end, opposite endpoints, different
+     axes, and reversed endpoints cross cells all produce the expected issue.
+   - Just-outside cases remain absent; validator reports the same class split
+     used by the proposer.
+
+3. [V15-STAGE-BLOCK-003] Complete post-state validation still occurs after
+   host commit, and the pre-host check proves only surviving IDs.
+
+   Location:
+   - extension/su_ai_plugin/core/duplicate_repair_executor.rb:378-420
+   - extension/su_ai_plugin/core/duplicate_repair_executor.rb:608-632
+   - extension/su_ai_plugin/core/duplicate_repair_executor.rb:713-730
+   - extension/su_ai_plugin/core/working_mode_runner.rb:424-470
+
+   Problem:
+   precompute_expected_post_state does not compute the complete post validation,
+   provenance/geometry/fingerprint expectation, or captured-tolerance result.
+   post_state_matches_expected compares only surviving derived IDs. The runner
+   calls validate_post_state only after apply_batch has committed and published
+   the new workspace. If that validation raises or fails, rescue records an
+   error summary but leaves @current_workspace in :ready.
+
+   Why it matters:
+   Host deletion can commit before the system knows the logical post-state is
+   valid. A failed post invariant can be presented as a ready workspace, the
+   exact host/logical divergence prohibited by BLOCK-003.
+
+   Minimum acceptable outcome:
+   Before begin_operation, construct and validate the complete post workspace
+   with captured tolerance and compare the required inventory, provenance
+   unions, geometry/fingerprint, survivor/handle shape, and applied-class
+   absence. Any preflight/validation mismatch opens no host operation and
+   cannot return READY. On success: one begin, validated disposals, one commit,
+   then publish that exact prevalidated logical workspace. Commit uncertainty
+   remains :failed and recoverable without a fabricated rollback claim.
+
+   Recheck evidence:
+   - Forced post-validation/provenance/fingerprint mismatch => begin_calls=0.
+   - Nth dispose failure => begin=1, abort=1, commit=0, exact pre-batch logical
+     inventory/provenance preserved.
+   - Success => begin=1, commit=1, abort=0 and published state equals the full
+     prevalidated result.
+   - Commit failure/uncertainty => :failed, never READY, with explicit recovery.
+
+4. [V15-STAGE-BLOCK-004] Production validation and audit data remain false or
+   incomplete.
+
+   Location:
+   - extension/su_ai_plugin/core/working_mode_runner.rb:407-595
+   - extension/su_ai_plugin/core/duplicate_repair_executor.rb:304-328
+   - extension/su_ai_plugin/core/duplicate_repair_executor.rb:723-730
+   - extension/su_ai_plugin/core/derived_duplicate_validator.rb:63-177
+   - extension/su_ai_plugin/html/app.js:459-668
+
+   Problem:
+   - Production pre_classes calls group_derived_duplicates(workspace, nil),
+     which falls back to 1e-4 rather than resolving captured tolerance.
+     validate_post_state also substitutes the 1e-4 executor default before
+     calling the validator.
+   - Executor filters out :skipped plan actions and returns [] when no runnable
+     action exists, so the summary loses truthful skipped rows/counts.
+   - duplicate_pairs_before sums removed member IDs (N-1), not actual issue
+     pairs/classes; three equal edges with three issue pairs report 2.
+   - Post-validation failure can leave state=ready while the summary says
+     actions_failed=1; the UI then renders "entities ready".
+
+   Why it matters:
+   The UI can undercount candidates, erase skipped evidence, use the wrong
+   tolerance, and claim readiness after validation failure. Owner cannot audit
+   what actually happened.
+
+   Minimum acceptable outcome:
+   Propagate the captured execution tolerance through production preflight,
+   proposer, validator, executor, and summary. Combine all plan outcomes with
+   execution outcomes so applied/skipped/failed rows are preserved. Define and
+   measure pair counts from actual issue/class evidence consistently. A failed
+   invariant must not be READY. Preserve issue IDs/provenance in every relevant
+   audit row and expose the required technical evidence through a truthful
+   inspectable structure; exact presentation remains AIPM/Owner-owned.
+
+   Recheck evidence:
+   - Production runner with captured 0.001 and delta 0.0005 reports one class
+     before, applies safely, and measures zero after.
+   - Semantic conflict produces skipped=1 and one inspectable skipped row.
+   - Three identical edges report the explicitly defined real pair count.
+   - Forced validation failure reports failed/non-ready and cannot show a ready
+     summary.
+
+5. [V15-STAGE-BLOCK-005] Owner verification and Pi evidence packet are not yet
+   executable/truthful.
+
+   Location:
+   - Review/OWNER_VERIFICATION_V15_DERIVED_EDGE_CANONICALIZATION_DRAFT_2026-08-25.txt:23,169-199,251-264,304-328
+   - Review/V15_DERIVED_EDGE_CANONICALIZATION_BLOCK_RECHECK_2026-08-25.md:34-53,286-302
+   - extension/su_ai_plugin/core/working_mode_runner.rb:475-595
+   - extension/su_ai_plugin/html/app.js:569-668
+
+   Problem:
+   - G1/G5 says the first Undo of the repair leaves one derived edge; undoing a
+     one-edge deletion from a two-edge prepared state restores two derived
+     edges. The second Undo removes the Prepare result.
+   - G3 changes the ComponentInstance layer, but PreflightRunner records the
+     definition Edge's own layer. The fixture therefore does not create the
+     claimed source-edge layer conflict. Even a correct conflict currently
+     renders skipped=0 because of BLOCK-004.
+   - The checklist asks Owner to read issue_ids and a complete summary JSON from
+     the dialog, but app.js renders neither issue_ids/source IDs nor raw JSON,
+     and the draft supplies no copy/paste-safe observation command.
+   - The draft uses the role label "PLANNING / TECHNICAL OWNER: CodeX / AIPM",
+     contrary to Reviewer Contract V3's frozen role labels.
+   - Pi's packet leaves final RBZ size/entries/hash as placeholders, omits an
+     exact base/head commit list, and says the working tree is clean even though
+     two untracked files existed before this review artifact.
+
+   Why it matters:
+   Owner cannot execute or interpret the gate truthfully, and the recheck packet
+   overstates evidence completeness. This directly preserves the original
+   BLOCK-005 condition.
+
+   Minimum acceptable outcome:
+   Rewrite the draft using fixtures that exercise actual SketchUp/Preflight
+   semantics, correct two-operation Undo observations, and real observation
+   paths for every required datum (UI or copy/paste-safe Ruby Console where the
+   approved UI does not expose it). Owner edits no repository file and returns
+   evidence in chat. Use V3 role labels. Rebuild the Pi packet with exact
+   base/head/commit list, final RBZ metadata, accurate status, and non-vacuous
+   tests for every stated result.
+
+   Recheck evidence:
+   - Static checklist audit plus executable FakeSU/real-call-chain coverage.
+   - Correct real-SU2020 G1/G3/Undo observation instructions.
+   - Every requested Owner datum has a demonstrated observation path.
+   - git status and packet claims agree at the submitted review boundary.
+
+======================================================================
+NITS:
+======================================================================
+
+- The approved V1.x Master Plan is not stored in the project or its Git
+  history. The only available copy remains at
+  E:/dnowload/SU_AI_PLUGIN_V1X_PRODUCT_TECHNICAL_MASTER_PLAN_FOR_CODEX.txt.
+  Per Reviewer Contract V3 section 14, place the approved copy at a stable
+  project-local path and reference it prospectively. This does not itself
+  block the V1.5 technical fix.
+- CURRENT_STATE.md's newest section records 0c43cf7 rather than final HEAD
+  7283a83. Update project state accurately as part of the next coherent packet.
+
+======================================================================
+DEBT:
+======================================================================
+
+- NONE required for this recheck.
+
+======================================================================
+QUESTIONS FOR AIPM / PRODUCT OWNER:
+======================================================================
+
+- NONE required to resolve these technical BLOCKs.
+- Exact audit layout/wording remains AIPM / Owner authority. The technical
+  requirement is truthful, inspectable evidence; this verdict does not freeze
+  a new UX design.
+
+======================================================================
+NEXT REVIEW:
+======================================================================
+
+- ONE coherent narrow recheck of V15-STAGE-BLOCK-001..005 after Pi completes
+  ONE complete interacting fix packet and independently reruns the evidence.
+- Do not reopen V1.0-V1.4, review V1.6, or create five micro-reviews.
+- Reasoning effort for the next narrow recheck is High by default under
+  Reviewer Contract V3 section 7; use xHigh only if the next fix again
+  materially changes provenance/transaction/state architecture.
+- Until PASS: do not execute the Owner draft, install/approve the candidate,
+  enter V1.6, push, publish, or release.
+- If the later recheck passes, close the V1.5 BLOCK set and return next-stage
+  authority to AIPM / Owner without another Codex greenlight gate.
+
+======================================================================
+END OF CODEX REVIEW 033
+======================================================================

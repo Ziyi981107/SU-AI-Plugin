@@ -1,0 +1,496 @@
+======================================================================
+AIPM REVIEW — V1.5 ROUND 3 PROGRESS / CODEX GATE
+======================================================================
+
+STATUS: ACTIVE
+DATE: 2026-08-26
+FOR: Pi / Implementation Agent
+ISSUED BY: ChatGPT / AIPM Product Control
+FINAL PRODUCT OWNER: Owner
+TECHNICAL REVIEWER: Codex / GPT-5.6 Sol
+
+PROJECT:
+  D:/Projects/SU-AI-Plugin
+
+PRIMARY PI REPORT REVIEWED:
+  Review/V1_5_STAGE_UNATTENDED_FINAL_REPORT_2026-08-26.md
+
+REVIEWED PRE-MIGRATION HEAD:
+  43854c8 (unattended final report)
+  on 6f5df97 (Round 3 state update)
+  on 5ac83ea (Round 3 production fix)
+  on 7283a83 (Round 2 baseline)
+
+THIS FILE IS AIPM'S REVIEW OF PI'S LATEST DEVELOPMENT PROGRESS AND DEFINES THE
+NEXT PERMISSIBLE PI ACTION.
+
+It is NOT a Codex review verdict.
+It is NOT permission to enter V1.6.
+It does NOT replace the canonical project governance stack.
+
+======================================================================
+0. CONTEXT TO READ FIRST
+======================================================================
+
+Before acting, Pi must read:
+
+  1. AGENTS.md
+
+  2. PROJECT_HANDOFF.md
+
+  3. PROJECT_MASTER_PLAN_V1X.md
+
+  4. CURRENT_STATE.md
+     - current active section first
+     - older sections are history unless explicitly referenced
+
+  5. this AIPM Review and only the current V1.5 review artifacts it explicitly
+     references
+
+  6. latest Pi-authored Review artifact representing actual development state
+
+  7. Git branch / HEAD / status
+
+Prompt/ remains READ-ONLY to Pi.
+
+Do not reconstruct current truth from old chat memory.
+
+======================================================================
+1. AIPM VERDICT ON PI'S ROUND 3 REPORT
+======================================================================
+
+AIPM VERDICT:
+
+  PI IMPLEMENTATION PACKET: ACCEPTED AS COMPLETE FOR REVIEW SUBMISSION
+  TECHNICAL BLOCK CLOSURE:  NOT YET CONFIRMED
+  NEXT DEVELOPMENT STAGE:   NOT AUTHORIZED
+  CURRENT ACTION:           HOLD AT CODEX NARROW RECHECK GATE
+
+Pi has done the correct thing by stopping after one coherent Round 3 packet.
+
+The report provides strong implementation evidence:
+
+  - targeted V15 BLOCK tests:
+      20 / 20 PASS
+
+  - full V15:
+      65 / 65 PASS
+
+  - full Ruby:
+      729 / 729 PASS
+
+  - Node DOM:
+      163 assertions PASS
+
+  - RBZ smoke:
+      8 / 8 PASS
+
+  - git diff --check:
+      clean
+
+  - reported candidate:
+      dist/SU-AI-Plugin.rbz
+      596443 bytes
+      57 entries
+      SHA-256:
+      d555024353b4e0e312f338e4a5af12655da71ba5b85114888a317054a1043089
+
+The crash-recovery behavior, commit reconstruction, bundled-Ruby recovery,
+single coherent fix packet, and refusal to enter V1.6 were all consistent with
+the project governance.
+
+However:
+
+  PASSING TESTS ARE EVIDENCE.
+  THEY ARE NOT THE CODEX TECHNICAL VERDICT.
+
+Pi must not describe V15-STAGE-BLOCK-001..005 as formally "closed" until Codex
+returns PASS / PASS WITH NITS.
+
+Preferred wording until then:
+
+  "BLOCK-001..005 addressed by the Round 3 implementation and test packet;
+   technical closure pending Codex narrow recheck."
+
+======================================================================
+2. WHAT AIPM ACCEPTS AS COMPLETE
+======================================================================
+
+For Pi ownership, the following work is accepted as complete for the current
+Round 3 submission:
+
+  - crash-state reconciliation;
+  - Round 3 production fix committed;
+  - documentation/state update committed;
+  - targeted V1.5 test packet;
+  - full Ruby regression;
+  - DOM regression;
+  - RBZ rebuild;
+  - RBZ smoke evidence;
+  - recheck packet;
+  - Owner-checklist draft retained as DO NOT EXECUTE;
+  - V1.6 not started;
+  - Prompt/ not modified by Pi;
+  - no push / publish / release;
+  - source CAD immutability remains the stated contract.
+
+Pi should NOT produce another speculative Round 3 implementation merely because
+AIPM is reviewing the report.
+
+======================================================================
+3. AIPM RISK FLAGS — DO NOT PREEMPTIVELY FIX
+======================================================================
+
+AIPM identified three high-leverage questions in Pi's report.
+
+These require direct source/Git/diff inspection and therefore belong to Codex,
+not to another speculative Pi implementation cycle.
+
+Pi MUST NOT preemptively redesign the code solely from these questions unless
+Codex confirms a material issue.
+
+----------------------------------------------------------------------
+RISK FLAG A — MAXIMAL CLIQUES ARE NOT AUTOMATICALLY A DISJOINT PARTITION
+----------------------------------------------------------------------
+
+The report says connected components are partitioned into maximal direct-match
+cliques via Bron-Kerbosch.
+
+Important technical question for Codex:
+
+  Can overlapping maximal cliques cause one derived member to participate in
+  more than one destructive RepairAction?
+
+Possible failure consequences:
+
+  - duplicate deletion;
+  - survivor/removed conflict;
+  - overlapping provenance unions;
+  - invalid transaction post-state.
+
+Pi action now:
+
+  NONE.
+  Preserve the current implementation for Codex inspection.
+
+If Codex proves the emitted final action set is already disjoint and safe:
+  no change.
+
+If Codex BLOCKs it:
+  follow the resulting minimum-outcome fix guidance.
+
+----------------------------------------------------------------------
+RISK FLAG B — 1 + 6 BUCKET OPTIMIZATION MUST PRESERVE RECALL
+----------------------------------------------------------------------
+
+Round 3 reduced the worst-case 3^6 candidate enumeration to:
+
+  1 exact bucket + at most 6 single-axis shift buckets.
+
+This appears to solve the performance regression.
+
+But Codex must verify candidate recall for all pairs accepted by the canonical
+direct tolerance matcher, including:
+
+  - simultaneous multi-axis boundary crossings;
+  - start/end endpoints crossing different bucket dimensions;
+  - reversed ordering;
+  - compound boundary conditions.
+
+Pi action now:
+
+  NONE.
+  Do not replace the optimization again before Codex inspects it.
+
+----------------------------------------------------------------------
+RISK FLAG C — NEW ROUND 3 PRODUCTION MODULE MUST BE PROVEN IN THE RBZ LOAD PATH
+----------------------------------------------------------------------
+
+Pi correctly disclosed that the existing smoke reload helper does not explicitly
+list:
+
+  - analyzers/duplicate_detector.rb
+  - derived_duplicate_topology.rb
+
+The file being present in the RBZ is useful evidence, but the technical reviewer
+should confirm the actual packaged production call chain loads the new Round 3
+code rather than relying on stale in-tree definitions.
+
+Pi action now:
+
+  NONE unless Codex requests a targeted smoke-test correction.
+
+Do NOT broadly refactor packaging.
+
+======================================================================
+4. DOCUMENTATION PRECISION — NON-BLOCKING
+======================================================================
+
+Two wording corrections should be carried forward in future reports.
+
+A. Do not say:
+
+     "BLOCK-001..005 closed by code + tests"
+
+   before Reviewer closure.
+
+   Say:
+
+     "addressed by Pi; pending Codex closure."
+
+B. If untracked files exist, do not report the entire repository as simply:
+
+     "working tree clean"
+
+   Prefer:
+
+     "tracked worktree clean; expected untracked governance files remain"
+
+   or report the exact `git status --porcelain` state.
+
+These are documentation-quality corrections only.
+
+Do NOT create a new code commit solely for these wording changes unless the
+current active state file actually contains a materially misleading gate claim.
+
+======================================================================
+5. CURRENT HARD STOP — CODEX GATE
+======================================================================
+
+Pi is now at a legitimate external gate.
+
+Until a real Codex PASS / PASS WITH NITS exists for the active V1.5 recheck:
+
+Pi MUST NOT:
+
+  - change Round 3 production code without new evidence;
+  - start V1.6;
+  - execute Owner verification;
+  - ask Owner to install the candidate;
+  - replace the reviewed RBZ;
+  - rebuild the RBZ for no reason;
+  - create a new speculative fix packet;
+  - claim V1.5 technically approved;
+  - claim READY / release-ready;
+  - push / publish / release;
+  - reopen V1.0-V1.4.
+
+Pi MAY:
+
+  - inspect project state;
+  - keep CURRENT_STATE accurate if a factual state change occurs;
+  - answer a concrete Codex question;
+  - prepare evidence requested by Codex;
+  - reproduce a failing Codex case;
+  - implement ONE coherent fix packet if Codex returns BLOCKED.
+
+Otherwise:
+
+  HOLD.
+
+======================================================================
+6. CODEX REVIEW LEVEL FOR THIS GATE
+======================================================================
+
+Per canonical project governance and CURRENT_STATE.md:
+
+  current V1.5 Round 3 recheck = xHigh
+
+Reason:
+
+  - provenance / occurrence identity;
+  - tolerance semantics;
+  - destructive duplicate-class membership;
+  - transaction / rollback;
+  - logical-state vs SketchUp host-state consistency;
+  - packaged-runtime correctness.
+
+Pi does not control Codex reasoning settings, but should prepare evidence for
+ONE narrow xHigh recheck rather than multiple micro-reviews.
+
+======================================================================
+7. IF CODEX RETURNS PASS / PASS WITH NITS
+======================================================================
+
+If the active V1.5 BLOCK recheck returns PASS / PASS WITH NITS:
+
+  1. Treat V15-STAGE-BLOCK-001..005 as technically CLOSED.
+
+  2. Do NOT create another Codex approval gate for V1.6.
+
+  3. Preserve the EXACT Codex-reviewed RBZ candidate.
+
+  4. Owner performs the approved V1.5 real-host verification on SketchUp 2020
+     using the current V1.5 Owner checklist.
+
+  5. Pi does NOT fabricate or execute Owner evidence.
+
+  6. If Owner verification PASS:
+       - update CURRENT_STATE / Pi-owned Review evidence as permitted;
+       - wait for AIPM/Owner V1.6 dispatch;
+       - next product stage is V1.6 Planar Normalization / Z Policy.
+
+  7. If Owner verification exposes a real defect:
+       - classify it as V1.5 real-host regression;
+       - produce one concise Review packet;
+       - do not enter V1.6 until that defect is resolved.
+
+No additional Codex "greenlight to enter V1.6" is required merely because V1.6
+is the next version.
+
+======================================================================
+8. IF CODEX RETURNS BLOCKED
+======================================================================
+
+If Codex returns BLOCKED:
+
+  1. Read the new Codex verdict and latest AIPM Prompt guidance.
+
+  2. Only accept:
+       - remaining original BLOCKs;
+       - new BLOCKs causally related to Round 3 fixes/new evidence.
+
+  3. Do NOT respond with micro-fixes.
+
+  4. Build ONE coherent next fix packet.
+
+  5. Run:
+       - targeted BLOCK regression;
+       - relevant V15 regression;
+       - full Ruby;
+       - DOM if affected;
+       - RBZ smoke if production/package changed;
+       - git diff --check.
+
+  6. Commit one stable implementation checkpoint.
+
+  7. Write one Pi recheck packet in Review/.
+
+  8. STOP for one narrow recheck.
+
+Do not expand the scope into unrelated V1.5 cleanup.
+
+Do not enter V1.6.
+
+======================================================================
+9. V1.6 — NEXT PLANNED STAGE, NOT CURRENT WORK
+======================================================================
+
+The next planned product stage after V1.5 closure is:
+
+  V1.6 — PLANAR NORMALIZATION / Z POLICY
+
+Product goal:
+
+  Prepare 2D architectural CAD for reliable topology without silently
+  flattening intentional geometry.
+
+Frozen principle:
+
+  "Non-zero Z exists" is evidence, not permission to flatten.
+
+V1.6 scope includes:
+
+  - raw vs normalized coordinate representation;
+  - Z-distribution diagnostics;
+  - normalization on DERIVED geometry only;
+  - conservative profile/rule-driven candidate selection;
+  - preview/review of geometry that would move in Z;
+  - uncertain geometry can remain unchanged;
+  - original raw coordinates/provenance preserved;
+  - mixed-Z/outlier detection;
+  - XY preservation during Z-only normalization;
+  - unit / coordinate-space regression;
+  - nested transform correctness.
+
+V1.6 does NOT include:
+
+  - terrain;
+  - site elevation modeling;
+  - building-height assignment;
+  - gap repair;
+  - V1.7 topology work;
+  - loop/region work;
+  - MCP;
+  - V2.
+
+DO NOT START V1.6 FROM THIS FILE.
+
+AIPM/Owner will dispatch V1.6 after the current V1.5 technical + Owner gates are
+properly closed.
+
+======================================================================
+10. V1.6 REVIEW POLICY — PRE-RECORDED
+======================================================================
+
+Per AGENTS.md / PROJECT_HANDOFF.md / PROJECT_MASTER_PLAN_V1X.md:
+
+V1.6 does NOT require a separate Codex review by default.
+
+Pi will self-implement and self-test V1.6 under AIPM guidance.
+
+Codex becomes risk-triggered only if V1.6 materially changes:
+
+  - transform architecture;
+  - unit/canonical-coordinate architecture;
+  - source/derived ownership;
+  - transaction/rollback architecture;
+  - provenance architecture;
+  - destructive flattening semantics.
+
+Normal V1.6 implementation difficulty is Pi-owned.
+
+The next predetermined mandatory Codex integration review is:
+
+  V1.7 — xHigh
+
+======================================================================
+11. CURRENT NEXT ACTION
+======================================================================
+
+PI:
+
+  STOP implementation at current V1.5 Round 3 HEAD.
+
+  Preserve the exact current code + RBZ for technical review.
+
+  Do not start V1.6.
+
+  Wait for the ONE current Codex narrow xHigh recheck.
+
+If Codex requests evidence:
+  provide targeted evidence only.
+
+If Codex returns BLOCKED:
+  follow one coherent fix cycle.
+
+If Codex returns PASS / PASS WITH NITS:
+  proceed to Owner V1.5 real-host verification, not directly to V1.6.
+
+======================================================================
+12. AIPM STATUS SUMMARY
+======================================================================
+
+V1.0-V1.4:
+  CLOSED / unchanged for current scope.
+
+V1.5:
+  Pi Round 3 implementation packet complete.
+  Automated evidence strong.
+  Technical closure pending Codex narrow xHigh recheck.
+  Owner verification pending Codex PASS.
+
+V1.6:
+  Planned and frozen in the Master Plan.
+  NOT STARTED.
+
+V1.7:
+  NOT STARTED.
+  Future mandatory xHigh integration review.
+
+V2 / MCP:
+  OUT OF SCOPE.
+
+======================================================================
+END OF AIPM REVIEW
+======================================================================

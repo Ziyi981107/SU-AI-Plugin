@@ -1,3 +1,12 @@
+======================================================================
+STATUS: SUPERSEDED / HISTORICAL - NOT ACTIVE
+======================================================================
+Do not use this file as current Pi authority.
+Current Pi authority comes from the AIPM Stage Technical Blueprint / PI_TASK
+plus AGENTS.md, PROJECT_HANDOFF.md, PROJECT_MASTER_PLAN_V1X.md, and
+CURRENT_STATE.md.
+The original historical body follows unchanged.
+
 CODING AGENT PLAYBOOK V2.0
 
 ROLE
