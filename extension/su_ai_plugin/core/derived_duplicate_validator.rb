@@ -29,6 +29,7 @@
 
 require_relative 'tolerance'
 require_relative 'derived_entity_record'
+require_relative 'derived_duplicate_topology'
 
 module SUAnalysis
   module Core
@@ -78,135 +79,82 @@ module SUAnalysis
 
       # Compute the duplicate-class topology for the given
       # workspace using the DIRECT endpoint matcher (the
-      # SAME matcher the proposer uses). Returns a
-      # Hash<String, Array<DerivedEntityRecord>> of every
-      # class with 2+ members.
+      # SAME matcher the proposer uses) and the SAME maximal-
+      # clique partition the proposer uses (BLOCK-002 V1.5
+      # round 3: proposer and validator must share both direct
+      # predicate and class semantics).
       #
-      # This is the V1.5 BLOCK-002 fix: the previous code
-      # used `quantize_point` to bucket records; the new
-      # code uses union-find over direct endpoint matches.
-      # Buckets are candidate acceleration only; the direct
-      # matcher is the match rule.
+      # Returns a Hash<String, Array<DerivedEntityRecord>> keyed
+      # by canonical "clique|" + sorted-derived-ids digest so
+      # the audit can identify each distinct class. Only proper
+      # cliques (>= 2 members) are reported.
       def group_derived_duplicates(workspace, tolerance)
         out = {}
         return out if workspace.nil?
         tol = tolerance || DEFAULT_TOLERANCE
         entities = workspace.respond_to?(:entities) ? workspace.entities : []
         return out if entities.empty?
-        # Build the list of edge records.
-        edges = []
-        entities.each do |d|
-          next unless d.is_a?(DerivedEntityRecord)
-          next unless d.kind == :edge
-          geom = d.respond_to?(:geometry_summary) ? d.geometry_summary : nil
-          next unless geom.is_a?(Hash)
-          s = geom['start'] || geom[:start]
-          f = geom['end']   || geom[:end]
-          l = geom['layer'] || geom[:layer]
-          next unless finite_point?(s) && finite_point?(f)
-          edges << { record: d, start: s, finish: f, layer: l }
+        # Build the list of edge record tuples.
+        records = entities.map { |d| DerivedDuplicateTopology.extract_record_tuple(d) }.compact
+        return out if records.empty?
+        # Use the SHARED topology helper (the SAME Bron-Kerbosch
+        # clique partition the proposer uses). This is the V1.5
+        # round-3 BLOCK-002 fix: validator and proposer MUST share
+        # class semantics.
+        cliques = DerivedDuplicateTopology.clique_classes(records, tol)
+        cliques.each do |clique|
+          member_records = clique.map { |t| t[:record] }
+          sorted_ids = member_records.map { |d| d.derived_id.to_s }.sort
+          # Canonical class key: derived from the SORTED
+          # derived_ids (deterministic across rebuilds of the
+          # same workspace).
+          key = "clique|#{sorted_ids.join('|')}"
+          out[key] = member_records
         end
-        # Union-find over direct matches. Inline the find
-        # operation so we don't need a separate method
-        # (module_function context).
-        parent = Array.new(edges.length) { |i| i }
-        edges.each_with_index do |a, i|
-          ((i + 1)...edges.length).each do |j|
-            b = edges[j]
-            kind = direct_match?(a[:start], a[:finish], b[:start], b[:finish],
-                                  a[:layer], b[:layer], tol)
-            if kind == :forward || kind == :reversed
-              # Find roots (with path compression)
-              ri = i
-              ri = parent[ri] while parent[ri] != ri
-              rj = j
-              rj = parent[rj] while parent[rj] != rj
-              parent[ri] = rj if ri != rj
-            end
-          end
-        end
-        # Collect roots (with path compression for lookup).
-        groups = {}
-        edges.each_with_index do |e, i|
-          r = i
-          r = parent[r] while parent[r] != r
-          (groups[r] ||= []) << e[:record]
-        end
-        groups.select { |_k, v| v.length >= 2 }
+        out
       end
 
       # ===========================================================
       # Direct endpoint matcher (the V1.5 BLOCK-002 contract).
-      # Mirrors DuplicateRepairProposer.direct_match?.
+      # Delegates to the SHARED topology helper so the proposer
+      # and validator use the SAME predicate (BLOCK-002 round-3
+      # class semantics).
       # ===========================================================
 
       def direct_match?(pa_s, pa_e, pb_s, pb_e, layer_a, layer_b, tolerance)
-        return nil unless finite_point?(pa_s) && finite_point?(pa_e)
-        return nil unless finite_point?(pb_s) && finite_point?(pb_e)
-        tol = tolerance.to_f
-        return nil unless tol.finite? && tol > 0
-        if normalize_layer(layer_a) != normalize_layer(layer_b)
-          return nil
-        end
-        if points_within?(pa_s, pb_s, tol) && points_within?(pa_e, pb_e, tol)
-          :forward
-        elsif points_within?(pa_s, pb_e, tol) && points_within?(pa_e, pb_s, tol)
-          :reversed
-        else
-          nil
-        end
+        DerivedDuplicateTopology.direct_match?(pa_s, pa_e, pb_s, pb_e,
+                                                layer_a, layer_b, tolerance)
       end
 
       # ===========================================================
       # Resolve the captured tolerance from the workspace's
       # source_snapshot.execution_config (BLOCK-004: the
       # validator must use the captured tolerance, not the
-      # default).
+      # default). Delegates to the shared helper.
       # ===========================================================
 
       def resolve_tolerance(workspace, tolerance)
-        return tolerance.to_f if tolerance && tolerance.to_f.finite? && tolerance.to_f > 0
-        return DEFAULT_TOLERANCE if workspace.nil?
-        src = workspace.respond_to?(:source_snapshot) ? workspace.source_snapshot : nil
-        return DEFAULT_TOLERANCE if src.nil?
-        ec = src.respond_to?(:execution_config) ? src.execution_config : nil
-        return DEFAULT_TOLERANCE if ec.nil?
-        vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
-        return DEFAULT_TOLERANCE unless vals.is_a?(Hash)
-        v = vals[:duplicate] || vals['duplicate']
-        v ? v.to_f : DEFAULT_TOLERANCE
+        DerivedDuplicateTopology.resolve_tolerance(workspace, tolerance)
       end
 
       # ===========================================================
-      # Layer0 normalization
+      # Layer0 normalization (delegated to shared helper).
       # ===========================================================
 
       def normalize_layer(name)
-        return 'Layer0' if name.nil?
-        s = name.to_s
-        return 'Layer0' if s.empty?
-        case s.downcase
-        when 'layer0', 'default', 'untagged'
-          'Layer0'
-        else
-          s
-        end
+        DerivedDuplicateTopology.normalize_layer(name)
       end
 
       # ===========================================================
-      # Numeric helpers
+      # Numeric helpers (delegated to shared helper).
       # ===========================================================
 
       def finite_point?(p)
-        return false unless p.is_a?(Array) && p.length == 3
-        p.all? do |v|
-          v.respond_to?(:finite?) && v.finite?
-        end
+        DerivedDuplicateTopology.finite_point?(p)
       end
 
       def points_within?(p, q, tol)
-        return false unless p.is_a?(Array) && q.is_a?(Array) && p.length == 3 && q.length == 3
-        (0..2).all? { |i| (p[i].to_f - q[i].to_f).abs <= tol.to_f }
+        DerivedDuplicateTopology.points_within?(p, q, tol)
       end
     end
   end

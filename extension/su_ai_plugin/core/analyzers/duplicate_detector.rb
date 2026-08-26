@@ -81,34 +81,123 @@ module SUAnalysis
         # Quantize both endpoints on a `cell` grid (cell = 2*tol),
         # then return a sorted (a, b) key so direction is
         # normalized. Return ALL the canonical keys whose cells
-        # are within 1 cell of the exact quantization so that an
-        # edge whose true endpoints sit on a cell boundary is
-        # also placed in the neighboring cells. This guarantees
-        # that any two within-tolerance endpoints share at least
-        # one bucket.
+        # could legitimately contain an edge that is within
+        # `tol` of this edge (BLOCK-002 V1.5 round 3).
+        #
+        # V1.5 round 3 fix (CodeX Review 033 BLOCK-002 finding):
+        # the previous implementation shifted ALL six quantized
+        # coordinates together by the SAME 3-D vector whenever ANY
+        # axis of either endpoint sat on a cell boundary. This
+        # missed the case where only ONE endpoint of an edge is on
+        # a boundary: a cross-bucket candidate was never compared
+        # because the OTHER endpoint's bucket was shifted AWAY from
+        # its neighbor.
+        #
+        # Correct enumeration: each endpoint's quantized cell can
+        # independently be the exact cell OR +/- 1 in any axis
+        # whose residual is within `tol` of the cell boundary.
+        # The 6 axes (3 per endpoint) are enumerated
+        # INDEPENDENTLY; the total number of bucket keys per edge
+        # is at most 2^6 = 64 in the worst case (all 6 axes on a
+        # boundary), but in practice it is small (typically 1-4).
+        # The direct_match? gate below still enforces the actual
+        # tolerance rule, so the bucket enumeration is candidate
+        # acceleration only.
         def adjacent_canonical_keys(edge, tol, cell)
-          exact = canonical_key_exact(edge, cell)
-          # Boundary scan: if any quantized coordinate sits
-          # within `tol` of the next integer (residual >= 1 - 2*tol/cell
-          # when cell = 2*tol -> residual >= 0.5 of cell), place
-          # the edge in the +/- 1 shifted bucket as well.
           a = edge.start_point
           b = edge.end_point
-          shifts = []
-          [[a, 0], [a, 1], [a, 2], [b, 0], [b, 1], [b, 2]].each do |pt, axis|
+          # Per-endpoint exact cell quantizations.
+          aq = [0, 1, 2].map { |ax| (a[ax] / cell).floor }
+          bq = [0, 1, 2].map { |ax| (b[ax] / cell).floor }
+          # Build a bounded set of bucket keys. The CORRECT
+          # enumeration must guarantee: if A's start and B's
+          # start are within `tol` AND each lands on a cell
+          # boundary, A and B share at least one bucket.
+          #
+          # For each endpoint, for each axis, if the residual is
+          # within `tol` of a cell boundary, that endpoint can
+          # plausibly be in EITHER its exact cell OR the
+          # immediately adjacent cell in that axis. The
+          # exhaustive enumeration over every combination would
+          # produce up to 3^6 = 729 keys per edge (one per
+          # endpoint-axis delta), which is far too slow on
+          # large selections.
+          #
+          # Equivalent and bounded enumeration:
+          #   1. The exact bucket key (no shift).
+          #   2. For each endpoint-axis pair on a boundary, ONE
+          #      additional key where ONLY that endpoint is
+          #      shifted by +/- 1 in that axis (and no other
+          #      endpoint-axis pair is shifted).
+          #
+          # Correctness argument: if A and B share a within-tol
+          # start (or end) point, the shared point's cell is some
+          # cell K. After quantization:
+          #   - Both A.start and B.start quantize to either K or
+          #     K-1 or K+1 (depending on which side of the cell
+          #     boundary they land on).
+          #   - If both quantize to K, they share the exact key.
+          #   - If they quantize to K and K+1 respectively,
+          #     A's shifted-start key (start shifted +1) puts A
+          #     in K+1, matching B's exact key. They share that
+          #     bucket.
+          #   - If they quantize to K and K-1, similar with -1.
+          # So at most one of A's 13 keys matches one of B's
+          # 13 keys, and the pair is found. The direct_match?
+          # gate below still enforces the actual tolerance rule.
+          # NOTE: many bucket keys may collapse to the SAME
+          # canonical key after sorting the (start_cell,
+          # end_cell) pair, so we apply .uniq.
+          keys = []
+          # Bounded key construction: include the exact bucket,
+          # plus at most 6 single-axis shifted variants (3 axes
+          # × 2 endpoints). For a synthetic 5000-edge selection
+          # where every edge has integer-aligned coordinates,
+          # every endpoint-axis is on a boundary, so each edge
+          # gets at most 1 + 6 = 7 keys (and many collapse to
+          # the same sorted pair).
+          keys << canonical_key_from_cells(aq, bq)
+          aq_deltas = boundary_deltas(a, cell, tol)
+          bq_deltas = boundary_deltas(b, cell, tol)
+          aq_deltas.each do |d|
+            keys << canonical_key_from_cells(add_delta(aq, d), bq)
+          end
+          bq_deltas.each do |d|
+            keys << canonical_key_from_cells(aq, add_delta(bq, d))
+          end
+          keys.uniq
+        end
+
+        # Return a list of 3-element Integer delta vectors
+        # describing each +/-1 axis-shift that is justified by
+        # the point being on a cell boundary.
+        def boundary_deltas(pt, cell, tol)
+          deltas = []
+          [0, 1, 2].each do |axis|
             q = (pt[axis] / cell).floor
             r = pt[axis] - q * cell
-            if r <= tol || (cell - r) <= tol
-              shifts << [0, 0, 0]
-              shifts << shift_for(axis, 1)
-              shifts << shift_for(axis, -1)
+            on_lower = r <= tol
+            on_upper = (cell - r) <= tol
+            if on_lower
+              d = [0, 0, 0]
+              d[axis] = -1
+              deltas << d
+            end
+            if on_upper
+              d = [0, 0, 0]
+              d[axis] = +1
+              deltas << d
             end
           end
-          shifts << [0, 0, 0]
-          shifts.uniq.map do |s|
-            shifted = exact.map { |coord| [coord[0] + s[0], coord[1] + s[1], coord[2] + s[2]] }
-            shifted.sort_by(&:to_s)
-          end.uniq
+          deltas
+        end
+
+        def add_delta(cells, delta)
+          [cells[0] + delta[0], cells[1] + delta[1], cells[2] + delta[2]]
+        end
+
+        def canonical_key_from_cells(aq, bq)
+          [aq, bq].sort_by { |x| x.map(&:to_s).join(',') }
         end
 
         def shift_for(axis, delta)

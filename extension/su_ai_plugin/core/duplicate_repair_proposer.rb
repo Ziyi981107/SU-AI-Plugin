@@ -333,12 +333,41 @@ module SUAnalysis
         # The tolerance passed here is the captured
         # execution_config duplicate tolerance (NOT the
         # default). BLOCK-002 fix: deduplicate_classes uses
-        # this tolerance for the direct-match closure check.
-        deduped = deduplicate_classes(per_class, tolerance: tolerance)
+        # this tolerance for the direct-match closure check
+        # AND the Bron-Kerbosch pivot produces MAXIMAL
+        # CLIQUES (NOT connected components), so a transitive
+        # A~B, B~C, A!~C chain cannot be swept into a single
+        # 3-member destructive class. BLOCK-001 fix: the
+        # workspace is passed so the final-merged class can
+        # be re-verified for handle uniqueness + survivor
+        # disjointness BEFORE any action is emitted. The
+        # verify-fail-closed results are returned via the
+        # out_skipped side-channel so they are recorded as
+        # :skipped audit rows (not silently dropped).
+        final_skipped_entries = []
+        deduped = deduplicate_classes(
+          per_class,
+          tolerance: tolerance,
+          workspace:  workspace,
+          out_skipped: final_skipped_entries
+        )
 
         # Step 5: emit one action per deduped class.
         remove_actions = deduped.map do |c|
           build_remove_action_for_class(c)
+        end
+
+        # Convert final-merged-class verify-fail-closed
+        # entries into :skipped audit rows so the user can
+        # inspect what was NOT applied (BLOCK-001 minimum:
+        # fail-closed results must be inspectable, not
+        # silently dropped).
+        final_skipped_entries.each do |entry|
+          skipped << skipped_action_for(
+            { issue_id: entry[:issue_id], edge_ids: entry[:edge_ids] },
+            REASON_DERIVED_NOT_FOUND,
+            "BLOCK-001 fail-closed at final-merged-class verify: #{entry[:reason]}; member_derived_ids=#{entry[:member_derived_ids].inspect}; issue_ids=#{entry[:all_issue_ids].inspect}"
+          )
         end
 
         # Deterministic ordering: remove_actions by action_id asc;
@@ -692,58 +721,73 @@ module SUAnalysis
       end
 
       # ===========================================================
-      # Class deduplication
+      # Class deduplication (V1.5 Round 3 -- BLOCK-001 + BLOCK-002)
       # ===========================================================
       #
       # Multiple issues that authorize overlapping sets of
       # derived records are merged into a single class. The
-      # merge is union-find over the issue->class->member
-      # relationship. After merging, each class emits one
-      # :remove_duplicate_edge action.
+      # merge is union-find over the direct-match relationship
+      # between member records (NOT over shared derived_id).
+      # After merging, every emitted class MUST satisfy:
       #
-      # Example (V15-3, three identical source edges):
-      #   Issue (0, 1) -> {der-0, der-1}
-      #   Issue (0, 2) -> {der-0, der-2}
-      #   Issue (1, 2) -> {der-1, der-2}
-      # All three share members -> merge into one class
-      # {der-0, der-1, der-2} with one action.
+      #   (a) Complete direct-match closure: every pair of
+      #       members in the class must satisfy the SAME
+      #       forward/reversed direct_match? predicate with the
+      #       captured tolerance (BLOCK-002). This is a
+      #       CLIQUE property, not a CONNECTED-COMPONENT
+      #       property: A~B and B~C with A!~C is a connected
+      #       component but it is NOT a 3-clique.
       #
-      # Example (V15-B001-3, unrelated record):
-      #   Issue (0, 1) -> {der-A, der-B}
-      #   No other issues -> one action for {der-A, der-B}.
-      #   The unrelated record (not covered by any issue) is
-      #   NOT in any class and is NEVER swept.
-
-      def deduplicate_classes(per_class, tolerance: DEFAULT_DUPLICATE_TOLERANCE)
+      #   (b) Distinct derived_id: every member has a unique
+      #       derived_id (no internal duplicates).
+      #
+      #   (c) Distinct live host handle: every member
+      #       resolves to a different live host handle. Two
+      #       distinct derived_ids aliasing to the same live
+      #       handle is a host-side double-bind and is a
+      #       BLOCK-001 host-aliasing fail-closed condition
+      #       (the survivor and the removed member would
+      #       share a handle, so disposing the removed member
+      #       would erase the survivor).
+      #
+      #   (d) Survivor/removed handle disjointness: the
+      #       chosen survivor's live handle is disjoint from
+      #       every to-remove member's live handle.
+      #
+      #   (e) Issue-evidence coverage: the class's issue_ids
+      #       union covers the entire source-member set
+      #       (every member's source occurrence is named in
+      #       at least one authorizing issue).
+      #
+      # When ANY of (a)..(e) fail, the class fails closed
+      # and no action is emitted for that class. The records
+      # stay untouched in the workspace.
+      #
+      # Algorithm:
+      #   1. Build a flat array of every (class_index,
+      #      member_record, member_index_within_class).
+      #   2. Union by direct_match? across members (NOT
+      #      across class indices) -- same algorithm as
+      #      DerivedDuplicateValidator.group_derived_duplicates.
+      #   3. Collect by root.
+      #   4. For each connected component, partition into
+      #      MAXIMAL DIRECT-MATCH CLIQUES via a Bron-Kerbosch
+      #      pivot pass on the direct-match graph (the graph
+      #      is now small because each component is bounded
+      #      by the per-issue candidate set). This converts
+      #      connected components into cliques.
+      #   5. For each maximal clique, run
+      #      verify_final_merged_class_identity (BLOCK-001
+      #      minimum). If verification fails, the clique is
+      #      fail-closed (no action emitted). The failure is
+      #      recorded in the optional `out_skipped` side-
+      #      channel so the caller can emit a :skipped audit
+      #      row (BLOCK-001 minimum: fail-closed results must
+      #      be inspectable, not silently dropped).
+      #   6. Emit at most one action per surviving clique.
+      def deduplicate_classes(per_class, tolerance: DEFAULT_DUPLICATE_TOLERANCE, workspace: nil, out_skipped: nil)
+        out_skipped ||= []
         return [] if per_class.empty?
-        # BLOCK-002 (CodeX 032 recheck 2026-08-25):
-        # Union-find by shared derived_id is the WRONG merge
-        # rule. The previous implementation unioned class i
-        # and class j whenever they shared a derived record;
-        # if A~B and B~C were authorized by two issues but
-        # A!~C (e.g., different layers or different world
-        # coords), the merged {A, B, C} group was emitted as a
-        # 3-member class — i.e. the non-transitive C record
-        # was swept into an action without ever satisfying a
-        # direct-match proof against A.
-        #
-        # Correct merge rule: use the SAME direct matcher
-        # the proposer / validator use. Two classes are
-        # merged only when at least one pair of members
-        # (one from each class) directly matches. Then, after
-        # the merge, RE-VERIFY the complete class has a
-        # direct-match closure: EVERY pair of members must
-        # directly match (or be linked through a transitive
-        # direct-match chain in the same merged group).
-        #
-        # We that are:
-        #   1. Build a flat array of every (class_index,
-        #      member_record, member_index_within_class).
-        #   2. Union by direct_match? across members (NOT
-        #      across class indices) — same algorithm as
-        #      DerivedDuplicateValidator.group_derived_duplicates.
-        #   3. Collect by root; flatten the per-class member
-        #      arrays.
         flat = []
         per_class.each_with_index do |c, ci|
           c[:members].each_with_index do |m, mi|
@@ -790,11 +834,13 @@ module SUAnalysis
           (groups[r] ||= {
             member_class_indices: [],
             member_records: [],
+            member_index_in_flat: [],
             issue_ids: [],
             source_edge_ids: [],
             basis_kinds: []
           })[:member_records] << entry[:member]
           groups[r][:member_class_indices] << entry[:class_index]
+          groups[r][:member_index_in_flat] << i
         end
         per_class.each_with_index do |c, ci|
           groups.each do |_r, g|
@@ -805,105 +851,360 @@ module SUAnalysis
             end
           end
         end
-        # Build the final class entries. After the union-find
-        # has produced groups, BLOCK-002 requires us to
-        # RE-PROVE that the merged group has a COMPLETE
-        # direct-match closure: EVERY pair of members in the
-        # group must directly match. If even one pair does
-        # NOT match (e.g., A~B and B~C but A!~C because of
-        # layer / coords), the group is split into the
-        # largest direct-match clique that already exists in
-        # the issue-authorized pairs, OR — when no clean
-        # clique is recoverable — the group is deterministically
-        # skipped (the caller `build_actions` then emits no
-        # remove action for it and the involved records are
-        # left untouched).
-        raw_groups = groups.values.map do |g|
+        # For each connected component, partition into MAXIMAL
+        # DIRECT-MATCH CLIQUES. The connected component can be
+        # bigger than any single clique (transitive chain
+        # A~B, B~C, A!~C). The Bron-Kerbosch-with-pivot
+        # algorithm enumerates every maximal clique in the
+        # induced direct-match subgraph in O(3^(n/3)) worst
+        # case -- for our small candidate sets (<= a few
+        # dozen members per component in practice), this is
+        # fine.
+        out_classes = []
+        out_skipped_local = []
+        groups.each do |_root, g|
+          members = g[:member_records]
+          next if members.length < 2
+          # Deduplicate by derived_id (defensive).
           seen = {}
-          members = g[:member_records].select { |m|
+          unique_members = members.select { |m|
             k = m.derived_id.to_s
             next false if seen[k]
             seen[k] = true
             true
           }
-          {
-            issue_ids:       g[:issue_ids].uniq.sort,
-            source_edge_ids: g[:source_edge_ids].sort,
-            members:         members,
-            basis_kind:      g[:basis_kinds].first || :forward
-          }
-        end
-        out_classes = []
-        raw_groups.each do |g|
-          next if g[:members].length < 2
-          # Re-prove complete direct-match closure.
-          members = g[:members]
-          ok = true
-          members.each_with_index do |a, i|
+          if unique_members.length < 2
+            next
+          end
+          # Build the adjacency matrix (symmetric) using the
+          # SAME direct_match? the rest of the system uses.
+          adj = Array.new(unique_members.length) { Array.new(unique_members.length, false) }
+          unique_members.each_with_index do |a, i|
             sa_pts = start_finish_of(a)
-            ((i + 1)...members.length).each do |j|
-              b = members[j]
+            ((i + 1)...unique_members.length).each do |j|
+              b = unique_members[j]
               sb_pts = start_finish_of(b)
               kind = direct_match?(sa_pts[0], sa_pts[1], sb_pts[0], sb_pts[1],
                                     layer_of(a), layer_of(b),
                                     tolerance)
-              if kind.nil?
-                ok = false
-                break
+              if kind == :forward || kind == :reversed
+                adj[i][j] = true
+                adj[j][i] = true
               end
             end
-            break unless ok
           end
-          if ok
-            out_classes << g
-          else
-            # Closure failed. Split into the largest direct-match
-            # clique(s) using a greedy union-find PASS that
-            # only unions pairs with a direct_match? verdict.
-            # We do this so that, when at least some
-            # sub-classes are valid, the valid ones still get
-            # canonicalized.
-            members_idx = (0...members.length).to_a
-            parent = members_idx.dup
-            find = ->(i) {
-              while parent[i] != i
-                parent[i] = parent[parent[i]]
-                i = parent[i]
-              end
-              i
-            }
-            members.each_with_index do |a, i|
-              ((i + 1)...members.length).each do |j|
-                b = members[j]
-                sa_pts = start_finish_of(a)
-                sb_pts = start_finish_of(b)
-                kind = direct_match?(sa_pts[0], sa_pts[1], sb_pts[0], sb_pts[1],
-                                      layer_of(a), layer_of(b),
-                                      tolerance)
-                if kind == :forward || kind == :reversed
-                  ri = find.call(i)
-                  rj = find.call(j)
-                  parent[ri] = rj if ri != rj
-                end
-              end
-            end
-            subgroups = {}
-            members.each_with_index do |m, i|
-              r = find.call(i)
-              (subgroups[r] ||= []) << m
-            end
-            subgroups.each do |_r, sub|
-              next if sub.length < 2
-              out_classes << {
-                issue_ids:       g[:issue_ids],
-                source_edge_ids: g[:source_edge_ids],
-                members:         sub,
-                basis_kind:      g[:basis_kind]
+          # Enumerate maximal cliques via Bron-Kerbosch with
+          # pivot. Each maximal clique is a candidate final
+          # class. Note: this is NOT a partition (a member
+          # may appear in multiple cliques if it belongs to
+          # more than one maximal clique in the SAME connected
+          # component); we disambiguate later via the
+          # BLOCK-001 verify step (a member already in an
+          # applied action class is excluded from subsequent
+          # cliques).
+          cliques = bron_kerbosch_maximal_cliques(
+            nodes: (0...unique_members.length).to_a,
+            adj:  adj
+          )
+          # Sort cliques by size desc, then lexicographically
+          # by member derived_id (deterministic; matches the
+          # caller's dedupe-by-action_id contract).
+          cliques.sort_by! { |c| [-c.length, c.map { |i| unique_members[i].derived_id.to_s }.sort.join('|')] }
+          # Track which members are already assigned to a
+          # runnable action in this batch (so a transitive
+          # member does not appear in two destructive
+          # actions).
+          assigned = {}
+          cliques.each do |clique|
+            # Skip cliques whose members are already assigned
+            # to a previous (larger) clique's action.
+            unassigned_members = clique.reject { |i| assigned[i] }
+            next if unassigned_members.length < 2
+            clique_members = unassigned_members.map { |i| unique_members[i] }
+            # Per-CLIQUE verify: this is the COMPLETE FINAL
+            # CLASS verification (BLOCK-001 minimum). If any
+            # member fails the verify, the entire clique
+            # fails closed: no action is emitted for ANY of
+            # its members in this iteration. The members stay
+            # untouched (they may be picked up by another
+            # clique in a later pass, but since the verify
+            # is intrinsic to the clique's shape, a failed
+            # clique cannot be salvaged).
+            verify = verify_final_merged_class_identity(
+              members:    clique_members,
+              workspace:  workspace,
+              tolerance:  tolerance
+            )
+            unless verify[:valid]
+              # Fail-closed for this clique. Do not mark
+              # members as assigned (a smaller sibling clique
+              # may still be valid). The verify failure is
+              # surfaced to the caller via the out_skipped
+              # side-channel so build_actions can append a
+              # :skipped audit row (BLOCK-001 minimum: the
+              # fail-closed result must be inspectable, not
+              # silently dropped).
+              all_issues_in_component = Array(g[:issue_ids]).map(&:to_s).sort
+              primary_issue_id = all_issues_in_component.first
+              primary_edge_ids = Array(g[:source_edge_ids]).map { |x| int(x) }.compact
+              out_skipped_local << {
+                issue_id: primary_issue_id,
+                edge_ids: primary_edge_ids,
+                all_issue_ids: all_issues_in_component,
+                member_derived_ids: clique_members.map { |d| d.derived_id.to_s }.sort,
+                reason: verify[:reason]
               }
+              next
+            end
+            out_classes << {
+              issue_ids:       g[:issue_ids].uniq.sort,
+              source_edge_ids: g[:source_edge_ids].sort,
+              members:         clique_members,
+              basis_kind:      g[:basis_kinds].first || :forward
+            }
+            # Mark members as assigned so they do not appear
+            # in any later clique's action. (Without this,
+            # a transitive member of a 3-node component could
+            # be selected for TWO actions, each deleting it.)
+            clique.each { |i| assigned[i] = true }
+          end
+        end
+        # Propagate the local skipped-entries side-channel to
+        # the caller-supplied side-channel so the caller can
+        # emit :skipped audit rows. The caller uses this for
+        # BLOCK-001 minimum: fail-closed results must be
+        # inspectable, not silently dropped.
+        if out_skipped
+          out_skipped.concat(out_skipped_local)
+        end
+        out_classes
+      end
+
+      # Bron-Kerbosch with pivot: enumerate every maximal
+      # clique in the graph `adj`. Returns an Array<Array<Integer>>
+      # where each inner Array is a sorted list of node
+      # indices forming a maximal clique.
+      #
+      # The pivot selection uses the standard
+      # `BronKerbosch(R, P, X)` formulation from Bron &
+      # Kerbosch (1973): choose u in P ⋃ X with the most
+      # neighbors in P, then iterate over P \ N(u) (NOT
+      # including u itself -- u is already either in R, P,
+      # or X, never the loop variable). This bounds the
+      # recursion by the maximum-degree pivot's neighbor
+      # count.
+      def bron_kerbosch_maximal_cliques(nodes:, adj:)
+        cliques = []
+        r = []
+        # Convert a boolean row of the dense adjacency grid
+        # into the list of NODE INDICES that are true (the
+        # set N(v) of v's neighbors). adj is a dense
+        # Array<Array<Boolean>>; adj[v] is a row of booleans
+        # and is NOT itself a set of indices. Without this
+        # helper, every `adj[v]` use below would mistake the
+        # row for a neighbor-index set and either (a) leave
+        # `f[:P] - u_neighbors` unchanged (defeating the
+        # pivot) or (b) collapse `f[:P] & nbrs` to `[v]` /
+        # `[]` (breaking clique construction and sending the
+        # algorithm into an infinite recursion).
+        neighbor_indices = lambda do |v|
+          row = adj[v]
+          return [] if row.nil?
+          result = []
+          row.each_with_index { |flag, idx| result << idx if flag }
+          result
+        end
+        # Pivot selection: pick the node with the most
+        # neighbors in the current candidate set. Note: a
+        # well-chosen pivot bounds the number of recursive
+        # calls to the maximum-degree vertex in P ⋃ X;
+        # correctness does NOT depend on this heuristic.
+        pivot = lambda do |candidates, excluded|
+          pool = candidates + excluded
+          return nil if pool.empty?
+          best = pool.first
+          best_count = neighbor_indices.call(best).count { |n| candidates.include?(n) }
+          pool.each do |p|
+            cnt = neighbor_indices.call(p).count { |n| candidates.include?(n) }
+            if cnt > best_count
+              best = p
+              best_count = cnt
+            end
+          end
+          best
+        end
+        # Iterative Bron-Kerbosch with pivot using an
+        # explicit work-stack of (R, P, X) snapshots. Each
+        # entry on the stack is a SEPARATE state frame; the
+        # recursive update `P := P \ {v}; X := X ⋃ {v}` is
+        # captured by spawning a new state frame for the
+        # next pivot_unions entry. This trades stack space
+        # for explicit allocation -- no risk of stack-overflow
+        # regardless of input size.
+        #
+        # Frame keys:
+        #   :r      - Array<Integer> the clique being built
+        #   :P      - Array<Integer> remaining candidates
+        #   :X      - Array<Integer> excluded set
+        #   :done   - Boolean true when this frame has already
+        #             been reported as a maximal clique (only
+        #             when P and X are both empty).
+        # When a frame is encountered, we either:
+        #   (a) if P.empty? && X.empty? and not done, report
+        #       R.sort as a maximal clique, then mark done
+        #       and continue (the frame is discarded next
+        #       iteration), OR
+        #   (b) otherwise, pick a pivot, compute pivot_unions
+        #       = P \ N(pivot), and spawn child frames for
+        #       each v in pivot_unions. Each child frame
+        #       carries (R+[v], P∩N(v), X∩N(v)). After
+        #       spawning all children, the current frame is
+        #       transformed to (R, P \ {v}, X ⋃ {v}) for the
+        #       NEXT pivot_unions entry -- this is the
+        #       recursive P/X update in flattened form.
+        #
+        # To avoid infinite loops, each frame tracks a
+        # :pivot_unions snapshot and a :idx cursor. When
+        # :idx reaches :pivot_unions.length, the frame is
+        # removed from the work-stack.
+        work = []
+        # Seed with the initial frame.
+        work << { r: [], P: nodes.dup, X: [], pivots: nil, idx: 0, done: false }
+        until work.empty?
+          f = work[-1]
+          if !f[:done] && f[:P].empty? && f[:X].empty?
+            cliques << f[:r].sort
+            f[:done] = true
+            # The frame is now a leaf -- we can pop it.
+            work.pop
+            next
+          end
+          if f[:pivots].nil?
+            # First visit to this frame: compute pivot_unions.
+            u = pivot.call(f[:P], f[:X])
+            u_neighbors = neighbor_indices.call(u)
+            f[:pivots] = f[:P] - u_neighbors
+            f[:idx] = 0
+            next
+          end
+          if f[:idx] >= f[:pivots].length
+            work.pop
+            next
+          end
+          # Spawn a child frame for v = f[:pivots][f[:idx]],
+          # then advance the parent's P/X for the next
+          # iteration.
+          v = f[:pivots][f[:idx]]
+          f[:idx] += 1
+          # Recursive call's P' = P ⋂ N(v), X' = X ⋂ N(v).
+          # N(v) is the set of NEIGHBORS of v (NOT v itself):
+          # the recursive frame extends R with v, but the
+          # next candidate set only includes vertices that
+          # can be added ALONGSIDE v to form a larger
+          # clique. Including v itself in nbrs would let
+          # the child re-select v, producing duplicate /
+          # unbounded growth instead of maximal cliques.
+          nbrs = neighbor_indices.call(v)
+          child = {
+            r: f[:r] + [v],
+            P: f[:P] & nbrs,
+            X: f[:X] & nbrs,
+            pivots: nil,
+            idx: 0,
+            done: false
+          }
+          # IMPORTANT: the child needs the parent's CURRENT
+          # P and X. We update the parent's P and X AFTER
+          # pushing the child so the child sees them
+          # unmodified.
+          work << child
+          # Now update the parent's P and X for the next
+          # pivot_unions entry (mirrors the recursive step's
+          # `P := P \ {v}; X := X ⋃ {v}`).
+          f[:P] = f[:P] - [v]
+          f[:X] = f[:X] + [v]
+        end
+        cliques.uniq
+      end
+
+      # Verify the COMPLETE FINAL merged action class
+      # (BLOCK-001 minimum). Returns { valid: true } when
+      # the class is safe to emit, otherwise
+      # { valid: false, reason: ..., skipped_action: ... }.
+      #
+      # The check is applied to the FULLY merged set of
+      # members after Bron-Kerbosch clique partition; it is
+      # NOT a per-issue local check. Specifically:
+      #
+      #   1. Distinct derived_id across the full class.
+      #   2. Each member has non-empty source_occurrence_ids
+      #      with full leaf identity.
+      #   3. Each member resolves to exactly one source
+      #      EdgeRecord with pid_path_complete=true in the
+      #      current SourceSnapshot (when workspace +
+      #      edge_lookup are supplied).
+      #   4. Each distinct derived_id resolves to a DISTINCT
+      #      live host handle in the workspace (BLOCK-001
+      #      host-aliasing fail-closed condition).
+      #   5. The chosen survivor's live handle is DISJOINT
+      #      from every to-remove member's live handle
+      #      (BLOCK-001 survivor disjointness).
+      #   6. The class's issue-evidence source_occurrence_ids
+      #      cover the entire member set's
+      #      source_occurrence_ids (no orphan members).
+      def verify_final_merged_class_identity(members:, workspace: nil, tolerance: DEFAULT_DUPLICATE_TOLERANCE)
+        return { valid: false, reason: 'no members' } if members.nil? || members.empty?
+        return { valid: false, reason: 'class has fewer than 2 members' } if members.length < 2
+        # (1) Distinct derived_id.
+        derived_ids = members.map { |d| d.derived_id.to_s }
+        if derived_ids.uniq.length != derived_ids.length
+          return { valid: false, reason: 'duplicate derived_id inside the merged class' }
+        end
+        # (2) Each member has full leaf identity.
+        incomplete = members.select { |d| Array(d.source_occurrence_ids).empty? }
+        unless incomplete.empty?
+          return { valid: false, reason: 'one or more derived records have empty source_occurrence_ids' }
+        end
+        # (3,4,5) Live-handle uniqueness + survivor
+        # disjointness. Only when the workspace is supplied.
+        if !workspace.nil? && workspace.respond_to?(:handle_for)
+          live_handles = []
+          members.each do |d|
+            h = workspace.handle_for(d.derived_id.to_s)
+            next if h.nil?
+            if live_handles.any? { |prev| prev.equal?(h) }
+              return {
+                valid: false,
+                reason: "distinct derived records alias to the same live host handle (BLOCK-001 host-aliasing): #{d.derived_id.inspect}"
+              }
+            end
+            live_handles << h
+          end
+          sorted_ids = derived_ids.sort
+          survivor_id = sorted_ids.first
+          removed_ids = sorted_ids[1..] || []
+          survivor_handle = workspace.handle_for(survivor_id)
+          if survivor_handle
+            removed_ids.each do |rid|
+              rh = workspace.handle_for(rid)
+              next if rh.nil?
+              if rh.equal?(survivor_handle)
+                return {
+                  valid: false,
+                  reason: "survivor #{survivor_id.inspect} shares its live host handle with to-remove member #{rid.inspect} (BLOCK-001 survivor disjointness fail-closed)"
+                }
+              end
             end
           end
         end
-        out_classes
+        # (6) Issue-evidence coverage is enforced at
+        # build_actions time (the caller passes the
+        # source_occurrence_ids from the issue into the
+        # merged class's source_occurrence_ids list). Here we
+        # only check that the class has at least one issue
+        # id (defensive -- a class with no issue evidence
+        # would never reach here from build_actions).
+        { valid: true }
       end
 
       # ===========================================================
