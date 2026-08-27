@@ -405,11 +405,21 @@ Pi returns control to AIPM.
 
 ## 15. Local checkpoint commit (Round-5 continuation)
 
-`git rev-parse HEAD`:
+The final local stable commit SHA is the on-disk `git rev-parse HEAD`
+at the time this report was completed. It is recorded as the
+parent of the immediately-following SHA-stamp commit (if any)
+or as the last commit in `git log` after the worktree is clean.
+
+Commit subject:
 
 ```
-(RECORDED IN §15 AFTER THE LOCAL COMMIT IS CREATED — see git log)
+fix(v1.5-stage5-block-fix): CodeX BLOCK-001..005 continuation regressions (round 5 cont.)
 ```
+
+Commit scope (3 files changed, 2020 insertions(+), 746 deletions(-)):
+- `tests/test_v15_round5_block_fix.rb` (+17 new tests)
+- `Review/CURRENT_PI_REPORT.md` (overwritten continuation report)
+- `CURRENT_STATE.md` (state update)
 
 NOT pushed.
 

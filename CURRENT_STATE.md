@@ -88,12 +88,14 @@ Round-4 documentation / report evidence:
 - `21df8d7` - stamp final Round-4 implementation HEAD SHA into the Pi packet + CURRENT_STATE.
 
 Round-5 implementation HEAD:
-(see §15 of `Review/CURRENT_PI_REPORT.md` for the recorded SHA;
-final stable commit recorded in the local git log; NOT pushed)
+`f6dda52b6bc42ffdaa0a6e46a96206daa543dc47` (Round-5 corrective
+fix checkpoint, preserved as prior HEAD; NOT pushed)
 
 Round-5 continuation implementation HEAD:
-(see §15 of `Review/CURRENT_PI_REPORT.md` for the recorded SHA;
-final stable commit recorded in the local git log; NOT pushed).
+The final local stable commit SHA is the on-disk `git rev-parse HEAD`
+at the time this state file was completed (verify with
+`git rev-parse HEAD`; see `Review/CURRENT_PI_REPORT.md` §15;
+NOT pushed).
 The continuation only ADDS test code; production code is unchanged,
 so the RBZ hash is identical to the Round-5 implementation HEAD.
 
