@@ -2,237 +2,46 @@ AIPM OWNER VERIFICATION — V1.5 DUPLICATE REPAIR
 Project: SU-AI-Plugin
 Date: 2026-08-27
 Authority: ChatGPT / AIPM
-Gate: V15-STAGE-BLOCK-005 / Owner real-host verification
-Status: PUBLISHED — DO NOT EXECUTE UNTIL THE ROUND-4 CODEX NARROW RECHECK RETURNS PASS
+Gate: V15-STAGE-BLOCK-005
+Status: INVALIDATED — DO NOT EXECUTE
 
-==================================================
-0. PURPOSE / AUTHORITY
-==================================================
-This is the single authoritative Owner verification path for the V1.5 Round-4 duplicate-repair candidate.
+The Round-4 Codex narrow xHigh recheck returned BLOCK.
 
-It supersedes older V1.5 Owner checklists as executable authority. Historical Owner verification files remain evidence only.
+The prior checklist is not safe executable authority because:
+1. it used `WorkingModeRunner.reset_for_tests` in an optional live-host path;
+2. discard -> raw `Sketchup.undo` had no supported runner/host reconciliation and could restore host geometry while logical workspace/handles remained stale.
 
-Publishing this checklist does NOT mean:
-- Codex BLOCK-001..005 are closed;
-- the RBZ is approved for installation;
-- Owner verification has passed;
-- V1.5 is complete;
-- V1.6 may start.
+Therefore:
+- do not install/run the Round-4 candidate for Owner verification;
+- do not execute the old Ruby Console commands;
+- do not mark Owner PASS.
 
-Execution prerequisite:
-- AIPM primary review: PASS FOR NARROW RECHECK;
-- Codex Round-4 narrow xHigh BLOCK recheck: PASS.
+Open:
+- BLOCK-001
+- BLOCK-002A
+- BLOCK-002B
+- BLOCK-003
+- BLOCK-004
+- BLOCK-005
 
-Until Codex PASS, STOP here and do not install/run the candidate RBZ.
+V1.5: NOT CLOSED
+V1.6: NOT STARTED
+Owner Verification: BLOCKED
 
-==================================================
-1. CANDIDATE IDENTITY — VERIFY BEFORE INSTALL
-==================================================
-Round-4 implementation checkpoint:
-  c5e5ec7db88cae8262e13c1e6629f12b07f4241e
+AIPM has frozen a Round-5 corrective design. Pi implements/tests and STOPs. After AIPM reviews the Round-5 packet, AIPM may authorize a new narrow Codex xHigh recheck. Only after Codex PASS will AIPM republish this canonical Owner verification file with a supported production path.
 
-Governance commit after Round-4 implementation:
-  ea6d5f0a883dfdbf2ac618d0b1de3c7c2638e0cb
-  chore(governance): adopt current dispatch/report workflow
+Future republished Owner path must:
+- use normal UI/dialog primarily;
+- contain no test reset/monkeypatch/private-state mutation;
+- use only supported production observation APIs if needed;
+- verify source CAD immutability;
+- verify exact/reversed/complete duplicate repair;
+- verify non-transitive whole-component skip;
+- verify truthful audit and no false READY;
+- verify discard;
+- verify Undo/external host change cannot leave stale logical state usable;
+- verify reconciliation/invalidation + rebuild;
+- record real SketchUp host/version evidence;
+- not claim SU2017 support without real SU2017 evidence.
 
-Expected branch:
-  v1.5-stage-round3-fix
-
-Expected RBZ:
-  D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
-
-Expected RBZ size:
-  599,997 bytes
-
-Expected RBZ entries:
-  59
-
-Expected SHA-256:
-  3D255BD5F6304440AD0C5030C8B52EEFA722CC0A27795B7F18F261DDAB0DE1BA
-
-Owner PASS requires the installed/tested artifact to match this candidate identity, or a later AIPM-approved artifact with explicitly updated facts.
-
-[ ] Candidate identity matches the approved artifact.
-
-==================================================
-2. TEST MODEL / SAFETY PREPARATION
-==================================================
-Use a disposable test SKP or a safe copy. Do not use the only copy of production work.
-
-Prepare representative geometry that includes, where practical:
-- a simple exact duplicate edge pair;
-- a reversed duplicate pair;
-- a 3-member complete duplicate component;
-- an ambiguous/non-transitive component where A~B and B~C but A!~C;
-- ordinary non-duplicate geometry near the duplicate geometry.
-
-Before repair:
-- save the SKP;
-- visually identify the original/source CAD;
-- record enough evidence (screenshots/counts) to verify that source geometry is preserved.
-
-[ ] Test is being run on a disposable/safe file.
-[ ] Source/original CAD is identifiable before repair.
-
-==================================================
-3. G1 — PREPARE + DUPLICATE REPAIR + WORKSPACE TRUTH
-==================================================
-Primary path: use the plugin's normal dialog/Working Mode flow.
-
-Observe the Working Mode fields that are available in the current UI, including:
-- Source snapshot ID / fingerprint digest;
-- execution-config digest;
-- Workspace ID;
-- state;
-- entity count;
-- duplicate_pairs_before / duplicate_pairs_after;
-- actions_applied / actions_skipped / actions_failed;
-- per-action audit details when shown.
-
-Expected behavior:
-1. Exact/reversed high-confidence duplicates on DERIVED geometry may be repaired.
-2. A complete 3-member duplicate component is handled as one deterministic repair action with one survivor.
-3. A non-transitive/incomplete component is NOT partially repaired; it remains geometry-unchanged and is surfaced as skipped/ambiguous evidence.
-4. Skipped evidence remains visible; it is not silently dropped.
-5. A workspace may be READY while truthful skipped ambiguous components remain.
-6. READY must not be shown if an APPLIED component's promised post-state failed.
-7. Original/source CAD must remain unchanged.
-
-[ ] High-confidence exact/reversed duplicate repair behaves as expected.
-[ ] Complete 3-member component collapses deterministically to one survivor.
-[ ] Non-transitive component is skipped whole; no sub-clique destructive repair occurs.
-[ ] Applied/skipped/failed evidence is truthful and inspectable.
-[ ] duplicate_pairs_before / after are plausible for the observed direct duplicate pairs.
-[ ] Source/original CAD remains unchanged.
-[ ] Workspace state is truthful (no false READY).
-
-Optional explicit observation path, only if the normal UI does not expose enough evidence:
-
-require 'su_ai_plugin/main'
-SUAnalysis::Core::WorkingModeRunner.reset_for_tests
-ar = SUAnalysis::Extension::AnalyzersRunner.run(
-  Sketchup.active_model.selection, model: Sketchup.active_model
-)
-SUAnalysis::Core::WorkingModeRunner.prepare(
-  source:  ar.respond_to?(:source_snapshot) ? ar.source_snapshot : nil,
-  adapter: SUAnalysis::Extension::SUDerivedWorkspaceAdapter.new,
-  model:   Sketchup.active_model
-)
-SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(
-  registry: ar.respond_to?(:registry) ? ar.registry : nil
-)
-puts SUAnalysis::Core::WorkingModeRunner.snapshot
-
-If the Ruby Console path errors, capture the exact error. Do not improvise a replacement API path.
-
-==================================================
-4. G2 — DIALOG-DRIVEN APPLY / AUDIT UX
-==================================================
-Use the normal plugin dialog to exercise duplicate repair.
-
-Verify that the user-facing result makes material repair truth inspectable:
-- before/after duplicate-pair counts where populated;
-- actions applied/skipped/failed;
-- survivor/removed evidence where available;
-- skipped ambiguous components remain visible;
-- failures are not presented as successful/ready repairs.
-
-[ ] Normal dialog path can execute/observe the V1.5 duplicate-repair workflow.
-[ ] User-visible summary agrees with what happened in the model.
-[ ] Ambiguity/failure is visible rather than silently hidden.
-
-==================================================
-5. G3 — DISCARD / UNDO / RECOVERY
-==================================================
-After a successful prepared/repair flow, exercise discard through the supported product path where available.
-
-Optional explicit observation path:
-
-SUAnalysis::Core::WorkingModeRunner.discard
-puts SUAnalysis::Core::WorkingModeRunner.snapshot
-# expected: state == "discarded"
-Sketchup.undo
-
-Verify:
-- discard does not corrupt source CAD;
-- the workspace transitions truthfully to discarded;
-- Undo does not produce an obviously inconsistent source/derived state;
-- rebuilding/starting the workflow again remains possible.
-
-[ ] Discard succeeds without source corruption.
-[ ] State reports discarded truthfully.
-[ ] Undo/recovery leaves the model usable and coherent.
-[ ] Re-run/rebuild is possible after discard/recovery.
-
-==================================================
-6. SOURCE-INTEGRITY GATE — CRITICAL
-==================================================
-Compare source/original CAD before and after the V1.5 workflow.
-
-Owner must fail this Gate immediately if the normal workflow erases, moves, flattens, merges, re-layers, or otherwise destructively mutates source CAD.
-
-[ ] No source geometry was erased.
-[ ] No source geometry was moved or flattened.
-[ ] No source layer/tag semantics were destructively changed by normal repair.
-[ ] Repair effects are confined to the derived/working representation.
-
-ANY source mutation through the normal workflow = OWNER FAIL / RELEASE BLOCK.
-
-==================================================
-7. HOST / COMPATIBILITY EVIDENCE
-==================================================
-Record the exact SketchUp version used:
-  ______________________________
-
-Record OS / relevant environment:
-  ______________________________
-
-Result on current real production host:
-  PASS / FAIL
-
-Formal SU2017 support must not be claimed from automated Ruby 2.7/FakeSU evidence alone.
-If SU2017+ compatibility is to be formally claimed, run a real SU2017 verification and record it separately here:
-
-SU2017 real-host verification:
-  NOT RUN / PASS / FAIL
-
-Notes / exact errors:
-  ______________________________
-  ______________________________
-
-==================================================
-8. OWNER EVIDENCE TO RETURN TO AIPM
-==================================================
-Return:
-- SketchUp version(s) used;
-- whether candidate hash/identity matched;
-- PASS/FAIL for G1, G2, G3 and Source Integrity;
-- screenshots of the Working Mode summary before/after repair where useful;
-- screenshot/evidence for the non-transitive skipped case;
-- screenshot/evidence showing source CAD preservation;
-- exact error text for any failure;
-- any surprising user-visible behavior.
-
-Do not reinterpret a failure as acceptable. Record what actually happened.
-
-==================================================
-9. PASS / FAIL RULE
-==================================================
-OWNER PASS requires ALL of the following:
-- Codex Round-4 narrow recheck = PASS;
-- approved candidate identity verified;
-- normal real-SketchUp V1.5 duplicate-repair flow works;
-- source CAD remains unchanged;
-- high-confidence duplicates repair only on derived geometry;
-- non-transitive ambiguity is skipped whole, not partially repaired;
-- audit/summary reflects applied/skipped/failed truthfully;
-- no false READY state observed;
-- discard/recovery path leaves a coherent usable state;
-- no material host/runtime error invalidates the candidate.
-
-OWNER FAIL if any critical item above fails.
-
-Owner PASS still does NOT by itself start V1.6.
-AIPM must review the returned Owner evidence, formally close V1.5, then design/freeze the V1.6 Stage Technical Blueprint before Pi receives a new CURRENT_PI_DISPATCH.
-
-END OF AIPM OWNER VERIFICATION
+END — INVALIDATED / DO NOT EXECUTE
