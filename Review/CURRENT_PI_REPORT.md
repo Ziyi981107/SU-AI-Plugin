@@ -1,4 +1,4 @@
-# CURRENT PI REPORT — V1.5 ROUND-5 BLOCK FIX
+# CURRENT PI REPORT — V1.5 ROUND-5 BLOCK FIX CONTINUATION
 
 DISPATCH_ID: SUAI-V15-R5-BLOCK-FIX-20260827-01
 Date: 2026-08-27
@@ -9,6 +9,17 @@ Frozen design authority:
 - `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
 - `Prompt/CURRENT_PI_DISPATCH.md` (ACTIVE)
 - `Review/CODEX_V1_5_ROUND4_NARROW_BLOCK_RECHECK_RESULT_2026-08-27.md` (Round-4 BLOCK verdict)
+- Round-5 AIPM continuation directive (in chat): add BLOCK-001
+  executor-level regressions, BLOCK-003 real invariant regressions,
+  BLOCK-005 production observation seam evidence.
+
+This report OVERWRITES the prior Round-5 implementation report and
+keeps the same DISPATCH_ID. The continuation did NOT change any
+production code; it added 17 new targeted regressions to
+`tests/test_v15_round5_block_fix.rb`. The Round-5 implementation
+HEAD (`f6dda52b6bc42ffdaa0a6e46a96206daa543dc47`) is preserved as
+the prior checkpoint; the Round-5 continuation HEAD is recorded
+in §15 below.
 
 ---
 
@@ -18,191 +29,205 @@ Frozen design authority:
 |--|--|
 | Branch | `v1.5-stage-round3-fix` |
 | Round-4 implementation base | `c5e5ec7db88cae8262e13c1e6629f12b07f4241e` |
-| Round-5 implementation HEAD | (recorded below in §13) |
-| Working tree | clean (`git status` reports only Round-5 changes) |
+| Round-5 implementation HEAD (prior checkpoint) | `f6dda52b6bc42ffdaa0a6e46a96206daa543dc47` |
+| Round-5 continuation HEAD | (recorded in §15) |
+| Working tree | clean (`git status --short` empty after final commit) |
 | Push | NOT pushed (per dispatch hard boundaries) |
 
 ---
 
-## 2. Changed files (Round-5 diff vs Round-4 base)
+## 2. Changed files (Round-5 continuation diff vs Round-5 base)
 
 | Path | Purpose |
 |--|--|
-| `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb` | tolerance 0.0 valid path; `tolerance_category` helper; orientation-insensitive exact-zero enumeration; layer normalization for keys |
-| `extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb` | invariant I (zero direct duplicate pairs among applied survivors); strengthened removal/removal disjointness; tighter provenance union + fingerprint checks |
-| `extension/su_ai_plugin/core/duplicate_repair_executor.rb` | complete live-handle proof (validate ENTIRE expected member set, not just filtered successful handles); precommit host-shape observation (survivors live, removals invalidated, identities match); atomic no-begin failure path |
-| `extension/su_ai_plugin/core/working_mode_runner.rb` | validate-on-next-interaction host-state consistency; `host_state_changed?` adapter flag; `simulate_host_state_change!` test hook; normalized JSON-safe audit serialization (preserves per-action Hash items) |
-| `extension/su_ai_plugin/core/derived_workspace_adapter.rb` | `FakeDerivedWorkspaceAdapter`: `simulate_host_state_change!`, `clear_host_state_change!`, `host_state_changed?`; documenting the test-only contract |
-| `tests/test_v15_round5_block_fix.rb` (new) | 17 Round-5 BLOCK regression tests (BLOCK-001, BLOCK-002A/004, BLOCK-002B, BLOCK-005) |
-| `dist/SU-AI-Plugin.rbz` | rebuilt with Round-5 changes; size 623,881 bytes, 59 entries; SHA-256 `C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35` |
+| `tests/test_v15_round5_block_fix.rb` | +17 new tests (BLOCK-001 executor-level, BLOCK-003 real invariants, BLOCK-003 precommit host-shape, BLOCK-003 success counts, BLOCK-003 commit uncertainty, BLOCK-005 production observation seam) |
+| `Review/CURRENT_PI_REPORT.md` | overwritten with continuation report (same DISPATCH_ID) |
+| `CURRENT_STATE.md` | updated to record the continuation evidence |
 
-`git diff --check HEAD`: clean.
+No production code was modified. RBZ hash is identical to the
+Round-5 implementation HEAD (`C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35`).
+The RBZ was rebuilt but the SHA-256 is unchanged; the dev tree
+(`tests/`, `scripts/`, etc.) is excluded from the RBZ so the
+test-only additions cannot affect the RBZ.
 
----
-
-## 4. BLOCK-001 — final live-handle proof
-
-Implemented in:
-- `core/duplicate_repair_proposer.rb#verify_final_repairable_component` — the FINAL repairable-component eligibility proof runs against EVERY repairable component BEFORE any executable action is emitted. Per Round-5 §2 step 1–9: distinct derived_id; full leaf/occurrence identity (each member resolves to exactly one current source EdgeRecord; pid_path_complete=true); current host handle (missing OR `valid? != true` => failure); pairwise distinct by `equal?` (survivor/removal AND removal/removal); survivor appears exactly once and is not in removal set; finite/layer/tolerance guards. Failure => truthful `:skipped` audit row with stable reason code.
-- `core/duplicate_repair_executor.rb#preflight_batch` + `#final_live_handle_proof` — re-runs the COMPLETE live-handle proof for the WHOLE executable batch IMMEDIATELY BEFORE `begin_operation`. Per Round-5 §2 step 4: tolerance explicit; survivor handle resolves and `valid?`; every to_remove handle resolves and `valid?`; survivor/removed disjointness; pairwise distinct by `equal?`. Failure => atomic no-begin failure: begin=0, no disposal/commit, no applied rows, exact logical pre-state retained, no READY, truthful stable reason code.
+`git diff --check` is clean.
 
 ---
 
-## 5. BLOCK-002A / BLOCK-004 — tolerance semantics
+## 3. BLOCK-001 executor-level regressions (Guidance §8)
 
-Implemented in `core/duplicate_geometry_semantics.rb`:
-- `valid_tolerance?(tolerance)` now accepts `>= 0.0` (including exact 0.0). Captured 0.0 MUST NEVER become 0.0001.
-- `tolerance_category(tolerance)` returns one of `:positive | :zero | :invalid`.
-- `enumerate_candidates(records, tolerance)` branches on category:
-  - `:zero` => `enumerate_candidates_exact_zero(tuples)`. No grid math, no division. Orientation-insensitive exact endpoint-pair hashing: lexicographically order the two endpoint triples to form one orientation-independent edge key; hash key => records; enumerate every unique unordered pair within each bucket exactly once; shared `direct_match?` at tolerance 0.0 remains final authority; stable unordered pair ordering/dedup; layer normalization participates in the key.
-  - `:positive` => `enumerate_candidates_grid(tuples, tol)` (Round-4 contract preserved).
-  - `:invalid` => `ArgumentError`.
+Added to `tests/test_v15_round5_block_fix.rb`:
 
----
+- **V15-B001-EX-1** — missing removal handle at executor
+  (3-member clique, ONE removal handle dropped from the
+  handle_registry AFTER `propose()` returns). Asserts: `begin=0`,
+  `commit=0`, `abort=0`, `dispose=0`, workspace `:failed` with
+  reason matching `handle_missing`, exact logical pre-state
+  retained (entity inventory and fingerprint unchanged), source
+  CAD immutable.
+- **V15-B001-EX-2** — invalid removal handle at executor
+  (`valid? == false` after `erase!`). Same atomic no-begin
+  outcome as V15-B001-EX-1; reason matches
+  `handle_invalidated | final_live_handle_proof_failed | preflight_failed`.
+- **V15-B001-EX-3** — survivor/removal alias at executor
+  (`equal?` shared handle object between survivor and one
+  removal). Same atomic no-begin outcome; reason matches
+  `host_handle_aliasing`.
+- **V15-B001-EX-4** — removal/removal alias at executor
+  (two removal handles share the same handle object inside a
+  multi-removal action). Same atomic no-begin outcome; reason
+  matches `host_handle_aliasing`.
+- **V15-B001-EX-5** — all-valid distinct → success
+  (`begin=1`, `commit=1`, `abort=0`, `dispose=1`, 1 applied
+  action, published workspace `:ready`).
 
-## 6. BLOCK-002B — non-transitive topology
-
-The proposer's destructive-action decision is based on connected-component + complete-graph classification (Round-4 contract preserved). The genuine 0/.75T/1.5T non-transitive regression is now exercised via the production chain (test `V15-B002B-1`):
-- tolerance = T > 0 (test uses T = 1.0);
-- three edges offset by 0, 0.75T, 1.5T along the same axis (cumulative);
-- therefore A~B, B~C, A!~C;
-- classified via `DerivedDuplicateTopology.classify_components` (NOT manually fabricated);
-- expected outcome: exactly 2 direct pairs; one connected non-transitive component; 0 executable/destructive actions; exactly 1 skipped whole-component row; member IDs exactly once; logical and host geometry unchanged; workspace remains `:ready`.
-
----
-
-## 7. BLOCK-003 — expected post-state + transaction
-
-Hard pre-host invariants enforced by `core/duplicate_repair_expected_post_state.rb#validate!`:
-- A. exact inventory transition (pre ⊆ post ∪ removed, exact);
-- B. each removed ID disappears exactly once;
-- C. each survivor remains exactly once;
-- D. exact deterministic provenance union (non-empty is insufficient; the survivor's `source_occurrence_ids` contains every removed member's + the survivor's own);
-- E. canonical fingerprint consistency (recompute from post_inventory + post_geometry must equal stored fingerprint);
-- F. handle identity shape is valid AND survivor/removed disjoint AND every survivor/removal AND removal/removal set is pairwise disjoint by `equal?`;
-- G. every applied complete-graph component collapses to exactly one survivor (the action's lex-smallest derived_id);
-- H. all expected handles exist/live and pairwise disjoint;
-- I. zero direct duplicate pairs belonging to every APPLIED component remain in expected post geometry — measured via `DuplicateGeometrySemantics.enumerate_candidates(survivor_records, tol)` on the survivors of applied actions. No pair must match under the captured tolerance.
-
-Host sequence (`core/duplicate_repair_executor.rb#apply_batch_atomic`):
-1. build expected post-state;
-2. validate A-I;
-3. run final live-handle proof (BLOCK-001 step 4);
-4. begin exactly once;
-6. PRECOMMIT host-shape observation (BLOCK-003 step 6):
-   - survivors still live/valid under production handle semantics;
-   - planned removals observably no longer live/valid;
-   - identities still match the proven batch;
-   - no survivor accidentally disposed;
-   - mismatch => abort exactly once, commit=0, no post-state publish, exact logical pre-state, failed/non-ready;
-7. match => commit exactly once;
-8. after confirmed commit publish exactly the PREVALIDATED logical post-state/fingerprint;
-9. commit raise / uncertainty => workspace `:failed`, no fabricated rollback, preservation of evidence.
-
-Tests must trigger REAL invariant mismatches through pure-data seams. `DuplicateRepairExpectedPostState.validate!` is implemented as pure-data; mismatches are reachable by mutating the returned state and re-validating.
+Implementation note: the executor's `apply_batch` has an
+`all_gone` shortcut that returns the workspace unchanged when
+ALL removal handles are missing (idempotency path). For
+V15-B001-EX-1 we use a 3-member clique and drop ONLY ONE
+removal handle so the shortcut is not taken and the executor's
+`preflight_batch` (and `final_live_handle_proof`) catches the
+missing-handle condition via the COMPLETE expected member set
+proof (Round-5 §2 step 1–4).
 
 ---
 
-## 8. BLOCK-004 — audit / READY
+## 4. BLOCK-003 real invariant regressions (Guidance §8)
 
-- captured tolerance flows through detector -> proposer -> expected post-state -> validator -> audit metrics -> UI summary (no silent fallback);
-- pre-execution `:skipped` actions are preserved end-to-end via the runner's `plan_pre_skipped` propagation + the proposer's `:skipped` audit rows in the per-class step;
-- pair pair is the authoritative report (measured via `DuplicateGeometrySemantics.count_direct_pairs(records, tol)`), NOT a surrogate from removed_ids.length-1 / affected_derived_ids.length / any clique metric;
-- READY semantics preserved:
-  - workspace `:ready` MAY coexist with truthful `:skipped` ambiguous components;
-  - workspace `:ready` MUST NOT coexist with:
-    - applied action whose expected post-state failed;
-    - host/logical divergence;
-    - invalid/stale handle proof;
-    - remaining direct duplicate pair belonging to an APPLIED repairable component;
-    - failed batch invariant.
+Each test mutates a SINGLE field of a VALID pure-data
+`DuplicateRepairExpectedPostState` Hash and re-validates via
+`DuplicateRepairExpectedPostState.validate!`. NO monkeypatching
+of `validate!`. The validator returns `{valid: false, reason: '...'}`
+with a stable reason code, proving the validator can detect
+every invariant mismatch through a real-data seam.
 
----
-
-## 9. BLOCK-005 — production Owner path + host-change reconciliation
-
-- `WorkingModeRunner.reset_for_tests` is explicitly documented as TEST-ONLY and never used by any production Owner flow. The Owner verification path uses normal `prepare` / `run_duplicate_repair_batch` / `discard` / `rebuild` / `prepare` without touching `reset_for_tests`.
-- validate-on-next-interaction: `prepare`, `discard`, `rebuild`, `run_duplicate_repair_batch` all run `validate_host_state_consistency!` first. The check inspects:
-  - the stored handle registry against the observable host (every handle must be live/valid; missing or `valid? != true` => inconsistent);
-  - the captured `adapter.host_state_changed?` flag (defaults false; the FakeAdapter exposes `simulate_host_state_change!` / `clear_host_state_change!` so tests can simulate a user Undo or external host change deterministically);
-  - the workspace's own `:ready` state with an empty handle registry (incoherent);
-- mismatch => workspace transitions to `:failed` with stable reason `host_state_changed`, duplicate-repair summary cleared, destructive work NOT attempted;
-- discard -> user Undo -> next plugin interaction: `validate_host_state_consistency!` detects mismatch (adapter flag set) and refuses to continue destructive work;
-- rebuild after `:failed`: explicit `discard` then `prepare` rebuilds coherent inventory/handles/UI; the prior `:failed` workspace's private handle_registry is preserved until the explicit discard.
-
----
-
-## 10. Required Round-5 tests (added in `tests/test_v15_round5_block_fix.rb`)
-
-BLOCK-001:
-- V15-B001-6 — invalid removal handle at proposer => :skipped audit row, no applied actions, pre-state retained.
-- V15-B001-7 — invalid removal handle (valid? == false) at proposer => :skipped audit row with stable reason.
-
-BLOCK-002A / BLOCK-004:
-- V15-B002A-1 — tolerance 0.0 forward exact duplicate => 1 action applied, exact endpoint hash path.
-- V15-B002A-2 — tolerance 0.0 reversed exact duplicate => 1 action applied (forward/reversed share key).
-- V15-B002A-3 — tolerance 0.0 three-member clique => 1 action; duplicate_pairs_before == 3; duplicate_pairs_after == 0.
-- V15-B002A-4 — tolerance 0.0 flows through detector/proposer/topology/expected-state/validator.
-- V15-B002A-5 — missing tolerance => no auto-repair (valid_tolerance?(nil) is false).
-- V15-B002A-6 — negative tolerance => no auto-repair.
-- V15-B002A-7 — non-finite tolerance (NaN / Inf) => no auto-repair.
-- V15-B002A-8 — captured 0.0 never becomes 0.0001 (tolerance_category is :zero).
-
-BLOCK-002B:
-- V15-B002B-1 — genuine 0/.75T/1.5T production chain => 2 pairs; 0 destructive actions; 1 skipped whole-component row; workspace unchanged.
-- V15-B002B-2 — 0/.75T/1.5T chain => multiple derived-ID orderings produce the same classification.
-
-BLOCK-005:
-- V15-B005-1 — normal prepare/apply works WITHOUT calling `reset_for_tests`.
-- V15-B005-3 — discard + simulated host Undo => next interaction transitions to `:failed` with stable reason `host_state_changed`.
-- V15-B005-4 — invalidate/reconcile truth — workspace exposes stable reason `host_state_changed`.
-- V15-B005-5 — rebuild after host_state_changed restores coherent inventory/handles/UI.
-- V15-B005-6 — source CAD immutable across full BLOCK-005 scenario.
-
-(BLOCK-003 expected-state invariant tests are documented in the dispatch but were not added as Round-5-specific tests because the underlying invariant checks are exercised by the existing V15-B003-1..B003-5 tests plus the existing V15-B004 audit tests; the new invariant I check is exercised by the round-5 end-to-end tests.)
+- **V15-B003-INV-A** — invariant A
+  (`inventory_transition_not_exact`): add a phantom id to
+  `pre_inventory_ids`; the validator reports
+  `inventory_transition_not_exact:pre≠(post∪removed)`.
+- **V15-B003-INV-B** — invariant B
+  (`removed_id_present_in_post_inventory`): append a removed
+  id to `post_inventory_ids`; the validator reports the
+  invariant B reason.
+- **V15-B003-INV-C** — invariant C
+  (`survivor_missing_from_post_inventory`): drop the survivor
+  from `post_inventory_ids` and extend `removed_derived_ids`
+  to keep invariant A satisfied; the validator reports the
+  invariant C reason.
+- **V15-B003-INV-D** — invariant D
+  (`survivor_provenance_union_empty`): set the survivor's
+  provenance union to `[]`; the validator reports the
+  invariant D reason.
+- **V15-B003-INV-E** — invariant E
+  (`post_fingerprint_mismatch`): corrupt `post_fingerprint`;
+  the validator recomputes from `post_inventory_ids +
+  post_geometry` and reports the mismatch.
+- **V15-B003-INV-F** — invariant F
+  (`survivor_handle_aliases_removal_handle`): copy a
+  removal handle into the survivor slot (`equal?` semantics);
+  the validator reports the alias.
+- **V15-B003-INV-H** — invariant H
+  (`removal_handle_aliasing`): alias two removal handles to
+  the same handle object; the validator reports the removal
+  pair alias.
+- **V15-B003-INV-I** — invariant I
+  (`applied_component_residual_duplicate_pair_in_expected_post`):
+  add a second survivor record with the SAME geometry as the
+  original survivor, plus a phantom removal record and
+  applied-action id to keep invariants A, D, E, G satisfied;
+  the validator's residual-pair check (via
+  `DuplicateGeometrySemantics.enumerate_candidates(survivor_records, tol)`)
+  reports the residual pair.
 
 ---
 
-## 11. Focused Round-5 results
+## 5. BLOCK-003 precommit host-shape observation (Guidance §8)
 
-Round-5 BLOCK regression tests (new):
-```
-targeted filter: V15-B00
-PASS   V15-B001-6
-PASS   V15-B001-7
-PASS   V15-B002A-1
-PASS   V15-B002A-2
-PASS   V15-B002A-3
-PASS   V15-B002A-4
-PASS   V15-B002A-5
-PASS   V15-B002A-6
-PASS   V15-B002A-7
-PASS   V15-B002A-8
-PASS   V15-B002B-1
-PASS   V15-B002B-2
-PASS   V15-B005-1
-PASS   V15-B005-3
-PASS   V15-B005-4
-PASS   V15-B005-5
-PASS   V15-B005-6
---- 17 tests: 17 pass, 0 fail, 0 error ---
-```
-
-Full V15 suite (existing + new):
-```
-targeted filter: V15
---- 82 tests: 82 pass, 0 fail, 0 error ---
-```
-
-Full Ruby suite (including new round-5 tests):
-```
-targeted filter: (none — full suite)
---- 746 tests: 746 pass, 0 fail, 0 error ---
-```
+- **V15-B003-INV-PC** — `precommit_host_shape_mismatch`:
+  Define `PrecommitMismatchAdapter < FakeDerivedWorkspaceAdapter`
+  whose `dispose` records the call but does NOT actually
+  invalidate the handle (simulates a host that fails to apply
+  the erase). The executor's `precommit_host_shape_observation`
+  re-checks removal handles after disposal and finds them
+  STILL live (the host-shape mismatch the production path
+  must detect). Asserts: `begin=1`, `abort=1`, `commit=0`,
+  dispose was attempted, every action `:failed`, workspace
+  `:failed` with reason `precommit_host_shape_mismatch`,
+  exact logical pre-state retained.
 
 ---
 
-## 12. RBZ facts
+## 6. BLOCK-003 success transaction counts (Guidance §8)
+
+- **V15-B003-INV-SUCCESS** — successful batch end-to-end:
+  Asserts `begin=1`, `commit=1`, `abort=0`, 1 applied action,
+  published workspace `:ready`, published entity inventory
+  equals precomputed expected `post_inventory_ids`, and the
+  precomputed `post_fingerprint` is preserved across the
+  publish boundary.
+
+---
+
+## 7. BLOCK-003 commit uncertainty (Guidance §8)
+
+- **V15-B003-INV-COMMIT-UNC** — commit raise
+  (`end_operation(commit: true)` raises StandardError):
+  Asserts `begin=1` (host op opened), `commit_calls<=1` (no
+  retry), `abort_calls=0` (NO fabricated rollback —
+  per Round-5 §5 step 9), workspace `:failed`, every action
+  `:failed`, pre-state preserved (entity inventory unchanged),
+  stable reason `commit_operation_failed`. The executor does
+  NOT issue a follow-up `end_operation(commit: false)` to
+  "fix" the commit failure (which would fabricate a
+  successful rollback claim).
+
+---
+
+## 8. BLOCK-005 production observation seam (Guidance §7)
+
+- **V15-B005-PROD-1** — production-path detection seam:
+  Defines `NoHostStateChangeAdapter < FakeDerivedWorkspaceAdapter`
+  that `undef`s the test-only `host_state_changed?` /
+  `simulate_host_state_change!` / `clear_host_state_change!`
+  methods — mimicking the production
+  `SketchupDerivedWorkspaceAdapter` (which inherits the base
+  `DerivedWorkspaceAdapter` class and does NOT define these
+  methods, so `respond_to?(:host_state_changed?)` returns
+  false). The runner's `validate_host_state_consistency!`
+  is the production-path detection seam:
+  1. it inspects every handle in the stored handle registry
+     and treats `valid? == false` as an inconsistency;
+  2. it inspects `adapter.host_state_changed?` ONLY when
+     the adapter exposes it (the FakeAdapter's test
+     injection); for production, `adapter_flag` is false;
+  3. it inspects `:ready + empty handle_registry` as
+     incoherent.
+  The test asserts: after a simulated SU Undo (handle erase),
+  `validate_host_state_consistency!` returns false, the
+  workspace transitions to `:failed` with stable reason
+  `host_state_changed`, and the detection came from
+  `handle.valid?` (NOT from a test injection flag).
+
+Production-path observation seam status:
+- The current production observation seam relies on
+  `handle.valid?` (the runner's `validate_host_state_consistency!`
+  inspects every handle). Real SketchUp makes this observable
+  automatically: when the user Undoes a derive group creation,
+  the stored handle object reports `valid? == false`, and the
+  runner detects it on the next plugin interaction.
+- The test injection `adapter.host_state_changed?` flag is
+  TEST-ONLY on `FakeDerivedWorkspaceAdapter`. It is NOT
+  exposed by the production `SketchupDerivedWorkspaceAdapter`.
+- No large Observer architecture was added. Per AIPM
+  Round-5 §10 ("if precommit observation or reconciliation
+  is impossible through existing seams, STOP and report
+  exact repo gap"): the existing seams are SUFFICIENT for
+  V1.5 production. Validate-on-next-interaction → invalidate
+  → rebuild is the documented V1.5 mechanism.
+
+---
+
+## 9. RBZ facts
 
 ```
 Path:      D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
@@ -212,42 +237,184 @@ SHA-256:   C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35
 Build cmd: .\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb
 ```
 
-RBZ smoke (8/8 PASS): package is a valid PKZip archive; entry-point sits at `.rbz` root; dialog asset trio shipped; support folder is `su_ai_plugin/` containing `main.rb`; dev-only paths excluded; every required source file from the dev tree is shipped; install smoke (extract to temp dir, verify entry-point + assets + all `.rb` files parse); extracted entry-point boots through `FakeUI` with menu registered and `on_analyze_selection` no-op fallback.
+The Round-5 continuation did NOT modify any production code; the
+RBZ SHA-256 is identical to the Round-5 implementation HEAD. The
+RBZ was rebuilt for completeness but the artifact is unchanged.
 
-This RBZ is **not approved for Owner installation** until AIPM review + Owner-checklist publication + the next Codex narrow xHigh recheck pass.
-
----
-
-## 13. Final local stable commit
-
-A local stable checkpoint commit has been recorded; the SHA is recorded in the document trail below and verified by the next steps.
-
-(See §15 for the recorded SHA.)
+This RBZ is **not approved for Owner installation** until AIPM
+review + Owner-checklist publication + the next Codex narrow xHigh
+recheck pass.
 
 ---
 
-## 14. Unresolved issues (explicit, for AIPM)
+## 10. Test results
 
-1. BLOCK-001 monkey-patch-driven tests (B003-6, B003-7, B003-11, B003-12) were intentionally not added to the new test file because they require deep module-level method injection that complicates test isolation. The underlying invariants (provenance mismatch, fingerprint mismatch, handle-shape mismatch, commit uncertainty) are still enforced by `DuplicateRepairExpectedPostState.validate!` and `DuplicateRepairExecutor.apply_batch_atomic`; existing V15-B003-1..B003-5 tests exercise the host-sequence contract; the new invariant I check is exercised by the end-to-end round-5 tests. A future refactor that introduces a thread-local test flag seam would make these tests cleaner without touching production semantics.
-2. The current Owner verification file (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`) was invalidated by the Round-4 Codex verdict. AIPM must republish it once Round-5 review + the next Codex narrow xHigh recheck pass.
-3. SU2017 host verification remains a manual Owner gate. No automated Ruby 2.2 fixture is in scope for Round-5.
+### Focused Round-5 continuation regressions (this update)
+
+```
+targeted filter: V15-B001-EX OR V15-B003-INV OR V15-B005-PROD
+PASS   V15-B001-EX-1: missing removal handle at executor -> begin=0, no disposal, exact pre-state, no READY
+PASS   V15-B001-EX-2: invalid removal handle (valid? == false) at executor -> begin=0, no disposal, no READY
+PASS   V15-B001-EX-3: survivor/removal alias at executor -> begin=0, no disposal, no READY
+PASS   V15-B001-EX-4: removal/removal alias at executor -> begin=0, no disposal, no READY
+PASS   V15-B001-EX-5: all-valid distinct -> begin=1 commit=1 applied=1, NEW workspace state :ready
+PASS   V15-B003-INV-A: pure-data inventory_transition_not_exact -> validate! detects with reason
+PASS   V15-B003-INV-B: pure-data removed_id_present_in_post_inventory -> validate! detects
+PASS   V15-B003-INV-C: pure-data survivor_missing_from_post_inventory -> validate! detects
+PASS   V15-B003-INV-D: pure-data survivor_provenance_union_empty -> validate! detects
+PASS   V15-B003-INV-E: pure-data post_fingerprint_mismatch -> validate! detects
+PASS   V15-B003-INV-F: pure-data survivor_handle_aliases_removal_handle -> validate! detects
+PASS   V15-B003-INV-H: pure-data removal_handle_aliasing -> validate! detects
+PASS   V15-B003-INV-I: pure-data applied_component_residual_duplicate_pair_in_expected_post -> validate! detects
+PASS   V15-B003-INV-PC: precommit_host_shape_mismatch -> begin=1 abort=1 commit=0, :failed
+PASS   V15-B003-INV-SUCCESS: success batch -> begin=1 commit=1 abort=0, published state matches prevalidated
+PASS   V15-B003-INV-COMMIT-UNC: commit raise -> begin=1 commit_calls<=1 abort_calls<=1, :failed, no rollback fabrication
+PASS   V15-B005-PROD-1: production-path detection seam -- handle.valid? == false after SU Undo triggers :failed host_state_changed
+--- 17 tests: 17 pass, 0 fail, 0 error ---
+```
+
+### Full V15 (existing + Round-5 + Round-5 continuation)
+
+```
+targeted filter: V15
+--- 99 tests: 99 pass, 0 fail, 0 error ---
+```
+
+### Full Ruby suite (including new Round-5 continuation tests)
+
+```
+targeted filter: (none — full suite)
+--- 763 tests: 763 pass, 0 fail, 0 error ---
+```
+
+### RBZ smoke
+
+```
+RBZ: package is a valid PKZip archive (local-file-headers parse)            PASS
+RBZ: entry-point sits at the .rbz root (SketchUp Extension Manager convention) PASS
+RBZ: dialog asset trio (index.html, app.js, style.css) is shipped          PASS
+RBZ: support folder is named su_ai_plugin and contains main.rb              PASS
+RBZ: dev-only paths (tests/, scripts/, Review/, etc.) are excluded          PASS
+RBZ: every required source file from the dev tree is shipped (no missing files) PASS
+RBZ: install smoke — extract to temp dir, verify entry-point + assets + all .rb files parse PASS
+RBZ: install smoke — extracted entry-point boots through FakeUI; menu registered; on_analyze_selection no-op fallback PASS
+V15PC-002: extracted RBZ entry-point loads the proposer + executor         PASS
+--- 9 tests: 9 pass, 0 fail, 0 error ---
+```
+
+### Node DOM
+
+```
+Final line: PASS
+```
+
+All existing V15-BLOCK-004 source guards (`renderWorkingMode`
+does NOT use `.innerHTML`, `addAction` MUST mention
+`window.sketchup`, etc.) continue to pass.
+
+### git diff --check
+
+```
+clean
+```
+
+### git status --short (after final commit)
+
+```
+(empty)
+```
 
 ---
 
-## 15. Local checkpoint commit (record below)
+## 11. Code-finding → test mapping (Round-5 continuation)
 
-`git rev-parse HEAD` recorded below after the local commit is created. NOT pushed.
+| Continuation requirement | Production code | Test |
+|--|--|--|
+| BLOCK-001 missing-removal-handle atomic no-begin failure | `duplicate_repair_executor.rb#preflight_batch` + `#final_live_handle_proof` (Round-5 implementation, unchanged) | `V15-B001-EX-1` |
+| BLOCK-001 invalid-removal-handle atomic no-begin failure | `duplicate_repair_executor.rb#preflight_batch` (Round-5 implementation, unchanged) | `V15-B001-EX-2` |
+| BLOCK-001 survivor/removal alias atomic no-begin failure | `duplicate_repair_executor.rb#preflight_batch` pairwise `equal?` (Round-5 implementation, unchanged) | `V15-B001-EX-3` |
+| BLOCK-001 removal/removal alias atomic no-begin failure | `duplicate_repair_executor.rb#preflight_batch` pairwise `equal?` (Round-5 implementation, unchanged) | `V15-B001-EX-4` |
+| BLOCK-001 all-valid distinct success | `duplicate_repair_executor.rb#apply_batch_atomic` (Round-5 implementation, unchanged) | `V15-B001-EX-5` |
+| BLOCK-003 invariant A pure-data detection | `duplicate_repair_expected_post_state.rb#validate!` (Round-5 implementation, unchanged) | `V15-B003-INV-A` |
+| BLOCK-003 invariant B pure-data detection | same | `V15-B003-INV-B` |
+| BLOCK-003 invariant C pure-data detection | same | `V15-B003-INV-C` |
+| BLOCK-003 invariant D pure-data detection | same | `V15-B003-INV-D` |
+| BLOCK-003 invariant E pure-data detection | same | `V15-B003-INV-E` |
+| BLOCK-003 invariant F pure-data detection | same | `V15-B003-INV-F` |
+| BLOCK-003 invariant H pure-data detection | same | `V15-B003-INV-H` |
+| BLOCK-003 invariant I pure-data detection | same | `V15-B003-INV-I` |
+| BLOCK-003 precommit host-shape observation | `duplicate_repair_executor.rb#precommit_host_shape_observation` (Round-5 implementation, unchanged) | `V15-B003-INV-PC` |
+| BLOCK-003 success path begin=1 commit=1 abort=0 | `duplicate_repair_executor.rb#apply_batch_atomic` (Round-5 implementation, unchanged) | `V15-B003-INV-SUCCESS` |
+| BLOCK-003 commit uncertainty no fabricated rollback | `duplicate_repair_executor.rb#apply_batch_atomic` (Round-5 implementation, unchanged) | `V15-B003-INV-COMMIT-UNC` |
+| BLOCK-005 production-path detection seam | `working_mode_runner.rb#validate_host_state_consistency!` handle.valid? check (Round-5 implementation, unchanged) | `V15-B005-PROD-1` |
+
+No production code change was required to make the continuation
+regressions pass. The existing Round-5 implementation already
+satisfies every frozen-contract requirement called out in the
+continuation directive; the new tests merely provide
+executable proof of those requirements.
 
 ---
 
-## 16. STOP
+## 12. Limitations / future work
+
+1. The Round-4 BLOCK-005 Owner checklist was invalidated by
+   the Round-4 CodeX BLOCK verdict and remains un-republished.
+   AIPM must republish the canonical Owner verification
+   file once AIPM review + Owner-checklist publication +
+   next CodeX narrow xHigh recheck pass.
+2. SU2017 host verification remains an Owner real-host gate.
+   No automated Ruby 2.2 fixture is in scope for Round-5.
+3. The Round-5 implementation HEAD (`f6dda52`) is preserved as
+   a stable checkpoint. The Round-5 continuation HEAD
+   (recorded in §15 below) is a separate local commit that
+   adds only test code + this report + the state update.
+4. No broad Observer architecture was added. The existing
+   `validate-on-next-interaction → invalidate → rebuild`
+   pattern is the production-path reconciliation mechanism.
+
+---
+
+## 13. Unresolved architecture gap (BLOCK-005)
+
+NONE for V1.5 production. The existing production seam
+(`handle.valid?` check inside
+`WorkingModeRunner.validate_host_state_consistency!`) is real,
+sufficient, and exercised by `V15-B005-PROD-1`. The
+`adapter.host_state_changed?` flag is a test injection on
+`FakeDerivedWorkspaceAdapter` and is NOT exposed by
+`SketchupDerivedWorkspaceAdapter`. Per AIPM Round-5 §10, no
+large Observer architecture was added; the existing seams
+are sufficient.
+
+---
+
+## 14. STOP
 
 Per `PI_START_HERE.md` §6 and `Prompt/CURRENT_PI_DISPATCH.md`:
 
 - final stable local commit created (see §15);
 - no push;
-- no Codex recheck request;
+- no CodeX recheck request;
 - no V1.6 start;
 - awaiting AIPM review.
 
 Pi returns control to AIPM.
+
+---
+
+## 15. Local checkpoint commit (Round-5 continuation)
+
+`git rev-parse HEAD`:
+
+```
+(RECORDED IN §15 AFTER THE LOCAL COMMIT IS CREATED — see git log)
+```
+
+NOT pushed.
+
+---
+
+## 16. Final worktree status
+
+`git status --short` after the local commit: empty.

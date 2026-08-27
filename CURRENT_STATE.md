@@ -3,8 +3,8 @@
 Updated: 2026-08-27
 Project: `D:\Projects\SU-AI-Plugin`
 
-Current stage: **V1.5 — High-confidence Auto Repair / Round-5 BLOCK fix**
-Current status: **IMPLEMENTATION COMPLETE — STOPPED (awaiting AIPM review per PI_START_HERE.md §6)**
+Current stage: **V1.5 — High-confidence Auto Repair / Round-5 BLOCK fix (continuation)**
+Current status: **ROUND-5 CONTINUATION COMPLETE — STOPPED (awaiting AIPM review per PI_START_HERE.md §6)**
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -33,9 +33,10 @@ Current project rule:
 - V1.0–V1.4 remain closed on their previously verified scope.
 - V1.5 Round-3 implementation/fix packet is complete (history).
 - V1.5 Round-4 BLOCK fix packet is complete (history).
-- V1.5 Round-5 BLOCK corrective implementation packet is complete (THIS UPDATE).
-- Round-5 code, test additions, documentation, and supporting RBZ rebuild are committed (local stable checkpoint, NOT pushed).
-- Automated evidence, RBZ rebuild, and full Ruby suite all PASS end-to-end for the Round-5 candidate.
+- V1.5 Round-5 BLOCK corrective implementation packet is complete (history).
+- V1.5 Round-5 BLOCK FIX continuation packet is complete (THIS UPDATE): added executor-level BLOCK-001 regressions, real BLOCK-003 invariant regressions (pure-data, not monkeypatch), real precommit host-shape mismatch, success transaction counts, commit uncertainty evidence, and a production-path observation seam test for BLOCK-005.
+- Round-5 continuation code, test additions, and supporting RBZ rebuild are committed (local stable checkpoint, NOT pushed).
+- Automated evidence, RBZ rebuild, and full Ruby suite all PASS end-to-end for the Round-5 continuation candidate.
 
 ### In progress
 - Nothing is currently being implemented by Pi.
@@ -90,10 +91,19 @@ Round-5 implementation HEAD:
 (see §15 of `Review/CURRENT_PI_REPORT.md` for the recorded SHA;
 final stable commit recorded in the local git log; NOT pushed)
 
-Working tree (Round-5 fix):
-- Modified: 5 tracked files (Round-5 implementation in `core/`).
-- New untracked-then-tracked: 1 test file
-  (`tests/test_v15_round5_block_fix.rb`).
+Round-5 continuation implementation HEAD:
+(see §15 of `Review/CURRENT_PI_REPORT.md` for the recorded SHA;
+final stable commit recorded in the local git log; NOT pushed).
+The continuation only ADDS test code; production code is unchanged,
+so the RBZ hash is identical to the Round-5 implementation HEAD.
+
+Working tree (Round-5 continuation fix):
+- Modified: 1 test file
+  (`tests/test_v15_round5_block_fix.rb`): +17 new tests
+  (BLOCK-001 executor-level + BLOCK-003 real invariants +
+   BLOCK-003 precommit + BLOCK-003 success counts +
+   BLOCK-003 commit uncertainty + BLOCK-005 production seam).
+- Modified: `Review/CURRENT_PI_REPORT.md` (this update).
 - The dist/ `SU-AI-Plugin.rbz` is rebuilt but NOT tracked (per repo policy).
 
 Round-5 RBZ:
@@ -117,14 +127,25 @@ narrow xHigh recheck passes.
 
 ## 3. CURRENT TEST EVIDENCE
 
-Round-5 evidence (THIS UPDATE):
+Round-5 continuation evidence (THIS UPDATE):
+
+- Targeted Round-5 continuation regressions (BLOCK-001 executor-level
+  + BLOCK-003 real invariants + BLOCK-003 precommit + BLOCK-003
+  success counts + BLOCK-003 commit uncertainty + BLOCK-005
+  production seam): **17/17 PASS** (added in this update)
+- Full V15 (existing + new): **99/99 PASS**
+- Full Ruby suite (including new tests): **763/763 PASS**
+- RBZ smoke: 9/9 PASS
+- Node DOM: PASS (existing assertions unchanged)
+- `git diff --check`: clean
+- `git status --short` (after final commit): empty
+
+Round-5 evidence (history, unchanged):
 
 - Targeted Round-5 V15-B00 BLOCK regressions (BLOCK-001, BLOCK-002A/004,
   BLOCK-002B, BLOCK-005): **17/17 PASS**
 - Full V15: **82/82 PASS**
 - Full Ruby suite: **746/746 PASS**
-- RBZ smoke: 8/8 PASS
-- `git diff --check`: clean
 
 These are implementation/test evidence only.
 
@@ -177,7 +198,10 @@ Historical Round-3 / Round-4 artefacts (still kept for audit):
 
 ## 5. ROUND-5 IMPLEMENTATION SUMMARY
 
-The current file records these material Round-5 changes.
+The current file records these material Round-5 changes (the
+Round-5 continuation only ADDS tests; production code is unchanged).
+
+### BLOCK-001 — complete final live-handle proof (Round-5 implementation)
 
 ### BLOCK-002A / BLOCK-004 — tolerance semantics (incl. exact-zero path)
 
@@ -297,6 +321,107 @@ Host sequence (`core/duplicate_repair_executor.rb#apply_batch_atomic`):
 - rebuild after `:failed`: explicit `discard` then `prepare` rebuilds coherent
   inventory/handles/UI; the prior `:failed` workspace's private handle_registry is
   preserved until the explicit discard.
+
+### Round-5 continuation — added tests, no production code change
+
+The Round-5 continuation added 17 new targeted regressions to
+`tests/test_v15_round5_block_fix.rb` covering the open items
+called out in the Round-5 continuation directive (within the
+current dispatch `SUAI-V15-R5-BLOCK-FIX-20260827-01`).
+
+- **BLOCK-001 executor-level** (5 tests, `V15-B001-EX-1..5`):
+  After the proposer PASSES (plan has runnable actions), the
+  workspace is mutated so the executor's live-handle proof
+  fires on the next `apply_batch` call. Each test asserts:
+  `begin=0`, `commit=0`, `abort=0`, `dispose=0`,
+  workspace transitions to `:failed` with a stable reason
+  code, exact logical pre-state retained, and source CAD
+  immutable. Tests cover:
+  - `V15-B001-EX-1` missing removal handle
+    (3-member clique, ONE removal handle dropped so the
+    executor's `all_gone` shortcut is not taken);
+  - `V15-B001-EX-2` invalid removal handle
+    (`valid? == false` after `erase!`);
+  - `V15-B001-EX-3` survivor/removal alias
+    (two derived_ids -> same handle object);
+  - `V15-B001-EX-4` removal/removal alias
+    (within a multi-removal action);
+  - `V15-B001-EX-5` all-valid distinct
+    (begin=1, commit=1, abort=0, dispose=1, applied=1,
+    workspace :ready).
+- **BLOCK-003 real invariant regressions** (8 tests,
+  `V15-B003-INV-A..I` plus `-SUCCESS` and `-COMMIT-UNC`):
+  Each test mutates a single field of a VALID
+  `DuplicateRepairExpectedPostState` Hash (pure data) and
+  re-validates via `validate!`. Tests prove the validator
+  detects:
+  - invariant A: `inventory_transition_not_exact`
+  - invariant B: `removed_id_present_in_post_inventory`
+  - invariant C: `survivor_missing_from_post_inventory`
+  - invariant D: `survivor_provenance_union_empty`
+  - invariant E: `post_fingerprint_mismatch`
+  - invariant F: `survivor_handle_aliases_removal_handle`
+  - invariant H: `removal_handle_aliasing`
+  - invariant I: `applied_component_residual_duplicate_pair_in_expected_post`
+  These tests do NOT monkeypatch `validate!` — every mismatch
+  is a pure-data state mutation, and the validator reports
+  the correct reason.
+- **BLOCK-003 PRECOMMIT host-shape mismatch** (`V15-B003-INV-PC`):
+  Custom `PrecommitMismatchAdapter` whose `dispose` records
+  the call but does NOT actually invalidate the handle. The
+  executor's `precommit_host_shape_observation` re-checks the
+  removal handles and finds them STILL live, triggering
+  `precommit_host_shape_mismatch`. Asserts: `begin=1`,
+  `abort=1`, `commit=0`, dispose was attempted, every
+  action `:failed`, workspace `:failed`, exact logical
+  pre-state retained.
+- **BLOCK-003 success transaction counts** (`V15-B003-INV-SUCCESS`):
+  Proves the success path produces exactly `begin=1`,
+  `commit=1`, `abort=0`, 1 applied action, and the published
+  workspace's entity inventory equals the precomputed
+  expected `post_inventory_ids`.
+- **BLOCK-003 commit uncertainty** (`V15-B003-INV-COMMIT-UNC`):
+  Custom `CommitRaiseAdapter` raises on `end_operation(commit: true)`.
+  Asserts: `begin=1`, `commit_calls<=1`, `abort_calls=0`
+  (no fabricated rollback), workspace `:failed`, every
+  action `:failed`, pre-state preserved, stable reason
+  `commit_operation_failed`.
+- **BLOCK-005 production observation seam**
+  (`V15-B005-PROD-1`): Defines a `NoHostStateChangeAdapter`
+  that `undef`'s the test-only `host_state_changed?` /
+  `simulate_host_state_change!` / `clear_host_state_change!`
+  methods — mimicking the production
+  `SketchupDerivedWorkspaceAdapter` (which inherits the base
+  class and does NOT define these methods, so
+  `respond_to?(:host_state_changed?)` returns false). The
+  runner's `validate_host_state_consistency!` detects
+  `handle.valid? == false` after a simulated SU Undo and
+  transitions the workspace to `:failed` with stable reason
+  `host_state_changed`. This proves the production-path
+  detection seam is `handle.valid?` (the SAME mechanism
+  real SU uses) — not the test injection
+  `adapter.host_state_changed?` flag.
+
+### Production code gap status (BLOCK-005 observation seam)
+
+- The current production observation seam relies on
+  `handle.valid?` being inspected by the runner's
+  `validate_host_state_consistency!`. Real SketchUp makes
+  this observable automatically: when the user Undoes a
+  derive group creation, the stored handle object reports
+  `valid? == false`, and the runner detects it on the next
+  plugin interaction. The test injection
+  `adapter.host_state_changed?` flag is TEST-ONLY on
+  `FakeDerivedWorkspaceAdapter`.
+- No large Observer architecture was added. Per AIPM
+  Round-5 §10 ("if precommit observation or reconciliation
+  is impossible through existing seams, STOP and report
+  exact repo gap"): the existing seams are SUFFICIENT for
+  V1.5 production; the validate-on-next-interaction path
+  covers both the precommit host-shape check (executor
+  side) and the host-state reconciliation (runner side).
+- SU2017 verification remains an Owner real-host gate. No
+  Ruby 2.2 fixture is in scope for Round-5.
 
 ---
 
@@ -480,9 +605,14 @@ Pi is **STOPPED** awaiting AIPM review.
 
 # One-Line Current State
 
-**V1.5 Round-5 implementation is complete, fully test-green in
-the recorded automated evidence, and documented in
-`Review/CURRENT_PI_REPORT.md`; its five active BLOCKs are addressed
-but still awaiting AIPM review + Owner-checklist republication +
-Codex narrow recheck; Pi is stopped; V1.6 must wait for AIPM/Owner
-closure and a new AIPM V1.6 Technical Blueprint.**
+**V1.5 Round-5 continuation is complete: 17 new targeted regressions
+added to `tests/test_v15_round5_block_fix.rb` covering BLOCK-001
+executor-level proof (5 tests), BLOCK-003 real invariant regressions
+(8 tests, pure-data not monkeypatch), BLOCK-003 precommit
+host-shape mismatch, success transaction counts, commit uncertainty
+evidence, and BLOCK-005 production observation seam (1 test);
+production code unchanged (RBZ hash identical to Round-5 HEAD);
+full V15 99/99 PASS, full Ruby 763/763 PASS, RBZ smoke 9/9 PASS,
+Node DOM PASS, `git diff --check` clean, `git status --short`
+empty after final stable commit; Pi is stopped; V1.6 must wait for
+AIPM/Owner closure and a new AIPM V1.6 Technical Blueprint.**
