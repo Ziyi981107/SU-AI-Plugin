@@ -1,0 +1,303 @@
+CODEX REVIEW — V1.5 ROUND-4 NARROW BLOCK RECHECK
+Project: D:\Projects\SU-AI-Plugin
+Date: 2026-08-27
+Dispatcher / Technical Design Authority: ChatGPT / AIPM
+Reviewer: Codex
+Reasoning effort: xHigh
+Mode: READ / REVIEW ONLY — DO NOT MODIFY REPO
+
+==================================================
+0. CURRENT AUTHORITY / STATUS
+==================================================
+Use the real repository, Git, diff, source and tests as the technical truth.
+Use current canonical governance files for role/authority.
+Do not infer current tasks from old ACTIVE headers, mtime, filename numbering, or historical Prompt/Review artifacts.
+
+Current governance commit supplied by Owner:
+  ea6d5f0a883dfdbf2ac618d0b1de3c7c2638e0cb
+  chore(governance): adopt current dispatch/report workflow
+
+Round-4 implementation checkpoint:
+  c5e5ec7db88cae8262e13c1e6629f12b07f4241e
+
+AIPM primary review verdict after Pi's Round-4 packet:
+  PASS FOR NARROW RECHECK
+
+Important: CURRENT_STATE may still contain wording generated before that AIPM review (for example "awaiting AIPM review"). Treat the AIPM verdict in this dispatch as the later review-state fact; do not use that stale phrase to reopen task authority.
+
+Pi is STOPPED.
+V1.6 is NOT STARTED.
+Prompt/CURRENT_PI_DISPATCH.md should remain NO ACTIVE DISPATCH.
+Review/CURRENT_PI_REPORT.md should remain NO CURRENT REPORT.
+
+AIPM has published the canonical Owner verification path:
+  Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt
+
+Do not execute Owner verification. Review whether the path is technically coherent and whether BLOCK-005 can close as an authoritative verification path.
+
+==================================================
+1. READ FIRST
+==================================================
+Read at minimum:
+1. AGENTS.md
+2. PROJECT_HANDOFF.md
+3. PROJECT_MASTER_PLAN_V1X.md
+4. CURRENT_STATE.md
+5. Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND4_BLOCK_FIX_2026-08-27.md
+6. Review/V1_5_ROUND4_BLOCK_FIX_RECHECK_PACKET_2026-08-27.md
+7. Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt
+8. the prior Codex Round-3 narrow BLOCK recheck that created V15-STAGE-BLOCK-001..005
+9. real Git history/diff/source/tests directly relevant to the Round-4 changes
+
+==================================================
+2. PRECHECK — REPO / GIT INTEGRITY
+==================================================
+Before substantive review:
+- report current branch;
+- report current HEAD;
+- report git status / whether worktree is clean;
+- verify c5e5ec7 is the Round-4 implementation checkpoint;
+- verify what changed between c5e5ec7 and current HEAD;
+- confirm the post-Round-4 governance migration did NOT alter V1.5 runtime/test/package behavior outside its intended governance scope.
+
+If the worktree is materially dirty such that the reviewed candidate cannot be identified reliably:
+- STOP safely;
+- return BLOCKED / UNREVIEWABLE with exact dirty paths;
+- modify nothing.
+
+Do not treat the branch name v1.5-stage-round3-fix as stage truth; it is only a Git branch label.
+
+==================================================
+3. REVIEW SCOPE — NARROW ONLY
+==================================================
+Recheck ONLY the existing active V1.5 BLOCK set:
+- V15-STAGE-BLOCK-001
+- V15-STAGE-BLOCK-002
+- V15-STAGE-BLOCK-003
+- V15-STAGE-BLOCK-004
+- V15-STAGE-BLOCK-005
+
+Review:
+- Round-4 implementation diff;
+- direct dependencies;
+- directly affected regressions;
+- adjacent seams materially changed by Round-4.
+
+Keep unchanged V1.0-V1.4 scope closed.
+Do NOT design V1.6.
+Do NOT create a new Stage or new post-PASS gate.
+Do NOT replace AIPM architecture/Guidance.
+Do NOT send implementation instructions directly to Pi.
+
+==================================================
+4. BLOCK-001 — FINAL ELIGIBILITY / LIVE HANDLE
+==================================================
+Verify in real source that before executable action emission and again immediately before host operation:
+- every final repairable-component member has distinct derived_id;
+- current source-edge identity is unambiguous/current;
+- every host handle exists and is live/valid;
+- handles are distinct by identity;
+- survivor/removal handles are disjoint;
+- provenance belongs to current SourceSnapshot;
+- layer/tolerance/finite guards pass;
+- missing/stale/invalid/aliased/ambiguous member fails the WHOLE component closed;
+- no partial action is emitted from that failed component;
+- no host operation opens when final preflight proof fails.
+
+Confirm V15-13 now matches this stricter Round-4 contract rather than the superseded "filter invalid member silently" behavior.
+
+==================================================
+5. BLOCK-002A — TOLERANCE SEMANTICS / ENUMERATION
+==================================================
+Verify one shared production duplicate-geometry semantics path is actually authoritative across detector/proposer/validator and other Round-4 consumers.
+
+For tolerance > 0 verify:
+- cell size == captured tolerance;
+- mathematical floor coordinates;
+- BOTH endpoint cells indexed;
+- 27-neighbor lookup around BOTH endpoints;
+- union/dedup candidates;
+- shared forward/reversed direct_match? is final authority;
+- stable unordered pair dedup;
+- no silent fallback to historical 0.0001.
+
+EXPLICIT AIPM REVIEW QUESTION:
+The frozen Guidance requires:
+  tolerance == 0 -> exact endpoint-pair hash path.
+
+The Pi packet contains potentially inconsistent wording:
+- valid_tolerance? is described as Float > 0;
+- yet tolerance == 0 is claimed to use exact pair lookup / "same algorithm".
+
+Inspect the REAL SOURCE and answer precisely:
+A. Is there a genuine safe exact-zero branch that satisfies the frozen Guidance?
+B. Is zero rejected before enumeration, contrary to the frozen contract?
+C. Could any zero path divide by zero / use invalid grid math?
+D. Are tests sufficient to prove the intended zero semantics, or is a regression missing?
+
+Do not accept the Pi packet's wording as evidence here; inspect code/tests.
+
+Negative / non-finite tolerance must fail closed.
+
+==================================================
+6. BLOCK-002B — NON-TRANSITIVE TOPOLOGY
+==================================================
+Verify destructive action emission uses connected-component completeness, NOT maximal cliques.
+
+For each connected component N>=2:
+- repairable only if direct_pair_count == N*(N-1)/2;
+- one deterministic action only;
+- survivor = lexicographically smallest derived_id;
+- provenance union deterministic/complete;
+- no member appears in multiple actions;
+- incomplete/non-transitive component emits NO destructive sub-clique action;
+- one inspectable skipped row is preserved;
+- geometry remains unchanged for skipped ambiguity.
+
+Bron-Kerbosch may remain only as non-authoritative diagnostic code if it cannot drive destructive repair.
+
+==================================================
+7. BLOCK-003 — EXPECTED POST-STATE / TRANSACTION
+==================================================
+Verify the whole executable batch receives a complete pure-data expected post-state BEFORE begin_operation.
+
+Confirm invariants cover at least:
+- exact inventory transition;
+- removals exactly once;
+- survivors exactly once;
+- exact provenance union;
+- internally consistent geometry/fingerprint;
+- valid/disjoint handle identity shape;
+- every applied complete duplicate component collapses to one survivor;
+- no direct duplicate pair belonging to an applied component remains in expected post-state.
+
+Verify failure semantics:
+- failed expected-state validation => begin_calls=0, no mutation, no applied result, no false READY;
+- after validation: recheck live handles -> one begin -> disposals -> precommit host shape check -> commit;
+- dispose/precommit mismatch => abort exactly once, commit=0, logical pre-state retained;
+- commit exception/uncertainty => failed/non-ready, no fabricated confirmed expected state;
+- successful commit publishes the prevalidated expected logical state.
+
+Look for host/logical divergence, double-abort/double-end-operation, or publication-before-commit risks.
+
+==================================================
+8. BLOCK-004 — AUDIT TRUTH / READY / PAIR METRIC
+==================================================
+Verify captured duplicate tolerance flows explicitly through the relevant production chain with no silent default fallback.
+
+Verify final evidence preserves applied/skipped/failed rows and skipped rows are not filtered away.
+
+Verify duplicate_pairs_before/after means UNIQUE UNORDERED direct-match pairs under the captured tolerance, not an action-size/clique surrogate.
+
+Verify READY semantics exactly match the frozen Guidance:
+READY may coexist with truthful skipped ambiguity.
+READY must NOT coexist with:
+- failed expected post-state for an applied action;
+- host/logical divergence;
+- invalid/stale action handles;
+- remaining direct duplicate pair in an APPLIED repairable component;
+- failed batch invariant.
+
+Review the relevant UI/summary seam only to the extent necessary to confirm audit truth is not lost.
+
+==================================================
+9. BLOCK-005 — OWNER VERIFICATION AUTHORITY
+==================================================
+Review:
+  Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt
+
+Confirm:
+- it is the one current authoritative Owner execution path;
+- it does not silently reuse superseded old checklist semantics;
+- it references the correct Round-4 candidate identity/evidence;
+- it keeps Owner execution blocked until Codex PASS;
+- it exercises source integrity, normal dialog path, duplicate repair truth, non-transitive skip, audit truth, discard/Undo/recovery and host/runtime evidence;
+- it does not claim automated tests substitute for real SketchUp evidence;
+- it does not claim formal SU2017 support without real SU2017 evidence;
+- its commands correspond to genuine supported production observation seams.
+
+BLOCK-005 can close on "authoritative path exists and is technically valid"; Owner PASS itself happens later after Codex PASS and real-host execution.
+
+==================================================
+10. TEST / PACKAGE EVIDENCE TO RECHECK
+==================================================
+Pi reported:
+- Round-4 BLOCK regressions: 20/20 PASS;
+- full V1.5: 65/65 PASS;
+- full Ruby: 729/729 PASS;
+- Node DOM: 163/163 assertions PASS (164 PASS lines including trailer);
+- RBZ smoke: 8/8 PASS;
+- Round-4 RBZ: 599,997 bytes / 59 entries;
+- SHA-256: 3D255BD5F6304440AD0C5030C8B52EEFA722CC0A27795B7F18F261DDAB0DE1BA.
+
+Do not merely trust these numbers. Re-run only what is necessary and proportionate to the BLOCK recheck, plus enough regression/package evidence to validate changed seams.
+
+Known non-blocking candidate for separate technical debt assessment:
+- V14-RUNTIME-BLOCK-004 may fail under a particular subset filter because WorkingModeRunner module state leaks between tests; it passes in isolation and in the recorded full suite. Determine whether Round-4 caused/materially worsened it. Do not reopen unrelated closed scope without causal evidence.
+
+==================================================
+11. REQUIRED VERDICT FORMAT
+==================================================
+Return one verdict:
+
+PASS
+or
+BLOCK
+or
+UNREVIEWABLE (only when repo/Git state prevents reliable review)
+
+Then report:
+
+1. Repo / Git facts
+   - branch
+   - HEAD
+   - worktree status
+   - c5e5ec7 -> current HEAD scope
+
+2. BLOCK table
+   - BLOCK-001: PASS/BLOCK + exact evidence
+   - BLOCK-002A: PASS/BLOCK + exact evidence
+   - BLOCK-002B: PASS/BLOCK + exact evidence
+   - BLOCK-003: PASS/BLOCK + exact evidence
+   - BLOCK-004: PASS/BLOCK + exact evidence
+   - BLOCK-005: PASS/BLOCK + exact evidence
+
+3. Findings
+   For every material finding give:
+   - severity: BLOCK / MATERIAL-NONBLOCKING / MINOR
+   - exact file + symbol/line area
+   - observed behavior
+   - violated frozen contract (if any)
+   - minimum acceptable outcome
+   - exact recheck evidence needed
+
+4. Tolerance-zero answer
+   Explicitly answer A/B/C/D from Section 5.
+
+5. Tests/package actually re-run
+   - commands
+   - results
+
+6. Scope integrity
+   - confirm no unrelated V1.0-V1.4 reopening
+   - confirm no V1.6 design/action
+
+7. Final next state
+   If PASS: state that V15-STAGE-BLOCK-001..005 are technically closed by this narrow recheck, subject to later Owner real-host verification for V1.5 product closure.
+   If BLOCK: list only remaining/new causally related BLOCKs and return control to AIPM.
+
+==================================================
+12. HARD STOP / AUTHORITY
+==================================================
+READ/REVIEW ONLY.
+Do not edit files.
+Do not commit.
+Do not push.
+Do not start Pi.
+Do not design V1.6.
+Do not create a new gate after PASS.
+Do not declare Owner Verification PASS.
+
+After verdict, STOP and return control to AIPM / Owner.
+
+END OF CODEX ROUND-4 NARROW BLOCK RECHECK DISPATCH
