@@ -79,7 +79,7 @@ Round-3 documentation / report evidence:
   Codex recheck.
 
 Round-4 implementation HEAD:
-`16dafce2ba91688b33511d5e7b8a351ace4fc88d`
+`c5e5ec7db88cae8262e13c1e6629f12b07f4241e`
 
 (Commit message: `fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005
 narrow-scope fixes (round 4)` — local stable checkpoint,

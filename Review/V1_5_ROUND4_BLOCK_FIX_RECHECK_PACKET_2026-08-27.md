@@ -19,7 +19,7 @@ Frozen design authority:
 | Round-2 base | `7283a830c0eb8979ad5c78ced30d8cffc790bc75` |
 | Round-3 implementation commit | `5ac83ea` |
 | Round-3 documentation | `fae3518` (recheck packet), `6f5df97` (state), `43854c8` (final report) |
-| Current Round-4 implementation HEAD | `16dafce2ba91688b33511d5e7b8a351ace4fc88d` (local stable checkpoint, NOT pushed) |
+| Current Round-4 implementation HEAD | `c5e5ec7db88cae8262e13c1e6629f12b07f4241e` (local stable checkpoint, NOT pushed) |
 
 Working tree (this Round-4 fix):
 - Modified: 7 tracked files (`AGENTS.md` + 6 V1.5 core files), 1 test file
@@ -578,7 +578,7 @@ ASSERT rows).
 ## 13. Local checkpoint commit
 
 A local stable checkpoint commit has been recorded at
-SHA `16dafce2ba91688b33511d5e7b8a351ace4fc88d` :
+SHA `c5e5ec7db88cae8262e13c1e6629f12b07f4241e` :
 
 ```
 fix(v1.5-stage4-block-recheck): CodeX BLOCK-001..005
