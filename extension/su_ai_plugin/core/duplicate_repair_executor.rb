@@ -132,7 +132,9 @@ module SUAnalysis
         end
         # Pre-flight (BLOCK-001 live-handle proof re-check +
         # BLOCK-003 invariant checks). Run BEFORE opening the
-        # host operation.
+        # host operation. Per Round-5 §2, this validates the
+        # COMPLETE expected member set, not just filtered
+        # successful handles.
         preflight = preflight_batch(workspace: workspace, per_action: per_action, captured_tolerance: captured_tol)
         unless preflight[:valid]
           updated = runnable.map { |a| fail_action(a, reason: "preflight_failed: #{preflight[:reason]}", affected_derived_ids: Array(a.affected_derived_ids)) }
@@ -152,6 +154,20 @@ module SUAnalysis
           # closed WITHOUT opening the host operation.
           updated = runnable.map { |a| fail_action(a, reason: "expected_post_state_invalid: #{expected_post['reason']}", affected_derived_ids: Array(a.affected_derived_ids)) }
           new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: "expected_post_state_invalid: #{expected_post['reason']}")
+          return [new_ws, updated + pre_skipped]
+        end
+        # Round-5 BLOCK-001 §2 step 4: re-run the COMPLETE
+        # live-handle proof immediately before opening the
+        # host operation. Per AIPM §2 step 4: "After
+        # expected-state validation, rerun this proof for the
+        # WHOLE executable batch."
+        final_proof = final_live_handle_proof(workspace: workspace, per_action: per_action)
+        unless final_proof[:valid]
+          # Atomic no-begin failure (BLOCK-001 step 5..8):
+          # begin=0, no disposal/commit, no applied rows,
+          # exact logical pre-state retained, no READY.
+          updated = runnable.map { |a| fail_action(a, reason: "final_live_handle_proof_failed: #{final_proof[:reason]}", affected_derived_ids: Array(a.affected_derived_ids)) }
+          new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: "final_live_handle_proof_failed: #{final_proof[:reason]}")
           return [new_ws, updated + pre_skipped]
         end
         # Precompute the post-workspace from the pure-data
@@ -188,6 +204,31 @@ module SUAnalysis
           break unless action_errors.empty?
         end
         if action_errors.empty?
+          # BLOCK-003 PRECOMMIT host-shape observation.
+          # Re-verify against the live host state immediately
+          # before commit. Per AIPM §5 step 6:
+          #   - survivors still live/valid
+          #   - planned removals observably no longer live/valid
+          #   - identities still match the proven batch
+          #   - no survivor accidentally disposed
+          # Mismatch => abort exactly once, commit=0, no
+          # post-state publish, exact logical pre-state,
+          # failed/non-ready.
+          precommit = precommit_host_shape_observation(
+            workspace: workspace,
+            per_action: per_action,
+            adapter: adapter,
+            model: model
+          )
+          unless precommit[:valid]
+            begin
+              adapter.end_operation(model, commit: false)
+            rescue StandardError
+            end
+            updated = runnable.map { |a| fail_action(a, reason: "precommit_host_shape_mismatch: #{precommit[:reason]}", affected_derived_ids: Array(a.affected_derived_ids)) }
+            new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: "precommit_host_shape_mismatch: #{precommit[:reason]}")
+            return [new_ws, updated + pre_skipped]
+          end
           # Commit the operation. BLOCK-003: success path
           # publishes the already-precomputed logical
           # post-workspace. A successful commit means the
@@ -200,6 +241,9 @@ module SUAnalysis
             # follow-up end_operation(commit: false): the
             # host either auto-rolled-back its own operation
             # (real SU) or never opened one (fake adapter).
+            # Per AIPM §5 step 9: commit uncertainty =>
+            # failed/non-ready; preserve evidence; do NOT
+            # fabricate successful rollback.
             new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: "commit_operation_failed: #{e.class}: #{e.message}")
             updated = runnable.map { |a| fail_action(a, reason: "commit_operation_failed: #{e.class}: #{e.message}", affected_derived_ids: all_present_ids & Array(a.affected_derived_ids)) }
             return [new_ws, updated + pre_skipped]
@@ -236,14 +280,35 @@ module SUAnalysis
       # Pre-flight (BLOCK-001 + BLOCK-003): per-action live-
       # handle proof + handle validity + tolerance + capture
       # the pre-batch candidate_pair_count.
+      #
+      # Round-5 §2: validates the COMPLETE expected member
+      # set from each action, not just filtered successful
+      # handles. Every action's expected member IDs =
+      # survivor + all removals. Each one resolves to exactly
+      # one current host handle; any missing member is
+      # failure; any `valid? != true` is failure; all handles
+      # pairwise distinct by `equal?` (survivor/removal AND
+      # removal/removal); survivor appears exactly once and
+      # is not in removal set.
       # ------------------------------------------------------------
       def preflight_batch(workspace:, per_action:, captured_tolerance: nil)
+        # Captured tolerance explicit. Per Round-5 §3 the
+        # category check is more permissive (>= 0.0 valid).
+        tol = captured_tolerance || DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
+        unless DuplicateGeometrySemantics.valid_tolerance?(tol)
+          return { valid: false, reason: 'invalid_or_missing_captured_tolerance' }
+        end
         # Live-handle proof: every action's survivor and
         # to_remove handles must be present, valid, distinct,
-        # and survivor/removed disjoint.
-        per_action.each do |act, to_remove, present_ids, _invalid_ids|
+        # and survivor/removed disjoint. Per Round-5 §2 step 1,
+        # the COMPLETE expected member set is validated -- not
+        # just the filtered present set.
+        per_action.each do |act, to_remove, _present_ids, _invalid_ids|
           survivor_id = act.before_summary.is_a?(Hash) ?
                           act.before_summary['survivor_derived_id'].to_s : nil
+          survivor_handle = nil
+          # (1) survivor resolves to exactly one current host
+          # handle; missing OR invalid => failure.
           if survivor_id && !survivor_id.empty?
             survivor_handle = workspace.handle_for(survivor_id)
             if survivor_handle.nil?
@@ -253,7 +318,10 @@ module SUAnalysis
               return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
             end
           end
-          present_ids.each do |id|
+          # (2) Every to_remove member resolves to exactly
+          # one current host handle. Per Round-5 §2 step 2,
+          # ANY missing member is failure -- not filtered out.
+          to_remove.each do |id|
             h = workspace.handle_for(id)
             if h.nil?
               return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
@@ -262,22 +330,32 @@ module SUAnalysis
               return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
             end
           end
-          # Survivor/removed disjointness.
-          if survivor_id && !survivor_id.empty? && present_ids.any?
-            survivor_handle = workspace.handle_for(survivor_id)
-            present_ids.each do |id|
-              h = workspace.handle_for(id)
-              next if h.nil?
-              if h.equal?(survivor_handle)
-                return { valid: false, reason: "survivor_handle_aliases_removal_handle: #{survivor_id.inspect}<->#{id.inspect}" }
-              end
+          # (3) Survivor appears exactly once and is not in
+          # removal set.
+          if survivor_id && !survivor_id.empty? && to_remove.include?(survivor_id)
+            return { valid: false, reason: "survivor_present_in_removal_set: #{survivor_id.inspect}" }
+          end
+          # (4) All handles pairwise distinct by object
+          # identity (`equal?`). Check survivor/removal AND
+          # removal/removal alias.
+          all_handles = {}
+          if survivor_id && !survivor_id.empty?
+            all_handles[survivor_id] = survivor_handle
+          end
+          to_remove.each do |id|
+            h = workspace.handle_for(id)
+            all_handles[id] = h
+          end
+          # Pairwise equal? check.
+          ids = all_handles.keys
+          ids.combination(2).each do |a, b|
+            ha = all_handles[a]
+            hb = all_handles[b]
+            next if ha.nil? || hb.nil?
+            if ha.equal?(hb)
+              return { valid: false, reason: "host_handle_aliasing: #{a.inspect} <-> #{b.inspect}" }
             end
           end
-        end
-        # Captured tolerance explicit.
-        tol = captured_tolerance || DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
-        unless DuplicateGeometrySemantics.valid_tolerance?(tol)
-          return { valid: false, reason: 'invalid_or_missing_captured_tolerance' }
         end
         # Measure the pre-batch candidate_pair_count (for the
         # expected post-state's `before` metric). The expected
@@ -291,6 +369,127 @@ module SUAnalysis
           captured_tolerance:             tol,
           candidate_pair_count_before:    candidate_pair_count_before
         }
+      end
+
+      # ------------------------------------------------------------
+      # FINAL live-handle proof (Round-5 BLOCK-001 §2 step 4).
+      # Re-runs the complete live-handle proof for the WHOLE
+      # executable batch IMMEDIATELY BEFORE begin_operation,
+      # AFTER expected-state validation. Per AIPM §2:
+      #   - complete expected member set (survivor + removals)
+      #   - every member resolves to exactly one host handle
+      #   - any missing OR `valid? != true` is failure
+      #   - all handles pairwise distinct by `equal?` (incl.
+      #     removal/removal)
+      #   - survivor appears exactly once and not in removal
+      # Failure => atomic no-begin failure: begin=0, no
+      # disposal, no commit, no applied rows, exact logical
+      # pre-state retained, no READY, truthful stable reason
+      # code.
+      # ------------------------------------------------------------
+      def final_live_handle_proof(workspace:, per_action:)
+        per_action.each do |act, to_remove, _present_ids, _invalid_ids|
+          survivor_id = act.before_summary.is_a?(Hash) ?
+                          act.before_summary['survivor_derived_id'].to_s : nil
+          survivor_handle = nil
+          if survivor_id && !survivor_id.empty?
+            survivor_handle = workspace.handle_for(survivor_id)
+            if survivor_handle.nil?
+              return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
+            end
+            if survivor_handle.respond_to?(:valid?) && !survivor_handle.valid?
+              return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+            end
+          end
+          # Each to_remove member resolves to exactly one
+          # current host handle.
+          to_remove.each do |id|
+            h = workspace.handle_for(id)
+            if h.nil?
+              return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
+            end
+            if h.respond_to?(:valid?) && !h.valid?
+              return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
+            end
+          end
+          # Survivor appears exactly once and is not in the
+          # removal set.
+          if survivor_id && !survivor_id.empty? && to_remove.include?(survivor_id)
+            return { valid: false, reason: "survivor_present_in_removal_set: #{survivor_id.inspect}" }
+          end
+          # All handles pairwise distinct by `equal?` (incl.
+          # removal/removal alias).
+          all_handles = {}
+          all_handles[survivor_id] = survivor_handle if survivor_id && !survivor_id.empty?
+          to_remove.each { |id| all_handles[id] = workspace.handle_for(id) }
+          ids = all_handles.keys
+          ids.combination(2).each do |a, b|
+            ha = all_handles[a]
+            hb = all_handles[b]
+            next if ha.nil? || hb.nil?
+            if ha.equal?(hb)
+              return { valid: false, reason: "host_handle_aliasing: #{a.inspect} <-> #{b.inspect}" }
+            end
+          end
+        end
+        { valid: true }
+      end
+
+      # ------------------------------------------------------------
+      # PRECOMMIT host-shape observation (Round-5 BLOCK-003 §5
+      # step 6). After disposal but before commit, re-verify
+      # the live host state:
+      #   - survivors still live/valid
+      #   - planned removals observably no longer live/valid
+      #   - identities still match the proven batch
+      #   - no survivor accidentally disposed
+      # Mismatch => abort exactly once, commit=0, no
+      # post-state publish, exact logical pre-state,
+      # failed/non-ready.
+      # ------------------------------------------------------------
+      def precommit_host_shape_observation(workspace:, per_action:, adapter:, model:)
+        per_action.each do |act, to_remove, _present_ids, _invalid_ids|
+          survivor_id = act.before_summary.is_a?(Hash) ?
+                          act.before_summary['survivor_derived_id'].to_s : nil
+          # (1) Survivors still live/valid.
+          if survivor_id && !survivor_id.empty?
+            sh = workspace.handle_for(survivor_id)
+            if sh.nil? || (sh.respond_to?(:valid?) && !sh.valid?)
+              return { valid: false, reason: "precommit_survivor_handle_not_live: #{survivor_id.inspect}" }
+            end
+          end
+          # (2) Planned removals observably no longer live/valid.
+          to_remove.each do |id|
+            h = workspace.handle_for(id)
+            if h.nil?
+              # handle was cleared by dispose -- expected.
+              next
+            end
+            if h.respond_to?(:valid?) && !h.valid?
+              # handle invalidated by dispose -- expected.
+              next
+            end
+            # Handle still appears live/valid after dispose --
+            # this is a host-shape mismatch.
+            return { valid: false, reason: "precommit_removal_handle_still_live: #{id.inspect}" }
+          end
+          # (3) Identities still match the proven batch.
+          # This is the same check as the live-handle proof
+          # (handles must still be distinct by equal?).
+          all_handles = {}
+          all_handles[survivor_id] = workspace.handle_for(survivor_id) if survivor_id && !survivor_id.empty?
+          to_remove.each { |id| all_handles[id] = workspace.handle_for(id) }
+          ids = all_handles.keys
+          ids.combination(2).each do |a, b|
+            ha = all_handles[a]
+            hb = all_handles[b]
+            next if ha.nil? || hb.nil?
+            if ha.equal?(hb)
+              return { valid: false, reason: "precommit_handle_aliasing: #{a.inspect} <-> #{b.inspect}" }
+            end
+          end
+        end
+        { valid: true }
       end
 
       # ------------------------------------------------------------

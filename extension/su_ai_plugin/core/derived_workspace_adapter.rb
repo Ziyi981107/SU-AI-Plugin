@@ -222,6 +222,14 @@ module SUAnalysis
         @operation_log  = []
         # Optional failure-injection hook (used by tests).
         @next_operation_should_raise = nil
+        # Round-5 BLOCK-005 §7: host-state-change simulation
+        # hook. When set true, the next
+        # WorkingModeRunner.validate_host_state_consistency!
+        # call sees the adapter as inconsistent (simulates a
+        # SketchUp Undo or external host change). Default
+        # false. Tests can flip this via
+        # `simulate_host_state_change!`.
+        @host_state_changed = false
       end
 
       def next_id
@@ -238,6 +246,26 @@ module SUAnalysis
       # OR end_operation call raises the given error.
       def inject_operation_failure!(error)
         @next_operation_should_raise = error
+      end
+
+      # Round-5 BLOCK-005 §7: host-state-change simulation
+      # hook. When set true via `simulate_host_state_change!`,
+      # the next `validate_host_state_consistency!` call sees
+      # the adapter as inconsistent and transitions the
+      # current workspace to :failed with reason
+      # `host_state_changed`. Production code MUST NOT call
+      # this; tests use it to simulate a SketchUp Undo or
+      # external host change.
+      def simulate_host_state_change!
+        @host_state_changed = true
+      end
+
+      def clear_host_state_change!
+        @host_state_changed = false
+      end
+
+      def host_state_changed?
+        @host_state_changed ? true : false
       end
 
       def create_top_level_group(name, model: nil)

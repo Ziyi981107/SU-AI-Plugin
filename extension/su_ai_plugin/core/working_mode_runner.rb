@@ -286,7 +286,15 @@ module SUAnalysis
       # For the V1.4 plumbing, rebuild = prepare (the workspace
       # is empty in :building state); V1.4+ will rebuild real
       # entities from the captured RepairPlan.
+      #
+      # Round-5 BLOCK-005 §7: rebuild runs
+      # `validate_host_state_consistency!` first. If the prior
+      # workspace's handle registry is inconsistent with the
+      # host (e.g. user-undone), the runner must NOT silently
+      # discard/overwrite; the user must explicitly discard
+      # the now-stale workspace before a new rebuild.
       def rebuild
+        validate_host_state_consistency!
         return _empty_snapshot if @current_source.nil?
         # If the captured adapter is missing (e.g. tests that
         # bypass prepare()), rebuild stays idle.
@@ -964,8 +972,134 @@ module SUAnalysis
         snapshot
       end
 
-      # Test hook: force-clear the runner state. Not used in
-      # production; here for testing in isolation.
+      # ===========================================================
+      # Round-5 BLOCK-005 §7: host-state reconciliation.
+      # ===========================================================
+      #
+      # Validate-on-next-interaction: compare the stored
+      # workspace handle registry against the observable host
+      # state BEFORE proceeding with any later destructive or
+      # reconciliation operation.
+      #
+      # Returns:
+      #   true  -> workspace is consistent with host, proceed.
+      #   false -> workspace was inconsistent; the runner has
+      #            transitioned it to :failed with reason
+      #            `host_state_changed`. The next prepare() or
+      #            rebuild() must observe :failed and refuse
+      #            silent overwrite.
+      #
+      # Per AIPM §7:
+      #   - validate stored workspace/handles against
+      #     observable host state
+      #   - mismatch -> do not continue destructive work
+      #   - deterministically invalidate to an existing safe
+      #     non-ready state (failed/stale/none or repo-
+      #     fitting equivalent)
+      #   - surface stable reason `host_state_changed`
+      #   - require/use existing safe rebuild/prepare before
+      #     destructive work resumes
+      #
+      # Implementation:
+      #   - The workspace's PRIVATE handle_registry is the
+      #     single source of truth for the runner's
+      #     expectation. Each handle's `valid?` (when
+      #     supported) is checked against the host.
+      #   - When the adapter exposes
+      #     `host_state_changed?` and returns true, the
+      #     workspace is also invalidated (this lets the
+      #     FakeAdapter simulate a user-Undo or external
+      #     host change without changing the workspace).
+      #   - A workspace already in :failed/:discarded/:none
+      #     is treated as "consistent enough" for the purpose
+      #     of this check (the runner proceeds; the caller
+      #     still has explicit gates).
+      #   - No observer architecture is added; the check runs
+      #     only when a destructive/observable operation is
+      #     about to use the stored handles.
+      def validate_host_state_consistency!
+        return true if @current_workspace.nil?
+        # :none: no workspace; nothing to validate.
+        return true if @current_workspace.state == :none
+        # :failed: already non-ready; further destructive
+        # operations already refuse. The runner just reports
+        # the existing :failed state. The adapter flag is
+        # irrelevant here -- the workspace is already
+        # unusable for destructive work.
+        return true if @current_workspace.state == :failed
+        # If the runner does not have a captured adapter
+        # (e.g. tests that bypass prepare() by setting
+        # @current_workspace directly), the validate-on-
+        # next-interaction seam degrades gracefully: check
+        # the stored handle registry but skip the adapter-
+        # driven host_state_changed? flag (which requires an
+        # adapter to consult). Production flows always go
+        # through prepare() and have a captured adapter.
+        adapter = @current_adapter
+        # Adapter-driven host-state flag (FakeAdapter +
+        # production can override; default false).
+        adapter_flag = false
+        if !adapter.nil? && adapter.respond_to?(:host_state_changed?)
+          adapter_flag = adapter.host_state_changed? ? true : false
+        end
+        registry = @current_workspace.instance_variable_get(:@handle_registry) || {}
+        # :ready + no handles is already incoherent (the
+        # workspace claimed READY without materializing
+        # handles). :discarded + host-state-change means
+        # the prior discard was undone / external state
+        # changed; per AIPM §7, the next interaction must
+        # NOT claim a false :discarded coherence.
+        invalid_no_handles = registry.empty? && @current_workspace.state == :ready
+        invalid_handle = registry.any? do |_derived_id, handle|
+          if handle.nil?
+            true
+          elsif handle.respond_to?(:valid?) && !handle.valid?
+            true
+          else
+            false
+          end
+        end
+        if adapter_flag || invalid_no_handles || invalid_handle
+          _invalidate_to_failed_with_reason('host_state_changed')
+          return false
+        end
+        true
+      end
+
+      # Internal: re-emit a :failed workspace that preserves
+      # the existing handle registry + entity pairs but
+      # carries a stable reason. Mirrors the same shape used
+      # by `discard` failures so downstream callers see a
+      # consistent :failed state.
+      def _invalidate_to_failed_with_reason(reason)
+        return if @current_workspace.nil?
+        ws = @current_workspace
+        adapter = ws.instance_variable_get(:@adapter)
+        model   = ws.instance_variable_get(:@model)
+        new_ws = DerivedGeometryWorkspace.new_with_inventory(
+            workspace_id:    ws.workspace_id,
+            source_snapshot: ws.source_snapshot,
+            adapter:         adapter,
+            model:           model,
+            state:           :failed,
+            entity_pairs:    ws.instance_variable_get(:@entity_pairs),
+            handle_registry: ws.instance_variable_get(:@handle_registry),
+            fingerprint:     ws.respond_to?(:fingerprint) ? ws.fingerprint : nil,
+            last_error:      reason.to_s,
+            build_started_at: ws.build_started_at
+        )
+        @current_workspace = new_ws
+        @duplicate_repair_summary = nil
+      end
+
+      # Test hook: force-clear the runner state. NOT for
+      # production or Owner flow per Round-5 BLOCK-005 §7.
+      # Tests that need isolated runner state may call this
+      # directly; production code MUST NOT. Production code
+      # reaches the runner only through prepare / rebuild /
+      # discard / run_duplicate_repair_batch, all of which
+      # operate on the CURRENT workspace without mutating
+      # private state.
       def reset_for_tests
         @current_workspace    = nil
         @current_source       = nil
@@ -988,12 +1122,31 @@ module SUAnalysis
                     when Hash
                       v.each_with_object({}) { |(kk, vv), h| h[kk.to_s] = vv }
                     when Array
-                      v.map { |item| item.is_a?(String) ? item : item.to_s }
+                      v.map { |item| stringify_duplicate_repair_value(item) }
                     else
                       v.to_s
                     end
         end
         out.freeze
+      end
+
+      # Internal helper: recursively stringify a value (Hash
+      # keys become strings; Array items recurse; everything
+      # else is converted to a String). Used so per-action audit
+      # rows inside the summary's `actions` Array stay queryable
+      # (status, confidence_basis, etc.) instead of being
+      # collapsed into a single inspect-style blob.
+      def stringify_duplicate_repair_value(v)
+        case v
+        when String, Numeric, TrueClass, FalseClass, NilClass
+          v
+        when Hash
+          v.each_with_object({}) { |(kk, vv), h| h[kk.to_s] = stringify_duplicate_repair_value(vv) }
+        when Array
+          v.map { |item| stringify_duplicate_repair_value(item) }
+        else
+          v.to_s
+        end
       end
 
       # V1.4 CodeX BLOCK fix (Stage 4): test-only accessor

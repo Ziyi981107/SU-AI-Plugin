@@ -57,10 +57,14 @@
 #        removal handle)
 #   G.  every APPLIED complete-graph component collapses to
 #        exactly one survivor (the lex-smallest derived_id)
-#   H.  no direct duplicate pair belonging to an APPLIED
-#        component remains in the expected post-state (the
-#        measurement of the expected post-workspace reports 0
-#        pairs for every applied component)
+#   H.  all expected handles exist/live and every
+#        survivor/removal AND removal/removal set is pairwise
+#        disjoint
+#   I.  zero direct duplicate pairs belonging to every APPLIED
+#        component remain in the expected post geometry (no
+#        pair of survivors from different APPLIED actions
+#        satisfies the shared direct_match? predicate under
+#        the captured tolerance)
 #
 
 require 'digest'
@@ -262,14 +266,63 @@ module SUAnalysis
         # The proposer already enforces lex-smallest, so we just
         # require survivors.length == applied_action_ids.length.
         return { valid: false, reason: 'survivor_count_mismatch:applied_action_count' } if survivors.length != Array(state['applied_action_ids']).length
-        # H. No direct duplicate pair belonging to an APPLIED
-        # component remains in the expected post-state. The
-        # measurement of the expected post-workspace should
-        # not contain pairs between (survivor, removed) for
-        # any APPLIED action. The pair count metric is the
-        # authoritative report (state['duplicate_pairs_after']).
-        # We do NOT add a hardcoded check; the metric is the
-        # proof.
+        # H. All expected handles exist/live AND every
+        # survivor/removal AND removal/removal set is pairwise
+        # disjoint by `equal?`. Strengthened in Round-5:
+        # previously checked only survivor/removal aliasing;
+        # now also removal/removal aliasing across the entire
+        # batch.
+        surv_handles = state['survivor_handles'] || {}
+        rem_handles  = state['removal_handles'] || {}
+        # All survivor handles pairwise distinct by equal?.
+        surv_handles.each do |sid, sh|
+          next if sh.nil?
+          surv_handles.each do |sid2, sh2|
+            next if sid == sid2
+            next if sh2.nil?
+            if sh.equal?(sh2)
+              return { valid: false, reason: "survivor_handle_aliasing: #{sid} <-> #{sid2}" }
+            end
+          end
+        end
+        # All removal handles pairwise distinct by equal?.
+        rem_handles.each do |rid, rh|
+          next if rh.nil?
+          rem_handles.each do |rid2, rh2|
+            next if rid == rid2
+            next if rh2.nil?
+            if rh.equal?(rh2)
+              return { valid: false, reason: "removal_handle_aliasing: #{rid} <-> #{rid2}" }
+            end
+          end
+        end
+        # I. Zero direct duplicate pairs belonging to every
+        # APPLIED component remain in the expected post
+        # geometry. We measure direct pairs among the
+        # survivors of the applied components under the
+        # captured tolerance. If any pair matches, the
+        # applied batch was not fully collapsed.
+        tol = state['tolerance']
+        unless DuplicateGeometrySemantics.valid_tolerance?(tol)
+          # Already caught by `valid` flag above; defensive.
+          return { valid: false, reason: 'invalid_or_missing_captured_tolerance' }
+        end
+        post_geom = state['post_geometry'] || {}
+        survivor_records = survivors.map { |sid|
+          info = post_geom[sid]
+          next nil unless info.is_a?(Hash)
+          geom = info['geometry_summary'] || {}
+          {
+            derived_id: sid,
+            start:      geom['start'] || geom[:start],
+            finish:     geom['end']   || geom[:end]   || geom['finish'],
+            layer:      geom['layer'] || geom[:layer]
+          }
+        }.compact
+        survivor_pairs = DuplicateGeometrySemantics.enumerate_candidates(survivor_records, tol)
+        unless survivor_pairs.empty?
+          return { valid: false, reason: 'applied_component_residual_duplicate_pair_in_expected_post' }
+        end
         { valid: true }
       end
 

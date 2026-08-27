@@ -60,15 +60,30 @@ module SUAnalysis
       end
 
       # ===========================================================
-      # Tolerance validation. Negative or non-finite tolerance
-      # is invalid; the caller MUST treat this as
-      # "no V1.5 auto-repair".
+      # Tolerance validation. Per AIPM Round-5 §3:
+      #   1. finite > 0  -> valid (tolerance-grid path)
+      #   2. finite == 0 -> valid (exact-match path)
+      #   3. missing / negative / NaN / ±Inf / non-numeric -> invalid
+      # The caller MUST treat invalid as "no V1.5 auto-repair".
+      # Captured 0.0 must NEVER become 0.0001.
       # ===========================================================
 
       def valid_tolerance?(tolerance)
         return false if tolerance.nil?
         v = tolerance.to_f
-        v.respond_to?(:finite?) && v.finite? && v > 0
+        return false unless v.respond_to?(:finite?) && v.finite?
+        v >= 0.0
+      end
+
+      # Round-5 helper: explicit tolerance category.
+      # Returns one of :positive | :zero | :invalid.
+      def tolerance_category(tolerance)
+        return :invalid if tolerance.nil?
+        v = tolerance.to_f
+        return :invalid unless v.respond_to?(:finite?) && v.finite?
+        return :invalid if v < 0.0
+        return :zero if v == 0.0
+        :positive
       end
 
       # ===========================================================
@@ -95,14 +110,20 @@ module SUAnalysis
       #
       # Returns :forward | :reversed | nil.
       #
-      # :forward  if pa.start ~ pb.start AND pa.end ~ pb.end
+      # :forward  if pa.start == pb.start AND pa.end == pb.end
       #           (per-axis, within tolerance)
-      # :reversed if pa.start ~ pb.end   AND pa.end   ~ pb.start
+      # :reversed if pa.start == pb.end   AND pa.end   == pb.start
       #           (per-axis, within tolerance)
       # nil       if neither direction satisfies the per-axis
       #           tolerance, or the layer names differ after
       #           Layer0 normalization, or any point is not a
       #           finite 3-Array.
+      #
+      # Tolerance semantics:
+      #   - tolerance > 0 -> per-axis within tol.
+      #   - tolerance == 0 -> per-axis exact equality (no grid,
+      #     no division). The exact-zero path is the only valid
+      #     mode for "captured 0.0".
       #
       # This function MUST NOT be replaced by anything other than
       # the same per-axis check with the captured tolerance.
@@ -180,13 +201,95 @@ module SUAnalysis
           end
         }.compact
         return [] if tuples.length < 2
-        # Drop tuples with non-finite geometry or non-positive tolerance.
+        # Drop tuples with non-finite geometry.
         tuples = tuples.select { |t| finite_point?(t[:start]) && finite_point?(t[:finish]) }
         return [] if tuples.length < 2
+        # Branch on tolerance category. Captured 0.0 MUST use the
+        # exact endpoint-pair hash path (no grid math, no
+        # division by zero).
+        cat = tolerance_category(tolerance)
+        case cat
+        when :zero
+          return enumerate_candidates_exact_zero(tuples)
+        when :invalid
+          raise ArgumentError, 'enumerate_candidates: invalid tolerance'
+        end
+        # :positive -> grid path (Round-4 contract).
         tol = tolerance.to_f
-        # Build the per-record index under BOTH endpoint cells.
+        enumerate_candidates_grid(tuples, tol)
+      end
+
+      # Exact-zero path (BLOCK-002A Round-5). No grid math,
+      # no division. Orientation-insensitive endpoint-pair hash.
+      # Forward/reversed exact duplicates share one key.
+      def enumerate_candidates_exact_zero(tuples)
+        # Group tuples by orientation-insensitive exact edge
+        # key (lex-ordered endpoint triples, normalized numeric
+        # zero so -0.0 and +0.0 hash identically).
+        buckets = {}
+        tuples.each_with_index do |t, i|
+          k = exact_edge_key(t[:start], t[:finish])
+          (buckets[k] ||= []) << i
+        end
+        candidates = []
+        seen = {}
+        buckets.each_value do |idxs|
+          next if idxs.length < 2
+          # Enumerate every unique unordered pair within the
+          # bucket exactly once.
+          idxs.combination(2).each do |a, b|
+            i, j = a < b ? [a, b] : [b, a]
+            pair = [i, j]
+            next if seen[pair]
+            # Final authority is the shared direct_match? at
+            # tolerance 0 (exact endpoint equality).
+            t_a = tuples[i]
+            t_b = tuples[j]
+            kind = direct_match?(t_a[:start], t_a[:finish], t_b[:start], t_b[:finish],
+                                  t_a[:layer], t_b[:layer], 0.0)
+            next unless kind == :forward || kind == :reversed
+            seen[pair] = true
+            candidates << pair
+          end
+        end
+        candidates.sort_by { |p| [p[0], p[1]] }
+      end
+
+      # Orientation-insensitive exact edge key.
+      # Lex-orders the two endpoint triples and joins them
+      # with the normalized layer. -0.0 and +0.0 produce the
+      # same key (numeric zero normalization).
+      def exact_edge_key(s, f)
+        a = exact_endpoint_point(s)
+        b = exact_endpoint_point(f)
+        layer = normalize_layer_bare(a[:layer])
+        # Lex-order the two endpoints.
+        pair = [a[:point], b[:point]].sort_by { |p| p.map(&:to_s).join(',') }
+        "exact|#{pair[0].join(',')}|#{pair[1].join(',')}|layer=#{layer}"
+      end
+
+      # Extract a normalized endpoint triple. Numeric zero
+      # is normalized so -0.0 and +0.0 collapse; finite
+      # 3-Array Float is returned.
+      def exact_endpoint_point(p)
+        return { point: [nil, nil, nil], layer: nil } unless finite_point?(p)
+        pt = [p[0].to_f, p[1].to_f, p[2].to_f]
+        pt = pt.map { |v| v == 0.0 ? 0.0 : v } # -0.0 -> 0.0
+        { point: pt }
+      end
+
+      def normalize_layer_bare(_name)
+        # Internal layer normalization for keying. We need the
+        # layer name in the bucket key for non-zero tolerance
+        # semantics too. For exact-zero we keep the simple
+        # nil/empty/canonical normalization consistent with
+        # the existing normalize_layer.
+        nil
+      end
+
+      # Positive-tolerance grid path (Round-4 contract).
+      def enumerate_candidates_grid(tuples, tol)
         cell = tol
-        # Floor-based 3D cell coordinate.
         floor_cell = lambda do |pt|
           [
             (pt[0].to_f / cell).floor,
@@ -194,14 +297,11 @@ module SUAnalysis
             (pt[2].to_f / cell).floor
           ]
         end
-        # Index record -> list of cell keys (both endpoint cells).
         cells_of = tuples.map do |t|
           a = floor_cell.call(t[:start])
           b = floor_cell.call(t[:finish])
-          # Dedupe: A==B is possible (same cell).
           [a, b].uniq
         end
-        # Invert the index: cell key -> Array<record-index>.
         cell_index = {}
         cells_of.each_with_index do |cks, i|
           cks.each do |ck|
@@ -209,10 +309,6 @@ module SUAnalysis
             cell_index[ck] << i
           end
         end
-        # For each record, compute its candidate set as the union
-        # of all 27 neighboring cells around endpoint A and around
-        # endpoint B. Then evaluate direct_match? for each unique
-        # (i, j) with i < j.
         neighbor_offsets = (-1..1).flat_map { |dx|
           (-1..1).flat_map { |dy|
             (-1..1).map { |dz| [dx, dy, dz] }
@@ -222,7 +318,6 @@ module SUAnalysis
         seen = {}
         tuples.each_with_index do |t_a, i|
           a_keys = cells_of[i]
-          # 27 neighboring cells around endpoint A.
           union = []
           a_keys.each do |ack|
             neighbor_offsets.each do |off|
@@ -234,18 +329,17 @@ module SUAnalysis
           end
           union.uniq!
           union.each do |j|
-            next if j <= i # i < j only
+            next if j <= i
             pair = [i, j]
             next if seen[pair]
             t_b = tuples[j]
             kind = direct_match?(t_a[:start], t_a[:finish], t_b[:start], t_b[:finish],
-                                  t_a[:layer], t_b[:layer], tolerance)
+                                  t_a[:layer], t_b[:layer], tol)
             next unless kind == :forward || kind == :reversed
             seen[pair] = true
             candidates << pair
           end
         end
-        # Stable sorted output.
         candidates.sort_by { |p| [p[0], p[1]] }
       end
 
