@@ -95,8 +95,9 @@ Round-5 continuation implementation HEAD:
 - Main continuation commit: `3cb11ddd9259d24ead165a5530b6e06a16f2b00f`
   (test + state + report update)
 - SHA-stamp commit: `ac474fb9d42cb60ba508d0fce045b50b846e51ca`
-- Final SHA-stamp commit (final `git rev-parse HEAD`):
-  `aa5bae22122e16d7cc87b37cdf90c143fc4b55ca`
+- Final SHA-stamp commit: `aa5bae22122e16d7cc87b37cdf90c143fc4b55ca`
+- Final `git rev-parse HEAD` (acceptance state):
+  `6fd81b57a08cc2864cf09e763b3dae48c888c4ef`
 - See `Review/CURRENT_PI_REPORT.md` §15 for the full scope.
 
 The continuation only ADDS test code; production code is unchanged,

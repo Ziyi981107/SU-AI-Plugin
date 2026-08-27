@@ -32,7 +32,8 @@ in §15 below.
 | Round-5 implementation HEAD (prior checkpoint) | `f6dda52b6bc42ffdaa0a6e46a96206daa543dc47` |
 | Round-5 continuation main commit | `3cb11ddd9259d24ead165a5530b6e06a16f2b00f` (tests + state + report) |
 | Round-5 continuation SHA-stamp | `ac474fb9d42cb60ba508d0fce045b50b846e51ca` |
-| Round-5 continuation final `git rev-parse HEAD` | `aa5bae22122e16d7cc87b37cdf90c143fc4b55ca` |
+| Round-5 continuation final SHA-stamp | `aa5bae22122e16d7cc87b37cdf90c143fc4b55ca` |
+| Round-5 continuation final `git rev-parse HEAD` | `6fd81b57a08cc2864cf09e763b3dae48c888c4ef` |
 | Working tree | clean (`git status --short` empty) |
 | Push | NOT pushed (per dispatch hard boundaries) |
 
