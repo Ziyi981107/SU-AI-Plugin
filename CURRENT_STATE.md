@@ -92,10 +92,12 @@ Round-5 implementation HEAD:
 fix checkpoint, preserved as prior HEAD; NOT pushed)
 
 Round-5 continuation implementation HEAD:
-The final local stable commit SHA is the on-disk `git rev-parse HEAD`
-at the time this state file was completed (verify with
-`git rev-parse HEAD`; see `Review/CURRENT_PI_REPORT.md` §15;
-NOT pushed).
+- Main continuation commit: `3cb11ddd9259d24ead165a5530b6e06a16f2b00f`
+  (test + state + report update)
+- SHA-stamp commit (final `git rev-parse HEAD`):
+  `ac474fb9d42cb60ba508d0fce045b50b846e51ca`
+- See `Review/CURRENT_PI_REPORT.md` §15 for the full scope.
+
 The continuation only ADDS test code; production code is unchanged,
 so the RBZ hash is identical to the Round-5 implementation HEAD.
 

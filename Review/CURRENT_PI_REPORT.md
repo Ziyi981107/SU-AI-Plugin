@@ -30,8 +30,9 @@ in §15 below.
 | Branch | `v1.5-stage-round3-fix` |
 | Round-4 implementation base | `c5e5ec7db88cae8262e13c1e6629f12b07f4241e` |
 | Round-5 implementation HEAD (prior checkpoint) | `f6dda52b6bc42ffdaa0a6e46a96206daa543dc47` |
-| Round-5 continuation HEAD | (recorded in §15) |
-| Working tree | clean (`git status --short` empty after final commit) |
+| Round-5 continuation implementation HEAD | `3cb11ddd9259d24ead165a5530b6e06a16f2b00f` (the main continuation commit) |
+| Round-5 continuation SHA-stamp HEAD | `ac474fb9d42cb60ba508d0fce045b50b846e51ca` (final `git rev-parse HEAD`; stamps the recorded SHAs) |
+| Working tree | clean (`git status --short` empty) |
 | Push | NOT pushed (per dispatch hard boundaries) |
 
 ---
@@ -405,21 +406,31 @@ Pi returns control to AIPM.
 
 ## 15. Local checkpoint commit (Round-5 continuation)
 
-The final local stable commit SHA is the on-disk `git rev-parse HEAD`
-at the time this report was completed. It is recorded as the
-parent of the immediately-following SHA-stamp commit (if any)
-or as the last commit in `git log` after the worktree is clean.
+The Round-5 continuation produced two local commits:
 
-Commit subject:
+1. Main continuation commit (test + state + report updates):
+   ```
+   3cb11ddd9259d24ead165a5530b6e06a16f2b00f
+   ```
+   Subject:
+   ```
+   fix(v1.5-stage5-block-fix): CodeX BLOCK-001..005 continuation regressions (round 5 cont.)
+   ```
+   Scope: 3 files changed, 2020 insertions(+), 746 deletions(-):
+   - `tests/test_v15_round5_block_fix.rb` (+17 new tests)
+   - `Review/CURRENT_PI_REPORT.md` (overwritten continuation report)
+   - `CURRENT_STATE.md` (state update)
 
-```
-fix(v1.5-stage5-block-fix): CodeX BLOCK-001..005 continuation regressions (round 5 cont.)
-```
-
-Commit scope (3 files changed, 2020 insertions(+), 746 deletions(-)):
-- `tests/test_v15_round5_block_fix.rb` (+17 new tests)
-- `Review/CURRENT_PI_REPORT.md` (overwritten continuation report)
-- `CURRENT_STATE.md` (state update)
+2. SHA-stamp commit (records the SHAs above; cosmetic only):
+   ```
+   ac474fb9d42cb60ba508d0fce045b50b846e51ca
+   ```
+   Subject:
+   ```
+   docs(v1.5): stamp final Round-5 continuation HEAD SHA into the Pi packet + CURRENT_STATE
+   ```
+   Scope: 2 files changed, 18 insertions(+), 6 deletions(-).
+   Final on-disk `git rev-parse HEAD`.
 
 NOT pushed.
 
