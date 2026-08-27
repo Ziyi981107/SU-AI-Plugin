@@ -16,6 +16,17 @@ Current project rule:
 - AIPM owns product + technical design, primary review, and dispatch.
 - Pi executes the frozen design.
 - Codex is used only for legitimate mandatory / high-risk repo-aware review.
+- The fixed current workflow is:
+  `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`.
+- `PI_START_HERE.md` is the permanent Pi bootstrap entry.
+- `CURRENT_PI_DISPATCH.md` is the sole normal formal current task file and
+  currently says `NO ACTIVE DISPATCH`.
+- `CURRENT_PI_REPORT.md` is the sole normal current implementation return and
+  currently says `NO CURRENT REPORT`.
+- Historical Prompt/Review artifacts remain durable evidence only and cannot
+  become current through filename, numbering, mtime, or stale ACTIVE status.
+- Git is the normal fine-grained implementation history; separately named
+  durable artifacts remain allowed for important design/Gate/release evidence.
 - This V1.5 Round-4 case has reached the end of Pi's execution window.
   Pi is STOPPED. AIPM review + the next Codex narrow recheck are
   the next gates per PROJECT_MASTER_PLAN_V1X.md §13.
@@ -53,7 +64,8 @@ V1.6 must not begin until:
 1. V1.5's active BLOCK set is formally closed;
 2. required Owner verification for V1.5 is completed as applicable;
 3. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
-4. AIPM dispatches a new PI_TASK.
+4. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
+   V1.6 Stage Technical Blueprint as required.
 
 ---
 
@@ -158,8 +170,9 @@ Relevant frozen design references:
 - `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND4_BLOCK_FIX_2026-08-27.md`
 - `Prompt/PI_TASK_V1_5_ROUND4_BLOCK_FIX_2026-08-27.md`
 
-These are the authority artefacts for the Round-4 fix. They
-do NOT override the existing project governance in
+These are the durable executed-contract artefacts for the completed Round-4
+fix. They are not a current Pi dispatch and do NOT override the current
+`Prompt/CURRENT_PI_DISPATCH.md` or existing project governance in
 `AGENTS.md`, `PROJECT_HANDOFF.md`, and
 `PROJECT_MASTER_PLAN_V1X.md`.
 
@@ -438,6 +451,11 @@ Conditional high-risk repo-aware review:
 **Codex**
 
 Default:
+`Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`
+
+There is currently no active Pi implementation dispatch.
+
+Historical shorthand:
 `Pi → AIPM`
 
 Current exception:

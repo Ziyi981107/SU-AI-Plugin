@@ -36,9 +36,9 @@ This file does NOT store:
 Those belong in:
 
 - `CURRENT_STATE.md`;
-- current Stage Technical Blueprint;
-- current AIPM Guidance / PI_TASK;
-- Pi Review packets;
+- `Prompt/CURRENT_PI_DISPATCH.md`;
+- `Review/CURRENT_PI_REPORT.md`;
+- durable Stage Technical Blueprint / Guidance / Gate evidence when justified;
 - Git.
 
 ---
@@ -387,7 +387,7 @@ Owns:
 Default review flow:
 
 ```text
-Pi Review packet
+Review/CURRENT_PI_REPORT.md or justified durable Pi Review artifact
 → AIPM Primary Review
 → Continue / Fix / Update Blueprint / Owner Gate / Codex escalation
 ```
@@ -405,7 +405,8 @@ Owns:
 - diagnostics;
 - stable Git checkpoints;
 - CURRENT_STATE updates;
-- Review packets;
+- `Review/CURRENT_PI_REPORT.md`;
+- durable Review artifacts when long-term evidence is justified;
 - low-level reversible implementation choices inside a frozen Blueprint.
 
 Pi may choose:
@@ -465,38 +466,38 @@ A Codex BLOCK that requires design change routes back through AIPM.
 
 ---
 
-# 12. Prompt / Review Ownership
+# 12. Current Communication and Durable Artifacts
 
-## `Prompt/`
+Permanent workflow:
 
-Authoritative execution/review inputs.
+- `PI_START_HERE.md` is Pi's stable bootstrap entry.
+- `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current
+  AIPM -> Pi implementation dispatch.
+- `Review/CURRENT_PI_REPORT.md` is the sole normal current Pi -> AIPM
+  implementation return.
 
-May contain:
+Pi treats `Prompt/` as read-only and does not write it as the normal return
+channel. Pi does not use `Review/` to discover tasks. AIPM does not treat
+`Prompt/` as implementation evidence.
 
-- AIPM Technical Blueprint;
-- PI_TASK;
-- AIPM Review / Guidance;
-- explicitly requested Codex review output.
+Historical Prompt/Review files remain evidence only. They cannot become current
+authority through filename, numbering, modification time, or stale
+`STATUS: ACTIVE`.
 
-Pi treats `Prompt/` as READ-ONLY.
+Do not create versioned Prompt/Review files for every small iteration. The
+CURRENT files serve normal daily work, while Git provides fine-grained
+implementation history.
 
-## `Review/`
+Separately named durable artifacts remain appropriate for Stage Technical
+Blueprints, major architecture/data/schema contracts, important migrations,
+mandatory Codex Gate reviews, Owner verification, Stage closure, release
+reports, material risk acceptance, and other evidence likely to matter later.
 
-Pi-owned implementation reporting.
-
-May contain:
-
-- progress reports;
-- test evidence;
-- escalation packets;
-- BLOCK recheck packets;
-- Owner checklist drafts.
-
-Default consumer is AIPM.
-
-Codex reads relevant Review packets only when invoked.
-
-Historical Prompt/Review artifacts remain evidence only unless explicitly activated by current AIPM guidance.
+AIPM decides whether an instruction needs the formal dispatch or a referenced
+durable Blueprint / Guidance. A short direct chat instruction is allowed only
+for a small continuation inside an already frozen ACTIVE dispatch and must
+never silently alter architecture, product contract, Stage scope, or release
+authority.
 
 ---
 
@@ -541,6 +542,26 @@ Package contents do not by themselves prove runtime load/execution.
 # 15. Git / Toolchain Discipline
 
 Git checkpoints are recovery/evidence mechanisms, not governance gates.
+
+Pi may create a local commit at a meaningful stable checkpoint, including a
+complete validated small task, a stable sub-stage, a rollback point before a
+clearly high-risk refactor/mutation, Stage/Gate completion, or another
+explicitly requested checkpoint.
+
+Do not commit after every trivial edit or present a known broken state as
+stable. An explicitly necessary diagnostic/broken checkpoint must be labelled
+truthfully.
+
+Local commit and remote push are different authorities. Pi must not push by
+default; push requires explicit Owner/AIPM authorization.
+
+Pi must never independently force-push, rewrite shared remote history, rebase
+published/shared history, destructively reset away another agent's work, or
+squash/rewrite checkpoints merely to make history look cleaner.
+
+Recommended practice is to commit meaningful validated checkpoints and request
+authorized push at end-of-day, important Stage/Gate close, release/tag, or when
+important local work needs remote backup.
 
 Keep:
 
@@ -597,7 +618,9 @@ Examples:
 - review strategy;
 - release strategy.
 
-Dynamic facts belong in `CURRENT_STATE.md`.
+Dynamic project status belongs in `CURRENT_STATE.md`. Normal current task and
+implementation-return content belongs in `CURRENT_PI_DISPATCH.md` and
+`CURRENT_PI_REPORT.md`.
 
 The project must not again depend on a Master Plan or active contract that lives only in an external Downloads directory.
 

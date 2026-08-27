@@ -25,7 +25,8 @@ Do not infer your identity from this filename or from another agent's section.
 If you are **Pi**:
 - you are the Implementation Agent;
 - you must read `PI_START_HERE.md` before choosing or starting work;
-- you implement the current frozen AIPM Guidance / Blueprint / PI_TASK;
+- you implement only an authorized ACTIVE
+  `Prompt/CURRENT_PI_DISPATCH.md` and its referenced frozen AIPM contracts;
 - you do not adopt Codex reviewer authority.
 
 If you are **Codex**:
@@ -54,6 +55,7 @@ Owns:
 - UX acceptance;
 - automation authority;
 - material time/cost/risk tradeoffs;
+- Owner verification;
 - experience freeze;
 - final release decision.
 
@@ -73,6 +75,8 @@ Owns:
 - provenance/identity design;
 - compatibility/performance strategy;
 - test matrix;
+- acceptance criteria;
+- release gates;
 - primary review;
 - next-step dispatch;
 - Codex escalation.
@@ -87,7 +91,8 @@ Owns:
 - diagnostics;
 - stable checkpoints;
 - `CURRENT_STATE.md` updates;
-- Review packets;
+- `Review/CURRENT_PI_REPORT.md` updates;
+- durable Review artifacts when AIPM determines long-term evidence is justified;
 - low-level reversible implementation choices inside frozen design.
 
 ## Codex
@@ -116,53 +121,63 @@ Durable canonical project files:
 3. `PROJECT_MASTER_PLAN_V1X.md`
 4. `CURRENT_STATE.md`
 
-Pi-specific current-task pointer:
+Permanent Pi bootstrap entry:
 
 5. `PI_START_HERE.md`
 
-Current AIPM Blueprint / Guidance / PI_TASK are referenced by the current
-pointer/state.
+Normal current communication files:
+
+6. `Prompt/CURRENT_PI_DISPATCH.md` - sole normal formal AIPM -> Pi dispatch.
+7. `Review/CURRENT_PI_REPORT.md` - sole normal Pi -> AIPM implementation
+   return.
+
+Durable AIPM Blueprint / Guidance artifacts are read only when explicitly
+referenced by the current dispatch or otherwise required by canonical project
+context.
 
 Rules:
 
 - project truth lives in project-local files;
 - historical Prompt/Review files are evidence, not automatically authority;
-- do not choose authority by modification time;
-- do not infer current task from an old `STATUS: ACTIVE`;
+- no file becomes current by modification time, filename numbering, or stale
+  `STATUS: ACTIVE`;
+- `CURRENT_PI_REPORT.md` is implementation evidence, not task authority;
 - Git/source/tests/package are implementation evidence, not product authority.
 
 ---
 
 # 3. Pi Bootstrap — HARD RULE
 
-If you are Pi:
-
-Before selecting or starting any implementation task:
+If you are Pi, before selecting or starting implementation work:
 
 1. read `PI_START_HERE.md`;
-2. follow the exact context stack declared there;
-3. read the current AIPM Technical Guidance / Blueprint;
-4. read the current PI_TASK;
-5. implement only after all required files are present and consistent.
+2. follow its permanent context stack;
+3. read `Prompt/CURRENT_PI_DISPATCH.md`;
+4. read every durable Blueprint / Guidance explicitly referenced by that file;
+5. execute only when the dispatch is ACTIVE, internally consistent, and the
+   project's normal user authorization / Proceed flow is satisfied.
 
 Pi MUST NOT choose work by:
 
-- newest Prompt;
 - modification time;
+- latest/newest filename or highest number;
+- historical `STATUS: ACTIVE`;
+- historical Prompt or Review files;
 - old Codex Guidance;
 - old Codex Review;
 - archived Reviewer Contract;
 - old `NEXT ACTION`;
 - previous session memory.
 
-`Prompt/` is NOT a task queue.
+`Prompt/` is NOT a task queue. `Review/` is NOT task authority.
 
-If `PI_START_HERE.md` is missing or references a missing current authority file:
-STOP and report the missing path to AIPM.
+If `PI_START_HERE.md` or `CURRENT_PI_DISPATCH.md` is missing, malformed, or
+contradictory, or if the dispatch says `STATUS: NO ACTIVE DISPATCH`, Pi must
+STOP and report the problem to AIPM. Do not guess.
 
-After the current PI_TASK is complete:
-STOP and return control to AIPM.
-Do not auto-select the next task.
+After the current dispatch is complete, update
+`Review/CURRENT_PI_REPORT.md`, STOP, and return control to AIPM. Do not
+auto-select the next task.
 
 ---
 
@@ -179,6 +194,7 @@ Pi may choose:
 Pi must NOT independently change:
 
 - product scope;
+- product UX;
 - Stage boundaries / roadmap;
 - Source of Truth;
 - state/data ownership;
@@ -468,36 +484,89 @@ Do not bypass AIPM.
 
 ---
 
-# 13. Prompt / Review Ownership
+# 13. Prompt / Review Communication
 
-## `Prompt/`
+Normal daily direction:
 
-May contain:
-- AIPM Blueprint;
-- PI_TASK;
-- AIPM Review / Guidance;
-- explicitly requested Codex review artifact.
+- `Prompt/` = AIPM -> Pi.
+- `Review/` = Pi -> AIPM.
 
-Pi treats `Prompt/` as read-only.
+Normal current files:
 
-`Prompt/` is not an active-task queue.
+- `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current
+  implementation dispatch.
+- `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation
+  return.
 
-## `Review/`
+Pi treats `Prompt/` as read-only and does not write it as the normal task
+return channel. Pi does not use `Review/` to discover work. AIPM does not
+treat `Prompt/` as implementation evidence.
 
-Pi implementation reporting:
-- progress;
-- test evidence;
-- escalation;
-- BLOCK recheck packet;
-- Owner checklist draft only when AIPM permits.
+`AGENTS.md`, `PROJECT_HANDOFF.md`, `PROJECT_MASTER_PLAN_V1X.md`,
+`CURRENT_STATE.md`, and `PI_START_HERE.md` are project governance/context,
+not directional task messages.
 
-Default consumer is AIPM.
+Do not create separately versioned Prompt/Review artifacts for every small
+iteration. Use the CURRENT files for normal daily work. Create durable
+separately named artifacts only when long-term reference is justified, such as
+a Stage Technical Blueprint, major architecture/data/schema contract,
+important migration decision, mandatory Codex Gate review, Owner verification,
+Stage closure, release report, or material risk acceptance.
 
-Codex reads relevant Review files only when invoked.
+Git history is the normal fine-grained implementation history.
+
+AIPM decides the appropriate dispatch medium:
+
+- Changes to project truth or technical authority belong in the formal current
+  dispatch or a durable Blueprint / Guidance referenced by it. This includes
+  architecture, Source of Truth, data/state ownership, schema, algorithm
+  semantics, transaction/recovery, cross-module contracts, Stage scope,
+  acceptance/release gates, and long-lived technical decisions.
+- Small local continuation inside an already frozen ACTIVE dispatch may be a
+  short direct chat instruction, such as rerunning tests, retrying a command,
+  fixing a local bug, adding an already-implied regression, collecting
+  evidence, rebuilding a package, updating the report, or narrow debugging.
+
+A short chat instruction must never create a new task or silently alter frozen
+architecture or product contract.
 
 ---
 
-# 14. Evidence Discipline
+# 14. Git Checkpoint / Push Policy
+
+Local commits are meaningful stable checkpoints, not a per-edit ritual.
+
+Pi may create a local commit for:
+
+- a complete validated small implementation task;
+- a stable sub-stage checkpoint;
+- a clean rollback point before a clearly high-risk refactor or mutation;
+- Stage/Gate completion;
+- another explicitly requested checkpoint.
+
+Do not commit after every trivial edit. Do not present a known broken state as
+a stable checkpoint. If an explicitly necessary diagnostic/broken checkpoint
+is created, label it truthfully.
+
+Local commit and remote push are different authorities.
+
+Pi must not push by default. Push requires explicit Owner/AIPM authorization.
+
+Pi must never independently:
+
+- force-push;
+- rewrite shared remote history;
+- rebase published/shared history;
+- destructively reset away another agent's work;
+- squash/rewrite checkpoints merely to make history look cleaner.
+
+Recommended practice is to commit meaningful validated checkpoints and request
+authorized push at end-of-day, important Stage/Gate close, release/tag, or when
+important local work needs remote backup.
+
+---
+
+# 15. Evidence Discipline
 
 When relevant verify:
 
@@ -530,7 +599,7 @@ Never fabricate:
 
 ---
 
-# 15. SketchUp / Toolchain Discipline
+# 16. SketchUp / Toolchain Discipline
 
 Target compatibility remains legacy-first, with SketchUp 2017+ as the intended
 baseline unless an approved contract changes it.
@@ -549,7 +618,7 @@ On Windows:
 
 ---
 
-# 16. Codex Reasoning Effort
+# 17. Codex Reasoning Effort
 
 Only relevant after Codex has legitimately been invoked.
 
@@ -571,7 +640,7 @@ xHigh is not itself a review trigger.
 
 ---
 
-# 17. Stable vs Dynamic Information
+# 18. Stable vs Dynamic Information
 
 Keep this file stable.
 
@@ -586,8 +655,9 @@ Do NOT store here:
 
 Those belong in:
 - `CURRENT_STATE.md`;
-- current AIPM Guidance / Blueprint;
-- Pi Review packet;
+- `Prompt/CURRENT_PI_DISPATCH.md`;
+- referenced durable AIPM Guidance / Blueprint;
+- `Review/CURRENT_PI_REPORT.md` or justified durable Review artifact;
 - Git.
 
 ---

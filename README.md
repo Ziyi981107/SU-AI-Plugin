@@ -1,5 +1,13 @@
 # SU-AI-Plugin
 
+> Agent workflow note: the legacy repository-map descriptions below are
+> historical and non-authoritative. Current governance is defined by
+> `AGENTS.md` and the permanent `PI_START_HERE.md` bootstrap.
+> `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal AIPM -> Pi
+> dispatch; `Review/CURRENT_PI_REPORT.md` is the sole normal Pi -> AIPM
+> implementation return. Historical Prompt/Review files cannot become current
+> by filename, numbering, modification time, or stale status.
+
 > SketchUp 建筑方案自动化插件
 > 当前阶段: **V1.0 Read-only CAD Analyzer** (PI_TASK_001)
 
