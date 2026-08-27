@@ -30,8 +30,9 @@ in §15 below.
 | Branch | `v1.5-stage-round3-fix` |
 | Round-4 implementation base | `c5e5ec7db88cae8262e13c1e6629f12b07f4241e` |
 | Round-5 implementation HEAD (prior checkpoint) | `f6dda52b6bc42ffdaa0a6e46a96206daa543dc47` |
-| Round-5 continuation implementation HEAD | `3cb11ddd9259d24ead165a5530b6e06a16f2b00f` (the main continuation commit) |
-| Round-5 continuation SHA-stamp HEAD | `ac474fb9d42cb60ba508d0fce045b50b846e51ca` (final `git rev-parse HEAD`; stamps the recorded SHAs) |
+| Round-5 continuation main commit | `3cb11ddd9259d24ead165a5530b6e06a16f2b00f` (tests + state + report) |
+| Round-5 continuation SHA-stamp | `ac474fb9d42cb60ba508d0fce045b50b846e51ca` |
+| Round-5 continuation final `git rev-parse HEAD` | `aa5bae22122e16d7cc87b37cdf90c143fc4b55ca` |
 | Working tree | clean (`git status --short` empty) |
 | Push | NOT pushed (per dispatch hard boundaries) |
 
@@ -406,7 +407,7 @@ Pi returns control to AIPM.
 
 ## 15. Local checkpoint commit (Round-5 continuation)
 
-The Round-5 continuation produced two local commits:
+The Round-5 continuation produced three local commits:
 
 1. Main continuation commit (test + state + report updates):
    ```
@@ -430,7 +431,23 @@ The Round-5 continuation produced two local commits:
    docs(v1.5): stamp final Round-5 continuation HEAD SHA into the Pi packet + CURRENT_STATE
    ```
    Scope: 2 files changed, 18 insertions(+), 6 deletions(-).
-   Final on-disk `git rev-parse HEAD`.
+
+3. Final SHA-stamp commit (records both SHAs from 1 and 2; cosmetic only):
+   ```
+   aa5bae22122e16d7cc87b37cdf90c143fc4b55ca
+   ```
+   Subject:
+   ```
+   docs(v1.5): stamp final Round-5 continuation HEAD SHAs into CURRENT_STATE + report
+   ```
+   Scope: 2 files changed, 34 insertions(+), 21 deletions(-).
+   Final on-disk `git rev-parse HEAD` at the time this report was
+   completed.
+
+The actual file content (tests, source, report body, state body) is
+unchanged across all three commits; only the SHA-stamp lines in
+`Review/CURRENT_PI_REPORT.md` §1 and §15, and in `CURRENT_STATE.md`
+§2, were updated.
 
 NOT pushed.
 
