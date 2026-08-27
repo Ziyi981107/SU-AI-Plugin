@@ -1,94 +1,195 @@
 #
-# core/derived_duplicate_topology.rb — V1.5 Round 3 shared helper
+# core/derived_duplicate_topology.rb — V1.5 Round-4
 #
-# Provides the SHARED direct-match graph construction and
-# maximal-clique enumeration used by BOTH DuplicateRepairProposer
-# and DerivedDuplicateValidator (BLOCK-002 CodeX Review 033:
-# proposer and validator must share both direct predicate and
-# class semantics).
+# Compatibility shim + thin domain helper for the duplicate
+# topology. All actual duplicate-geometry semantics (direct
+# match predicate, finite/tolerance/layer normalization,
+# candidate enumeration, pair enumeration) live in
+# `DuplicateGeometrySemantics` and are re-exported from here
+# so the historical `DerivedDuplicateTopology.*` call sites
+# continue to resolve.
 #
-# Single source of truth for:
-#   - The direct endpoint predicate (forward / reversed / nil)
-#     with the SAME per-axis tolerance check the rest of V1.5
-#     uses.
-#   - Layer0 normalization (must match before geometry).
-#   - Bron-Kerbosch-with-pivot enumeration of maximal direct-
-#     match cliques on the induced direct-match graph.
-#   - Layer/finite-point/tolerance helpers.
+# Per AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND4_BLOCK_FIX_2026-08-27
+# §3 (BLOCK-002A + BLOCK-002B):
+#   "Introduce one shared pure duplicate-geometry semantics
+#    responsibility used by: DuplicateDetector; duplicate
+#    proposer eligibility/revalidation; duplicate validator.
+#    For tolerance > 0: 3D grid cell size = captured tolerance;
+#    mathematical floor per axis; index EVERY edge under BOTH
+#    endpoint cells; 27-neighbor-cell query around each endpoint;
+#    union/deduplicate candidate IDs; shared direct_match?
+#    as final authority; stable unordered pair dedup."
 #
-# Both the proposer (which operates on issue-derived member
-# subsets of the workspace) and the validator (which operates on
-# the full workspace entity list) call into this module. They
-# each pass in their own record set; the methodology is
-# identical and the class semantics match.
+# Round-4 does NOT use Bron-Kerbosch / maximal-clique
+# enumeration as the destructive action unit. See
+# DuplicateRepairProposer for the connected-component +
+# complete-graph topology decision.
 #
 
 require_relative 'tolerance'
 require_relative 'derived_entity_record'
+require_relative 'duplicate_geometry_semantics'
 
 module SUAnalysis
   module Core
     module DerivedDuplicateTopology
       module_function
 
-      DEFAULT_TOLERANCE = 1.0e-4
+      DEFAULT_TOLERANCE = DuplicateGeometrySemantics::DEFAULT_TOLERANCE
 
-      # ===========================================================
-      # Direct endpoint matcher (the V1.5 BLOCK-002 contract).
-      # Mirrors DuplicateRepairProposer.direct_match?.
-      # ===========================================================
-
+      # Re-export the shared semantics so existing call sites
+      # resolve through this module unchanged.
       def direct_match?(pa_s, pa_e, pb_s, pb_e, layer_a, layer_b, tolerance)
-        return nil unless finite_point?(pa_s) && finite_point?(pa_e)
-        return nil unless finite_point?(pb_s) && finite_point?(pb_e)
-        tol = tolerance.to_f
-        return nil unless tol.finite? && tol > 0
-        # Layer names must match after Layer0 normalization.
-        if normalize_layer(layer_a) != normalize_layer(layer_b)
-          return nil
-        end
-        if points_within?(pa_s, pb_s, tol) && points_within?(pa_e, pb_e, tol)
-          :forward
-        elsif points_within?(pa_s, pb_e, tol) && points_within?(pa_e, pb_s, tol)
-          :reversed
-        else
-          nil
-        end
+        DuplicateGeometrySemantics.direct_match?(pa_s, pa_e, pb_s, pb_e,
+                                                  layer_a, layer_b, tolerance)
+      end
+
+      def finite_point?(p)
+        DuplicateGeometrySemantics.finite_point?(p)
+      end
+
+      def finite_float_triple(p)
+        DuplicateGeometrySemantics.finite_float_triple(p)
+      end
+
+      def points_within?(p, q, tol)
+        DuplicateGeometrySemantics.points_within?(p, q, tol)
+      end
+
+      def normalize_layer(name)
+        DuplicateGeometrySemantics.normalize_layer(name)
+      end
+
+      def valid_tolerance?(t)
+        DuplicateGeometrySemantics.valid_tolerance?(t)
+      end
+
+      def resolve_tolerance(workspace, tolerance)
+        # Prefer explicit value, then captured, then default.
+        return tolerance.to_f if DuplicateGeometrySemantics.valid_tolerance?(tolerance)
+        cap = DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
+        return cap if cap
+        DEFAULT_TOLERANCE
+      end
+
+      # Extract a tuple from a DerivedEntityRecord.
+      def extract_record_tuple(d)
+        DuplicateGeometrySemantics.extract_record_tuple(d)
+      end
+
+      # Candidate enumeration (BLOCK-002A).
+      def enumerate_candidates(records, tolerance)
+        DuplicateGeometrySemantics.enumerate_candidates(records, tolerance)
+      end
+
+      # Pair enumeration (BLOCK-004 pair metric).
+      def enumerate_direct_pairs(records, tolerance)
+        DuplicateGeometrySemantics.enumerate_direct_pairs(records, tolerance)
+      end
+
+      def count_direct_pairs(records, tolerance)
+        DuplicateGeometrySemantics.count_direct_pairs(records, tolerance)
       end
 
       # ===========================================================
-      # Build a direct-match adjacency matrix for a list of
-      # records. Each record is a Hash {record:, start:, finish:,
-      # layer:}. Returns:
-      #   { adj: Array<Array<Boolean>>, records: Array<Hash> }
-      # where adj[i][j] is true iff records[i] directly matches
-      # records[j] under the captured tolerance.
+      # Round-4 topology decision (BLOCK-002B).
       # ===========================================================
-
-      def build_direct_match_graph(records, tolerance)
-        adj = Array.new(records.length) { Array.new(records.length, false) }
-        records.each_with_index do |a, i|
-          sa_pts = [a[:start], a[:finish]]
-          ((i + 1)...records.length).each do |j|
-            b = records[j]
-            sb_pts = [b[:start], b[:finish]]
-            kind = direct_match?(sa_pts[0], sa_pts[1], sb_pts[0], sb_pts[1],
-                                  a[:layer], b[:layer], tolerance)
-            if kind == :forward || kind == :reversed
-              adj[i][j] = true
-              adj[j][i] = true
-            end
+      #
+      # Builds the direct-match adjacency graph for the given
+      # records under the captured tolerance, then partitions
+      # the vertices into connected components. For each
+      # component with N >= 2:
+      #
+      #   - if the component is a COMPLETE GRAPH (every pair of
+      #     members is a direct match), the component is
+      #     REPAIRABLE: ONE destructive action will be emitted,
+      #     with deterministic survivor = lex-smallest
+      #     derived_id and removal set = the other members.
+      #
+      #   - if the component is NOT a complete graph, it is
+      #     NON-TRANSITIVE / INCOMPLETE: emit NO destructive
+      #     action for any sub-clique; emit one inspectable
+      #     :skipped audit row with reason
+      #     `non_transitive_duplicate_component`; preserve
+      #     member IDs, issue IDs, source/provenance evidence.
+      #
+      # This decision is the V1.5 Round-4 BLOCK-002B contract.
+      # Bron-Kerbosch / maximal-clique enumeration is NOT used
+      # to drive destructive action emission (AIPM Round-4 §4).
+      def classify_components(records, tolerance)
+        pairs = DuplicateGeometrySemantics.enumerate_candidates(records, tolerance)
+        tuples = DuplicateGeometrySemantics.records_to_tuples(records)
+        n = tuples.length
+        # Build union-find over direct-match edges.
+        parent = (0...n).to_a
+        find = ->(i) {
+          while parent[i] != i
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+          end
+          i
+        }
+        pairs.each do |i, j|
+          ri = find.call(i)
+          rj = find.call(j)
+          next if ri == rj
+          parent[ri] = rj
+        end
+        # Group indices by root.
+        groups = {}
+        (0...n).each do |i|
+          r = find.call(i)
+          (groups[r] ||= []) << i
+        end
+        # Build the pair set for O(1) membership.
+        pair_set = {}
+        pairs.each { |i, j| pair_set[[i, j]] = true }
+        # Classify each component.
+        result = {
+          repairable_components: [],
+          non_transitive_components: [],
+          singletons: []
+        }
+        groups.each do |_r, members|
+          if members.length < 2
+            result[:singletons] << members
+            next
+          end
+          # For each component with N >= 2, count direct pairs.
+          required_pairs = members.length * (members.length - 1) / 2
+          actual_pairs = 0
+          members.combination(2).each do |i, j|
+            actual_pairs += 1 if pair_set[[i, j]]
+          end
+          if actual_pairs == required_pairs
+            # COMPLETE GRAPH -> repairable.
+            result[:repairable_components] << members.sort
+          else
+            # NON-TRANSITIVE / INCOMPLETE -> fail-closed as one
+            # inspectable skipped audit row.
+            result[:non_transitive_components] << {
+              member_indices: members.sort,
+              member_tuples:  members.sort.map { |i| tuples[i] },
+              direct_pair_count: actual_pairs,
+              required_pair_count: required_pairs,
+              missing_pair_count: required_pairs - actual_pairs
+            }
           end
         end
-        { adj: adj, records: records }
+        result
+      end
+
+      # Round-4 pair-count metric (BLOCK-004).
+      def duplicate_pair_count(records, tolerance)
+        DuplicateGeometrySemantics.count_direct_pairs(records, tolerance)
       end
 
       # ===========================================================
-      # Enumerate MAXIMAL CLIQUES of the direct-match graph.
-      # Same Bron-Kerbosch-with-pivot implementation as the
-      # proposer uses (BLOCK-002 shared class semantics).
-      # Returns an Array<Array<Integer>> where each inner Array
-      # is a sorted list of node indices forming a maximal clique.
+      # Compatibility-only: maximal cliques of the direct-match
+      # graph. This is retained ONLY as a diagnostic helper for
+      # tests + audit; the proposer's destructive-action decision
+      # does NOT use maximal cliques (Round-4 BLOCK-002B).
+      # Production auto-repair paths MUST NOT call this.
       # ===========================================================
 
       def maximal_cliques(adj)
@@ -153,93 +254,6 @@ module SUAnalysis
           f[:X] = f[:X] + [v]
         end
         cliques.uniq
-      end
-
-      # ===========================================================
-      # Convenience: compute the duplicate-class topology for the
-      # given records using clique partition (the V1.5 round-3
-      # BLOCK-002 contract). Returns an Array<Array<Hash>> where
-      # each inner Array contains ≥ 2 record Hashes forming a
-      # maximal direct-match clique.
-      #
-      # Use `select{|c| c.length >= 2}` to keep only proper
-      # cliques (the raw Bron-Kerbosch can also report
-      # singletons, but maximal cliques of size 1 mean no
-      # duplicate, so we drop them).
-      # ===========================================================
-
-      def clique_classes(records, tolerance)
-        return [] if records.nil? || records.empty?
-        graph = build_direct_match_graph(records, tolerance)
-        cliques = maximal_cliques(graph[:adj])
-        cliques.map { |c| c.map { |i| graph[:records][i] } }.select { |c| c.length >= 2 }
-      end
-
-      # ===========================================================
-      # Resolve the captured tolerance from the workspace's
-      # source_snapshot.execution_config (BLOCK-004: the
-      # validator must use the captured tolerance, not the
-      # default).
-      # ===========================================================
-
-      def resolve_tolerance(workspace, tolerance)
-        return tolerance.to_f if tolerance && tolerance.to_f.finite? && tolerance.to_f > 0
-        return DEFAULT_TOLERANCE if workspace.nil?
-        src = workspace.respond_to?(:source_snapshot) ? workspace.source_snapshot : nil
-        return DEFAULT_TOLERANCE if src.nil?
-        ec = src.respond_to?(:execution_config) ? src.execution_config : nil
-        return DEFAULT_TOLERANCE if ec.nil?
-        vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
-        return DEFAULT_TOLERANCE unless vals.is_a?(Hash)
-        v = vals[:duplicate] || vals['duplicate']
-        v ? v.to_f : DEFAULT_TOLERANCE
-      end
-
-      # ===========================================================
-      # Layer0 normalization
-      # ===========================================================
-
-      def normalize_layer(name)
-        return 'Layer0' if name.nil?
-        s = name.to_s
-        return 'Layer0' if s.empty?
-        case s.downcase
-        when 'layer0', 'default', 'untagged'
-          'Layer0'
-        else
-          s
-        end
-      end
-
-      # ===========================================================
-      # Numeric helpers
-      # ===========================================================
-
-      def finite_point?(p)
-        return false unless p.is_a?(Array) && p.length == 3
-        p.all? do |v|
-          v.respond_to?(:finite?) && v.finite?
-        end
-      end
-
-      def points_within?(p, q, tol)
-        return false unless p.is_a?(Array) && q.is_a?(Array) && p.length == 3 && q.length == 3
-        (0..2).all? { |i| (p[i].to_f - q[i].to_f).abs <= tol.to_f }
-      end
-
-      # Extract a {record:, start:, finish:, layer:} Hash from a
-      # DerivedEntityRecord. Used by the validator + proposer to
-      # feed records into the shared graph builder.
-      def extract_record_tuple(d)
-        return nil unless d.is_a?(DerivedEntityRecord)
-        return nil unless d.kind == :edge
-        geom = d.respond_to?(:geometry_summary) ? d.geometry_summary : nil
-        return nil unless geom.is_a?(Hash)
-        s = geom['start'] || geom[:start]
-        f = geom['end']   || geom[:end]
-        l = geom['layer'] || geom[:layer]
-        return nil unless finite_point?(s) && finite_point?(f)
-        { record: d, start: s, finish: f, layer: l }
       end
     end
   end

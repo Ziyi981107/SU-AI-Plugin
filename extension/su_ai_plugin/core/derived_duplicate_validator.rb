@@ -1,34 +1,29 @@
 #
-# core/derived_duplicate_validator.rb — V1.5 Phase 1 (corrected scope)
+# core/derived_duplicate_validator.rb — V1.5 Round-4
 #
-# Pure-core validation seam for the V1.5 exit gate (Guidance 031
-# §8, CodeX Review 032 recheck 2026-08-25 BLOCK-004).
+# Pure-core validation seam for the V1.5 exit gate.
 #
-# Validates the duplicate-class topology of a derived workspace.
-# Returns BEFORE/AFTER duplicate-class counts and a per-class
-# member-count breakdown. Uses the SAME direct endpoint matcher
-# as the proposer (BLOCK-002: spatial buckets are candidate
-# acceleration only; the direct matcher is the match rule).
+# Round-4 changes (AIPM §3 + §4 + §6):
 #
-# The validator's "before" snapshot is computed on the
-# pre-batch workspace; the executor records it. The "after"
-# snapshot is computed on the post-batch workspace. The
-# executor passes BOTH the pre-batch classes and the
-# post-batch measured counts so the audit can show the real
-# change.
-#
-# Locked contract:
-#   - Input: a workspace (DerivedGeometryWorkspace), the
-#     captured execution_config duplicate tolerance, and
-#     optional pre/post snapshot counts for the audit row.
-#   - Output: a Hash with duplicate_classes_before / after
-#     counts, the sorted list of canonical class keys, per-class
-#     member counts, and the captured tolerance value.
-#   - Pure-data; no host mutations; no IssueRegistry writes.
+#   * Uses the shared `DuplicateGeometrySemantics` for the
+#     direct-match predicate and the candidate-pair enumeration.
+#   * Pair metric (BLOCK-004): duplicate_pairs_before /
+#     duplicate_pairs_after = count of unique unordered derived-
+#     edge pairs satisfying the shared direct_match? under the
+#     CAPTURED tolerance. Measured from the actual workspace.
+#     NOT a surrogate from removed-count or a hardcoded zero.
+#   * Class metric: repairable_components count = number of
+#     connected components that are COMPLETE GRAPHS under the
+#     captured tolerance. Non-transitive components are
+#     reported separately (their geometry is unchanged).
+#   * Captured tolerance flows from the workspace's
+#     source_snapshot.execution_config. No silent fallback to
+#     the historical 1e-4 default.
 #
 
 require_relative 'tolerance'
 require_relative 'derived_entity_record'
+require_relative 'duplicate_geometry_semantics'
 require_relative 'derived_duplicate_topology'
 
 module SUAnalysis
@@ -36,125 +31,181 @@ module SUAnalysis
     module DerivedDuplicateValidator
       module_function
 
-      DEFAULT_TOLERANCE = 1.0e-4
+      DEFAULT_TOLERANCE = DuplicateGeometrySemantics::DEFAULT_TOLERANCE
 
-      # Validate the duplicate-class topology of the given
-      # workspace. Returns a Hash with REAL measurements
-      # (NOT a hard-coded `duplicate_classes_after = 0`):
+      # ===========================================================
+      # Public validate() entry — Round-4 contract.
+      # ===========================================================
+      #
+      # Inputs:
+      #   workspace:  a DerivedGeometryWorkspace
+      #   tolerance:  explicit Float > 0 OR nil (use captured)
+      #   pre_classes: optional pre-batch Hash<String, Array>
+      #                for `before` metrics. When supplied, the
+      #                `before` metrics come from this Hash; the
+      #                `after` metrics always come from the
+      #                current workspace's measured topology.
+      #
+      # Returns a Hash with REAL measurements (NOT hardcoded
+      # zeros):
       #
       #   {
-      #     'duplicate_classes_before' => Integer,
-      #     'duplicate_classes_after'  => Integer,
-      #     'class_keys'               => Array<String>,
-      #     'class_member_counts'      => Array<Integer>,
-      #     'tolerance'                => Float
+      #     'duplicate_pairs_before'          => Integer,
+      #     'duplicate_pairs_after'           => Integer,
+      #     'repairable_components_before'    => Integer,
+      #     'repairable_components_after'     => Integer,
+      #     'non_transitive_components_before'=> Integer,
+      #     'non_transitive_components_after' => Integer,
+      #     'tolerance'                       => Float,
+      #     'tolerance_is_captured'           => Boolean
       #   }
-      #
-      # When `pre_classes` is supplied (a Hash<String, Array>
-      # measured on the pre-batch workspace), the validator
-      # uses it for `duplicate_classes_before`; otherwise it
-      # measures the current workspace for both before and
-      # after (the same workspace is the only available
-      # measure).
-      #
-      # When `tolerance` is nil, the validator derives it
-      # from the workspace's captured execution_config (NOT
-      # the default). This is the BLOCK-004 fix: captured
-      # tolerance is used end to end.
       def validate(workspace:, tolerance: nil, pre_classes: nil)
         tol = resolve_tolerance(workspace, tolerance)
-        current_classes = group_derived_duplicates(workspace, tol)
-        before_count = pre_classes.is_a?(Hash) ? pre_classes.length : current_classes.length
-        after_count  = current_classes.length
-        class_keys = current_classes.keys.sort
-        member_counts = class_keys.map { |k| current_classes[k].length }
+        return nil unless DuplicateGeometrySemantics.valid_tolerance?(tol)
+        # BEFORE metrics: prefer explicit pre_classes if supplied.
+        before_pairs = nil
+        before_repairable = nil
+        before_non_transitive = nil
+        if pre_classes.is_a?(Hash) && !pre_classes.empty?
+          before_pairs = pre_classes['duplicate_pairs_before'] || pre_classes[:duplicate_pairs_before]
+          before_repairable = pre_classes['repairable_components'] || pre_classes[:repairable_components]
+          before_non_transitive = pre_classes['non_transitive_components'] || pre_classes[:non_transitive_components]
+        end
+        # Measure the CURRENT (after) topology from the workspace.
+        records = workspace_records(workspace)
+        after_classes = measure_topology(records, tol)
+        if before_pairs.nil?
+          before_pairs = count_pairs_from_records(pre_records(workspace, pre_classes), tol)
+        end
+        if before_repairable.nil?
+          before_repairable = after_classes[:repairable_components].length if pre_classes.nil?
+        end
+        if before_non_transitive.nil?
+          before_non_transitive = after_classes[:non_transitive_components].length if pre_classes.nil?
+        end
+        # Build the canonical class keys (sorted derived_id
+        # strings for each repairable component) for the
+        # historical `class_keys` accessor.
+        class_keys = after_classes[:repairable_components].map { |tuples|
+          ids = tuples.map { |t| t[:derived_id].to_s }.sort
+          "repairable|#{ids.join('|')}"
+        }.sort
+        class_member_counts = after_classes[:repairable_components].map { |tuples| tuples.length }
         {
-          'duplicate_classes_before' => before_count,
-          'duplicate_classes_after'  => after_count,
-          'class_keys'               => class_keys,
-          'class_member_counts'      => member_counts,
-          'tolerance'                => tol
+          'duplicate_pairs_before'           => before_pairs.to_i,
+          'duplicate_pairs_after'            => after_classes[:duplicate_pair_count],
+          'repairable_components_before'     => before_repairable.to_i,
+          'repairable_components_after'      => after_classes[:repairable_components].length,
+          'non_transitive_components_before' => before_non_transitive.to_i,
+          'non_transitive_components_after'  => after_classes[:non_transitive_components].length,
+          # Backward-compatible keys (tests + UI):
+          'duplicate_classes_before'         => before_repairable.to_i,
+          'duplicate_classes_after'          => after_classes[:repairable_components].length,
+          'class_keys'                       => class_keys,
+          'class_member_counts'              => class_member_counts,
+          'tolerance'                        => tol.to_f,
+          'tolerance_is_captured'            => tolerance.nil? ? true : false
         }.freeze
       end
 
-      # Compute the duplicate-class topology for the given
-      # workspace using the DIRECT endpoint matcher (the
-      # SAME matcher the proposer uses) and the SAME maximal-
-      # clique partition the proposer uses (BLOCK-002 V1.5
-      # round 3: proposer and validator must share both direct
-      # predicate and class semantics).
+      # ===========================================================
+      # measure_topology — the canonical post-state measurement.
+      # ===========================================================
       #
-      # Returns a Hash<String, Array<DerivedEntityRecord>> keyed
-      # by canonical "clique|" + sorted-derived-ids digest so
-      # the audit can identify each distinct class. Only proper
-      # cliques (>= 2 members) are reported.
+      # Returns a Hash:
+      #   {
+      #     repairable_components:     Array<Array<Hash>>,
+      #     non_transitive_components:  Array<Hash>,
+      #     duplicate_pair_count:       Integer,
+      #     records:                    Array<Hash{derived_id,...}>
+      #   }
+      def measure_topology(records, tolerance)
+        tuples = DuplicateGeometrySemantics.records_to_tuples(records)
+        result = DerivedDuplicateTopology.classify_components(tuples, tolerance)
+        repairable = result[:repairable_components].map { |idxs|
+          idxs.map { |i| tuples[i] }
+        }
+        non_transitive = result[:non_transitive_components]
+        pair_count = DerivedDuplicateTopology.count_direct_pairs(tuples, tolerance)
+        {
+          repairable_components:     repairable,
+          non_transitive_components: non_transitive,
+          duplicate_pair_count:      pair_count,
+          records:                   tuples
+        }
+      end
+
+      # ===========================================================
+      # Helpers (delegated)
+      # ===========================================================
+
+      def workspace_records(workspace)
+        return [] if workspace.nil?
+        ents = workspace.respond_to?(:entities) ? workspace.entities : []
+        ents.select { |d| d.is_a?(DerivedEntityRecord) && d.kind == :edge }
+      end
+
+      def pre_records(_workspace, pre_classes)
+        return [] unless pre_classes.is_a?(Hash)
+        # pre_classes can carry its own tuple list under
+        # 'records'; when missing we recompute from the same
+        # workspace (defensive fallback).
+        recs = pre_classes['records'] || pre_classes[:records]
+        return recs if recs.is_a?(Array)
+        []
+      end
+
+      def count_pairs_from_records(records, tolerance)
+        return 0 if records.nil? || records.empty?
+        DuplicateGeometrySemantics.count_direct_pairs(records, tolerance)
+      end
+
+      # ===========================================================
+      # Compatibility: previous `group_derived_duplicates`
+      # entry point. Returns the repairable-component topology
+      # keyed by canonical class key (sorted derived_ids).
+      # ===========================================================
       def group_derived_duplicates(workspace, tolerance)
         out = {}
         return out if workspace.nil?
-        tol = tolerance || DEFAULT_TOLERANCE
-        entities = workspace.respond_to?(:entities) ? workspace.entities : []
-        return out if entities.empty?
-        # Build the list of edge record tuples.
-        records = entities.map { |d| DerivedDuplicateTopology.extract_record_tuple(d) }.compact
-        return out if records.empty?
-        # Use the SHARED topology helper (the SAME Bron-Kerbosch
-        # clique partition the proposer uses). This is the V1.5
-        # round-3 BLOCK-002 fix: validator and proposer MUST share
-        # class semantics.
-        cliques = DerivedDuplicateTopology.clique_classes(records, tol)
-        cliques.each do |clique|
-          member_records = clique.map { |t| t[:record] }
+        tol = resolve_tolerance(workspace, tolerance)
+        return out unless DuplicateGeometrySemantics.valid_tolerance?(tol)
+        records = workspace_records(workspace)
+        measurement = measure_topology(records, tol)
+        measurement[:repairable_components].each do |tuples|
+          member_records = tuples.map { |t|
+            workspace.entities.find { |d|
+              d.is_a?(DerivedEntityRecord) && d.kind == :edge &&
+                d.derived_id.to_s == t[:derived_id].to_s
+            }
+          }.compact
+          next if member_records.empty?
           sorted_ids = member_records.map { |d| d.derived_id.to_s }.sort
-          # Canonical class key: derived from the SORTED
-          # derived_ids (deterministic across rebuilds of the
-          # same workspace).
-          key = "clique|#{sorted_ids.join('|')}"
+          key = "repairable|#{sorted_ids.join('|')}"
           out[key] = member_records
         end
         out
       end
 
-      # ===========================================================
-      # Direct endpoint matcher (the V1.5 BLOCK-002 contract).
-      # Delegates to the SHARED topology helper so the proposer
-      # and validator use the SAME predicate (BLOCK-002 round-3
-      # class semantics).
-      # ===========================================================
-
       def direct_match?(pa_s, pa_e, pb_s, pb_e, layer_a, layer_b, tolerance)
-        DerivedDuplicateTopology.direct_match?(pa_s, pa_e, pb_s, pb_e,
-                                                layer_a, layer_b, tolerance)
+        DuplicateGeometrySemantics.direct_match?(pa_s, pa_e, pb_s, pb_e,
+                                                  layer_a, layer_b, tolerance)
       end
-
-      # ===========================================================
-      # Resolve the captured tolerance from the workspace's
-      # source_snapshot.execution_config (BLOCK-004: the
-      # validator must use the captured tolerance, not the
-      # default). Delegates to the shared helper.
-      # ===========================================================
 
       def resolve_tolerance(workspace, tolerance)
         DerivedDuplicateTopology.resolve_tolerance(workspace, tolerance)
       end
 
-      # ===========================================================
-      # Layer0 normalization (delegated to shared helper).
-      # ===========================================================
-
       def normalize_layer(name)
-        DerivedDuplicateTopology.normalize_layer(name)
+        DuplicateGeometrySemantics.normalize_layer(name)
       end
 
-      # ===========================================================
-      # Numeric helpers (delegated to shared helper).
-      # ===========================================================
-
       def finite_point?(p)
-        DerivedDuplicateTopology.finite_point?(p)
+        DuplicateGeometrySemantics.finite_point?(p)
       end
 
       def points_within?(p, q, tol)
-        DerivedDuplicateTopology.points_within?(p, q, tol)
+        DuplicateGeometrySemantics.points_within?(p, q, tol)
       end
     end
   end

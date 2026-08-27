@@ -1398,9 +1398,9 @@ end
 
 
 
-# ----- 13. Erased / invalid derived entity skipped safely -----
+# ----- 13. Erased / invalid derived entity fails closed (BLOCK-001) -----
 
-test 'V15-13: erased / invalid derived entity is skipped (no raise; no removal)' do
+test 'V15-13: erased / invalid derived entity fails closed (BLOCK-001, no raise; whole component :skipped)' do
 
   e1 = v15_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
 
@@ -1424,7 +1424,17 @@ test 'V15-13: erased / invalid derived entity is skipped (no raise; no removal)'
 
   # Manually invalidate the 'der-B' handle in the workspace.
 
-  # The executor MUST skip it safely (valid? == false).
+  # Per Round-4 BLOCK-001: every member must have a live/
+
+  # valid handle. An invalidated member fails the ENTIRE
+
+  # component closed (NOT silently filtered into a partial-
+
+  # apply; NOT silently deleted; NO raise). The auditor
+
+  # emits a :skipped audit row with a stable reason code
+
+  # and the geometry is preserved verbatim.
 
   handle_b = ws.handle_for('der-B')
 
@@ -1446,21 +1456,61 @@ test 'V15-13: erased / invalid derived entity is skipped (no raise; no removal)'
 
   plan = v15_validate(v15_propose(workspace: ws, registry: reg, snapshot: src))
 
-  # Apply: der-B is invalid -> the executor filters it out and
+  # Round-4 contract: no :validated action may target the
 
-  # the action transitions to :applied with affected_derived_ids
+  # component whose member handle is invalidated. A :skipped
 
-  # excluding the invalid handle.
+  # audit row carries the BLOCK-001 reason code
+
+  # (`host_handle_invalidated`).
+
+  statuses = plan.actions.map(&:status)
+
+  refute_includes statuses, :validated,
+
+                 'BLOCK-001: an invalid member handle MUST NOT yield a :validated action'
+
+  refute_includes statuses, :proposed,
+
+                 'BLOCK-001: an invalid member handle MUST NOT yield a :proposed action'
+
+  skipped_actions = plan.actions.select { |a| a.respond_to?(:status) && a.status == :skipped }
+
+  assert skipped_actions.any?,
+
+         'BLOCK-001: invalid handle MUST yield at least one :skipped audit row'
+
+  has_handle_reason = skipped_actions.any? { |a|
+
+    a.confidence_basis.to_s.include?('host_handle_invalidated') ||
+
+      a.confidence_basis.to_s.include?('host_handle_missing') ||
+
+      a.confidence_basis.to_s.include?('host_handle_aliasing')
+
+  }
+
+  assert has_handle_reason,
+
+         'BLOCK-001: :skipped audit row MUST record the host-handle-invalid reason'
+
+  # Apply: no destructive removal. der-A and der-B are both
+
+  # preserved.
 
   new_ws, applied = v15_apply_all(workspace: ws, plan: plan)
 
-  assert_equal :applied, applied.first.status
+  refute applied.any? { |a| a.respond_to?(:status) && a.status == :applied },
 
-  # Only der-A remains; der-B was filtered as invalid.
+         'BLOCK-001: no :applied action may execute with an invalidated member handle'
 
-  assert_equal 1, new_ws.entities.length
+  assert_equal 2, new_ws.entities.length,
 
-  assert_equal 'der-A', new_ws.entities.first.derived_id
+               'BLOCK-001: workspace inventory unchanged (whole component skipped)'
+
+  refute_nil new_ws.entity('der-A')
+
+  refute_nil new_ws.entity('der-B')
 
 end
 
@@ -3269,27 +3319,25 @@ test 'V15-B003-5: precomputed post-workspace fingerprint mismatch fails closed w
     begin_calls += 1
     original_begin.call(*args, **kw)
   end
-  # Force precompute_expected_post_state to return an inconsistent
-  # expected_post (surviving_derived_ids missing 'der-A' even
-  # though der-A is not in to_remove). The self-consistency check
-  # then fails BEFORE begin_operation.
-  original_precompute = DuplicateRepairExecutor.method(:precompute_expected_post_state)
-  DuplicateRepairExecutor.define_singleton_method(:precompute_expected_post_state) do |workspace:, per_action:, survivor_updates:|
-    result = original_precompute.call(workspace: workspace, per_action: per_action, survivor_updates: survivor_updates)
-    # The original returns a FROZEN Hash. To simulate a
-    # self-consistency mismatch without mutating the frozen
-    # structure, build a brand-new Hash with the same keys
-    # EXCEPT drop 'der-A' from surviving_derived_ids.
-    ids = (result[:surviving_derived_ids] || result['surviving_derived_ids'] || []).dup
-    ids = ids - ['der-A']
-    {
-      surviving_derived_ids:     ids,
-      survivor_replacement_keys: result[:survivor_replacement_keys] || [],
-      pre_classes_count:         result[:pre_classes_count],
-      pre_classes_keys:          result[:pre_classes_keys]
-    }
+  # Round-4 BLOCK-003: the executor builds a pure-data
+  # expected post-state via DuplicateRepairExpectedPostState
+  # and validates its invariants BEFORE opening the host
+  # operation. We inject an inconsistency into the validator
+  # so the build returns valid=false; the executor must
+  # reject the batch without calling begin_operation.
+  require_relative '../extension/su_ai_plugin/core/duplicate_repair_expected_post_state'
+  original_validate = DuplicateRepairExpectedPostState.method(:validate!)
+  DuplicateRepairExpectedPostState.define_singleton_method(:validate!) do |state, workspace|
+    # Force every preflight check to fail with a stable reason.
+    { valid: false, reason: 'injected_post_state_invariant_mismatch' }
   end
-  new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  begin
+    new_ws, updated = DuplicateRepairExecutor.apply_batch(workspace: ws, plan: plan)
+  ensure
+    # Always restore the original validator to avoid leaking
+    # across tests.
+    DuplicateRepairExpectedPostState.define_singleton_method(:validate!, original_validate)
+  end
   # Workspace unchanged in entity inventory.
   assert_equal ws.entities.length, new_ws.entities.length,
                'pre-host post-state mismatch: workspace inventory unchanged'
@@ -3300,8 +3348,10 @@ test 'V15-B003-5: precomputed post-workspace fingerprint mismatch fails closed w
   # Every action :failed.
   assert updated.all? { |a| a.status == :failed },
          'BLOCK-003-5: precomputed post-state mismatch: every action :failed'
-  # Restore the original method to avoid leaking into other tests.
-  DuplicateRepairExecutor.define_singleton_method(:precompute_expected_post_state, original_precompute)
+  # The workspace must NOT be :ready (it can be :failed or
+  # unchanged in entity inventory per the round-4 contract).
+  refute_equal :ready, new_ws.state,
+               'BLOCK-003-5: workspace MUST NOT be :ready when pre-state validation fails'
 end
 
 # ----- BLOCK-004-5: after_pairs is measured from post-batch

@@ -35,8 +35,13 @@ vendor/bundle/
 .cache/
 rubyinst/
 
-# --- Agent scratch (downloads, test state, monitor logs) ---
+# --- Agent scratch (pi / codex agent workspaces, downloads, test state) ---
 /tmp/
 data/_check_tmp/
+.pi/
+.codex/
 *.tmp
 *.download
+
+# --- Per-Q019: built RBZ (rebuilt from sources; never committed) ---
+dist/

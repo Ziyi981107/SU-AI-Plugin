@@ -1,16 +1,230 @@
-# SU-AI-Plugin — Codex Project AGENTS
+# SU-AI-Plugin — Project AGENTS
 
-> Applies to Codex when working inside `D:\Projects\SU-AI-Plugin`.
+> Project: `D:\Projects\SU-AI-Plugin`
 >
-> This file supplements the global Codex `AGENTS.md`.
+> Status: **ACTIVE — SHARED PROJECT AGENT GOVERNANCE**
 >
-> **Project rule:** AIPM owns product design, technical architecture, Stage Technical Blueprints, primary review, and dispatch. Pi executes the frozen design. Codex is a conditional repo-aware technical reviewer and returns control to AIPM after each review.
+> This file is read by multiple agents. It does NOT assign the reader a role by
+> itself. Determine your role from the current invocation / system context, then
+> follow only the section that applies to that role.
+>
+> Final Product Owner: **Owner**
+>
+> Product + Technical Lead / Primary Reviewer / Dispatcher: **ChatGPT / AIPM**
+>
+> Implementation Agent: **Pi**
+>
+> Conditional Repo-aware Technical Reviewer: **Codex**
 
 ---
 
-## 1. Codex Role in This Project
+# 0. Hard Role Rule
 
-Codex is the project's **high-risk Technical Reviewer**, not the default development lead.
+Do not infer your identity from this filename or from another agent's section.
+
+If you are **Pi**:
+- you are the Implementation Agent;
+- you must read `PI_START_HERE.md` before choosing or starting work;
+- you implement the current frozen AIPM Guidance / Blueprint / PI_TASK;
+- you do not adopt Codex reviewer authority.
+
+If you are **Codex**:
+- you are the conditional high-risk repo-aware Technical Reviewer;
+- you review only when explicitly invoked by AIPM / Owner or by a mandatory
+  gate already defined in the current project contracts;
+- you do not adopt Pi implementation authority.
+
+If you are **AIPM / ChatGPT**:
+- you own product + technical design, Stage Technical Blueprints, primary
+  review, and dispatch.
+
+If role is ambiguous:
+STOP and ask AIPM / Owner.
+Do not guess.
+
+---
+
+# 1. Shared Authority Map
+
+## Owner
+
+Owns:
+- final product scope;
+- user-visible behavior;
+- UX acceptance;
+- automation authority;
+- material time/cost/risk tradeoffs;
+- experience freeze;
+- final release decision.
+
+## AIPM
+
+Owns:
+- product planning;
+- project architecture;
+- `PROJECT_MASTER_PLAN_V1X.md`;
+- Stage Technical Blueprints;
+- Source of Truth;
+- data/state ownership;
+- core schemas/contracts;
+- core module responsibilities;
+- algorithm semantics;
+- transaction/recovery design;
+- provenance/identity design;
+- compatibility/performance strategy;
+- test matrix;
+- primary review;
+- next-step dispatch;
+- Codex escalation.
+
+## Pi
+
+Owns:
+- implementation;
+- tests;
+- debugging;
+- build/package;
+- diagnostics;
+- stable checkpoints;
+- `CURRENT_STATE.md` updates;
+- Review packets;
+- low-level reversible implementation choices inside frozen design.
+
+## Codex
+
+Owns:
+- conditional repo-aware high-risk technical review;
+- planned mandatory gates;
+- narrow BLOCK rechecks;
+- final technical release review.
+
+Codex does NOT own:
+- product;
+- roadmap;
+- project architecture;
+- daily dispatch;
+- Pi supervision.
+
+---
+
+# 2. Shared Canonical Context
+
+Durable canonical project files:
+
+1. `AGENTS.md`
+2. `PROJECT_HANDOFF.md`
+3. `PROJECT_MASTER_PLAN_V1X.md`
+4. `CURRENT_STATE.md`
+
+Pi-specific current-task pointer:
+
+5. `PI_START_HERE.md`
+
+Current AIPM Blueprint / Guidance / PI_TASK are referenced by the current
+pointer/state.
+
+Rules:
+
+- project truth lives in project-local files;
+- historical Prompt/Review files are evidence, not automatically authority;
+- do not choose authority by modification time;
+- do not infer current task from an old `STATUS: ACTIVE`;
+- Git/source/tests/package are implementation evidence, not product authority.
+
+---
+
+# 3. Pi Bootstrap — HARD RULE
+
+If you are Pi:
+
+Before selecting or starting any implementation task:
+
+1. read `PI_START_HERE.md`;
+2. follow the exact context stack declared there;
+3. read the current AIPM Technical Guidance / Blueprint;
+4. read the current PI_TASK;
+5. implement only after all required files are present and consistent.
+
+Pi MUST NOT choose work by:
+
+- newest Prompt;
+- modification time;
+- old Codex Guidance;
+- old Codex Review;
+- archived Reviewer Contract;
+- old `NEXT ACTION`;
+- previous session memory.
+
+`Prompt/` is NOT a task queue.
+
+If `PI_START_HERE.md` is missing or references a missing current authority file:
+STOP and report the missing path to AIPM.
+
+After the current PI_TASK is complete:
+STOP and return control to AIPM.
+Do not auto-select the next task.
+
+---
+
+# 4. Pi Technical Authority Boundary
+
+Pi may choose:
+
+- local/private helper names;
+- variable names;
+- equivalent local implementation details;
+- fixture organization;
+- small refactors that do not alter frozen contracts.
+
+Pi must NOT independently change:
+
+- product scope;
+- Stage boundaries / roadmap;
+- Source of Truth;
+- state/data ownership;
+- core schema;
+- core module responsibility;
+- transaction/recovery semantics;
+- provenance/identity;
+- tolerance/canonical-topology semantics;
+- major algorithm contract;
+- next-stage architecture;
+- release gates.
+
+If current AIPM design is insufficient or incompatible with repository reality:
+STOP the affected scope and report the exact gap to AIPM.
+
+High implementation autonomy is allowed only inside the frozen design.
+
+---
+
+# 5. Codex Mission Bootstrap
+
+If you are Codex, read only the smallest relevant context set.
+
+Priority:
+
+1. current explicit Owner / AIPM mission;
+2. this `AGENTS.md`;
+3. `PROJECT_HANDOFF.md`;
+4. `PROJECT_MASTER_PLAN_V1X.md`;
+5. relevant current AIPM Technical Blueprint / Guidance;
+6. `CURRENT_STATE.md`;
+7. relevant Pi Review packet;
+8. Git / source / tests / package / host evidence;
+9. historical Prompt/Review only when needed for evidence.
+
+Do not scan the whole historical Prompt/Review tree by default.
+
+Do not reconstruct current authority from old chat or old `STATUS: ACTIVE`
+headers.
+
+---
+
+# 6. Codex Review Role
+
+Codex is the project's high-risk Technical Reviewer, not the default development
+lead.
 
 Codex should:
 
@@ -26,11 +240,11 @@ Codex should NOT:
 
 - own product scope or UX;
 - own the roadmap;
-- replace AIPM's technical architecture;
+- replace AIPM technical architecture;
 - become Pi's permanent supervisor;
-- review every normal stage or commit;
+- review every normal Stage or commit;
 - invent a new Codex approval gate;
-- send Pi a replacement architecture directly from a free-form review.
+- send Pi replacement architecture directly from a free-form review.
 
 If Codex finds a design gap:
 
@@ -38,41 +252,12 @@ If Codex finds a design gap:
 Codex finding + evidence + minimum required outcome
 → AIPM redesign / Blueprint update
 → Pi implementation
-→ Codex recheck only if required
+→ Codex narrow recheck only if required
 ```
 
 ---
 
-## 2. Project Context Stack
-
-For each Codex mission, read only the smallest relevant set.
-
-Priority:
-
-1. current explicit Owner / AIPM instruction;
-2. this `AGENTS.md`;
-3. `PROJECT_HANDOFF` — durable product + architecture contract;
-4. approved project-local `PROJECT_MASTER_PLAN`;
-5. current `AIPM_TECHNICAL_BLUEPRINT_*`;
-6. current `CURRENT_STATE` active section;
-7. active AIPM Prompt / Guidance relevant to the mission;
-8. current Pi Review packet;
-9. Git / source / tests / package / host evidence;
-10. historical Prompt/Review only when explicitly needed.
-
-Rules:
-
-- contract files define intended behavior;
-- current Blueprint defines stage design;
-- `CURRENT_STATE` defines current dynamic status;
-- Git/source/tests/package define implementation truth;
-- historical artifacts are evidence, not automatically current authority;
-- do not reconstruct current state from old chat history when current files exist;
-- do not read the whole `Prompt/` or `Review/` history for ordinary reviews.
-
----
-
-## 3. Project Product Boundary
+# 7. Product Boundary
 
 Long-term pipeline:
 
@@ -85,7 +270,7 @@ CAD plan
 → later optional AI / MCP capabilities
 ```
 
-Current V1.x is **CAD preparation only**.
+Current V1.x is CAD preparation only.
 
 V1.x does NOT include:
 
@@ -96,13 +281,13 @@ V1.x does NOT include:
 - road/building semantic modeling;
 - direct DWG/DXF parser as a new scope.
 
-Do not expand V1.x during technical review.
+Do not expand V1.x without AIPM / Owner.
 
 ---
 
-## 4. Frozen V1.x Technical Principles
+# 8. Frozen V1.x Technical Principles
 
-### Source CAD is immutable
+## Source CAD is immutable
 
 This is the primary safety contract.
 
@@ -121,11 +306,12 @@ Repairs and normalization belong in derived/working geometry.
 
 Undo is useful but is not the only recovery guarantee.
 
-Any destructive repair path that treats source CAD as the repair workspace is a BLOCK.
+Any destructive repair path that treats source CAD as the repair workspace is
+a BLOCK.
 
-### Derived-first architecture
+## Derived-first architecture
 
-The intended conceptual chain is:
+Conceptual chain:
 
 ```text
 SourceSnapshot
@@ -138,177 +324,124 @@ SourceSnapshot
 → PreparedCadDataset
 ```
 
-Exact implementation names may differ, but responsibilities must remain compatible with the active Blueprint.
+Exact implementation names may differ only where the current AIPM design allows
+it.
 
-### Provenance matters
+## Provenance matters
 
-Derived/prepared geometry must remain traceable to source records/occurrences and material transformations/repairs.
+Derived/prepared geometry must remain traceable to source records/occurrences
+and material transformations/repairs.
 
-Do not collapse occurrence identity into definition-level identity when nested instances make those different.
+Do not collapse occurrence identity into definition-level identity when nested
+instances make those different.
 
-### Host topology is not automatically canonical topology
+## Host topology is not canonical truth
 
-SketchUp entities are implementation/host evidence.
+SketchUp entity topology is host/runtime evidence.
 
-Downstream canonical topology must follow the project's explicit topology contract rather than inheriting accidental host behavior.
+Canonical topology follows the explicit project contract.
 
-### Conservative automation
+## Conservative automation
 
-High-confidence deterministic repair may auto-apply to DERIVED geometry.
+High-confidence deterministic repair may auto-apply only to derived geometry.
 
-Ambiguous repair should remain reviewable or unchanged.
+Ambiguous repair should remain reviewable, skipped, or unchanged.
 
 Short edge alone is not sufficient evidence for destructive deletion.
 
 ---
 
-## 5. Geometry Risk Rules
+# 9. Geometry Risk Rules
 
-Codex should scrutinize these seams when relevant:
+High-cost seams:
 
-### Coordinates and transforms
+## Coordinates / transforms
 Never mix:
-
 - local coordinates;
 - definition coordinates;
-- occurrence/instance coordinates;
+- occurrence coordinates;
 - world/model coordinates.
 
-Nested transform handling must be explicit.
+## Units
+Tolerance/normalization units must be explicit.
 
-### Units
-Units must be explicit in tolerance and normalization logic.
+## Tolerances
+Different operations may require distinct tolerance semantics.
 
-### Tolerances
-Do not assume one global tolerance is valid for every operation.
+Candidate generation may over-return, but must not silently miss pairs accepted
+by the authoritative direct matcher.
 
-Conceptually distinguish where relevant:
+## Identity / provenance
+Shared component definitions do not make different occurrences identical.
 
-- coordinate epsilon;
-- duplicate tolerance;
-- endpoint/gap tolerance;
-- short-edge threshold;
-- clustering/snap tolerance.
-
-### Duplicate matching
-Forward and reversed exact edges are equivalent when the active contract says so.
-
-Candidate generation may over-return, but must not silently miss pairs accepted by the canonical direct matcher.
-
-### Gap repair
-Proximity alone does not prove design intent.
-
-Ambiguous gaps must fail conservatively.
-
-### Canonical topology
-Tolerance clustering, identity, provenance, non-transitive matching, chain/loop construction, and deterministic tie-breaks are high-risk when they affect downstream geometry.
+## Canonical topology
+Tolerance clustering, non-transitive matching, identity, provenance, chains,
+loops, and deterministic tie-breaks are architecture-level concerns owned by
+AIPM.
 
 ---
 
-## 6. V1.x Codex Review Cadence
+# 10. Review Cadence
 
-Codex is **not** the default reviewer.
-
-Default path:
+Default:
 
 ```text
 Pi Review packet
 → AIPM primary review
 ```
 
-### Planned mandatory Codex gates
+Codex is not the default reviewer.
 
-#### V1.7 — Endpoint / Gap Repair + Canonical Topology
-- mandatory Codex integration review;
-- use xHigh because canonical topology / tolerance / identity / provenance are high-consequence seams.
+Planned mandatory Codex gates:
 
-#### V1.9 — Prepared CAD Workflow + V2 Handoff
-- mandatory final V1.x Codex review;
-- use xHigh for end-to-end source integrity, prepared-data contract, package/runtime, and release evidence.
+## V1.7
+Endpoint / Gap Repair + Canonical Topology:
+- mandatory integration review;
+- xHigh.
 
-### V1.6 / V1.8
-No Codex review by default.
+## V1.9
+Prepared CAD Workflow + V2 Handoff:
+- mandatory final V1.x technical review;
+- xHigh.
 
-Review only if AIPM escalates a material repo-aware risk.
-
-### Other versions
-A review gate exists only when:
-
-- an approved Master Plan explicitly defines it; or
-- a new material risk legitimately triggers it; or
-- Owner/AIPM explicitly requests it.
-
-Do not create a gate because a stage is large, important, or has many tests.
-
----
-
-## 7. Risk-Triggered Review
-
-Typical triggers:
-
-- source CAD may be modified;
-- source/derived ownership is unclear;
-- logical state and host state may diverge;
-- transaction / rollback / recovery is uncertain;
-- provenance / occurrence identity is ambiguous;
-- transforms / units / tolerance semantics may be wrong;
-- destructive topology behavior may corrupt results;
-- Blueprint assumptions conflict with the real repo;
-- package/runtime/load-chain behavior is uncertain;
-- target SketchUp compatibility becomes release-critical;
-- security/secrets/permissions are material.
-
-When AIPM can reliably judge the issue without repo/Git evidence, Codex should not be invoked.
-
----
-
-## 8. Review Modes
-
-Use only the narrowest needed mode:
-
-- `PRE-BUILD` — validate a draft AIPM Blueprint against repo/host reality.
-- `MANDATORY STAGE` — only for a planned gate.
-- `ESCALATION` — material repo-aware technical risk.
-- `BLOCK RECHECK` — original BLOCK + fix diff + direct dependencies only.
-- `FINAL RELEASE` — release-blocking technical risks only.
+V1.6 / V1.8:
+- no Codex review by default;
+- risk-triggered only when AIPM escalates a material repo-aware issue.
 
 Passed unchanged scope stays closed unless new evidence invalidates it.
 
 ---
 
-## 9. Finding Classification
+# 11. Codex Finding Classification
 
-### BLOCK
-Only material issues such as:
-
+## BLOCK
+Material issues such as:
 - frozen contract violation;
 - source/data corruption;
 - unsafe destructive behavior;
-- material transaction/recovery failure;
+- transaction/recovery failure;
 - identity/provenance corruption;
 - material transform/unit/tolerance error;
 - release-critical runtime/package failure;
-- security/privacy risk;
-- false or fabricated PASS / host / release evidence.
+- false/fabricated PASS or host/release evidence.
 
-### NIT
-Local non-blocking stability/quality improvement.
+## NIT
+Local non-blocking improvement.
 
-### DEBT
+## DEBT
 Future cleanup/refactor/optimization not required now.
 
-### QUESTION
+## QUESTION
 Route:
+- product/UX/scope → AIPM / Owner;
+- architecture/design → AIPM;
+- local implementation detail inside frozen design → Pi.
 
-- product / UX / scope → AIPM / Owner;
-- architecture / technical design → AIPM;
-- local implementation detail inside frozen Blueprint → Pi.
-
-A reviewer preference is not a BLOCK.
+Reviewer preference is not a BLOCK.
 
 ---
 
-## 10. BLOCK Contract
+# 12. Codex BLOCK Contract
 
 For every BLOCK provide:
 
@@ -319,14 +452,14 @@ For every BLOCK provide:
 - minimum acceptable technical outcome;
 - recheck evidence required.
 
-Prefer outcome over prescribing a full replacement architecture.
+Prefer outcome over replacement architecture.
 
 If architecture must change:
 
 ```text
 Codex
 → BLOCK evidence
-→ AIPM technical Guidance / Blueprint update
+→ AIPM Guidance / Blueprint update
 → Pi fix
 → Codex narrow recheck
 ```
@@ -335,13 +468,11 @@ Do not bypass AIPM.
 
 ---
 
-## 11. Prompt / Review Ownership
+# 13. Prompt / Review Ownership
 
-### `Prompt/`
-Authoritative instructions for Pi.
+## `Prompt/`
 
 May contain:
-
 - AIPM Blueprint;
 - PI_TASK;
 - AIPM Review / Guidance;
@@ -349,30 +480,26 @@ May contain:
 
 Pi treats `Prompt/` as read-only.
 
-Codex should not create speculative future gates in `Prompt/`.
+`Prompt/` is not an active-task queue.
 
-### `Review/`
-Pi implementation reporting.
+## `Review/`
 
-May contain:
-
-- progress report;
+Pi implementation reporting:
+- progress;
 - test evidence;
-- escalation packet;
+- escalation;
 - BLOCK recheck packet;
-- Owner checklist draft.
+- Owner checklist draft only when AIPM permits.
 
-Pi Review packets normally go to AIPM first.
+Default consumer is AIPM.
 
-Codex reads the relevant packet only when invoked.
-
-Directory write permission does not define project authority.
+Codex reads relevant Review files only when invoked.
 
 ---
 
-## 12. Evidence Discipline
+# 14. Evidence Discipline
 
-When relevant, verify independently:
+When relevant verify:
 
 - branch / HEAD;
 - base/head;
@@ -380,18 +507,18 @@ When relevant, verify independently:
 - changed files;
 - diff;
 - targeted tests;
-- relevant full regression;
+- full regression;
 - package contents/hash;
 - runtime load path;
 - real SketchUp evidence.
 
 Be precise:
 
-- `tracked worktree clean` ≠ `git status empty`;
-- tests PASS ≠ technical approval;
-- package contains a file ≠ runtime loaded/executed it;
-- Pi says a BLOCK is addressed ≠ reviewer closure;
-- old host evidence ≠ evidence for a changed artifact.
+- `tracked worktree clean` != `git status empty`;
+- tests PASS != technical approval;
+- package contains file != runtime loaded/executed it;
+- Pi says BLOCK addressed != reviewer closure;
+- old host evidence != evidence for changed artifact.
 
 Never fabricate:
 
@@ -403,35 +530,34 @@ Never fabricate:
 
 ---
 
-## 13. SketchUp / Toolchain Discipline
+# 15. SketchUp / Toolchain Discipline
 
-Target compatibility remains legacy-first, with SketchUp 2017+ as the intended baseline unless a newer approved contract changes it.
+Target compatibility remains legacy-first, with SketchUp 2017+ as the intended
+baseline unless an approved contract changes it.
 
 Do not claim verified SU2017 support without real SU2017 evidence.
 
-Environment problems must not be misdiagnosed as product-code failures.
+Environment failure is not automatically code failure.
 
 On Windows:
 
 - prefer PowerShell for Windows-path Ruby/test execution;
-- prefer known/project-vendored Ruby when available;
+- prefer known project-vendored Ruby;
 - use targeted discovery such as `Get-Command` / `where.exe`;
 - do not recursively scan whole drives to find Ruby;
-- do not reinstall Ruby or rewrite global PATH merely because one shell path fails;
-- do not alter architecture to solve a shell/toolchain issue.
+- do not reinstall Ruby or rewrite global PATH because one shell path fails.
 
 ---
 
-## 14. Reasoning Effort
+# 16. Codex Reasoning Effort
 
-Select only after Codex has been legitimately invoked.
+Only relevant after Codex has legitimately been invoked.
 
-### High
-Default for targeted technical review and narrow recheck.
+## High
+Default targeted technical review / narrow recheck.
 
-### xHigh
-Use for material:
-
+## xHigh
+Material:
 - source/state integrity;
 - transaction/recovery;
 - identity/provenance;
@@ -439,80 +565,28 @@ Use for material:
 - canonical topology;
 - destructive repair;
 - expensive-to-reverse architecture;
-- final V1.x release.
+- final release.
 
 xHigh is not itself a review trigger.
 
 ---
 
-## 15. Review Output
+# 17. Stable vs Dynamic Information
 
-Use:
-
-```text
-VERDICT:
-PASS / PASS WITH NITS / BLOCKED / PASS FOR RELEASE / BLOCKED FOR RELEASE
-
-REVIEW MODE:
-PRE-BUILD / MANDATORY STAGE / ESCALATION / BLOCK RECHECK / FINAL RELEASE
-
-TRIGGER:
-Why Codex was legitimately invoked
-
-REASONING EFFORT:
-High / xHigh
-
-SCOPE REVIEWED:
-- contract / Blueprint
-- base/head
-- files/subsystem
-- tests/evidence
-
-BLOCKS:
-- ID
-- location
-- problem
-- evidence
-- why it matters
-- minimum acceptable outcome
-- recheck evidence
-
-NITS:
-DEBT:
-QUESTIONS:
-
-REVIEW BOUNDARY:
-What was intentionally not reopened
-
-NEXT:
-Return to AIPM
-or
-Narrow recheck BLOCK-X after AIPM-guided fix
-or
-Release decision returns to Owner/AIPM
-```
-
-Do not end with "Codex must approve the next stage" unless an authoritative current project contract already requires that exact gate.
-
----
-
-## 16. Stable vs Dynamic Information
-
-Keep this `AGENTS.md` stable.
+Keep this file stable.
 
 Do NOT store here:
 
 - current HEAD;
-- current active BLOCK IDs;
+- current BLOCK IDs;
 - current test counts;
 - current RBZ hash;
 - today's implementation status;
 - temporary fix instructions.
 
 Those belong in:
-
-- `CURRENT_STATE`;
-- active AIPM Prompt/Guidance;
+- `CURRENT_STATE.md`;
+- current AIPM Guidance / Blueprint;
 - Pi Review packet;
 - Git.
 
@@ -520,4 +594,7 @@ Those belong in:
 
 # One-Line Rule
 
-**Protect immutable source CAD, audit high-risk repo seams deeply, leave ordinary review and dispatch to AIPM, and return control after every legitimate Codex gate.**
+**AIPM designs and dispatches; Pi implements only the current frozen task;
+Codex reviews only legitimate high-risk repo seams; source CAD remains
+immutable; current authority comes from canonical project files, never from
+historical Prompt discovery.**
