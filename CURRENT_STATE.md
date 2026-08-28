@@ -127,9 +127,10 @@ AIPM Source Review corrective dispatch HEAD (starting point):
 AIPM Source Review corrective final stable commit:
 - Implementation commit: `874149dc7488ff8c844e16fb6e0e6013df9abfa6`
 - SHA-stamp commit 1: `b868cf4bad78bff2e3510481368e838e1459320c`
-- SHA-stamp commit 2 (final acceptance): `b9e1965`
+- SHA-stamp commit 2: `b9e1965`
+- SHA-stamp commit 3 (acceptance state): `d91d94a2655be451ce84356dba32ffbee89a566e`
 - Final `git rev-parse HEAD`:
-  `b9e1965`
+  `d91d94a2655be451ce84356dba32ffbee89a566e`
 - See `Review/CURRENT_PI_REPORT.md` §14 for the full scope.
 
 Working tree (THIS UPDATE):
