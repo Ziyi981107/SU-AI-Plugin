@@ -615,6 +615,45 @@ module SUAnalysis
           DuplicateGeometrySemantics.strict_handle_live?(handle)
         end
         invalid_ids = disposable_handles.reject { |id, h| valid_pairs.any? { |vid, _vh| vid == id } }.map(&:first)
+        # Per FIX-SR-01: if ANY removal member is not
+        # strictly live, fail closed BEFORE begin_operation.
+        # We must NOT partially dispose the valid removals
+        # while the invalid ones remain at the host -- that
+        # would produce host/logical divergence (the host
+        # actually disposes the valid removals, but the
+        # workspace claims to have removed the invalid ones
+        # too, which were never disposed at the host level).
+        # Reusing the existing strict_handle_live? contract
+        # -- no new predicate.
+        unless invalid_ids.empty?
+          # Build a truthful, stable reason code that names
+          # every non-live member.
+          invalid_handles_detail = invalid_ids.map { |id|
+            h = workspace.handle_for(id)
+            if h.nil?
+              "#{id.inspect}:missing"
+            elsif !h.respond_to?(:valid?)
+              "#{id.inspect}:no_valid_predicate"
+            else
+              begin
+                v = h.valid?
+                "#{id.inspect}:valid?=#{v.inspect}"
+              rescue StandardError => e
+                "#{id.inspect}:valid?_raised=#{e.class}"
+              end
+            end
+          }.join('; ')
+          reason = "removal_handle_not_strictly_live: [#{invalid_handles_detail}]"
+          new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: reason)
+          updated_action = fail_action(
+            action,
+            reason: reason,
+            affected_derived_ids: invalid_ids
+          )
+          return [new_ws, updated_action]
+        end
+        # All removals strictly live -- proceed to the
+        # existing single-action host operation path.
         begin
           adapter.begin_operation(model, label: 'SU-AI-Plugin: V1.5 Duplicate Repair Apply')
         rescue StandardError => e
@@ -644,7 +683,7 @@ module SUAnalysis
           end
           removed_ids = valid_pairs.map(&:first)
           kept_ids = Array(workspace.entities.map(&:derived_id)).map(&:to_s) - removed_ids
-          total_removed = (removed_ids + invalid_ids).uniq
+          total_removed = removed_ids
           survivor_updates = nil
           if survivor_id && !survivor_id.empty? && kept_ids.include?(survivor_id)
             survivor_updates = { survivor_id => Array(action.source_occurrence_ids).map(&:to_s) }
@@ -665,7 +704,7 @@ module SUAnalysis
           rescue StandardError
           end
           new_ws = rollback_to_failed(pre_ws: workspace, model: model, reason: "dispose_failed: #{dispose_errors.join('; ')}")
-          updated_action = fail_action(action, reason: "dispose_failed: #{dispose_errors.join('; ')}", affected_derived_ids: (valid_pairs.map(&:first) - invalid_ids))
+          updated_action = fail_action(action, reason: "dispose_failed: #{dispose_errors.join('; ')}", affected_derived_ids: (valid_pairs.map(&:first)))
           [new_ws, updated_action]
         end
       end

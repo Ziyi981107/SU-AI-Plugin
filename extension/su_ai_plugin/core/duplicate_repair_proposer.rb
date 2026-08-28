@@ -78,6 +78,7 @@ module SUAnalysis
       REASON_NON_EDGE_KIND           = 'derived_record_kind_not_edge'.freeze
       REASON_INCOMPLETE_PROVENANCE   = 'incomplete_nested_provenance'.freeze
       REASON_NON_FINITE_COORDS       = 'non_finite_endpoint_coordinates'.freeze
+      REASON_INVALID_CAPTURED_TOLERANCE = 'invalid_or_missing_captured_tolerance'.freeze
       REASON_NON_DISTINCT_SOURCE     = 'duplicate_evidence_repeated_source_edge'.freeze
       REASON_MISSING_EDGE_RECORD     = 'no_edge_record_for_one_or_both_edge_ids'.freeze
       REASON_NO_DERIVED_FOR_ISSUE    = 'no_derived_records_resolve_to_issue_source_edges'.freeze
@@ -120,13 +121,18 @@ module SUAnalysis
       def build_actions(source_snapshot:, registry:, workspace:)
         tolerance    = resolve_tolerance(source_snapshot, workspace)
         unless DuplicateGeometrySemantics.valid_tolerance?(tolerance)
-          # Captured tolerance missing / invalid: NO V1.5
-          # auto-repair; emit one explicit skipped plan
-          # outcome so the audit doesn't lie.
+          # Per FIX-SR-03: missing / invalid captured
+          # tolerance must use a truthful reason code
+          # (`invalid_or_missing_captured_tolerance`). The
+          # endpoint-geometry reason (`non_finite_endpoint_coordinates`)
+          # is reserved for actual coordinate failures and
+          # is semantically false for a missing / invalid
+          # configuration. V1.5 auto-repair remains disabled
+          # in both cases (fail-closed).
           issue_id = 'config|invalid_captured_tolerance'
           return [skipped_action_for(
             { issue_id: issue_id, edge_ids: [] },
-            REASON_NON_FINITE_COORDS,
+            REASON_INVALID_CAPTURED_TOLERANCE,
             'V1.5 auto-repair disabled: captured duplicate tolerance is missing or invalid'
           )]
         end

@@ -1,32 +1,47 @@
-# CURRENT PI REPORT — V1.5 ROUND-5 AIPM SOURCE REVIEW CORRECTIVE
+# CURRENT PI REPORT — V1.5 ROUND-5 AIPM SOURCE REVIEW NARROW CONTINUATION
 
 Project: SU-AI-Plugin
 Version: V1.5
-Stage: Round-5 AIPM Source Review corrective continuation
-Dispatch: `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`
+Stage: Round-5 AIPM Source Review corrective NARROW CONTINUATION
+Dispatch: `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01` (NARROW CONTINUATION of the SAME dispatch)
 Dispatcher: ChatGPT / AIPM
-Frozen Guidance: `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
-AIPM Source Review: `Review/CURRENT_AIPM_REVIEW.md`
+AIPM reviewed commit: `874149dc7488ff8c844e16fb6e0e6013df9abfa6` (the prior Round-5 corrective implementation)
+AIPM verdict: FIX REQUIRED — narrow implementation correction
+Frozen Guidance (unchanged): `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
 Branch: `dev/v1.5`
-Status: **IMPLEMENTATION COMPLETE — STOPPED awaiting AIPM direct source re-review**
+Status: **IMPLEMENTATION COMPLETE — PUSHED — STOPPED awaiting AIPM direct GitHub Source Review**
 
 ---
 
-## 1. Scope (per dispatch)
+## 0. Scope (per dispatch NARROW CONTINUATION)
 
-Implemented ONLY the bounded AIPM Source Review fixes frozen
-in `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`:
+This is NOT a new Round and NOT a new design. It is a NARROW
+continuation of the SAME dispatch
+`SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`, addressing
+the bounded implementation defects AIPM directly found by
+reviewing the real GitHub implementation commit
+`874149dc7488ff8c844e16fb6e0e6013df9abfa6`.
 
-- **FIX-A** — strict tolerance parsing (no permissive `.to_f`)
-  + elimination of missing/invalid runtime fallback +
-  exact-zero layer-key correction.
-- **FIX-B** — exact deterministic survivor provenance union.
-- **FIX-C** — strict destructive host-handle liveness hardening.
+Implemented ONLY:
 
-Explicitly NOT implemented (per dispatch §Hard STOP and §Scope):
+- **FIX-SR-01** — single-action executor
+  (`DuplicateRepairExecutor.apply_atomic`) must fail closed
+  on any invalid removal handle, with NO partial execution.
+- **FIX-SR-02** — expected post state
+  (`DuplicateRepairExpectedPostState.validate!`) must prove
+  every expected survivor + removal handle is strictly
+  live via the existing
+  `DuplicateGeometrySemantics.strict_handle_live?` contract.
+- **FIX-SR-03** — truthful invalid-tolerance audit reason
+  (new `REASON_INVALID_CAPTURED_TOLERANCE` constant in
+  `DuplicateRepairProposer`) used when the missing /
+  invalid captured duplicate tolerance disables V1.5
+  auto-repair.
 
-- BLOCK-005 discard / Undo recovery redesign;
-- Observer architecture;
+Explicitly NOT implemented (per dispatch):
+
+- BLOCK-005 discard / Undo recovery redesign (still OPEN);
+- Observer / Undo architecture;
 - Owner verification;
 - V1.6;
 - product / UX changes;
@@ -36,216 +51,201 @@ Explicitly NOT implemented (per dispatch §Hard STOP and §Scope):
 
 ---
 
-## 2. Preflight
+## 1. Preflight (at the start of THIS dispatch)
 
 | Item | Value |
 |---|---|
-| `git branch --show-current` | `dev/v1.5` (matches dispatch expected) |
-| `git rev-parse HEAD` (before) | `89f62457887d5d5d2b04f8d01f8d1ed27464c37e` |
-| `git status --short` (before) | `M Prompt/CURRENT_PI_DISPATCH.md`, `M Review/CURRENT_AIPM_REVIEW.md`, plus untracked AIPM review evidence `.txt` files |
-| Untracked files preserved | yes — `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`, `Review/AIPM_V1_5_R5_*.txt`, `Review/V3_4_*.txt` |
+| `git branch --show-current` | `dev/v1.5` (matches expected) |
+| `git rev-parse HEAD` (start of THIS dispatch) | `6cdd8d778d740b28ff90669ce997a413495049bc` |
+| `git status --short` (start) | untracked: 7 AIPM review evidence `.txt` files (preserved) |
+| Untracked files preserved | yes — same 7 `.txt` files |
 | Unexpected tracked production/test/governance modifications | none |
-| `git remote -v` | empty (no remote) |
-| Push status | `PUSH NOT POSSIBLE — NO REMOTE` |
-
-The starting point `89f6245` is the V3.4 governance migration HEAD
-documented in `CURRENT_AIPM_REVIEW.md` §Evidence basis.
+| `git remote -v` | `origin https://github.com/Ziyi981107/SU-AI-Plugin.git` (from prior task) |
+| `git log -1 origin/dev/v1.5` | `6cdd8d778d740b28ff90669ce997a413495049bc` (matches local) |
+| `git diff --check` | clean |
 
 ---
 
-## 3. Changed production files
+## 2. Changed production files (THIS UPDATE)
 
 | File | Change | Reason |
 |---|---|---|
-| `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb` | Added `parse_strict_tolerance`; rewrote `valid_tolerance?` / `tolerance_category` to delegate to it; added `strict_handle_live?`; rewrote `exact_edge_key` to include the normalized layer; rewrote `enumerate_candidates_exact_zero` to pass `t[:layer]` to `exact_edge_key`; rewrote `resolve_captured_tolerance` to use `parse_strict_tolerance`. | FIX-A §2.2/2.3/2.4 + FIX-C. |
-| `extension/su_ai_plugin/core/duplicate_repair_proposer.rb` | Rewrote `read_duplicate_tolerance` / `resolve_tolerance` to return nil on missing/invalid (no runtime fallback); rewrote the survivor / removal / member handle-proof sections in `verify_final_repairable_component` to use `strict_handle_live?`; added `REASON_HANDLE_INVALID` for handles that lack `:valid?`. | FIX-A §2.3 + FIX-C. |
-| `extension/su_ai_plugin/core/derived_duplicate_topology.rb` | Rewrote `resolve_tolerance` to return nil when no valid explicit or captured value is available (no runtime fallback). | FIX-A §2.3. |
-| `extension/su_ai_plugin/core/duplicate_repair_executor.rb` | Rewrote `precompute_expected_post_state` so `captured_tolerance` stays nil on missing/invalid (with `tolerance_valid: false`); rewrote `preflight_batch`, `final_live_handle_proof`, `precommit_host_shape_observation` to use `strict_handle_live?`; rewrote the per-action pre-computation in `apply_batch_atomic` to classify via `strict_handle_live?`; rewrote `apply` / `apply_atomic` / `precompute_survivor_replacements` accordingly; preserved the "all_gone" shortcut semantics as "handle.nil?" only. | FIX-A §2.3 + FIX-C. |
-| `extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb` | Added `'survivor_provenance_unions_from_pre_state'` field computed from authoritative pre-state records; added invariant checks in `validate!` for exact union match + key-set equality (with stable reason codes `survivor_provenance_union_mismatch`, `survivor_provenance_union_key_mismatch`, `survivor_provenance_union_missing_in_action`, `survivor_provenance_union_from_pre_state_empty`). | FIX-B §3.2/3.3. |
-| `extension/su_ai_plugin/core/working_mode_runner.rb` | Rewrote the `before_pairs` / `after_pairs` computation in `build_duplicate_repair_summary` to remove the silent `read_duplicate_tolerance` fallback; added a new `tolerance_status` field (`missing_captured_tolerance` / `invalid_captured_tolerance` / `captured`) so the UI can render the honest answer when no pair metric is available. | FIX-A §2.3 (audit path). |
+| `extension/su_ai_plugin/core/duplicate_repair_proposer.rb` | Added `REASON_INVALID_CAPTURED_TOLERANCE = 'invalid_or_missing_captured_tolerance'.freeze`. Updated `build_actions` so the missing / invalid captured duplicate tolerance branch uses the new truthful reason instead of `REASON_NON_FINITE_COORDS`. Fail-closed behavior preserved. | FIX-SR-03. |
+| `extension/su_ai_plugin/core/duplicate_repair_executor.rb` | Updated `apply_atomic` to fail closed BEFORE `begin_operation` if `invalid_ids` is non-empty: emits a `:failed` action with stable reason `removal_handle_not_strictly_live: [...]` (per-id detail); transitions the workspace to `:failed` with the same reason; `begin=0`, `dispose=0`, `commit=0`, `abort=0`, exact logical pre-state retained, source immutable. Removed the `total_removed = (removed_ids + invalid_ids).uniq` partial-execution path. The normal all-valid success path remains green. Reuses the existing `strict_handle_live?` contract. | FIX-SR-01. |
+| `extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb` | In `validate!`, inserted a NEW invariant J BEFORE the existing F / H aliasing checks. For every survivor + removal handle in the expected post-state, the validator calls `DuplicateGeometrySemantics.strict_handle_live?`. Any nil / no-`:valid?` / nil-`valid?` / false-`valid?` / raise-`valid?` handle makes the state invalid with stable reason codes `survivor_handle_missing`, `survivor_handle_no_valid_predicate`, `survivor_handle_not_strictly_live`, `survivor_handle_valid?_raised`, and the corresponding `removal_handle_*` reasons. This invariant is in addition to (not a replacement for) the existing F / H aliasing invariants, the executor's preflight / final-proof, fingerprint (E), and pair-metric (I). | FIX-SR-02. |
+| `tests/test_v15_round5_block_fix.rb` | +16 new focused regressions: V15-SR01-1..6 (single-action executor), V15-SR02-1..7 (expected post state), V15-SR03-1..3 (truthful invalid-tolerance reason). | dispatch §4 Required tests. |
 
-No other production files were modified.
+No other production / test files were modified.
 
 ---
 
-## 4. Changed test files
+## 3. Changed test files (THIS UPDATE)
 
-| File | Change | Reason |
+`tests/test_v15_round5_block_fix.rb`:
+
+- **V15-SR01-1..6** (6 tests) — single-action executor
+  (`DuplicateRepairExecutor.apply`) path:
+  - 1. removal handle missing `:valid?` -> `begin=0`,
+     no READY.
+  - 2. `valid?` returns nil -> `begin=0`, no READY.
+  - 3. `valid? == false` (handle erased) -> `begin=0`,
+     no READY.
+  - 4. `valid?` raises StandardError -> `begin=0`, no
+     READY.
+  - 5. multi-removal action with one valid + one invalid
+     -> NO partial execution; the valid handle is NOT
+     disposed; `begin=0`, `dispose=0`.
+  - 6. all-valid baseline -> existing single-action
+     success path remains green (1 applied, 1 entity
+     remaining, `:ready`).
+- **V15-SR02-1..7** (7 tests) — expected post state:
+  - 1. nil survivor handle -> invalid
+     (`survivor_handle_missing`).
+  - 2. nil removal handle -> invalid
+     (`removal_handle_missing`).
+  - 3. removal handle missing `:valid?` -> invalid
+     (`removal_handle_no_valid_predicate`).
+  - 4. removal handle `valid?` returns nil -> invalid
+     (`removal_handle_not_strictly_live`).
+  - 5. survivor / removal alias (regression, existing
+     invariant F).
+  - 6. removal / removal alias (regression, existing
+     invariant H).
+  - 7. all-valid distinct -> valid (baseline).
+- **V15-SR03-1..3** (3 tests) — truthful audit reason:
+  - 1. missing captured duplicate tolerance -> skipped
+     audit row's `confidence_basis` ==
+     `skipped:invalid_or_missing_captured_tolerance`.
+  - 2. invalid (`'abc'`) captured duplicate tolerance ->
+     same truthful reason.
+  - 3. non-finite endpoint geometry still uses
+     `skipped:non_finite_endpoint_coordinates` (no
+     cross-pollution).
+
+---
+
+## 4. AIPM finding -> implementation -> regression mapping
+
+| AIPM finding (per dispatch §1..3) | Implementation site | Regressions |
 |---|---|---|
-| `tests/test_v15_round5_block_fix.rb` | Updated `V15-B003-INV-I` test to also populate the new `survivor_provenance_unions_from_pre_state` field (the phantom survivor's pre-state record must agree with its claimed union so the test still reaches invariant I). Added **32 new focused regressions** in 6 groups: FIX-A strict tolerance parsing (11), FIX-A exact-zero layer-key correction (4), FIX-A no-fallback production-path regressions (5), FIX-B exact provenance union invariants + executor-level mismatch (7), FIX-C strict handle liveness (5). | dispatch §6 Required regressions. |
+| FIX-SR-01: single-action `apply_atomic` did not fail when `invalid_ids` was non-empty; could partially dispose and produce host/logical divergence. | `duplicate_repair_executor.rb#apply_atomic` — added the `unless invalid_ids.empty?` early-return that calls `rollback_to_failed` + `fail_action` BEFORE `begin_operation`. Removed the `total_removed = (removed_ids + invalid_ids).uniq` partial-execution branch. Reuses `strict_handle_live?`. | `V15-SR01-1..5` (failure cases) + `V15-SR01-6` (success baseline). |
+| FIX-SR-02: F / H invariants in `validate!` skipped nil handles and did not require strict liveness; expected state could pass with non-live handles. | `duplicate_repair_expected_post_state.rb#validate!` — new invariant J inserted BEFORE F / H. Reuses `DuplicateGeometrySemantics.strict_handle_live?`. Stable reason codes `survivor_handle_missing` / `survivor_handle_no_valid_predicate` / `survivor_handle_not_strictly_live` / `survivor_handle_valid?_raised` (and `removal_handle_*`). | `V15-SR02-1..4` (the new paths) + `V15-SR02-5..6` (F / H regression) + `V15-SR02-7` (baseline). |
+| FIX-SR-03: missing / invalid captured tolerance used `REASON_NON_FINITE_COORDS` (semantically false). | `duplicate_repair_proposer.rb` — added `REASON_INVALID_CAPTURED_TOLERANCE = 'invalid_or_missing_captured_tolerance'.freeze`; `build_actions` missing/invalid branch now uses the new constant. Fail-closed preserved. | `V15-SR03-1..2` (truthful reason) + `V15-SR03-3` (no cross-pollution of the coordinate reason). |
+| BLOCK-005 | explicitly NOT implemented (AIPM design gap, deferred per dispatch §Hard STOP). | n/a — BLOCK-005 remains OPEN. |
 
 ---
 
-## 5. AIPM finding -> implementation -> regression mapping
+## 5. FIX-SR-01 evidence (single-action `apply` path)
 
-| AIPM finding (per `CURRENT_AIPM_REVIEW.md`) | Implementation site | Regressions |
-|---|---|---|
-| BLOCK-002A / BLOCK-004 tolerance fail-closed: permissive `.to_f` / runtime default fallback / exact-zero key/layer inconsistency. | `duplicate_geometry_semantics.rb#parse_strict_tolerance`, `#valid_tolerance?`, `#tolerance_category`, `#resolve_captured_tolerance`, `#exact_edge_key`, `#enumerate_candidates_exact_zero`; `duplicate_repair_proposer.rb#read_duplicate_tolerance`, `#resolve_tolerance`; `derived_duplicate_topology.rb#resolve_tolerance`; `duplicate_repair_executor.rb#precompute_expected_post_state`, `#preflight_batch`; `working_mode_runner.rb#build_duplicate_repair_summary`. | `V15-FIXA-STR-1..11`, `V15-FIXA-KEY-1..4`, `V15-FIXA-NOFALLBACK-1..5`. |
-| BLOCK-003 exact provenance union: validator proves only non-empty provenance; does not prove exact deterministic union from authoritative pre-state members. | `duplicate_repair_expected_post_state.rb#build` (new `'survivor_provenance_unions_from_pre_state'` field computed from `workspace_inventory_pairs`), `#validate!` (new exact-union + key-set invariant checks with stable reason codes). | `V15-FIXB-PR-1..6`, `V15-FIXB-PR-EXEC`. |
-| Bounded hardening adjacent to BLOCK-001: handle that lacks `:valid?` / returns nil from `:valid?` / raises during `:valid?` must NOT be treated as live. | `duplicate_geometry_semantics.rb#strict_handle_live?`; `duplicate_repair_proposer.rb#verify_final_repairable_component`; `duplicate_repair_executor.rb#preflight_batch`, `#final_live_handle_proof`, `#precommit_host_shape_observation`, `#apply_batch_atomic` per-action pre-computation, `#apply`, `#apply_atomic`, `#precompute_survivor_replacements`. | `V15-FIXC-HDL-1..5`. |
-| BLOCK-005 discard / Undo / host-change reconciliation | explicitly NOT implemented (AIPM design gap, deferred to separate AIPM research per dispatch §5). | n/a — BLOCK-005 remains OPEN. |
-
----
-
-## 6. Exact tolerance / fallback search result
-
-Per dispatch §2.3 the search target was every live use of:
-
-- `DEFAULT_TOLERANCE`
-- `DEFAULT_DUPLICATE_TOLERANCE`
-- `.to_f`
-around duplicate tolerance resolution in production code.
-
-| File | Line | Symbol | Before | After |
-|---|---|---|---|---|
-| `duplicate_geometry_semantics.rb` | 36 | `DEFAULT_TOLERANCE = 1.0e-4` | constant present | constant retained for unrelated default-config creation; NOT a runtime fallback (used only by `tolerance.rb` `Tolerance.default`). |
-| `duplicate_geometry_semantics.rb` | old `valid_tolerance?` | `.to_f` on String + `.respond_to?(:finite?) && ...` | permissive: `"abc".to_f == 0.0` -> valid exact-zero. | replaced with `parse_strict_tolerance` (strict `Float(s)` for Strings; `f.finite? && f >= 0` for Numerics). |
-| `duplicate_geometry_semantics.rb` | old `tolerance_category` | `.to_f` | same permissive coercion. | replaced with `parse_strict_tolerance`. |
-| `duplicate_geometry_semantics.rb` | old `resolve_captured_tolerance` | `v.to_f` | permissive. | `parse_strict_tolerance(v)`. |
-| `duplicate_repair_proposer.rb` | `read_duplicate_tolerance` | `DEFAULT_DUPLICATE_TOLERANCE` returns on missing | runtime fallback. | returns nil on missing/invalid; caller MUST treat nil as "no V1.5 auto-repair". |
-| `duplicate_repair_proposer.rb` | `resolve_tolerance` | `DEFAULT_DUPLICATE_TOLERANCE` last-resort | runtime fallback. | returns nil when neither workspace nor snapshot supplies a valid captured value. |
-| `duplicate_repair_proposer.rb` | `verify_final_repairable_component` (provenance union) | `DEFAULT_DUPLICATE_TOLERANCE` in `canonical_geometry_key` call | uses default for non-action key normalization. | not a runtime fallback; the default is only used as a quantization grid for a non-action key. Preserved per Guidance §2.3 ("legacy constants may remain only if needed for unrelated default configuration creation"). |
-| `derived_duplicate_topology.rb` | `resolve_tolerance` | `DEFAULT_TOLERANCE` last-resort | runtime fallback. | returns nil when no valid explicit or captured value. |
-| `duplicate_repair_executor.rb` | `precompute_expected_post_state` | `DEFAULT_DUPLICATE_TOLERANCE` fallback | runtime fallback. | captured_tolerance stays nil; `tolerance_valid: false`; caller fails closed. |
-| `duplicate_repair_executor.rb` | `preflight_batch` | (no direct default, but used `tol` from `resolve_captured_tolerance`) | n/a | uses `strict_handle_live?` for every member; returns `valid: false, reason: 'invalid_or_missing_captured_tolerance'` on missing/invalid. |
-| `working_mode_runner.rb` | `build_duplicate_repair_summary` (both before_pairs and after_pairs) | fallback to `read_duplicate_tolerance(pre_workspace.source_snapshot)` on invalid captured | silent audit fallback. | no fallback; pair metric reported as `nil` (with explicit `tolerance_status` field) when captured is missing/invalid. |
-
-The exact-zero path is preserved: `tolerance_category(0.0) == :zero`; `enumerate_candidates_exact_zero` is invoked. Captured `0.0` is NEVER substituted by `0.0001` anywhere in the production chain.
-
----
-
-## 7. Exact provenance invariant evidence
-
-`duplicate_repair_expected_post_state.rb#build` now carries TWO
-independent survivor-provenance-union maps:
+All failure-case tests assert:
 
 ```text
-survivor_provenance_unions                  : <sid> -> <sorted uniq claimed source_occurrence_ids>
-survivor_provenance_unions_from_pre_state   : <sid> -> <sorted uniq pre-state record source_occurrence_ids>
+begin_calls    = 0
+commit_calls   = 0
+abort_calls    = 0
+dispose_calls  = 0
+applied count  = 0
+workspace.state: :failed
+last_error:    matches /removal_handle_not_strictly_live/
+pre-state inventory: unchanged
+source fingerprint: unchanged
 ```
 
-`validate!` requires:
-
-1. Same keys (sorted): `survivor_provenance_unions.keys.sort ==
-   survivor_provenance_unions_from_pre_state.keys.sort`. Mismatch ->
-   `survivor_provenance_union_key_mismatch`.
-2. For every key, exact equality of the canonical-normalized union:
-   `Array(occs).map(&:to_s).uniq.sort`. Mismatch ->
-   `survivor_provenance_union_mismatch: <sid>: missing=[...]
-   extra=[...]`.
-3. Defensive: missing entry in either map ->
-   `survivor_provenance_union_missing_in_action: <sid>` or
-   `survivor_provenance_union_from_pre_state_empty: <sid>`.
-
-Fingerprint validation (existing invariant E) remains in force;
-the two invariants are independent.
-
-The mismatch detection runs INSIDE `validate!`, which is
-called from `build(...)` AFTER the per-action membership and
-removed/survivor inventory invariants but BEFORE the function
-returns the post-state Hash. The executor's `apply_batch_atomic`
-only consults `expected_post['valid']` to decide whether to
-commit host mutation; a mismatch therefore blocks
-`begin_operation`.
-
-`V15-FIXB-PR-EXEC` exercises this end-to-end: a 3-record
-fixture has the action's claim (3 occurrences) and the
-pre-state records truncated to 2 occurrences; `apply_batch`
-reports `begin=0`, `commit=0`, `abort=0`, `dispose=0`,
-workspace `:failed` with `survivor_provenance_union_mismatch|
-expected_post_state_invalid`, logical pre-state retained,
-source immutable.
-
----
-
-## 8. Handle-liveness evidence
-
-`DuplicateGeometrySemantics.strict_handle_live?(handle)` is the
-single source of truth for handle liveness in destructive paths:
-
-| Handle shape | `respond_to?(:valid?)` | `valid?` returns | `strict_handle_live?` |
-|---|---|---|---|
-| `nil` | n/a | n/a | `false` |
-| Object missing `:valid?` (`NoValidPredicateHandle`) | `false` | n/a | `false` |
-| Object with `valid?` returning `nil` (`NilValidPredicateHandle`) | `true` | `nil` | `false` |
-| Object with `valid?` raising `StandardError` (`RaiseValidPredicateHandle`) | `true` | raises | `false` (caught) |
-| Object with `valid?` returning `false` | `true` | `false` | `false` |
-| Object with `valid?` returning `true` | `true` | `true` | `true` |
-
-This predicate is wired into:
-
-- `DuplicateRepairProposer#verify_final_repairable_component`
-  (per-repairable-component final eligibility proof) ->
-  `:skipped` audit row with `REASON_HANDLE_INVALID` /
-  `REASON_HANDLE_INVALIDATED`.
-- `DuplicateRepairExecutor#preflight_batch` (live-handle proof
-  re-check on every action before `begin_operation`) ->
-  `{ valid: false, reason: '*_handle_invalidated' /
-  '*_handle_malformed_no_valid_predicate' }`.
-- `DuplicateRepairExecutor#final_live_handle_proof` (same proof
-  re-run IMMEDIATELY before `begin_operation`, AFTER expected-
-  state validation) -> atomic no-begin failure.
-- `DuplicateRepairExecutor#precommit_host_shape_observation`
-  (symmetric: survivors still strictly live, planned removals
-  no longer strictly live) -> `precommit_*_not_live` /
-  `precommit_removal_handle_still_live` /
-  `precommit_handle_aliasing` reasons.
-- `DuplicateRepairExecutor#apply_batch_atomic` per-action
-  pre-computation: every removal handle is classified via
-  `strict_handle_live?` into present/invalid (a handle that
-  lacks `:valid?` is classified as invalid, NOT present).
-- `DuplicateRepairExecutor#apply` / `#apply_atomic` /
-  `#precompute_survivor_replacements` use the same predicate.
-- The `all_gone` shortcut in `apply_batch` /
-  `apply` retains the historical "handle.nil? == gone" semantics
-  (an invalidated handle is NOT gone and reaches preflight_batch).
-
-`V15-FIXC-HDL-1..3` exercise the three handle shapes above
-end-to-end through `apply_batch` and assert: `begin=0`,
-`commit=0`, `abort=0`, `dispose=0`, workspace `:failed`,
-stable reason code with `handle_invalidated|malformed_no_valid_predicate|final_live_handle_proof_failed|preflight_failed`,
-exact logical pre-state retained.
-
-`V15-FIXC-HDL-5` is the sanity guard: a normal workspace with
-all-valid handles still produces 1 applied action and a
-`:ready` workspace.
-
----
-
-## 9. Focused test results
-
-Run command:
-
-```bash
-.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests/run_all.rb 'FIX'
-```
-
-Result:
+All evidence is in the run logs of `tests/run_all.rb 'SR'`:
 
 ```text
---- 32 tests: 32 pass, 0 fail, 0 error ---
+PASS   V15-SR01-1: apply() (single-action) -> removal handle missing :valid? -> begin=0, no READY
+PASS   V15-SR01-2: apply() (single-action) -> valid? returns nil -> begin=0, no READY
+PASS   V15-SR01-3: apply() (single-action) -> valid? == false -> begin=0, no READY
+PASS   V15-SR01-4: apply() (single-action) -> valid? raises -> begin=0, no READY
+PASS   V15-SR01-5: apply() (single-action) -> multi-removal action with one valid + one invalid -> NO partial execution
+PASS   V15-SR01-6: apply() (single-action) -> all valid distinct -> existing single-action success path remains green
 ```
 
-Per test group:
+V15-SR01-5 specifically asserts the valid removal handle is
+NOT partially disposed:
 
-- FIX-A strict tolerance parser units (11/11 PASS):
-  `V15-FIXA-STR-1..11`.
-- FIX-A exact-zero layer-key correction (4/4 PASS):
-  `V15-FIXA-KEY-1..4`.
-- FIX-A no-fallback production-path regressions (5/5 PASS):
-  `V15-FIXA-NOFALLBACK-1..5`.
-- FIX-B exact provenance union invariants (7/7 PASS):
-  `V15-FIXB-PR-1..6`, `V15-FIXB-PR-EXEC`.
-- FIX-C strict handle liveness (5/5 PASS):
-  `V15-FIXC-HDL-1..5`.
+```ruby
+assert_equal 0, counter[:dispose_calls],
+             'FIX-SR-01: valid removal MUST NOT be partially disposed when another removal is invalid'
+assert_equal true, ws.handle_for(valid_removal_id).respond_to?(:valid?) && ws.handle_for(valid_removal_id).valid?
+```
+
+V15-SR01-6 asserts the success path is unchanged:
+
+```ruby
+assert_equal 1, counter[:begin_calls]
+assert_equal 1, counter[:commit_calls]
+assert_equal 0, counter[:abort_calls]
+assert_equal 1, counter[:dispose_calls]
+assert updated.status == :applied
+assert_equal :ready, new_ws.state
+assert_equal 1, new_ws.entities.length
+```
 
 ---
 
-## 10. Full test results
+## 6. FIX-SR-02 evidence (expected post state)
+
+`V15-SR02-1..4` use pure-data state mutations (no
+monkeypatching) to inject the invalid handle shapes and
+verify the validator reports the right reason.
+
+`V15-SR02-5..6` are the regression tests for the existing
+F / H aliasing invariants; they prove the aliasing paths
+still fire (no regression).
+
+`V15-SR02-7` is the all-valid baseline.
+
+```text
+PASS   V15-SR02-1: nil survivor handle -> validate! invalid (survivor_handle_missing)
+PASS   V15-SR02-2: nil removal handle -> validate! invalid (removal_handle_missing)
+PASS   V15-SR02-3: removal handle missing :valid? -> validate! invalid (removal_handle_no_valid_predicate)
+PASS   V15-SR02-4: removal handle valid? returns nil -> validate! invalid (removal_handle_not_strictly_live)
+PASS   V15-SR02-5: survivor/removal alias remains invalid (regression)
+PASS   V15-SR02-6: removal/removal alias remains invalid (regression)
+PASS   V15-SR02-7: all valid distinct -> validate! valid (baseline)
+```
+
+The new invariant J is in addition to the existing
+preflight / final-proof executor checks; the executor's
+fail-closed behavior is unchanged.
+
+---
+
+## 7. FIX-SR-03 evidence (truthful audit reason)
+
+`V15-SR03-1..2` exercise the working_mode_runner audit path
+with missing / invalid captured tolerance and verify the
+skipped audit row's `confidence_basis` is
+`skipped:invalid_or_missing_captured_tolerance`.
+
+`V15-SR03-3` exercises the proposer's per-issue guard
+(classify_issue) with non-finite source edge geometry and
+verifies the skipped action's `confidence_basis` is
+`skipped:non_finite_endpoint_coordinates` (not the new
+captured-tolerance reason). It does NOT use the full
+`propose()` / workspace build path because the source
+snapshot's VertexIndex.add_edge -> search_nearby ->
+quantize_key.floor raises FloatDomainError on
+Infinity / NaN. The unit-level test on the same
+per-issue guard used by `propose()` is sufficient to
+prove the two reasons do not cross-pollute.
+
+```text
+PASS   V15-SR03-1: missing captured tolerance -> skipped reason uses invalid_or_missing_captured_tolerance
+PASS   V15-SR03-2: invalid "abc" captured tolerance -> same truthful reason
+PASS   V15-SR03-3: non-finite endpoint geometry still uses the existing coordinate reason
+```
+
+---
+
+## 8. Full test results
 
 Run commands:
 
 ```bash
+.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests/run_all.rb 'SR'
 .\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests/run_all.rb 'V15'
 .\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe tests/run_all.rb
 ```
@@ -254,36 +254,34 @@ Results:
 
 | Suite | Result |
 |---|---|
-| Round-5 corrective focused regressions | 32/32 PASS (added in this update) |
-| Existing Round-5 continuation evidence | 99/99 PASS (unchanged) |
-| Full V15 (existing + new) | **131/131 PASS** |
-| Full Ruby suite | **795/795 PASS** |
+| Round-5 NARROW CONTINUATION focused regressions | 16/16 PASS (added in this update) |
+| Round-5 corrective focused regressions (history) | 32/32 PASS |
+| Round-5 continuation evidence (history) | 99/99 PASS |
+| Full V15 (existing + new) | **147/147 PASS** |
+| Full Ruby suite | **811/811 PASS** |
 | RBZ smoke | 9/9 PASS (post-rebuild) |
 | Node DOM (`html_render`) | 58/58 PASS |
 | `git diff --check` | clean |
 
-Implementation / test evidence only.
-
-Do not by themselves close the AIPM BLOCK on BLOCK-005, prove
-real-host behavior, or substitute for Owner verification.
+Implementation / test evidence only. Do not by themselves
+close the AIPM BLOCK on BLOCK-005, prove real-host behavior,
+or substitute for Owner verification.
 
 ---
 
-## 11. RBZ evidence
+## 9. RBZ evidence (THIS UPDATE)
 
-Path:
-
-`D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 
 | Property | Value |
 |---|---|
-| Size | 637,621 bytes |
+| Size | 641,652 bytes |
 | Entries | 59 |
-| SHA-256 | `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB` |
-| Previous Round-5 continuation SHA | `C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35` |
+| SHA-256 | `49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF` |
+| Previous Round-5 Source Review corrective SHA | `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB` |
 
-Production source is changed in this dispatch (5 files), so the
-RBZ hash is NEW. Build command:
+Production source is changed in this dispatch (3 files), so
+the RBZ hash is NEW. Build command:
 
 ```bash
 .\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb
@@ -293,7 +291,7 @@ Build output:
 
 ```text
 OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
-    size: 637621 bytes
+    size: 641652 bytes
     entries: 59
     entry-point: su_ai_plugin.rb (OK, at the .rbz root)
     support folder: su_ai_plugin/ (OK, sibling of the entry-point)
@@ -305,13 +303,13 @@ chooses) the next Codex narrow xHigh recheck passes.
 
 ---
 
-## 12. Known open BLOCK-005 statement
+## 10. Known open BLOCK-005 statement
 
 BLOCK-005 (discard -> SketchUp Undo -> next plugin interaction
 host-state reconciliation) is **deliberately OPEN** at the end
 of this dispatch.
 
-Per AIPM Source Review verdict and the dispatch §5:
+Per AIPM Source Review verdict and the dispatch §Hard STOP:
 
 - AIPM classified BLOCK-005 as an AIPM technical-design gap,
   not a Pi implementation-choice gap.
@@ -330,14 +328,14 @@ Per AIPM Source Review verdict and the dispatch §5:
 
 ---
 
-## 13. Unresolved issues
+## 11. Unresolved issues
 
-- BLOCK-005 still OPEN (deliberate, per dispatch §5; AIPM design
-  gap, not Pi implementation gap).
-- The V1.5 active BLOCK set remains NOT formally closed
-  pending AIPM direct source re-review of this corrective
-  packet + Owner-checklist republish + (if AIPM chooses)
-  the next Codex narrow xHigh recheck.
+- BLOCK-005 still OPEN (deliberate, per dispatch §Hard STOP; AIPM
+  design gap, not Pi implementation gap).
+- The V1.5 active BLOCK set remains NOT formally closed pending
+  AIPM direct GitHub Source Review of this NARROW CONTINUATION
+  + Owner-checklist republish + (if AIPM chooses) the next
+  Codex narrow xHigh recheck.
 - V1.6 is NOT STARTED; requires a new AIPM Stage Technical
   Blueprint before any implementation begins.
 - Owner verification is BLOCKED pending AIPM Owner-checklist
@@ -345,52 +343,61 @@ Per AIPM Source Review verdict and the dispatch §5:
 - Real-host (SketchUp 2017/2020/2024) verification remains
   required before V1.5 can be formally closed; not yet
   attempted.
-- No remote configured; final stable commit is local-only.
 
 ---
 
-## 14. Final stable commit
+## 12. Git / Push summary
 
 | Item | Value |
 |---|---|
-| Implementation commit | `874149dc7488ff8c844e16fb6e0e6013df9abfa6` |
-| SHA-stamp commit 1 | `b868cf4bad78bff2e3510481368e838e1459320c` |
-| SHA-stamp commit 2 | `b9e1965` |
-| SHA-stamp commit 3 (final acceptance) | `d91d94a2655be451ce84356dba32ffbee89a566e` |
-| Final stable commit (HEAD) | `d91d94a2655be451ce84356dba32ffbee89a566e` (local-only on `dev/v1.5`) |
-| Push status | `PUSH NOT POSSIBLE — NO REMOTE` |
-| `git status --short` (after stable commit + SHA stamp) | untracked: 7 AIPM review evidence `.txt` files preserved per dispatch §Preflight |
+| Starting HEAD | `6cdd8d778d740b28ff90669ce997a413495049bc` |
+| Implementation commit | see § 13 (final stable commit) |
+| `git status --short` (before commit) | untracked: 7 AIPM review evidence `.txt` files |
 | `git diff --check` | clean |
+| Pushed to | `origin/dev/v1.5` |
+| `git push` result | see § 13 |
+| `git remote -v` after push | `origin https://github.com/Ziyi981107/SU-AI-Plugin.git` |
+| `main` pushed / merged | no |
+| force-push | no |
+| release / tag | no |
+| BLOCK-005 touched | no |
+| V1.6 started | no |
 
 ---
 
-## 15. Hard STOP
+## 13. Hard STOP
 
 Per dispatch §Hard STOP:
 
-> After all assigned FIX-A/B/C work and evidence are complete:
-> STOP. Do not: continue into BLOCK-005; run/request Codex;
-> ask Owner for verification; start V1.6; select another task.
-> Return control to AIPM for real source review.
+> After the narrow correction + evidence + push: STOP. Do
+> NOT: touch BLOCK-005; run Codex; request Owner
+> verification; start V1.6; select another task. Return
+> control to AIPM for direct GitHub Source Review.
 
-STOP is in effect. Control returns to AIPM for direct source
-re-review of the Round-5 Source Review corrective packet.
+STOP is in effect. Control returns to AIPM for direct
+GitHub Source Review of the Round-5 NARROW CONTINUATION
+packet.
 
 ---
 
-# One-Line Round-5 Source Review Corrective Pi Report
+# One-Line Round-5 NARROW CONTINUATION Pi Report
 
-**V1.5 Round-5 AIPM Source Review corrective packet is complete
-within the frozen
+**V1.5 Round-5 AIPM Source Review NARROW CONTINUATION is
+complete within the same frozen
 `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`:
-FIX-A strict tolerance parsing + exact-zero layer-key
-correction, FIX-B exact deterministic provenance union, FIX-C
-strict destructive handle liveness hardening, all implemented
-with no silent `0.0001` fallback and no broad architecture
-refactor; 32 new focused regressions added (FIX-A 20, FIX-B 7,
-FIX-C 5); full V15 131/131 PASS, full Ruby 795/795 PASS, RBZ
-smoke 9/9 PASS, Node DOM 58/58 PASS, `git diff --check` clean;
-RBZ rebuilt with SHA-256
-`90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`;
-BLOCK-005 remains OPEN by design; Pi STOPPED; final stable
-commit local-only (`PUSH NOT POSSIBLE — NO REMOTE`).**
+FIX-SR-01 single-action executor fails closed on any invalid
+removal handle (no partial execution), FIX-SR-02 expected
+post state validator now requires every expected survivor +
+removal handle to be strictly live via
+`DuplicateGeometrySemantics.strict_handle_live?`, and
+FIX-SR-03 introduces a truthful new
+`REASON_INVALID_CAPTURED_TOLERANCE = 'invalid_or_missing_captured_tolerance'`
+reason for the missing/invalid captured-tolerance skip;
+16 new focused regressions added (SR01 6, SR02 7, SR03 3);
+full V15 147/147 PASS, full Ruby 811/811 PASS, RBZ smoke
+9/9 PASS, Node DOM 58/58 PASS, `git diff --check` clean;
+RBZ rebuilt with new SHA-256
+`49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF`
+(size 641,652 bytes, 59 entries); pushed to
+`origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi
+STOPPED awaiting AIPM direct GitHub Source Review.**

@@ -2,9 +2,14 @@
 
 Updated: 2026-08-28
 Project: `D:\Projects\SU-AI-Plugin`
+Updated: 2026-08-28 (NARROW CONTINUATION of the same dispatch
+`SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`; AIPM has
+directly reviewed the real GitHub implementation commit
+`874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
+`FIX REQUIRED -- narrow implementation correction`).
 
-Current stage: **V1.5 — High-confidence Auto Repair / Round-5 AIPM Source Review corrective continuation (THIS UPDATE)**
-Current status: **FIX-A / FIX-B / FIX-C implementation complete; awaiting AIPM source review and Owner-checklist republish per dispatch §Hard STOP**
+Current stage: **V1.5 — High-confidence Auto Repair / Round-5 AIPM Source Review NARROW CONTINUATION (THIS UPDATE)**
+Current status: **FIX-SR-01 / FIX-SR-02 / FIX-SR-03 implementation complete; pushed to origin/dev/v1.5; awaiting AIPM direct GitHub Source Review per dispatch §Hard STOP**
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -45,19 +50,22 @@ Current project rule:
 - V1.5 Round-4 BLOCK fix packet is complete (history).
 - V1.5 Round-5 BLOCK corrective implementation packet is complete (history).
 - V1.5 Round-5 BLOCK FIX continuation packet is complete (history).
-- V1.5 Round-5 AIPM Source Review corrective packet is complete (THIS UPDATE):
-  implemented the bounded AIPM Source Review fixes frozen in
+- V1.5 Round-5 AIPM Source Review corrective packet is complete (history, implementation commit `874149d`).
+- V1.5 Round-5 AIPM Source Review NARROW CONTINUATION is complete (THIS UPDATE):
+  implemented the bounded narrow AIPM Source Review fixes
+  (FIX-SR-01 single-action executor must fail closed,
+  FIX-SR-02 expected post state must prove handle liveness,
+  FIX-SR-03 truthful invalid-tolerance audit reason) within the
+  same frozen
   `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
-  (FIX-A strict tolerance parsing + exact-zero layer-key correction,
-  FIX-B exact deterministic provenance union,
-  FIX-C strict destructive handle-liveness hardening).
+  design.
 
 ### In progress
 - Nothing is currently being implemented by Pi.
 
 ### Waiting
-- AIPM review of the Round-5 Source Review Pi packet
-  (`Review/CURRENT_PI_REPORT.md`).
+- AIPM direct GitHub Source Review of the Round-5 NARROW
+  CONTINUATION Pi packet (`Review/CURRENT_PI_REPORT.md`).
 - AIPM republish of the Owner verification file
   (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`),
   per Round-5 §9; the previously published version was invalidated by the
@@ -133,6 +141,24 @@ AIPM Source Review corrective final stable commit:
   `d91d94a2655be451ce84356dba32ffbee89a566e`
 - See `Review/CURRENT_PI_REPORT.md` §14 for the full scope.
 
+NARROW CONTINUATION (THIS UPDATE):
+- Frozen design: same
+  `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`.
+- AIPM reviewed the real GitHub implementation commit
+  `874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
+  `FIX REQUIRED -- narrow implementation correction` on
+  FIX-SR-01 / FIX-SR-02 / FIX-SR-03.
+- See `Review/CURRENT_PI_REPORT.md` §3 (THIS UPDATE) for the
+  narrow scope.
+
+NARROW CONTINUATION (THIS UPDATE):
+- Frozen design: same
+  `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`.
+- Implementation commit: see § 2.
+- Pushed to `origin/dev/v1.5`.
+- See `Review/CURRENT_PI_REPORT.md` §3 (THIS UPDATE) for the
+  narrow scope.
+
 Working tree (THIS UPDATE):
 - Modified production files (5):
   - `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
@@ -166,28 +192,50 @@ Working tree (THIS UPDATE):
 - The dist/ `SU-AI-Plugin.rbz` is rebuilt (NEW SHA) but NOT tracked
   (per repo policy).
 
-Round-5 Source Review corrective RBZ:
+Round-5 Source Review corrective RBZ (THIS UPDATE):
 
 `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 
 Evidence recorded in this file:
-- Size: 637,621 bytes
+- Size: 641,652 bytes
 - Entries: 59
 - SHA-256:
-  `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`
+  `49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF`
 
 Build command:
 `.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb`
 
 This RBZ is **not approved for Owner installation** until the
-AIPM Owner verification file is republished AND the next Codex
-narrow xHigh recheck passes.
+AIPM Owner verification file is republished AND (if AIPM
+chooses) the next Codex narrow xHigh recheck passes.
+
+Round-5 Source Review corrective RBZ (history, unchanged):
+
+- Size: 637,621 bytes
+- Entries: 59
+- SHA-256: `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`
 
 ---
 
 ## 3. CURRENT TEST EVIDENCE
 
-Round-5 Source Review corrective evidence (THIS UPDATE):
+Round-5 NARROW CONTINUATION evidence (THIS UPDATE):
+
+- Targeted Round-5 NARROW CONTINUATION regressions
+  (FIX-SR-01 single-action executor: 6 tests +
+   FIX-SR-02 expected post state: 7 tests +
+   FIX-SR-03 truthful invalid-tolerance reason: 3 tests
+   = 16/16 PASS) (added in this update)
+- Round-5 corrective focused regressions (history): 32/32 PASS
+- Round-5 continuation evidence (history): 99/99 PASS
+- Full V15 (existing + new): **147/147 PASS**
+- Full Ruby suite: **811/811 PASS**
+- RBZ smoke: 9/9 PASS (post-rebuild)
+- Node DOM (html_render): 58/58 PASS
+- `git diff --check`: clean
+- `git status --short` (after final commit): untracked: 7 AIPM review evidence `.txt` files preserved per dispatch §Preflight
+
+Round-5 Source Review corrective evidence (history, unchanged):
 
 - Targeted Round-5 Source Review corrective regressions
   (FIX-A: 11 strict-tolerance parser unit tests +
@@ -196,14 +244,9 @@ Round-5 Source Review corrective evidence (THIS UPDATE):
    FIX-B: 6 exact provenance union tests +
    1 provenance mismatch executor-level test +
    FIX-C: 5 strict handle liveness tests
-   = 32/32 PASS) (added in this update)
-- Existing Round-5 continuation evidence (unchanged): **99/99 PASS**
-- Full V15 (existing + new): **131/131 PASS**
-- Full Ruby suite: **795/795 PASS**
-- RBZ smoke: 9/9 PASS
-- Node DOM (html_render): 58/58 PASS
-- `git diff --check`: clean
-- `git status --short` (after final commit): empty
+   = 32/32 PASS) (history)
+- Full V15 (history): 131/131 PASS
+- Full Ruby suite (history): 795/795 PASS
 
 Round-5 continuation evidence (history, unchanged):
 
@@ -585,6 +628,116 @@ current corrective dispatch. Per AIPM Source Review verdict:
 Pi must NOT invent a new Observer / Undo architecture while
 the BLOCK-005 design is being researched.
 
+### Round-5 NARROW CONTINUATION (THIS UPDATE) — narrow
+implementation corrections to the same dispatch
+
+After AIPM directly reviewed the real GitHub implementation
+commit `874149dc7488ff8c844e16fb6e0e6013df9abfa6` the verdict
+was `FIX REQUIRED -- narrow implementation correction`. This
+narrow continuation implements three bounded fixes within the
+same frozen Guidance; the design is unchanged.
+
+#### FIX-SR-01 — single-action executor must fail closed
+`extension/su_ai_plugin/core/duplicate_repair_executor.rb`
+
+`apply_atomic` (the single-action entry path) was classifying
+removal handles into `valid_pairs` / `invalid_ids` but did
+NOT fail closed when `invalid_ids` was non-empty: it would
+open a host operation, dispose only the valid handles, then
+logically `total_removed = (removed_ids + invalid_ids).uniq`,
+producing host/logical divergence.
+
+Now: BEFORE `begin_operation`, if any removal member is not
+strictly live (`DuplicateGeometrySemantics.strict_handle_live?`
+returns false — nil, missing `valid?`, returns nil/false, or
+raises), the function:
+- `begin=0`, `dispose=0`, `commit=0`, `abort=0`;
+- emits a `:failed` action with stable reason
+  `removal_handle_not_strictly_live: [...]` (per-id detail);
+- transitions the workspace to `:failed` with the same
+  reason;
+- preserves the exact logical pre-state;
+- source CAD immutable.
+
+Reuses the existing `strict_handle_live?` contract; no new
+predicate. The normal valid-handle success path remains
+green (covered by V15-SR01-6).
+
+#### FIX-SR-02 — expected post state must prove handle liveness
+`extension/su_ai_plugin\core\duplicate_repair_expected_post_state.rb`
+
+The previous F / H aliasing invariants in `validate!` checked
+`equal?` aliasing with `next if sh.nil?` / `next if rh.nil?`,
+so a nil or non-live handle was silently SKIPPED. This did
+not fully satisfy the frozen Guidance.
+
+Now: a NEW invariant J is inserted BEFORE the existing F / H
+aliasing checks. For every survivor + removal handle in the
+expected post-state, the validator calls
+`DuplicateGeometrySemantics.strict_handle_live?` (the same
+single source of truth used in the executor). Any
+- nil survivor handle -> invalid, reason
+  `survivor_handle_missing: <id>`.
+- nil removal handle -> invalid, reason
+  `removal_handle_missing: <id>`.
+- handle lacking `:valid?` -> invalid, reason
+  `<survivor|removal>_handle_no_valid_predicate: <id>`.
+- handle whose `valid?` returns nil / false -> invalid,
+  reason `<survivor|removal>_handle_not_strictly_live: <id>
+  valid?=...`.
+- handle whose `valid?` raises -> invalid, reason
+  `<survivor|removal>_handle_valid?_raised: <id> <exc>`.
+
+This invariant is in addition to (not a replacement for) the
+existing F / H aliasing invariants and the existing preflight /
+final-proof executor checks. The preflight and final-proof
+remain in place; the expected-state J is an additional
+gate. Fingerprint (invariant E) and pair-metric (invariant I)
+remain in force; provenance union (FIX-B) remains in force.
+
+#### FIX-SR-03 — truthful invalid-tolerance audit reason
+`extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
+
+When the proposer's `build_actions` detected a missing /
+invalid captured duplicate tolerance, the emitted skipped
+audit row used `REASON_NON_FINITE_COORDS` (`non_finite_endpoint_coordinates`),
+which is semantically false for a configuration failure.
+
+Now: a new stable reason `REASON_INVALID_CAPTURED_TOLERANCE =
+'invalid_or_missing_captured_tolerance'.freeze` is added,
+and the missing / invalid captured-tolerance branch uses
+this truthful reason. The endpoint-geometry reason
+(`non_finite_endpoint_coordinates`) is reserved for actual
+coordinate failures. The fail-closed behavior is preserved
+(zero applied actions; one skipped audit row with stable
+reason). No UI redesign.
+
+### Round-5 NARROW CONTINUATION — added tests
+`tests/test_v15_round5_block_fix.rb` got 16 new focused
+regressions (V15-SR01-1..6 + V15-SR02-1..7 + V15-SR03-1..3):
+
+- **SR01 (6 tests)**: exercise the single-action `apply()`
+  path directly. 4 invalid-handle shapes (missing
+  `:valid?`, `valid?` returns nil, `valid?` returns false,
+  `valid?` raises) -> all fail closed with `begin=0`,
+  no disposal/commit, no READY, exact pre-state, source
+  immutable. 1 multi-removal partial-execution test ->
+  the valid removal handle is NOT partially disposed.
+  1 baseline all-valid success test (existing behavior
+  remains green).
+- **SR02 (7 tests)**: pure-data state mutations prove the
+  expected-state validator catches nil survivor handle,
+  nil removal handle, removal missing `:valid?`, removal
+  `valid?` returns nil; the existing survivor/removal
+  aliasing and removal/removal aliasing invariants still
+  fire (regression); the all-valid baseline still validates.
+- **SR03 (3 tests)**: missing / invalid (`'abc'`) captured
+  tolerance produce a skipped audit row with
+  `skipped:invalid_or_missing_captured_tolerance`; the
+  non-finite endpoint geometry reason remains
+  `skipped:non_finite_endpoint_coordinates` and is NOT
+  cross-polluted.
+
 ---
 
 ## 6. CODEX RECHECK BOUNDARY
@@ -621,8 +774,8 @@ If a material design gap remains:
 ## 7. NEXT ACTION
 
 ### Immediate
-1. AIPM reviews the Round-5 corrective Pi packet
-   (`Review/CURRENT_PI_REPORT.md`).
+1. AIPM directly reviews the Round-5 NARROW CONTINUATION Pi
+   packet on GitHub (`Review/CURRENT_PI_REPORT.md`).
 2. AIPM republishes the canonical Owner verification file
    `Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`
    (BLOCK-005 deliverable, Pi is not the author).
@@ -792,26 +945,42 @@ CURRENT_PI_DISPATCH dispatch -> Pi Round-5 implementation
 Source Review verdict (BLOCK on FIX-A/B/C + BLOCK-005 deferred)
 -> AIPM Round-5 Source Review corrective Guidance + active
 CURRENT_PI_DISPATCH -> Pi Round-5 Source Review corrective
-implementation (THIS UPDATE) -> awaiting AIPM direct source
-re-review -> AIPM Owner-checklist republish -> optional Codex
-narrow recheck -> closure / next fix.
+implementation (commit `874149d`, history) -> GitHub origin
+push -> AIPM direct GitHub Source Review on `874149d` (FIX
+REQUIRED, narrow correction) -> Pi Round-5 NARROW CONTINUATION
+implementation (THIS UPDATE, FIX-SR-01/02/03) -> pushed to
+origin/dev/v1.5 -> awaiting AIPM direct GitHub Source Review
+-> AIPM Owner-checklist republish -> optional Codex narrow
+recheck -> closure / next fix.
 
-Pi is **STOPPED** awaiting AIPM review.
+Pi is **STOPPED** awaiting AIPM direct GitHub Source Review
+on the NARROW CONTINUATION.
 
 ---
 
 # One-Line Current State
 
-**V1.5 Round-5 Source Review corrective packet is complete:
-FIX-A (strict tolerance parsing + exact-zero layer-key
-correction), FIX-B (exact deterministic provenance union),
-and FIX-C (strict destructive handle-liveness hardening)
-implemented across 5 production files; 32 new focused
-regressions added to `tests/test_v15_round5_block_fix.rb`;
-full V15 131/131 PASS, full Ruby 795/795 PASS, RBZ smoke
-9/9 PASS, Node DOM 58/58 PASS, `git diff --check` clean,
-RBZ rebuilt with new SHA-256
-`90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`;
-BLOCK-005 remains OPEN by design; Pi is stopped; V1.6 must
-wait for AIPM/Owner closure and a new AIPM V1.6 Technical
-Blueprint.**
+**V1.5 Round-5 AIPM Source Review NARROW CONTINUATION is
+complete: FIX-SR-01 (single-action executor must fail closed
+on any invalid removal handle, no partial execution),
+FIX-SR-02 (expected post state validator now requires every
+expected survivor + removal handle to be strictly live via
+the existing `DuplicateGeometrySemantics.strict_handle_live?`
+contract, with stable reason codes
+`survivor_handle_missing` / `survivor_handle_no_valid_predicate`
+/ `survivor_handle_not_strictly_live` / `survivor_handle_valid?_raised`
+and the corresponding `removal_handle_*` reasons), and
+FIX-SR-03 (new truthful reason constant
+`REASON_INVALID_CAPTURED_TOLERANCE = 'invalid_or_missing_captured_tolerance'`
+used by the proposer's missing/invalid captured-tolerance
+skip; the endpoint-geometry reason
+`non_finite_endpoint_coordinates` is preserved for actual
+coordinate failures); 16 new focused regressions added
+(SR01 6, SR02 7, SR03 3); full V15 147/147 PASS, full Ruby
+811/811 PASS, RBZ smoke 9/9 PASS, Node DOM 58/58 PASS,
+`git diff --check` clean; RBZ rebuilt with new SHA-256
+`49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF`
+(size 641,652 bytes, 59 entries); pushed to
+`origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi is
+stopped; V1.6 must wait for AIPM/Owner closure and a new
+AIPM V1.6 Technical Blueprint.**

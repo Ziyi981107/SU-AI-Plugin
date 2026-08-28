@@ -322,6 +322,46 @@ module SUAnalysis
         # distinct from every removal handle.
         surv_handles = state['survivor_handles'] || {}
         rem_handles  = state['removal_handles'] || {}
+        # Per FIX-SR-02: every expected destructive handle
+        # MUST be strictly live (non-nil + respond_to?(:valid?)
+        # + valid? == true without raising). Reuse
+        # `DuplicateGeometrySemantics.strict_handle_live?`
+        # -- the single source of truth for handle liveness
+        # in destructive paths. This is an ADDITIONAL
+        # invariant (J); the existing F / H aliasing
+        # checks below remain in place.
+        surv_handles.each do |sid, sh|
+          unless DuplicateGeometrySemantics.strict_handle_live?(sh)
+            if sh.nil?
+              return { valid: false, reason: "survivor_handle_missing: #{sid.inspect}" }
+            elsif !sh.respond_to?(:valid?)
+              return { valid: false, reason: "survivor_handle_no_valid_predicate: #{sid.inspect}" }
+            else
+              begin
+                v = sh.valid?
+                return { valid: false, reason: "survivor_handle_not_strictly_live: #{sid.inspect} valid?=#{v.inspect}" }
+              rescue StandardError => e
+                return { valid: false, reason: "survivor_handle_valid?_raised: #{sid.inspect} #{e.class}: #{e.message}" }
+              end
+            end
+          end
+        end
+        rem_handles.each do |rid, rh|
+          unless DuplicateGeometrySemantics.strict_handle_live?(rh)
+            if rh.nil?
+              return { valid: false, reason: "removal_handle_missing: #{rid.inspect}" }
+            elsif !rh.respond_to?(:valid?)
+              return { valid: false, reason: "removal_handle_no_valid_predicate: #{rid.inspect}" }
+            else
+              begin
+                v = rh.valid?
+                return { valid: false, reason: "removal_handle_not_strictly_live: #{rid.inspect} valid?=#{v.inspect}" }
+              rescue StandardError => e
+                return { valid: false, reason: "removal_handle_valid?_raised: #{rid.inspect} #{e.class}: #{e.message}" }
+              end
+            end
+          end
+        end
         surv_handles.each do |sid, sh|
           next if sh.nil?
           rem_handles.each do |rid, rh|

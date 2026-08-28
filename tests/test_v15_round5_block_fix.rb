@@ -2399,3 +2399,678 @@ test 'V15-FIXC-HDL-5: existing valid-handle success path remains green (sanity)'
   assert_equal 1, applied.length, 'happy path: 1 applied action'
   assert_equal :ready, new_ws.state
 end
+
+# ============================================================
+# Round-5 Source Review NARROW CONTINUATION
+# Dispatch: SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01
+# Frozen Guidance: AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX
+# AIPM Source Review verdict on commit 874149d: FIX REQUIRED.
+# Covers:
+#   FIX-SR-01: single-action executor must fail closed on any
+#               invalid removal handle (no partial execution).
+#   FIX-SR-02: expected post state must prove every expected
+#               handle is strictly live (survivor + removal).
+#   FIX-SR-03: missing/invalid captured tolerance must use a
+#               truthful audit reason code distinct from
+#               non-finite endpoint geometry.
+# ============================================================
+
+# ============================================================
+# FIX-SR-01: single-action executor (apply_atomic) tests
+# Call the actual public single-action path
+# (DuplicateRepairExecutor.apply) rather than apply_batch.
+# ============================================================
+
+# Reuse the FIXC custom handle classes (defined earlier in
+# the file). They are top-level constants in the test file.
+
+test 'V15-SR01-1: apply() (single-action) -> removal handle missing :valid? -> begin=0, no READY' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  refute_empty runnable
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  # Replace removal handle with one that does NOT
+  # respond to :valid?.
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = NoValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  pre_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  # Atomic no-begin failure.
+  assert_equal 0, counter[:begin_calls],
+               "FIX-SR-01: handle missing :valid? MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  refute_equal :applied, updated.status
+  assert updated.status == :failed
+  assert_match(/removal_handle_not_strictly_live|handle_invalidated/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  # Logical pre-state retained.
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+  # Source immutable.
+  post_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  assert_equal pre_src_fp, post_src_fp
+end
+
+test 'V15-SR01-2: apply() (single-action) -> valid? returns nil -> begin=0, no READY' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = NilValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  assert_equal 0, counter[:begin_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :failed, updated.status
+  assert_match(/removal_handle_not_strictly_live/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+end
+
+test 'V15-SR01-3: apply() (single-action) -> valid? == false -> begin=0, no READY' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  # Erase the handle so valid? == false.
+  ws_seed.handle_for(removal_id).erase!
+  adapter = ws_seed.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws_seed.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws_seed, action: action
+  )
+  assert_equal 0, counter[:begin_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :failed, updated.status
+  assert_match(/removal_handle_not_strictly_live/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+end
+
+test 'V15-SR01-4: apply() (single-action) -> valid? raises -> begin=0, no READY' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = RaiseValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  assert_equal 0, counter[:begin_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :failed, updated.status
+  assert_match(/removal_handle_not_strictly_live/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+end
+
+test 'V15-SR01-5: apply() (single-action) -> multi-removal action with one valid + one invalid -> NO partial execution' do
+  # Build a 3-record workspace where the proposer emits
+  # ONE action with survivor = der-0 and removals =
+  # [der-1, der-2]. After propose() returns, mutate the
+  # workspace so der-1 has a valid handle and der-2 has a
+  # non-live handle. The single-action apply_atomic path
+  # must fail closed BEFORE begin: the valid der-1 handle
+  # is NOT partially disposed.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e3 = r5_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2, e3])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2),
+    r5_derived_edge(derived_id: 'der-2', start: e3.start_point, finish: e3.end_point, source_edge: e3)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|0|2', edge_ids: [0, 2], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|1|2', edge_ids: [1, 2], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  refute_equal 1, removal_ids.length,
+               'fixture sanity: this test requires a multi-removal action'
+  valid_removal_id = removal_ids[0]
+  invalid_removal_id = removal_ids[1]
+  # Mutate: replace one removal handle with a
+  # NoValidPredicateHandle. The other removal + survivor
+  # keep their valid handles.
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[invalid_removal_id] = NoValidPredicateHandle.new(invalid_removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  # No partial execution. The valid handle MUST NOT be
+  # disposed.
+  assert_equal 0, counter[:begin_calls],
+               "FIX-SR-01: multi-removal with 1 invalid MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls],
+               'FIX-SR-01: valid removal MUST NOT be partially disposed when another removal is invalid'
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :failed, updated.status
+  assert_match(/removal_handle_not_strictly_live/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  # Logical pre-state retained.
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+  # The valid removal handle was NOT disposed (its
+  # object identity is still in the workspace's
+  # handle_registry; valid? remains true).
+  assert_equal true, ws.handle_for(valid_removal_id).respond_to?(:valid?) && ws.handle_for(valid_removal_id).valid?
+end
+
+test 'V15-SR01-6: apply() (single-action) -> all valid distinct -> existing single-action success path remains green' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  # Existing success path: begin=1, commit=1, dispose=1,
+  # applied=1, new_ws :ready, 1 entity remaining.
+  assert_equal 1, counter[:begin_calls]
+  assert_equal 1, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 1, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :applied, updated.status
+  assert_equal :ready, new_ws.state
+  assert_equal 1, new_ws.entities.length
+end
+
+# ============================================================
+# FIX-SR-02: expected post state invariant J
+# Tests prove validate! detects non-strictly-live handles
+# using DuplicateGeometrySemantics.strict_handle_live?.
+# ============================================================
+
+test 'V15-SR02-1: nil survivor handle -> validate! invalid (survivor_handle_missing)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  survivor_id = state['survivor_derived_ids'].first
+  # Mutate: set the survivor's handle to nil.
+  mutated_sh = state['survivor_handles'].dup
+  mutated_sh[survivor_id] = nil
+  mutated = state.merge('survivor_handles' => mutated_sh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/survivor_handle_missing|survivor_handle_not_strictly_live/, v[:reason])
+end
+
+test 'V15-SR02-2: nil removal handle -> validate! invalid (removal_handle_missing)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  removal_id = state['removed_derived_ids'].first
+  mutated_rh = state['removal_handles'].dup
+  mutated_rh[removal_id] = nil
+  mutated = state.merge('removal_handles' => mutated_rh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/removal_handle_missing|removal_handle_not_strictly_live/, v[:reason])
+end
+
+test 'V15-SR02-3: removal handle missing :valid? -> validate! invalid (removal_handle_no_valid_predicate)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  removal_id = state['removed_derived_ids'].first
+  mutated_rh = state['removal_handles'].dup
+  mutated_rh[removal_id] = NoValidPredicateHandle.new(removal_id)
+  mutated = state.merge('removal_handles' => mutated_rh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/removal_handle_no_valid_predicate|removal_handle_not_strictly_live/, v[:reason])
+end
+
+test 'V15-SR02-4: removal handle valid? returns nil -> validate! invalid (removal_handle_not_strictly_live)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  removal_id = state['removed_derived_ids'].first
+  mutated_rh = state['removal_handles'].dup
+  mutated_rh[removal_id] = NilValidPredicateHandle.new(removal_id)
+  mutated = state.merge('removal_handles' => mutated_rh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/removal_handle_not_strictly_live/, v[:reason])
+end
+
+test 'V15-SR02-5: survivor/removal alias remains invalid (regression)' do
+  # The existing F / H aliasing invariants must still work
+  # after adding invariant J.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  survivor_id = state['survivor_derived_ids'].first
+  removal_id = state['removed_derived_ids'].first
+  rh = state['removal_handles'][removal_id]
+  mutated_sh = state['survivor_handles'].dup
+  mutated_sh[survivor_id] = rh
+  mutated = state.merge('survivor_handles' => mutated_sh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/survivor_handle_aliases_removal_handle/, v[:reason])
+end
+
+test 'V15-SR02-6: removal/removal alias remains invalid (regression)' do
+  # Build a multi-removal fixture so removal/removal
+  # aliasing has pairs to compare.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e3 = r5_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2, e3])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2),
+    r5_derived_edge(derived_id: 'der-2', start: e3.start_point, finish: e3.end_point, source_edge: e3)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|0|2', edge_ids: [0, 2], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|1|2', edge_ids: [1, 2], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  rem_ids = state['removed_derived_ids']
+  shared = state['removal_handles'][rem_ids[0]]
+  mutated_rh = state['removal_handles'].dup
+  mutated_rh[rem_ids[1]] = shared
+  mutated = state.merge('removal_handles' => mutated_rh)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/removal_handle_aliasing/, v[:reason])
+end
+
+test 'V15-SR02-7: all valid distinct -> validate! valid (baseline)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(state, ws)
+  assert_equal true, v[:valid]
+end
+
+# ============================================================
+# FIX-SR-03: truthful invalid-tolerance audit reason
+# ============================================================
+
+test 'V15-SR03-1: missing captured tolerance -> skipped reason uses invalid_or_missing_captured_tolerance' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  bad_ec = r5_exec_config_missing_duplicate
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  # The skipped audit row's confidence_basis MUST be the
+  # truthful invalid_or_missing_captured_tolerance reason
+  # (prefixed with 'skipped:' by skipped_action_for).
+  skipped_rows = snap['duplicate_repair']['actions'].select { |a| a['status'] == 'skipped' }
+  assert skipped_rows.length >= 1, 'expected at least one skipped audit row'
+  basis = skipped_rows.first['confidence_basis']
+  assert_equal 'skipped:invalid_or_missing_captured_tolerance', basis,
+               "FIX-SR-03: missing captured tolerance MUST use truthful reason (got #{basis.inspect})"
+  refute_equal 'skipped:non_finite_endpoint_coordinates', basis,
+               'FIX-SR-03: missing captured tolerance MUST NOT use the coordinate-geometry reason'
+end
+
+test 'V15-SR03-2: invalid "abc" captured tolerance -> same truthful reason' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  bad_ec = r5_exec_config_invalid_duplicate('abc')
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  skipped_rows = snap['duplicate_repair']['actions'].select { |a| a['status'] == 'skipped' }
+  assert skipped_rows.length >= 1
+  basis = skipped_rows.first['confidence_basis']
+  assert_equal 'skipped:invalid_or_missing_captured_tolerance', basis
+end
+
+test 'V15-SR03-3: non-finite endpoint geometry still uses the existing coordinate reason' do
+  # Build a fixture where the SOURCE edge has non-finite
+  # coords. The proposer's per-issue guard
+  # (`classify_issue`) checks the source edge's
+  # start_point / end_point -- when those are non-finite,
+  # the guard fires with REASON_NON_FINITE_COORDS (NOT
+  # the new invalid_or_missing_captured_tolerance reason).
+  #
+  # We can't use the full propose() / workspace build path
+  # because r5_snapshot() constructs a GeometrySnapshot
+  # whose VertexIndex.add_edge -> search_nearby ->
+  # quantize_key.floor raises FloatDomainError on
+  # Infinity / NaN. So this test exercises the proposer's
+  # public per-issue guard directly with a synthetic
+  # non-finite source edge + edge_lookup. This is the
+  # SAME guard that the proposer's `propose()` method
+  # invokes inside classify_issue; calling it directly
+  # verifies that:
+  #   1. the guard still uses REASON_NON_FINITE_COORDS
+  #      (not the new REASON_INVALID_CAPTURED_TOLERANCE);
+  #   2. the per-issue guard's confidence_basis in the
+  #      returned :skipped action uses
+  #      `skipped:non_finite_endpoint_coordinates`.
+  inf = Float::INFINITY
+  e1 = r5_edge(id: 0, start: [inf, inf, inf], finish: [inf, inf, inf], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  edge_lookup = { 0 => e1, 1 => e2 }
+  issue = {
+    issue_id:  'dup|0|1',
+    issue_type: 'duplicate_edge_candidate',
+    edge_ids:  [0, 1]
+  }
+  result = SUAnalysis::Core::DuplicateRepairProposer.classify_issue(
+    issue,
+    edge_lookup: edge_lookup,
+    tolerance:   1.0e-4
+  )
+  assert_equal false, result[:valid]
+  skip = result[:skipped_action]
+  assert skip.is_a?(SUAnalysis::Core::RepairAction)
+  # The non-finite geometry MUST still use the
+  # coordinate reason, NOT the captured-tolerance
+  # reason.
+  assert_equal 'skipped:non_finite_endpoint_coordinates', skip.confidence_basis.to_s,
+               'FIX-SR-03: non-finite geometry MUST still use the coordinate reason'
+  refute_equal 'skipped:invalid_or_missing_captured_tolerance', skip.confidence_basis.to_s,
+               'FIX-SR-03: non-finite geometry MUST NOT use the captured-tolerance reason'
+end
