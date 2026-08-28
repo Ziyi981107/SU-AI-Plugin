@@ -21,6 +21,10 @@ The sole normal current implementation return channel is:
 
 `Review/CURRENT_PI_REPORT.md` is implementation evidence, not task authority.
 
+The sole normal current AIPM source-review record is:
+
+`Review/CURRENT_AIPM_REVIEW.md`
+
 ---
 
 ## 1. Mandatory bootstrap order
@@ -37,6 +41,10 @@ Before choosing or starting implementation work, Pi must read:
 
 Pi may execute only the current dispatch, and only after the project's normal
 user authorization / Proceed flow.
+
+The target branch is authoritative only when declared by the ACTIVE dispatch
+as `TARGET_BRANCH: dev/vX.Y`. Pi must not invent or substitute a Round-specific
+branch.
 
 A short direct chat instruction may continue a small local step only inside an
 already ACTIVE dispatch and frozen contract. It cannot create a task, replace
@@ -110,12 +118,17 @@ affected work and report the design gap to AIPM.
 
 ## 5. Completion rule
 
-For an ACTIVE dispatch, Pi must update
-`Review/CURRENT_PI_REPORT.md` with the required implementation/test/evidence
-and final STOP state.
+For an ACTIVE dispatch, Pi completes the entire frozen task and required
+tests/build/package evidence, updates `CURRENT_STATE.md` and
+`Review/CURRENT_PI_REPORT.md`, creates the final stable commit, pushes only the
+assigned `dev/vX.Y` as the formal complete-task submission, then STOPs and
+returns control to AIPM.
 
-After completing the current dispatch, Pi must STOP and return control to AIPM.
-Pi must not select another task, start another Stage, request Codex review
+Pi may create local checkpoint commits before completion, but must not submit
+an incomplete dispatch for formal review.
+
+Pi must never push or merge `main`, force-push, rewrite shared history, create
+a release/tag, select another task, start another Stage, request/run Codex
 directly, or infer a next action from historical files.
 
 ---
@@ -123,5 +136,6 @@ directly, or infer a next action from historical files.
 ## 6. One-line Pi rule
 
 **Read the permanent bootstrap stack, execute only an authorized ACTIVE
-`CURRENT_PI_DISPATCH` inside the frozen AIPM contract, report through
-`CURRENT_PI_REPORT`, then STOP and return control to AIPM.**
+`CURRENT_PI_DISPATCH` on its assigned `dev/vX.Y` inside the frozen AIPM
+contract, complete and submit it through `CURRENT_PI_REPORT`, then STOP and
+return control to AIPM.**

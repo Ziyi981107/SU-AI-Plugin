@@ -10,7 +10,7 @@
 >
 > Final Product Owner: **Owner**
 >
-> Product + Technical Lead / Primary Reviewer / Dispatcher: **ChatGPT / AIPM**
+> Product + Technical Lead / Primary Source Reviewer / Dispatcher / Final Technical Adjudicator: **ChatGPT / AIPM**
 >
 > Implementation Agent: **Pi**
 >
@@ -80,6 +80,10 @@ Owns:
 - primary review;
 - next-step dispatch;
 - Codex escalation.
+- direct real-source review;
+- final adjudication of Codex findings;
+- technical Gate decisions;
+- approval to merge `main` after Gate PASS.
 
 ## Pi
 
@@ -90,8 +94,10 @@ Owns:
 - build/package;
 - diagnostics;
 - stable checkpoints;
+- final stable submission commit;
 - `CURRENT_STATE.md` updates;
 - `Review/CURRENT_PI_REPORT.md` updates;
+- complete-dispatch submission to the assigned `dev/vX.Y` branch;
 - durable Review artifacts when AIPM determines long-term evidence is justified;
 - low-level reversible implementation choices inside frozen design.
 
@@ -109,6 +115,15 @@ Codex does NOT own:
 - project architecture;
 - daily dispatch;
 - Pi supervision.
+
+Codex is review-only by default:
+- no source/test/governance modification;
+- no commit;
+- no push;
+- no merge.
+
+Codex findings are technical evidence. AIPM records the final
+Accepted / Downgraded / Rejected adjudication.
 
 ---
 
@@ -130,6 +145,8 @@ Normal current communication files:
 6. `Prompt/CURRENT_PI_DISPATCH.md` - sole normal formal AIPM -> Pi dispatch.
 7. `Review/CURRENT_PI_REPORT.md` - sole normal Pi -> AIPM implementation
    return.
+8. `Review/CURRENT_AIPM_REVIEW.md` - sole normal current AIPM source-review
+   record.
 
 Durable AIPM Blueprint / Guidance artifacts are read only when explicitly
 referenced by the current dispatch or otherwise required by canonical project
@@ -175,9 +192,10 @@ If `PI_START_HERE.md` or `CURRENT_PI_DISPATCH.md` is missing, malformed, or
 contradictory, or if the dispatch says `STATUS: NO ACTIVE DISPATCH`, Pi must
 STOP and report the problem to AIPM. Do not guess.
 
-After the current dispatch is complete, update
-`Review/CURRENT_PI_REPORT.md`, STOP, and return control to AIPM. Do not
-auto-select the next task.
+After the current dispatch is complete, Pi must update `CURRENT_STATE.md` and
+`Review/CURRENT_PI_REPORT.md`, create the final stable commit, push only the
+assigned `dev/vX.Y` branch as the complete-task submission, then STOP and
+return control to AIPM. Do not auto-select the next task.
 
 ---
 
@@ -251,6 +269,15 @@ Codex should:
 - investigate material repo-aware escalations;
 - perform narrow BLOCK rechecks;
 - perform final release technical review when required.
+
+Permanent mandatory/high-risk triggers include:
+- state/data ownership;
+- transaction/recovery/Undo;
+- cross-module core architecture;
+- SketchUp/host compatibility;
+- destructive action;
+- package/install/runtime/release-critical behavior;
+- Stage/Version final high-risk technical Gate.
 
 Codex should NOT:
 
@@ -497,6 +524,8 @@ Normal current files:
   implementation dispatch.
 - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation
   return.
+- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM
+  source-review record.
 
 Pi treats `Prompt/` as read-only and does not write it as the normal task
 return channel. Pi does not use `Review/` to discover work. AIPM does not
@@ -548,21 +577,55 @@ Do not commit after every trivial edit. Do not present a known broken state as
 a stable checkpoint. If an explicitly necessary diagnostic/broken checkpoint
 is created, label it truthfully.
 
-Local commit and remote push are different authorities.
+Local commit and formal version-branch submission are different steps.
 
-Pi must not push by default. Push requires explicit Owner/AIPM authorization.
+Pi may create multiple local commits. Pi formally pushes only when all are
+true:
 
-Pi must never independently:
+- the entire current Dispatch is complete;
+- required tests/build/package evidence is complete;
+- `CURRENT_STATE.md` is updated;
+- `Review/CURRENT_PI_REPORT.md` is updated;
+- a final stable commit exists;
+- Pi is ready to STOP and submit for AIPM source review.
 
+Pi pushes only the `TARGET_BRANCH: dev/vX.Y` assigned by the current dispatch.
+This complete-task push does not require a separate per-push Owner/AIPM
+permission.
+
+Pi must never:
+
+- push or merge `main`;
 - force-push;
 - rewrite shared remote history;
 - rebase published/shared history;
 - destructively reset away another agent's work;
 - squash/rewrite checkpoints merely to make history look cleaner.
 
-Recommended practice is to commit meaningful validated checkpoints and request
-authorized push at end-of-day, important Stage/Gate close, release/tag, or when
-important local work needs remote backup.
+Pi must not create a formal review submission for an incomplete dispatch.
+
+---
+
+# 14A. Source Review / Gate / Release Semantics
+
+AIPM may not claim Source Review PASS unless AIPM directly inspected the real
+code/diff, affected upstream/downstream seams, and relevant tests. A Pi report
+is evidence; it is not AIPM approval.
+
+Keep these states distinct:
+
+- **Pi Complete**: implementation finished, self-tested, stable commit created,
+  and submitted to the assigned `dev/vX.Y`.
+- **AIPM PASS**: AIPM directly reviewed the real source/diff and relevant
+  evidence against the frozen design.
+- **Gate PASS**: ordinary low-risk AIPM Gate, or for mandatory/high-risk scope,
+  AIPM PASS plus Codex repo-aware review plus AIPM adjudication.
+
+After Gate PASS, AIPM may approve merge to `main`.
+
+`main` is the technical stable line. Formal release/tag/external delivery is a
+separate Final Product Owner decision. Stable `main` does not mean formally
+released.
 
 ---
 

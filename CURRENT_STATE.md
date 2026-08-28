@@ -1,6 +1,6 @@
 # SU-AI-Plugin — CURRENT STATE
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 Project: `D:\Projects\SU-AI-Plugin`
 
 Current stage: **V1.5 — High-confidence Auto Repair / Round-5 BLOCK fix (continuation)**
@@ -13,14 +13,24 @@ Canonical durable context:
 - `PROJECT_MASTER_PLAN_V1X.md`
 
 Current project rule:
-- AIPM owns product + technical design, primary review, and dispatch.
+- Governance migration: **AIPM V3.4 ACTIVE**.
+- Canonical version branch: `dev/v1.5`.
+- AIPM owns product + technical design, direct source review, dispatch, Codex
+  adjudication, and the technical Gate.
 - Pi implements the frozen design.
-- Codex is used only for legitimate mandatory / high-risk repo risk.
+- Pi submits a complete Dispatch only to its assigned `dev/vX.Y`, then STOPs.
+- Codex is review-only by default and is used only for legitimate mandatory /
+  high-risk repo risk.
 - The fixed current workflow is:
-  `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`.
+  `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM source review -> Review/CURRENT_AIPM_REVIEW.md -> optional Codex -> AIPM adjudication`.
 - `PI_START_HERE.md` is the permanent Pi bootstrap entry.
 - `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current task file.
 - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation return.
+- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM source-review
+  record.
+- Pi Complete, AIPM PASS, and Gate PASS are distinct states.
+- After Gate PASS AIPM may approve merge to `main`; formal release/tag still
+  requires Final Product Owner approval.
 - Historical Prompt/Review artifacts remain durable evidence only and cannot become current through filename, numbering, mtime, or stale ACTIVE status.
 - Git is the normal fine-grained implementation history; separately named durable artifacts remain allowed for important design/Gate/release evidence.
 - This V1.5 Round-5 case has reached the end of Pi's execution window. Pi is STOPPED. AIPM review + the next Codex narrow xHigh recheck are the next gates per `PROJECT_MASTER_PLAN_V1X.md` §13.
@@ -65,7 +75,7 @@ V1.6 must not begin until:
 
 ## 2. CURRENT GIT / BUILD STATE
 
-Current branch: `v1.5-stage-round3-fix`
+Current branch: `dev/v1.5`
 
 Governance migration base HEAD (pre-Round-4 carrier of this `CURRENT_STATE.md`):
 `43854c879a1c1fcb57bcd2bea7743c02e73d0c05`
@@ -185,10 +195,10 @@ Relevant Round-5 Pi packet:
 Relevant frozen design references:
 
 - `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
-- `Prompt/CURRENT_PI_DISPATCH.md` (ACTIVE)
+- `Prompt/CURRENT_PI_DISPATCH.md` (executed dispatch; now closed in Git history)
 
 These are the durable executed-contract artefacts for the completed Round-5
-fix. They are not a current Pi dispatch and do NOT override the current
+fix. They are not a current Pi dispatch and do NOT override the neutral
 `Prompt/CURRENT_PI_DISPATCH.md` or existing project governance in
 `AGENTS.md`, `PROJECT_HANDOFF.md`, and `PROJECT_MASTER_PLAN_V1X.md`.
 
@@ -591,7 +601,7 @@ Conditional high-risk repo-aware review:
 **Codex**
 
 Default:
-`Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`
+`Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM source review -> Review/CURRENT_AIPM_REVIEW.md`
 
 There is currently no active Pi implementation dispatch.
 
@@ -601,7 +611,7 @@ advanced through Round-3 (Codex BLOCK verdict) -> AIPM Round-4
 Guidance + PI_TASK dispatch -> Pi Round-4 implementation
 (history) -> AIPM review -> AIPM Owner-checklist publication ->
 Codex Round-4 narrow recheck -> Round-4 BLOCK verdict ->
-AIPM Round-5 Guidance + CURRENT_PI_DISPATCH dispatch ->
+AIPM Round-5 Guidance + completed CURRENT_PI_DISPATCH dispatch ->
 Pi Round-5 implementation (this update) -> awaiting AIPM review
 -> AIPM Owner-checklist republication -> Codex narrow recheck ->
 closure / next fix.

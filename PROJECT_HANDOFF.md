@@ -1,4 +1,4 @@
-# SU-AI-Plugin — PROJECT HANDOFF V3.1
+# SU-AI-Plugin — PROJECT HANDOFF V3.4
 
 > Project: `D:\Projects\SU-AI-Plugin`
 >
@@ -6,7 +6,7 @@
 >
 > Final Product Owner: **Owner**
 >
-> Product + Technical Lead / Primary Reviewer / Dispatcher: **ChatGPT / AIPM**
+> Product + Technical Lead / Primary Source Reviewer / Dispatcher / Final Technical Adjudicator: **ChatGPT / AIPM**
 >
 > Implementation Agent: **Pi**
 >
@@ -38,6 +38,7 @@ Those belong in:
 - `CURRENT_STATE.md`;
 - `Prompt/CURRENT_PI_DISPATCH.md`;
 - `Review/CURRENT_PI_REPORT.md`;
+- `Review/CURRENT_AIPM_REVIEW.md`;
 - durable Stage Technical Blueprint / Guidance / Gate evidence when justified;
 - Git.
 
@@ -383,13 +384,22 @@ Owns:
 - primary Review;
 - next-step Dispatch;
 - whether Codex is required.
+- direct real-source review;
+- Codex finding adjudication;
+- technical Gate decisions;
+- approval to merge `main` after Gate PASS.
 
 Default review flow:
 
 ```text
-Review/CURRENT_PI_REPORT.md or justified durable Pi Review artifact
-→ AIPM Primary Review
-→ Continue / Fix / Update Blueprint / Owner Gate / Codex escalation
+Prompt/CURRENT_PI_DISPATCH.md
+→ Pi complete implementation + tests + stable commit
+→ assigned dev/vX.Y
+→ Review/CURRENT_PI_REPORT.md
+→ AIPM direct source review
+→ Review/CURRENT_AIPM_REVIEW.md
+→ optional Codex review when triggered
+→ AIPM adjudication and next action
 ```
 
 ---
@@ -404,8 +414,10 @@ Owns:
 - build/package;
 - diagnostics;
 - stable Git checkpoints;
+- final stable submission commit;
 - CURRENT_STATE updates;
 - `Review/CURRENT_PI_REPORT.md`;
+- complete-dispatch submission to the assigned `dev/vX.Y`;
 - durable Review artifacts when long-term evidence is justified;
 - low-level reversible implementation choices inside a frozen Blueprint.
 
@@ -463,6 +475,9 @@ Codex does not own:
 - Pi supervision.
 
 A Codex BLOCK that requires design change routes back through AIPM.
+Codex is review-only by default: no code changes, commit, push, or merge.
+Codex findings are evidence; AIPM records the final
+Accepted / Downgraded / Rejected adjudication.
 
 ---
 
@@ -475,6 +490,8 @@ Permanent workflow:
   AIPM -> Pi implementation dispatch.
 - `Review/CURRENT_PI_REPORT.md` is the sole normal current Pi -> AIPM
   implementation return.
+- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM source-review
+  record.
 
 Pi treats `Prompt/` as read-only and does not write it as the normal return
 channel. Pi does not use `Review/` to discover tasks. AIPM does not treat
@@ -552,16 +569,16 @@ Do not commit after every trivial edit or present a known broken state as
 stable. An explicitly necessary diagnostic/broken checkpoint must be labelled
 truthfully.
 
-Local commit and remote push are different authorities. Pi must not push by
-default; push requires explicit Owner/AIPM authorization.
+Pi may create multiple local commits. Pi formally pushes only after the entire
+current Dispatch, required evidence, `CURRENT_STATE.md`,
+`Review/CURRENT_PI_REPORT.md`, and the final stable commit are complete, and Pi
+is ready to STOP. The formal submission goes only to the assigned
+`dev/vX.Y`; it does not require separate per-push Owner/AIPM permission.
 
-Pi must never independently force-push, rewrite shared remote history, rebase
-published/shared history, destructively reset away another agent's work, or
-squash/rewrite checkpoints merely to make history look cleaner.
-
-Recommended practice is to commit meaningful validated checkpoints and request
-authorized push at end-of-day, important Stage/Gate close, release/tag, or when
-important local work needs remote backup.
+Pi must never push/merge `main`, force-push, rewrite shared remote history,
+rebase published/shared history, create a release/tag, destructively reset away
+another agent's work, or squash/rewrite checkpoints merely to make history
+look cleaner.
 
 Keep:
 
@@ -582,7 +599,26 @@ On Windows:
 
 ---
 
-# 16. Release Rule
+# 16. Source Review, Gate, Main, and Release Rule
+
+AIPM may not claim Source Review PASS from a Pi report alone. AIPM must
+directly inspect the real diff, affected upstream/downstream source, and
+relevant tests.
+
+Keep three states distinct:
+
+- **Pi Complete** - finished, self-tested, stable commit, submitted to
+  `dev/vX.Y`.
+- **AIPM PASS** - AIPM directly reviewed real source/diff and relevant
+  evidence.
+- **Gate PASS** - ordinary low-risk AIPM Gate, or for mandatory/high-risk
+  scope, AIPM PASS + Codex repo-aware review + AIPM adjudication.
+
+After Gate PASS, AIPM may approve merge into `main`.
+
+`main` is the technical stable line. Formal release/tag/external delivery
+remains a separate Final Product Owner decision. Stable `main` is not itself a
+formal release.
 
 Formal release requires, as applicable:
 
