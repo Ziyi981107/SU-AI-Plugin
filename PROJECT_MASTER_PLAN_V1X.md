@@ -802,7 +802,8 @@ Unit tests never replace required real-host evidence.
 
 # 13. Review Strategy
 
-AIPM is the default first-line reviewer.
+AIPM is the default Primary Source Reviewer. AIPM may not claim Source Review
+PASS without directly inspecting the real code/diff and relevant evidence.
 
 Normal path:
 
@@ -812,7 +813,8 @@ Pi Review packet
 → Continue / Fix / Update Blueprint / Owner Gate / Codex escalation
 ```
 
-Codex is conditional.
+Codex is conditional and review-only by default. Codex findings return to AIPM
+for final technical adjudication.
 
 ### Mandatory Codex gates
 - V1.4 — closed unless invalidated by new evidence.
@@ -835,6 +837,18 @@ Passed unchanged scope stays closed.
 BLOCK rechecks are narrow.
 
 Codex does not create the next development gate by itself.
+
+Keep the governance states distinct:
+
+- `Pi Complete` = complete, self-tested Dispatch submitted to the assigned
+  `dev/vX.Y`;
+- `AIPM PASS` = AIPM directly reviewed the real code/diff and relevant
+  evidence;
+- `Gate PASS` = the applicable technical Gate, including Codex review and AIPM
+  adjudication when the scope is mandatory/high-risk.
+
+`Pi Complete` does not equal `AIPM PASS`, and `AIPM PASS` does not by itself
+equal `Gate PASS` when mandatory/high-risk review remains required.
 
 ---
 
@@ -861,9 +875,11 @@ Owns:
 - transaction/recovery design;
 - compatibility/performance strategy;
 - test matrix;
-- primary review;
+- Primary Source Review based on direct real-code/diff inspection;
 - dispatch;
-- Codex escalation decision.
+- Codex escalation decision;
+- final technical adjudication;
+- approval to merge `main` after Gate PASS.
 
 ## Pi
 Owns:
@@ -873,7 +889,10 @@ Owns:
 - build/package;
 - diagnostics;
 - stable checkpoints;
+- complete Dispatch submission to the assigned `dev/vX.Y`;
 - low-level reversible choices inside frozen Blueprint.
+
+Pi must never push or merge `main`, force-push, or create a release/tag.
 
 Pi may choose:
 - private helper names;
@@ -904,6 +923,8 @@ Owns:
 - final technical release review.
 
 Codex does not own product or technical architecture.
+Codex is review-only by default. Its findings return to AIPM for final
+technical adjudication.
 
 ---
 
@@ -917,6 +938,8 @@ Codex does not own product or technical architecture.
 - Stage Blueprints define current construction details;
 - old Gate evidence does not prove a changed artifact;
 - do not silently rewrite history.
+- `main` is the technical stable line;
+- formal release/tag is a Final Product Owner decision.
 
 ---
 

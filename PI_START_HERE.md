@@ -2,7 +2,8 @@
 
 Project: `D:\Projects\SU-AI-Plugin`
 Status: **PERMANENT BOOTSTRAP ENTRY**
-Owner: **ChatGPT / AIPM**
+Final Product Owner: **Owner**
+Bootstrap / Technical Authority: **ChatGPT / AIPM**
 
 ---
 

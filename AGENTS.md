@@ -515,17 +515,15 @@ Do not bypass AIPM.
 
 Normal daily direction:
 
-- `Prompt/` = AIPM -> Pi.
-- `Review/` = Pi -> AIPM.
-
-Normal current files:
-
 - `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current
-  implementation dispatch.
+  AIPM -> Pi task authority.
 - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation
-  return.
+  return from Pi -> AIPM.
 - `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM
-  source-review record.
+  source-review verdict/evidence record.
+
+The `Review/` directory may contain Pi implementation-return evidence and
+technical-review evidence. It is not Pi task authority.
 
 Pi treats `Prompt/` as read-only and does not write it as the normal task
 return channel. Pi does not use `Review/` to discover work. AIPM does not
