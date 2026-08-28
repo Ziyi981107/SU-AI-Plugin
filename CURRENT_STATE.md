@@ -125,8 +125,10 @@ AIPM Source Review corrective dispatch HEAD (starting point):
 `6fd81b5` / `aa5bae2` / `ac474fb` / `3cb11dd` - Round-5 continuation SHAs)
 
 AIPM Source Review corrective final stable commit:
-- See `Review/CURRENT_PI_REPORT.md` §15 for the full scope (final SHA
-  recorded after the dispatch §Hard STOP stable commit).
+- Implementation commit: `874149dc7488ff8c844e16fb6e0e6013df9abfa6`
+- Final `git rev-parse HEAD` (after this SHA stamp):
+  `874149dc7488ff8c844e16fb6e0e6013df9abfa6`
+- See `Review/CURRENT_PI_REPORT.md` §14 for the full scope.
 
 Working tree (THIS UPDATE):
 - Modified production files (5):
