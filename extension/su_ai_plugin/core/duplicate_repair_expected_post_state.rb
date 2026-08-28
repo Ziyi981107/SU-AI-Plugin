@@ -93,6 +93,20 @@ module SUAnalysis
       #
       # Returns an immutable Hash with the full expected post-
       # state. Pure data; no host mutations.
+      #
+      # Per FIX-B §3 (BLOCK-003): the post-state Hash carries
+      # TWO independent survivor-provenance-union maps:
+      #   1. `survivor_provenance_unions` -- the action-supplied
+      #      aggregate (from `act.source_occurrence_ids`).
+      #   2. `survivor_provenance_unions_from_pre_state` -- the
+      #      authoritative union derived from pre-execution
+      #      `DerivedEntityRecord.source_occurrence_ids` for
+      #      every member (survivor + removals) of the
+      #      applied action's component, normalized to
+      #      strings, deduplicated, and sorted.
+      # The validator MUST require exact equality between the
+      # two maps (canonical normalization). A mismatch is a
+      # BLOCK-003 fail-closed event BEFORE `begin_operation`.
       def build(workspace:, applied_actions:, captured_tolerance: nil,
                 candidate_pair_count_before: nil)
         # Capture the captured tolerance (explicit arg wins,
@@ -112,6 +126,8 @@ module SUAnalysis
         # ---- Apply the batch in pure data ----
         removed_ids_set   = {}
         survivor_updates  = {}
+        # FIX-B §3: pre-state-derived authoritative union.
+        survivor_unions_from_pre_state = {}
         per_action_members = {}
         applied_actions = Array(applied_actions)
         applied_actions.each do |act|
@@ -128,6 +144,21 @@ module SUAnalysis
           # is KEPT, not removed.
           removed_ids_set.delete(survivor_id) unless survivor_id.empty?
           survivor_updates[survivor_id] = Array(act.respond_to?(:source_occurrence_ids) ? act.source_occurrence_ids : []).map(&:to_s).uniq.sort unless survivor_id.empty?
+          # FIX-B §3 step 1..7: authoritative pre-state union
+          # for THIS applied component. Compute from the
+          # pre_inventory (the actual pre-execution workspace
+          # records), not from the action's claim.
+          unless survivor_id.empty?
+            member_ids = (members + [survivor_id]).map(&:to_s).uniq
+            pre_occs = []
+            member_ids.each do |mid|
+              pre_rec = pre_inventory[mid.to_s]
+              next unless pre_rec.is_a?(Hash)
+              pre_occs.concat(Array(pre_rec['source_occurrence_ids']).map(&:to_s))
+            end
+            survivor_unions_from_pre_state[survivor_id] =
+              pre_occs.map(&:to_s).uniq.sort
+          end
           per_action_members[act.respond_to?(:action_id) ? act.action_id.to_s : ''] = members + [survivor_id]
         end
         removed_ids = removed_ids_set.keys.sort
@@ -179,24 +210,27 @@ module SUAnalysis
         unresolved_skipped = skipped_component_ids(workspace, applied_actions, tol)
         # ---- Build the post-state Hash ----
         state = {
-          'valid'                            => true,
-          'reason'                           => nil,
-          'tolerance'                        => tol.to_f,
-          'tolerance_is_captured'            => true,
-          'pre_inventory_ids'                => pre_ids,
-          'post_inventory_ids'               => post_ids,
-          'removed_derived_ids'              => removed_ids,
-          'survivor_derived_ids'             => survivor_ids,
-          'survivor_provenance_unions'       => survivor_updates,
-          'post_geometry'                    => post_geometry,
-          'post_fingerprint'                 => fp_digest,
-          'survivor_handles'                 => survivor_handles,
-          'removal_handles'                  => removal_handles,
-          'duplicate_pairs_before'           => before_pairs.to_i,
-          'duplicate_pairs_after'            => after_pairs,
-          'applied_action_ids'               => applied_actions.map { |a| a.respond_to?(:action_id) ? a.action_id.to_s : '' }.reject(&:empty?).sort,
-          'applied_component_membership'     => per_action_members,
-          'unresolved_skipped_component_ids' => unresolved_skipped
+          'valid'                                       => true,
+          'reason'                                      => nil,
+          'tolerance'                                   => tol.to_f,
+          'tolerance_is_captured'                       => true,
+          'pre_inventory_ids'                           => pre_ids,
+          'post_inventory_ids'                          => post_ids,
+          'removed_derived_ids'                         => removed_ids,
+          'survivor_derived_ids'                        => survivor_ids,
+          # FIX-B §3: keep BOTH maps so the validator can
+          # require exact equality.
+          'survivor_provenance_unions'                  => survivor_updates,
+          'survivor_provenance_unions_from_pre_state'   => survivor_unions_from_pre_state,
+          'post_geometry'                               => post_geometry,
+          'post_fingerprint'                            => fp_digest,
+          'survivor_handles'                            => survivor_handles,
+          'removal_handles'                             => removal_handles,
+          'duplicate_pairs_before'                      => before_pairs.to_i,
+          'duplicate_pairs_after'                       => after_pairs,
+          'applied_action_ids'                          => applied_actions.map { |a| a.respond_to?(:action_id) ? a.action_id.to_s : '' }.reject(&:empty?).sort,
+          'applied_component_membership'                => per_action_members,
+          'unresolved_skipped_component_ids'            => unresolved_skipped
         }
         # Validate every invariant. Mutate the state Hash's
         # 'valid' / 'reason' fields with the validation
@@ -242,6 +276,40 @@ module SUAnalysis
         survivor_unions.each do |sid, occs|
           occs = Array(occs).map(&:to_s).uniq.sort
           return { valid: false, reason: "survivor_provenance_union_empty: #{sid}" } if occs.empty?
+        end
+        # FIX-B §3.3: exact union validation. The validator
+        # must prove the action-supplied survivor provenance
+        # union agrees EXACTLY with the authoritative
+        # pre-state-derived union for every applied
+        # component. The two maps are required to have
+        # IDENTICAL keys and IDENTICAL canonical-normalized
+        # union contents.
+        pre_state_unions = state['survivor_provenance_unions_from_pre_state'] || {}
+        # Same keys?
+        unless survivor_unions.keys.sort == pre_state_unions.keys.sort
+          missing = survivor_unions.keys - pre_state_unions.keys
+          extra   = pre_state_unions.keys - survivor_unions.keys
+          return { valid: false, reason: "survivor_provenance_union_key_mismatch: missing=#{missing.inspect} extra=#{extra.inspect}" }
+        end
+        # Exact equality after canonical normalization
+        # (string, uniq, sort).
+        survivor_unions.each do |sid, occs|
+          claimed = Array(occs).map(&:to_s).uniq.sort
+          expected = Array(pre_state_unions[sid]).map(&:to_s).uniq.sort
+          unless claimed == expected
+            missing = expected - claimed
+            extra   = claimed - expected
+            return { valid: false, reason: "survivor_provenance_union_mismatch: #{sid}: missing=#{missing.inspect} extra=#{extra.inspect}" }
+          end
+        end
+        # Symmetric check: every key in pre_state_unions must
+        # also be in survivor_unions (no missing action
+        # provenance). Already covered by the keys-set
+        # comparison above; defensive.
+        pre_state_unions.each do |sid, occs|
+          return { valid: false, reason: "survivor_provenance_union_missing_in_action: #{sid}" } unless survivor_unions.key?(sid)
+          occs = Array(occs).map(&:to_s).uniq.sort
+          return { valid: false, reason: "survivor_provenance_union_from_pre_state_empty: #{sid}" } if occs.empty?
         end
         # E. Expected geometry / fingerprint consistency:
         # recompute the fingerprint from post_inventory +

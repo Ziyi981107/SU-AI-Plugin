@@ -3,8 +3,8 @@
 Updated: 2026-08-28
 Project: `D:\Projects\SU-AI-Plugin`
 
-Current stage: **V1.5 — High-confidence Auto Repair / Round-5 BLOCK fix (continuation)**
-Current status: **ROUND-5 CONTINUATION COMPLETE — STOPPED (awaiting AIPM review per PI_START_HERE.md §6)**
+Current stage: **V1.5 — High-confidence Auto Repair / Round-5 AIPM Source Review corrective continuation (THIS UPDATE)**
+Current status: **FIX-A / FIX-B / FIX-C implementation complete; awaiting AIPM source review and Owner-checklist republish per dispatch §Hard STOP**
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -33,7 +33,7 @@ Current project rule:
   requires Final Product Owner approval.
 - Historical Prompt/Review artifacts remain durable evidence only and cannot become current through filename, numbering, mtime, or stale ACTIVE status.
 - Git is the normal fine-grained implementation history; separately named durable artifacts remain allowed for important design/Gate/release evidence.
-- This V1.5 Round-5 case has reached the end of Pi's execution window. Pi is STOPPED. AIPM review + the next Codex narrow xHigh recheck are the next gates per `PROJECT_MASTER_PLAN_V1X.md` §13.
+- This V1.5 Round-5 Source Review corrective case has reached Pi's execution window completion. Pi is STOPPED. AIPM direct source review + the Owner-checklist republish + (if AIPM chooses) the next Codex narrow xHigh recheck are the next gates per `PROJECT_MASTER_PLAN_V1X.md` §13.
 
 ---
 
@@ -44,21 +44,27 @@ Current project rule:
 - V1.5 Round-3 implementation/fix packet is complete (history).
 - V1.5 Round-4 BLOCK fix packet is complete (history).
 - V1.5 Round-5 BLOCK corrective implementation packet is complete (history).
-- V1.5 Round-5 BLOCK FIX continuation packet is complete (THIS UPDATE): added executor-level BLOCK-001 regressions, real BLOCK-003 invariant regressions (pure-data, not monkeypatch), real precommit host-shape mismatch, success transaction counts, commit uncertainty evidence, and a production-path observation seam test for BLOCK-005.
-- Round-5 continuation code, test additions, and supporting RBZ rebuild are committed (local stable checkpoint, NOT pushed).
-- Automated evidence, RBZ rebuild, and full Ruby suite all PASS end-to-end for the Round-5 continuation candidate.
+- V1.5 Round-5 BLOCK FIX continuation packet is complete (history).
+- V1.5 Round-5 AIPM Source Review corrective packet is complete (THIS UPDATE):
+  implemented the bounded AIPM Source Review fixes frozen in
+  `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+  (FIX-A strict tolerance parsing + exact-zero layer-key correction,
+  FIX-B exact deterministic provenance union,
+  FIX-C strict destructive handle-liveness hardening).
 
 ### In progress
 - Nothing is currently being implemented by Pi.
 
 ### Waiting
-- AIPM review of the Round-5 Pi packet (`Review/CURRENT_PI_REPORT.md`).
+- AIPM review of the Round-5 Source Review Pi packet
+  (`Review/CURRENT_PI_REPORT.md`).
 - AIPM republish of the Owner verification file
-  (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`,
-  per Round-5 §9; the previously published version was invalidated by the Round-4
-  Codex verdict).
-- Codex narrow xHigh recheck of the V1.5 BLOCK set
-  (V15-STAGE-BLOCK-001..005), dispatched only AFTER AIPM review and
+  (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`),
+  per Round-5 §9; the previously published version was invalidated by the
+  Round-4 Codex verdict.
+- If AIPM chooses after its direct source re-review, a Codex narrow
+  xHigh recheck of the V1.5 BLOCK set
+  (`V15-STAGE-BLOCK-001..005`), dispatched only AFTER AIPM review and
   Owner-checklist republish.
 
 ### Not started
@@ -67,8 +73,8 @@ Current project rule:
 V1.6 must not begin until:
 1. V1.5's active BLOCK set is formally closed;
 2. required Owner verification for V1.5 is completed as applicable;
-4. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
-5. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
+3. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
+4. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
    V1.6 Stage Technical Blueprint as required.
 
 ---
@@ -111,27 +117,59 @@ Round-5 continuation implementation HEAD:
   `a7ae4fe9608b195b3ecdf7e95b6ca524ba5a7de8`
 - See `Review/CURRENT_PI_REPORT.md` §15 for the full scope.
 
-The continuation only ADDS test code; production code is unchanged,
-so the RBZ hash is identical to the Round-5 implementation HEAD.
+AIPM Source Review corrective dispatch HEAD (starting point):
+`89f62457887d5d5d2b04f8d01f8d1ed27464c37e`
+(`89f6245` - V3.4 governance migration; `4320c34` - V3.4 governance migration;
+`d3b3d79` - acceptance-state SHA stamp for Round-5 continuation;
+`a7ae4fe` - final `git rev-parse HEAD` stamp;
+`6fd81b5` / `aa5bae2` / `ac474fb` / `3cb11dd` - Round-5 continuation SHAs)
 
-Working tree (Round-5 continuation fix):
-- Modified: 1 test file
-  (`tests/test_v15_round5_block_fix.rb`): +17 new tests
-  (BLOCK-001 executor-level + BLOCK-003 real invariants +
-   BLOCK-003 precommit + BLOCK-003 success counts +
-   BLOCK-003 commit uncertainty + BLOCK-005 production seam).
-- Modified: `Review/CURRENT_PI_REPORT.md` (this update).
-- The dist/ `SU-AI-Plugin.rbz` is rebuilt but NOT tracked (per repo policy).
+AIPM Source Review corrective final stable commit:
+- See `Review/CURRENT_PI_REPORT.md` §15 for the full scope (final SHA
+  recorded after the dispatch §Hard STOP stable commit).
 
-Round-5 RBZ:
+Working tree (THIS UPDATE):
+- Modified production files (5):
+  - `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
+  - `extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
+  - `extension/su_ai_plugin/core/derived_duplicate_topology.rb`
+  - `extension/su_ai_plugin/core/duplicate_repair_executor.rb`
+  - `extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb`
+  - `extension/su_ai_plugin/core/working_mode_runner.rb`
+- Modified test files (1):
+  - `tests/test_v15_round5_block_fix.rb` (V15-B003-INV-I test
+    updated to also populate the new
+    `survivor_provenance_unions_from_pre_state` field; +32 new
+    focused regressions added: FIX-A strict tolerance parsing,
+    exact-zero layer-key correction, no-fallback regressions,
+    FIX-B provenance union invariants, FIX-C strict handle
+    liveness)
+- Tracked governance files updated (2, only the active dispatch
+  + AIPM review themselves):
+  - `Prompt/CURRENT_PI_DISPATCH.md` (the active dispatch)
+  - `Review/CURRENT_AIPM_REVIEW.md` (the active AIPM review)
+- Untracked AIPM Review evidence files preserved:
+  - `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+    (the new frozen Guidance, referenced by the active dispatch)
+  - `Review/AIPM_V1_5_R5_FUNCTIONAL_DIFF.txt`
+  - `Review/AIPM_V1_5_R5_SOURCE_SNAPSHOT.txt`
+  - `Review/AIPM_V1_5_R5_TEST_SNAPSHOT.txt`
+  - `Review/V3_4_GOVERNANCE_CANONICAL_FILES.txt`
+  - `Review/V3_4_GOVERNANCE_CORRECTION_DIFF.txt`
+  - `Review/V3_4_GOVERNANCE_MIGRATION_DIFF.txt`
+  - `Review/V3_4_PI_APPEND_SYSTEM_FINAL.txt`
+- The dist/ `SU-AI-Plugin.rbz` is rebuilt (NEW SHA) but NOT tracked
+  (per repo policy).
+
+Round-5 Source Review corrective RBZ:
 
 `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 
 Evidence recorded in this file:
-- Size: 623,881 bytes
+- Size: 637,621 bytes
 - Entries: 59
 - SHA-256:
-  `C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35`
+  `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`
 
 Build command:
 `.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb`
@@ -144,20 +182,25 @@ narrow xHigh recheck passes.
 
 ## 3. CURRENT TEST EVIDENCE
 
-Round-5 continuation evidence (THIS UPDATE):
+Round-5 Source Review corrective evidence (THIS UPDATE):
 
-- Targeted Round-5 continuation regressions (BLOCK-001 executor-level
-  + BLOCK-003 real invariants + BLOCK-003 precommit + BLOCK-003
-  success counts + BLOCK-003 commit uncertainty + BLOCK-005
-  production seam): **17/17 PASS** (added in this update)
-- Full V15 (existing + new): **99/99 PASS**
-- Full Ruby suite (including new tests): **763/763 PASS**
+- Targeted Round-5 Source Review corrective regressions
+  (FIX-A: 11 strict-tolerance parser unit tests +
+   4 exact-zero layer-key tests +
+   5 no-fallback production-path tests +
+   FIX-B: 6 exact provenance union tests +
+   1 provenance mismatch executor-level test +
+   FIX-C: 5 strict handle liveness tests
+   = 32/32 PASS) (added in this update)
+- Existing Round-5 continuation evidence (unchanged): **99/99 PASS**
+- Full V15 (existing + new): **131/131 PASS**
+- Full Ruby suite: **795/795 PASS**
 - RBZ smoke: 9/9 PASS
-- Node DOM: PASS (existing assertions unchanged)
+- Node DOM (html_render): 58/58 PASS
 - `git diff --check`: clean
 - `git status --short` (after final commit): empty
 
-Round-5 evidence (history, unchanged):
+Round-5 continuation evidence (history, unchanged):
 
 - Targeted Round-5 V15-B00 BLOCK regressions (BLOCK-001, BLOCK-002A/004,
   BLOCK-002B, BLOCK-005): **17/17 PASS**
@@ -183,26 +226,39 @@ Active V1.5 BLOCK set:
 
 Status:
 
-> **Addressed by the Round-5 Pi fix packet; awaiting AIPM review
-> and Codex narrow recheck. NOT yet formally closed.**
+> **Round-5 corrective implementation packet (THIS UPDATE)
+> addresses FIX-A (BLOCK-002A + 004), FIX-B (BLOCK-003), and
+> FIX-C (strict handle liveness hardening adjacent to BLOCK-001).
+> Round-5 continuation already addressed BLOCK-001 executor-level
+> and BLOCK-005 production observation seam. The active BLOCK
+> set remains NOT formally closed; awaiting AIPM direct source
+> re-review, Owner-checklist republish, and (if AIPM chooses)
+> the next Codex narrow xHigh recheck.**
 
-Do not write "BLOCKs closed" until both gates pass.
+Do not write "BLOCKs closed" until both AIPM direct source
+PASS and Owner verification gates pass.
 
-Relevant Round-5 Pi packet:
+Relevant Round-5 corrective Pi packet:
 
-`Review/CURRENT_PI_REPORT.md` (dispatch id `SUAI-V15-R5-BLOCK-FIX-20260827-01`)
+`Review/CURRENT_PI_REPORT.md` (dispatch id `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`)
 
 Relevant frozen design references:
 
-- `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
-- `Prompt/CURRENT_PI_DISPATCH.md` (executed dispatch; now closed in Git history)
+- `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+  (this round's frozen Guidance)
+- `Prompt/CURRENT_PI_DISPATCH.md` (active dispatch)
+- `Review/CURRENT_AIPM_REVIEW.md` (BLOCK verdict + corrective
+  dispatch authorization)
 
-These are the durable executed-contract artefacts for the completed Round-5
-fix. They are not a current Pi dispatch and do NOT override the neutral
-`Prompt/CURRENT_PI_DISPATCH.md` or existing project governance in
-`AGENTS.md`, `PROJECT_HANDOFF.md`, and `PROJECT_MASTER_PLAN_V1X.md`.
+These are the durable executed-contract artefacts for the
+completed Round-5 corrective fix. They are not a current Pi
+dispatch and do NOT override the neutral
+`Prompt/CURRENT_PI_DISPATCH.md` or existing project governance
+in `AGENTS.md`, `PROJECT_HANDOFF.md`, and
+`PROJECT_MASTER_PLAN_V1X.md`.
 
-Historical Round-3 / Round-4 artefacts (still kept for audit):
+Historical Round-3 / Round-4 / Round-5 continuation artefacts
+(still kept for audit):
 
 - `Review/V1_5_ROUND4_BLOCK_FIX_RECHECK_PACKET_2026-08-27.md`
 - `Review/V1_5_ROUND3_FIX_RECHECK_PACKET_2026-08-26.md`
@@ -210,252 +266,338 @@ Historical Round-3 / Round-4 artefacts (still kept for audit):
   (Round-4 BLOCK verdict that triggered the Round-5 dispatch)
 - `Prompt/CODEX_REVIEW_033_V1_5_DERIVED_EDGE_BLOCK_RECHECK_2026-08-25.txt`
 - `Prompt/CODEX_V15_ROUND3_FIX_GUIDANCE_2026-08-26.txt`
+- `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
 
 ---
 
-## 5. ROUND-5 IMPLEMENTATION SUMMARY
+## 5. ROUND-5 CORRECTIVE IMPLEMENTATION SUMMARY
 
-The current file records these material Round-5 changes (the
-Round-5 continuation only ADDS tests; production code is unchanged).
+The current file records these material Round-5 Source Review
+corrective changes (the corrective packet modifies production
+code, so the RBZ hash changed from the Round-5 continuation
+SHA `C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35`
+to the corrective SHA
+`90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`).
 
-### BLOCK-001 — complete final live-handle proof (Round-5 implementation)
+### FIX-A — strict tolerance parsing + exact-zero layer-key correction
+Applies to BLOCK-002A and BLOCK-004.
 
-### BLOCK-002A / BLOCK-004 — tolerance semantics (incl. exact-zero path)
+#### 2.2/2.3 Frozen parsing contract + no production fallback
 
 `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
 
-- `valid_tolerance?(tolerance)` accepts `>= 0.0` (including exact 0.0).
-  - `> 0` => tolerance-grid path (Round-4 contract preserved).
-  - `== 0` => exact-match path (no grid math, no division).
-  - missing / negative / NaN / Inf / non-numeric => invalid.
-- `tolerance_category(tolerance)` returns `:positive | :zero | :invalid`.
-- `enumerate_candidates(records, tolerance)` branches on category:
-  - `:zero` => `enumerate_candidates_exact_zero(tuples)` — orientation-insensitive exact
-    endpoint-pair hashing (lex-ordered two endpoint triples + normalized layer in the key;
-    hash key -> records; enumerate every unique unordered pair within each bucket exactly
-    once; shared `direct_match?` at tolerance 0.0 is final authority; stable pair
-    ordering/dedup).
-  - `:positive` => `enumerate_candidates_grid(tuples, tol)` (Round-4 contract preserved).
-  - `:invalid` => `ArgumentError`.
-- Captured 0.0 MUST NEVER become 0.0001 — no production fallback.
+- New `parse_strict_tolerance(value)` helper:
+  - `nil` / blank / non-numeric string / arbitrary non-numeric
+    object -> invalid (nil).
+  - String: parsed strictly via `Float(s)` (which raises
+    `ArgumentError` on partial or non-numeric input), then
+    finite + `>= 0` checks.
+  - Numeric (Float / Integer): coerced to Float, finite +
+    `>= 0` checks.
+  - Boolean: invalid (not a numeric tolerance).
+- `valid_tolerance?(value)` now delegates to
+  `parse_strict_tolerance` (returns true iff strict parse
+  succeeded).
+- `tolerance_category(value)` now delegates to
+  `parse_strict_tolerance` (returns `:positive | :zero |
+  :invalid`).
+- `resolve_captured_tolerance(workspace)` uses
+  `parse_strict_tolerance` -- no permissive `.to_f` as
+  validity proof.
 
-### BLOCK-001 — complete final live-handle proof
+#### 2.3 No production runtime fallback to defaults
 
-- `core/duplicate_repair_proposer.rb#verify_final_repairable_component` — runs the
-  FINAL repairable-component eligibility proof against EVERY repairable component
-  BEFORE any executable action is emitted. Per Round-5 §2 step 1–9: distinct
-  derived_id; full leaf/occurrence identity; current host handle (missing OR
-  `valid? != true` => failure); pairwise distinct by `equal?` (survivor/removal AND
-  removal/removal); survivor appears exactly once and is not in removal set;
-  finite/layer/tolerance guards. Failure => truthful `:skipped` audit row with
-  stable reason code.
-- `core/duplicate_repair_executor.rb#preflight_batch` + `#final_live_handle_proof` —
-  re-runs the COMPLETE live-handle proof for the WHOLE executable batch
-  IMMEDIATELY BEFORE `begin_operation`, AFTER expected-state validation. Per
-  Round-5 §2 step 4: tolerance explicit; survivor handle resolves and `valid?`;
-  every to_remove handle resolves and `valid?`; survivor/removed disjointness;
-  pairwise distinct by `equal?`. Failure => atomic no-begin failure: begin=0, no
-  disposal/commit, no applied rows, exact logical pre-state retained, no READY,
-  truthful stable reason code.
+The following call sites that previously fell back to
+`DEFAULT_TOLERANCE` / `DEFAULT_DUPLICATE_TOLERANCE` now
+return `nil` on missing/invalid captured:
 
-### BLOCK-002B — genuine non-transitive regression
+- `extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
+  - `read_duplicate_tolerance(source_snapshot)`: returns
+    nil for missing/invalid captured (NOT default).
+  - `resolve_tolerance(source_snapshot, workspace)`: returns
+    nil when neither workspace nor snapshot supplies a valid
+    captured value (NOT default).
+- `extension/su_ai_plugin/core/derived_duplicate_topology.rb`
+  - `resolve_tolerance(workspace, tolerance)`: returns nil
+    when no valid explicit or captured value is available
+    (NOT default).
+- `extension/su_ai_plugin/core/duplicate_repair_executor.rb`
+  - `precompute_expected_post_state(...)`: when captured
+    tolerance is missing/invalid, the returned Hash carries
+    `captured_tolerance: nil` and `tolerance_valid: false`
+    (NOT a defaulted number).
+  - `preflight_batch(...)`: returns
+    `{ valid: false, reason: 'invalid_or_missing_captured_tolerance' }`
+    when tolerance is missing/invalid (the proposer / batch
+    path already fails closed).
+- `extension/su_ai_plugin/core/working_mode_runner.rb`
+  - `build_duplicate_repair_summary(...)`: when captured
+    tolerance is missing/invalid, the summary's
+    `duplicate_pairs_before` / `duplicate_pairs_after` are
+    reported as the honest `nil` (NOT a defaulted number) and
+    a new `tolerance_status` field carries
+    `missing_captured_tolerance` /
+    `invalid_captured_tolerance` / `captured` so the UI can
+    render the honest answer.
 
-The production chain (Round-5 `V15-B002B-1`) exercises the 0/.75T/1.5T geometry
-through the production detector, proposer, topology classifier, expected
-post-state, validator, audit, runner, and UI summary. NO manual fabrication.
+The legacy `DEFAULT_TOLERANCE` / `DEFAULT_DUPLICATE_TOLERANCE`
+constants remain (for unrelated default-configuration creation,
+e.g. `Tolerance.default`), but are no longer used as runtime
+fallbacks for missing/invalid captured repair tolerance.
 
-- tolerance = T > 0 (test uses T = 1.0);
-- three edges offset by 0, 0.75T, 1.5T along the same axis (cumulative);
-- therefore A~B, B~C, A!~C;
-- expected outcome: exactly 2 direct pairs; one connected non-transitive
-  component; 0 executable/destructive actions; exactly 1 skipped whole-component
-  row; member IDs exactly once; logical and host geometry unchanged; workspace
-  remains `:ready`.
+#### 2.4 Exact-zero layer-key correction
 
-### BLOCK-003 — expected post-state + transaction (incl. invariant I + precommit)
+`extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
 
-`core/duplicate_repair_expected_post_state.rb#validate!` enforces A–I:
-- A. exact inventory transition;
-- B. each removed ID disappears exactly once;
-- C. each survivor remains exactly once;
-- D. exact deterministic provenance union (non-empty is insufficient);
-- E. canonical fingerprint consistency;
-- F. handle identity shape valid AND survivor/removal AND removal/removal disjoint;
-- G. every applied complete-graph component collapses to exactly one survivor;
-- H. all expected handles exist/live and pairwise disjoint;
-- I. zero direct duplicate pairs belonging to every APPLIED component remain in
-  expected post geometry — measured via
-  `DuplicateGeometrySemantics.enumerate_candidates(survivor_records, tol)` on the
-  survivors of applied actions.
+- `exact_edge_key(s, f, layer)` now actually includes the
+  NORMALIZED layer in the canonical bucket key (the prior
+  implementation claimed layer was in the key but always
+  passed `nil` via `normalize_layer_bare` -- that bug is
+  fixed).
+- `enumerate_candidates_exact_zero(tuples)` passes
+  `t[:layer]` to `exact_edge_key` for every tuple.
 
-Host sequence (`core/duplicate_repair_executor.rb#apply_batch_atomic`):
-1. build expected post-state;
-2. validate A-I;
-3. run final live-handle proof (BLOCK-001 step 4);
-4. begin exactly once;
-6. PRECOMMIT host-shape observation (BLOCK-003 step 6):
-   - survivors still live/valid;
-   - planned removals observably no longer live/valid;
-   - identities still match the proven batch;
-   - no survivor accidentally disposed;
-   - mismatch => abort exactly once, commit=0, no post-state publish, exact logical
-     pre-state, failed/non-ready;
-7. match => commit exactly once;
-8. after confirmed commit publish exactly the PREVALIDATED logical post-state/fingerprint;
-9. commit raise / uncertainty => workspace `:failed`, no fabricated rollback, evidence preserved.
+Result:
+- Identical geometry on different non-equivalent layers does
+  NOT share the same exact-zero bucket (was silently bucketed
+  together before).
+- Identical geometry on canonical Layer0 variants
+  (`'Layer0'`, `'layer0'`, `'LAYER0'`, `'default'`,
+  `'untagged'`) DOES share the bucket (case-insensitive
+  Layer0 canonicalization preserved).
+- Forward/reversed same-layer duplicates continue to share
+  one bucket.
+- The shared `direct_match?` at tolerance `0.0` remains
+  final authority.
 
-### BLOCK-004 — audit / READY
+### FIX-B — exact deterministic provenance union
+Applies to BLOCK-003.
 
-- captured tolerance flows through detector -> proposer -> expected post-state ->
-  validator -> audit metrics -> UI summary (no silent fallback);
-- pre-execution `:skipped` actions are preserved end-to-end;
-- pair metric is the authoritative report (measured via
-  `DuplicateGeometrySemantics.count_direct_pairs(records, tol)`), NOT a surrogate;
-- READY semantics: workspace `:ready` MAY coexist with truthful `:skipped`
-  ambiguous components; MUST NOT coexist with: applied action whose expected
-  post-state failed; host/logical divergence; invalid/stale handle proof; remaining
-  direct duplicate pair belonging to an APPLIED repairable component; failed
-  batch invariant.
+`extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb`
 
-### BLOCK-005 — production Owner path + host-change reconciliation
+- New field `'survivor_provenance_unions_from_pre_state'` in
+  the post-state Hash, computed by `build(...)` from the
+  authoritative pre-execution workspace records:
+  - For each applied action, gather the survivor derived ID
+    + every affected-derived ID (the action's "members").
+  - Resolve each member in `pre_inventory`
+    (`workspace_inventory_pairs(workspace)`).
+  - Collect every member record's `source_occurrence_ids`,
+    normalize to strings, deduplicate, sort deterministically.
+  - This result is the `EXPECTED_PROVENANCE_UNION` for the
+    survivor.
+- New invariant check in `validate!`:
+  - Same-keys: `survivor_provenance_unions.keys.sort` MUST
+    equal `survivor_provenance_unions_from_pre_state.keys.sort`.
+    Mismatch -> fail with stable reason
+    `survivor_provenance_union_key_mismatch: missing=...
+    extra=...`.
+  - Exact equality (after canonical string/uniq/sort
+    normalization) of the per-survivor union between the
+    action-supplied map and the pre-state-derived map.
+    Mismatch -> fail with stable reason
+    `survivor_provenance_union_mismatch: <sid>: missing=...
+    extra=...`.
+  - Missing action provenance for a survivor in the
+    pre-state-derived map -> fail with
+    `survivor_provenance_union_missing_in_action: <sid>`.
+  - Empty pre-state-derived union -> fail with
+    `survivor_provenance_union_from_pre_state_empty: <sid>`.
 
-- `WorkingModeRunner.reset_for_tests` is TEST-ONLY and never used by any
-  production Owner flow. Owner verification uses normal
-  prepare / run_duplicate_repair_batch / discard / rebuild / prepare.
-- `validate_host_state_consistency!` runs at the start of `prepare`, `discard`,
-  `rebuild`, and `run_duplicate_repair_batch`. It inspects:
-  - the stored handle registry against the observable host (every handle must be
-    live/valid; missing or `valid? != true` => inconsistent);
-  - the captured `adapter.host_state_changed?` flag (defaults false; the
-    `FakeDerivedWorkspaceAdapter` exposes `simulate_host_state_change!` /
-    `clear_host_state_change!` for deterministic tests);
-  - the workspace's `:ready` state with an empty handle registry (incoherent).
-- mismatch => workspace transitions to `:failed` with stable reason
-  `host_state_changed`, duplicate-repair summary cleared, destructive work NOT
-  attempted.
-- discard -> user Undo -> next plugin interaction: `validate_host_state_consistency!`
-  detects mismatch (adapter flag set) and refuses to continue destructive work.
-- rebuild after `:failed`: explicit `discard` then `prepare` rebuilds coherent
-  inventory/handles/UI; the prior `:failed` workspace's private handle_registry is
-  preserved until the explicit discard.
+This invariant is enforced BEFORE host mutation (i.e. before
+`begin_operation`); mismatch -> atomic no-begin failure, no
+disposal / commit, no applied rows, exact logical pre-state
+retained, no READY, truthful stable reason code.
 
-### Round-5 continuation — added tests, no production code change
+Fingerprint validation (existing invariant E) remains in force;
+provenance validation and fingerprint validation are
+independent invariants -- one does not substitute for the other.
 
-The Round-5 continuation added 17 new targeted regressions to
-`tests/test_v15_round5_block_fix.rb` covering the open items
-called out in the Round-5 continuation directive (within the
-current dispatch `SUAI-V15-R5-BLOCK-FIX-20260827-01`).
+### FIX-C — strict destructive host-handle liveness hardening
+Bounded hardening adjacent to BLOCK-001.
 
-- **BLOCK-001 executor-level** (5 tests, `V15-B001-EX-1..5`):
-  After the proposer PASSES (plan has runnable actions), the
-  workspace is mutated so the executor's live-handle proof
-  fires on the next `apply_batch` call. Each test asserts:
-  `begin=0`, `commit=0`, `abort=0`, `dispose=0`,
-  workspace transitions to `:failed` with a stable reason
-  code, exact logical pre-state retained, and source CAD
-  immutable. Tests cover:
-  - `V15-B001-EX-1` missing removal handle
-    (3-member clique, ONE removal handle dropped so the
-    executor's `all_gone` shortcut is not taken);
-  - `V15-B001-EX-2` invalid removal handle
-    (`valid? == false` after `erase!`);
-  - `V15-B001-EX-3` survivor/removal alias
-    (two derived_ids -> same handle object);
-  - `V15-B001-EX-4` removal/removal alias
-    (within a multi-removal action);
-  - `V15-B001-EX-5` all-valid distinct
-    (begin=1, commit=1, abort=0, dispose=1, applied=1,
-    workspace :ready).
-- **BLOCK-003 real invariant regressions** (8 tests,
-  `V15-B003-INV-A..I` plus `-SUCCESS` and `-COMMIT-UNC`):
-  Each test mutates a single field of a VALID
-  `DuplicateRepairExpectedPostState` Hash (pure data) and
-  re-validates via `validate!`. Tests prove the validator
-  detects:
-  - invariant A: `inventory_transition_not_exact`
-  - invariant B: `removed_id_present_in_post_inventory`
-  - invariant C: `survivor_missing_from_post_inventory`
-  - invariant D: `survivor_provenance_union_empty`
-  - invariant E: `post_fingerprint_mismatch`
-  - invariant F: `survivor_handle_aliases_removal_handle`
-  - invariant H: `removal_handle_aliasing`
-  - invariant I: `applied_component_residual_duplicate_pair_in_expected_post`
-  These tests do NOT monkeypatch `validate!` — every mismatch
-  is a pure-data state mutation, and the validator reports
-  the correct reason.
-- **BLOCK-003 PRECOMMIT host-shape mismatch** (`V15-B003-INV-PC`):
-  Custom `PrecommitMismatchAdapter` whose `dispose` records
-  the call but does NOT actually invalidate the handle. The
-  executor's `precommit_host_shape_observation` re-checks the
-  removal handles and finds them STILL live, triggering
-  `precommit_host_shape_mismatch`. Asserts: `begin=1`,
-  `abort=1`, `commit=0`, dispose was attempted, every
-  action `:failed`, workspace `:failed`, exact logical
-  pre-state retained.
-- **BLOCK-003 success transaction counts** (`V15-B003-INV-SUCCESS`):
-  Proves the success path produces exactly `begin=1`,
-  `commit=1`, `abort=0`, 1 applied action, and the published
-  workspace's entity inventory equals the precomputed
-  expected `post_inventory_ids`.
-- **BLOCK-003 commit uncertainty** (`V15-B003-INV-COMMIT-UNC`):
-  Custom `CommitRaiseAdapter` raises on `end_operation(commit: true)`.
-  Asserts: `begin=1`, `commit_calls<=1`, `abort_calls=0`
-  (no fabricated rollback), workspace `:failed`, every
-  action `:failed`, pre-state preserved, stable reason
-  `commit_operation_failed`.
-- **BLOCK-005 production observation seam**
-  (`V15-B005-PROD-1`): Defines a `NoHostStateChangeAdapter`
-  that `undef`'s the test-only `host_state_changed?` /
-  `simulate_host_state_change!` / `clear_host_state_change!`
-  methods — mimicking the production
-  `SketchupDerivedWorkspaceAdapter` (which inherits the base
-  class and does NOT define these methods, so
-  `respond_to?(:host_state_changed?)` returns false). The
-  runner's `validate_host_state_consistency!` detects
-  `handle.valid? == false` after a simulated SU Undo and
-  transitions the workspace to `:failed` with stable reason
-  `host_state_changed`. This proves the production-path
-  detection seam is `handle.valid?` (the SAME mechanism
-  real SU uses) — not the test injection
-  `adapter.host_state_changed?` flag.
+`extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
 
-### Production code gap status (BLOCK-005 observation seam)
+- New `strict_handle_live?(handle)` predicate -- the single
+  source of truth for handle-liveness in destructive paths:
+  - `nil` -> not live.
+  - lacks `:valid?` -> not live.
+  - `valid? == true` -> live.
+  - `valid? == false` -> not live.
+  - `valid? == nil` -> not live.
+  - `valid?` raises `StandardError` -> not live.
 
-- The current production observation seam relies on
-  `handle.valid?` being inspected by the runner's
-  `validate_host_state_consistency!`. Real SketchUp makes
-  this observable automatically: when the user Undoes a
-  derive group creation, the stored handle object reports
-  `valid? == false`, and the runner detects it on the next
-  plugin interaction. The test injection
-  `adapter.host_state_changed?` flag is TEST-ONLY on
-  `FakeDerivedWorkspaceAdapter`.
-- No large Observer architecture was added. Per AIPM
-  Round-5 §10 ("if precommit observation or reconciliation
-  is impossible through existing seams, STOP and report
-  exact repo gap"): the existing seams are SUFFICIENT for
-  V1.5 production; the validate-on-next-interaction path
-  covers both the precommit host-shape check (executor
-  side) and the host-state reconciliation (runner side).
-- SU2017 verification remains an Owner real-host gate. No
-  Ruby 2.2 fixture is in scope for Round-5.
+`extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
+
+- `verify_final_repairable_component(...)` now uses
+  `strict_handle_live?` for every member (replacing the old
+  `respond_to?(:valid?) && !h.valid?` pattern). A handle that
+  lacks `:valid?`, returns nil from `:valid?`, or raises
+  during `:valid?` is NOT treated as proven live and emits a
+  `:skipped` audit row with a stable reason code
+  (`REASON_HANDLE_INVALID` or
+  `REASON_HANDLE_INVALIDATED`).
+
+`extension/su_ai_plugin/core/duplicate_repair_executor.rb`
+
+- `preflight_batch(...)` and `final_live_handle_proof(...)`
+  use `strict_handle_live?` for survivor + to_remove
+  members; failure -> stable reason
+  `*_handle_invalidated: <id>` /
+  `*_handle_malformed_no_valid_predicate: <id>` (no host
+  mutation, no applied row, exact pre-state retained).
+- `precommit_host_shape_observation(...)` uses
+  `strict_handle_live?` symmetrically: survivors still
+  strictly live AND planned removals no longer strictly
+  live.
+- `apply_batch_atomic(...)` per-action pre-computation uses
+  `strict_handle_live?` to classify every removal handle as
+  present/invalid; a handle that lacks `:valid?` is
+  classified as invalid (NOT present).
+- `apply(...)` and `apply_atomic(...)` use
+  `strict_handle_live?` for the survivor + disposable
+  handles.
+- `precompute_survivor_replacements(...)` only adds a
+  survivor replacement when its handle is strictly live.
+- The `all_gone` shortcut in `apply_batch(...)` /
+  `apply(...)` only treats a handle as "already gone" when
+  the registry returns nil -- an invalidated handle (present
+  but `valid? == false`) is NOT "already gone"; it reaches
+  preflight_batch and fails closed via `strict_handle_live?`.
+
+### Round-5 Source Review corrective — added tests, production
+code changed (RBZ hash updated)
+
+The Round-5 Source Review corrective packet added 32 new
+focused regressions to `tests/test_v15_round5_block_fix.rb`
+covering the items called out in
+`AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+§6 (Required regressions). Production code is changed in 5
+files; the RBZ hash is therefore NEW.
+
+#### FIX-A unit-level strict tolerance parsing (11 tests)
+- `V15-FIXA-STR-1..11`: exercise `parse_strict_tolerance`
+  with:
+  - non-numeric string (`"abc"`),
+  - blank string (`""`),
+  - partial numeric (`"1foo"`),
+  - blank-ish string (`"  "`),
+  - negative numeric string (`"-1.0"`),
+  - valid numeric zero string (`"0.0"`),
+  - valid positive numeric string (`"1.0"`),
+  - arbitrary non-numeric object (`[]`, `{}`),
+  - Integer (5, 0),
+  - Boolean (`true`, `false`).
+- All permissive `.to_f` failure modes are covered.
+
+#### FIX-A exact-zero layer-key correction (4 tests)
+- `V15-FIXA-KEY-1`: identical geometry on different non-
+  equivalent layers ('WALL' vs 'DOOR') under exact-zero
+  tolerance -> 0 pairs (was 1 pair before the fix).
+- `V15-FIXA-KEY-2`: identical geometry on Layer0 vs 'layer0'
+  case-insensitive canonical -> 1 pair (preserved).
+- `V15-FIXA-KEY-3`: exact-zero forward/reversed same-layer
+  duplicates -> 1 pair (preserved).
+- `V15-FIXA-KEY-4`: direct unit test of `exact_edge_key`
+  confirms the normalized layer is in the key string
+  (`layer=WALL`, `layer=DOOR`).
+
+#### FIX-A no-fallback regressions (5 tests)
+- `V15-FIXA-NOFALLBACK-1`: missing captured duplicate
+  tolerance -> 0 applied, `tolerance_status =
+  'missing_captured_tolerance'`.
+- `V15-FIXA-NOFALLBACK-2`: invalid captured duplicate
+  tolerance (`'abc'`) -> 0 applied,
+  `tolerance_status = 'invalid_captured_tolerance'`.
+- `V15-FIXA-NOFALLBACK-3`: negative captured duplicate
+  tolerance (-0.5) -> 0 applied,
+  `tolerance_status = 'invalid_captured_tolerance'`.
+- `V15-FIXA-NOFALLBACK-4`: topology / proposer / semantics
+  `resolve_tolerance` with no valid explicit/captured ->
+  nil (NOT default).
+- `V15-FIXA-NOFALLBACK-5`: audit reports
+  `tolerance_status = 'captured'` for a valid captured
+  tolerance (no silent default fallback).
+
+#### FIX-B exact deterministic provenance union (7 tests)
+- `V15-FIXB-PR-1`: baseline: a normal 2-edge fixture with a
+  valid 2-occurrence pre-state union + matching action
+  claim -> expected state is valid; both maps agree.
+- `V15-FIXB-PR-2`: union non-empty but missing one
+  occurrence (action claim truncated) -> validate! detects
+  with `survivor_provenance_union_mismatch`.
+- `V15-FIXB-PR-3`: union has one extra occurrence ->
+  validate! detects with `survivor_provenance_union_mismatch`.
+- `V15-FIXB-PR-4`: survivor provenance entry missing from
+  action map -> validate! detects with
+  `survivor_provenance_union_key_mismatch`.
+- `V15-FIXB-PR-5`: action provenance disagrees with
+  authoritative pre-state union (3 distinct occurrences,
+  action claim truncated) -> validate! detects.
+- `V15-FIXB-PR-6`: correct provenance still yields exact
+  prevalidated post fingerprint + validate! agrees.
+- `V15-FIXB-PR-EXEC`: executor-level provenance mismatch
+  injected by truncating pre-state records so the
+  authoritative union is smaller than the action's claim ->
+  `apply_batch` fails closed BEFORE begin: `begin=0`,
+  `commit=0`, `abort=0`, `dispose=0`, workspace `:failed`
+  with `survivor_provenance_union_mismatch|
+  expected_post_state_invalid` reason, logical pre-state
+  retained, source immutable.
+
+#### FIX-C strict destructive handle liveness hardening (5 tests)
+- `V15-FIXC-HDL-1`: removal handle that does NOT respond to
+  `:valid?` (`NoValidPredicateHandle`) -> executor fails
+  closed before begin (begin=0, no disposal/commit, no
+  READY).
+- `V15-FIXC-HDL-2`: removal handle whose `:valid?` returns
+  nil (`NilValidPredicateHandle`) -> executor fails closed
+  before begin.
+- `V15-FIXC-HDL-3`: removal handle whose `:valid?` raises
+  `StandardError` (`RaiseValidPredicateHandle`) -> executor
+  fails closed before begin.
+- `V15-FIXC-HDL-4`: `strict_handle_live?` unit tests for nil,
+  missing-:valid?, nil-:valid?, raise-:valid?, valid-true,
+  valid-false handles.
+- `V15-FIXC-HDL-5`: existing valid-handle success path
+  remains green (sanity guard against FIX-C accidentally
+  breaking the happy path).
+
+### Production code gap status (BLOCK-005)
+
+BLOCK-005 (discard -> SketchUp Undo -> next interaction
+reconciliation) remains OPEN by design and is NOT part of the
+current corrective dispatch. Per AIPM Source Review verdict:
+
+> BLOCK-005 is classified as an AIPM technical-design gap,
+> not a Pi implementation-choice gap. BLOCK-005 is
+> intentionally NOT assigned in the current Pi corrective
+> packet. AIPM will separately research SketchUp official
+> API, mature open-source SketchUp extensions, Undo/Redo /
+> ModelObserver / EntitiesObserver, entity lifecycle /
+> persistent identity, license constraints.
+
+Pi must NOT invent a new Observer / Undo architecture while
+the BLOCK-005 design is being researched.
 
 ---
 
 ## 6. CODEX RECHECK BOUNDARY
 
-The next Codex engagement (when dispatched by AIPM) is a
-**BLOCK RECHECK**, not a new full Stage review.
+The next Codex engagement (if dispatched by AIPM after its
+direct source re-review) is a **BLOCK RECHECK**, not a new
+full Stage review.
 
 Reasoning effort:
 **xHigh**
 
 Review only:
 - the active V1.5 BLOCK set;
-- the Round-5 fix diff;
+- the Round-5 corrective fix diff (FIX-A / FIX-B / FIX-C);
 - direct dependencies;
 - directly affected regressions;
-- adjacent seams materially changed by the Round-5 fix.
+- adjacent seams materially changed by the Round-5
+  corrective fix (e.g. `working_mode_runner.rb` audit path).
 
 Keep unchanged V1.0–V1.4 scope closed.
 
@@ -474,26 +616,29 @@ If a material design gap remains:
 ## 7. NEXT ACTION
 
 ### Immediate
-1. AIPM reviews the Round-5 Pi packet
+1. AIPM reviews the Round-5 corrective Pi packet
    (`Review/CURRENT_PI_REPORT.md`).
 2. AIPM republishes the canonical Owner verification file
    `Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`
    (BLOCK-005 deliverable, Pi is not the author).
-3. AIPM dispatches the next Codex narrow xHigh recheck.
+3. AIPM decides whether to dispatch the next Codex narrow
+   xHigh recheck.
 
-### If Codex PASS
+### If AIPM direct source PASS
 1. close the V1.5 active BLOCK set;
-2. AIPM determines whether the current Owner real-SketchUp verification path is
-   technically ready;
+2. AIPM determines whether the current Owner real-SketchUp
+   verification path is technically ready;
 3. Owner runs the approved real-host verification;
-4. AIPM reviews the result and formally closes V1.5 when acceptance evidence is
-   sufficient;
+4. AIPM reviews the result and formally closes V1.5 when
+   acceptance evidence is sufficient;
 5. AIPM designs and freezes `V1.6` Stage Technical Blueprint;
 6. only then dispatch Pi into V1.6.
 
 ### If Codex remains BLOCKED
-1. Codex reports only remaining/new causally related material BLOCKs;
-2. Codex provides evidence + minimum acceptable outcome + recheck evidence;
+1. Codex reports only remaining/new causally related material
+   BLOCKs;
+2. Codex provides evidence + minimum acceptable outcome +
+   recheck evidence;
 3. control returns to AIPM;
 4. AIPM updates technical Guidance / Blueprint as required;
 5. Pi implements one coherent fix packet;
@@ -504,10 +649,11 @@ If a material design gap remains:
 ## 8. PRODUCT / UX STATUS
 
 V1.5 Owner verification:
-**BLOCKED pending AIPM Owner-checklist republication + Codex PASS.**
+**BLOCKED pending AIPM Owner-checklist republish + AIPM direct
+source PASS of the corrective packet.**
 
 No current evidence in this file supports:
-- Owner PASS for the Round-5 artifact;
+- Owner PASS for the Round-5 corrective artifact;
 - V1.5 formal completion;
 - V1.6 start authorization;
 - release readiness.
@@ -522,15 +668,27 @@ Project-level architecture:
 **Frozen by `PROJECT_MASTER_PLAN_V1X.md`.**
 
 Current V1.5:
-- legacy Stage that began before the V3.1 Stage-Blueprint workflow was fully adopted;
-- do not retroactively invent a fake Blueprint and pretend it governed earlier work;
-- Round-4 closes the existing BLOCK recheck honestly within the frozen
-  `AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND4_BLOCK_FIX_2026-08-27.md` design;
-- Round-5 closes the existing BLOCK recheck honestly within the frozen
-  `AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md` design.
+- legacy Stage that began before the V3.1 Stage-Blueprint
+  workflow was fully adopted;
+- do not retroactively invent a fake Blueprint and pretend it
+  governed earlier work;
+- Round-4 closes the existing BLOCK recheck honestly within
+  the frozen
+  `AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND4_BLOCK_FIX_2026-08-27.md`
+  design;
+- Round-5 closes the existing BLOCK recheck honestly within
+  the frozen
+  `AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
+  design;
+- Round-5 Source Review corrective packet (THIS UPDATE)
+  closes the AIPM Source Review BLOCK on FIX-A / FIX-B / FIX-C
+  within the frozen
+  `AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+  design.
 
 V1.6:
-- requires a new AIPM Stage Technical Blueprint before any implementation begins.
+- requires a new AIPM Stage Technical Blueprint before any
+  implementation begins.
 
 Pi may not fill V1.6 architecture gaps independently.
 
@@ -543,8 +701,8 @@ Preferred Ruby test environment:
 `.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe`
 
 Known host issue:
-- `C:\Ruby27-x64\bin\ruby.exe` is recorded as broken on this host due to Windows
-  runtime/SxS problems.
+- `C:\Ruby27-x64\bin\ruby.exe` is recorded as broken on this
+  host due to Windows runtime/SxS problems.
 
 Preferred shell:
 - PowerShell for project Ruby/test execution.
@@ -558,7 +716,8 @@ Targeted executable discovery only:
 Do NOT:
 - recursively run `find /`;
 - scan whole `C:\` or `D:\` for Ruby;
-- reinstall Ruby or rewrite global PATH merely because one shell path fails.
+- reinstall Ruby or rewrite global PATH merely because one
+  shell path fails.
 
 Environment failure is not evidence of product-code regression.
 
@@ -573,13 +732,20 @@ Closed unless new evidence invalidates it:
 - V1.3
 - V1.4
 - V1.5 Round-1, Round-2 (frozen evidence)
-- V1.5 Round-3 (frozen evidence, superseded by Round-4 for the active BLOCK set)
-- V1.5 Round-4 (frozen evidence, superseded by Round-5 for the active BLOCK set)
+- V1.5 Round-3 (frozen evidence, superseded by Round-4 for the
+  active BLOCK set)
+- V1.5 Round-4 (frozen evidence, superseded by Round-5 for the
+  active BLOCK set)
+- V1.5 Round-5 (frozen evidence, superseded by Round-5 Source
+  Review corrective for FIX-A / FIX-B / FIX-C)
+- V1.5 Round-5 continuation (frozen evidence; the active BLOCK
+  set remains NOT formally closed)
 
 Historical Review/Prompt artifacts remain evidence only.
 
 Do not use old "next action", "greenlight", "active directive",
-or old test baseline text from archived sections as current truth.
+or old test baseline text from archived sections as current
+truth.
 
 ---
 
@@ -603,18 +769,27 @@ Conditional high-risk repo-aware review:
 Default:
 `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM source review -> Review/CURRENT_AIPM_REVIEW.md`
 
-There is currently no active Pi implementation dispatch.
+There is currently no active Pi implementation dispatch for a
+new task; the Round-5 Source Review corrective dispatch
+`SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01` has been
+completed by Pi and is now STOPPED awaiting AIPM direct
+source re-review.
 
 Current exception:
-V1.5 is inside an active Codex BLOCK recheck cycle that has
-advanced through Round-3 (Codex BLOCK verdict) -> AIPM Round-4
-Guidance + PI_TASK dispatch -> Pi Round-4 implementation
-(history) -> AIPM review -> AIPM Owner-checklist publication ->
-Codex Round-4 narrow recheck -> Round-4 BLOCK verdict ->
-AIPM Round-5 Guidance + completed CURRENT_PI_DISPATCH dispatch ->
-Pi Round-5 implementation (this update) -> awaiting AIPM review
--> AIPM Owner-checklist republication -> Codex narrow recheck ->
-closure / next fix.
+V1.5 is inside an active AIPM Source Review + Codex BLOCK
+recheck cycle that has advanced through Round-3 (Codex BLOCK
+verdict) -> AIPM Round-4 Guidance + PI_TASK dispatch -> Pi
+Round-4 implementation (history) -> AIPM review -> AIPM
+Owner-checklist publication -> Codex Round-4 narrow recheck ->
+Round-4 BLOCK verdict -> AIPM Round-5 Guidance + completed
+CURRENT_PI_DISPATCH dispatch -> Pi Round-5 implementation
+(history) -> Pi Round-5 continuation (history) -> AIPM
+Source Review verdict (BLOCK on FIX-A/B/C + BLOCK-005 deferred)
+-> AIPM Round-5 Source Review corrective Guidance + active
+CURRENT_PI_DISPATCH -> Pi Round-5 Source Review corrective
+implementation (THIS UPDATE) -> awaiting AIPM direct source
+re-review -> AIPM Owner-checklist republish -> optional Codex
+narrow recheck -> closure / next fix.
 
 Pi is **STOPPED** awaiting AIPM review.
 
@@ -622,14 +797,16 @@ Pi is **STOPPED** awaiting AIPM review.
 
 # One-Line Current State
 
-**V1.5 Round-5 continuation is complete: 17 new targeted regressions
-added to `tests/test_v15_round5_block_fix.rb` covering BLOCK-001
-executor-level proof (5 tests), BLOCK-003 real invariant regressions
-(8 tests, pure-data not monkeypatch), BLOCK-003 precommit
-host-shape mismatch, success transaction counts, commit uncertainty
-evidence, and BLOCK-005 production observation seam (1 test);
-production code unchanged (RBZ hash identical to Round-5 HEAD);
-full V15 99/99 PASS, full Ruby 763/763 PASS, RBZ smoke 9/9 PASS,
-Node DOM PASS, `git diff --check` clean, `git status --short`
-empty after final stable commit; Pi is stopped; V1.6 must wait for
-AIPM/Owner closure and a new AIPM V1.6 Technical Blueprint.**
+**V1.5 Round-5 Source Review corrective packet is complete:
+FIX-A (strict tolerance parsing + exact-zero layer-key
+correction), FIX-B (exact deterministic provenance union),
+and FIX-C (strict destructive handle-liveness hardening)
+implemented across 5 production files; 32 new focused
+regressions added to `tests/test_v15_round5_block_fix.rb`;
+full V15 131/131 PASS, full Ruby 795/795 PASS, RBZ smoke
+9/9 PASS, Node DOM 58/58 PASS, `git diff --check` clean,
+RBZ rebuilt with new SHA-256
+`90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`;
+BLOCK-005 remains OPEN by design; Pi is stopped; V1.6 must
+wait for AIPM/Owner closure and a new AIPM V1.6 Technical
+Blueprint.**

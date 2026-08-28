@@ -61,6 +61,10 @@ module SUAnalysis
           return [workspace, action]
         end
         to_remove = Array(action.affected_derived_ids).map(&:to_s).uniq
+        # Same "already_applied" semantics as in `apply_batch`:
+        # only nil means cleared; invalidated handles are NOT
+        # already-applied -- they go through the apply_atomic
+        # strict-liveness preflight below.
         if to_remove.all? { |id| workspace.handle_for(id).nil? }
           return [workspace, skip_action(action, reason: 'already_applied')]
         end
@@ -92,6 +96,14 @@ module SUAnalysis
         if runnable.empty?
           return [workspace, all_skipped]
         end
+        # `all_gone` is specifically the "already_applied"
+        # path: every removal handle has been cleared from
+        # the workspace's handle registry (handle_for
+        # returns nil). An invalidated handle (present in the
+        # registry but `valid? == false`) is NOT cleared --
+        # it is a workspace-coherence problem and MUST reach
+        # preflight_batch below, where strict_handle_live?
+        # catches it and fails the batch closed.
         all_gone = runnable.all? do |a|
           Array(a.affected_derived_ids).all? { |id| workspace.handle_for(id).nil? }
         end
@@ -118,16 +130,18 @@ module SUAnalysis
           return [new_ws, updated + pre_skipped]
         end
         # Pre-compute (action, to_remove, present, invalid).
+        # Per FIX-C: a handle that is nil, lacks valid?,
+        # returns nil/false from valid?, or raises valid? is
+        # NOT "present" (it is "invalid" for destructive use).
         per_action = runnable.map do |act|
           to_remove = Array(act.affected_derived_ids).map(&:to_s).uniq
           invalid_ids = to_remove.select { |id|
             h = workspace.handle_for(id)
-            h.respond_to?(:valid?) ? !h.valid? : false
+            # nil, missing valid?, nil/false/raise from valid?
+            # -> invalid (cannot be disposed safely).
+            !DuplicateGeometrySemantics.strict_handle_live?(h)
           }
-          present_ids = to_remove.reject do |id|
-            h = workspace.handle_for(id)
-            h.nil? || (h.respond_to?(:valid?) && !h.valid?)
-          end
+          present_ids = to_remove - invalid_ids
           [act, to_remove, present_ids, invalid_ids]
         end
         # Pre-flight (BLOCK-001 live-handle proof re-check +
@@ -299,35 +313,45 @@ module SUAnalysis
           return { valid: false, reason: 'invalid_or_missing_captured_tolerance' }
         end
         # Live-handle proof: every action's survivor and
-        # to_remove handles must be present, valid, distinct,
-        # and survivor/removed disjoint. Per Round-5 §2 step 1,
-        # the COMPLETE expected member set is validated -- not
-        # just the filtered present set.
+        # to_remove handles must be present, live (per
+        # FIX-C strict_handle_live?), distinct, and
+        # survivor/removed disjoint. Per Round-5 §2 step 1,
+        # the COMPLETE expected member set is validated --
+        # not just the filtered present set.
         per_action.each do |act, to_remove, _present_ids, _invalid_ids|
           survivor_id = act.before_summary.is_a?(Hash) ?
                           act.before_summary['survivor_derived_id'].to_s : nil
           survivor_handle = nil
           # (1) survivor resolves to exactly one current host
-          # handle; missing OR invalid => failure.
+          # handle; missing OR non-live => failure.
+          # Per FIX-C: a handle that lacks :valid? or whose
+          # :valid? raises is NOT proven live.
           if survivor_id && !survivor_id.empty?
             survivor_handle = workspace.handle_for(survivor_id)
-            if survivor_handle.nil?
-              return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
-            end
-            if survivor_handle.respond_to?(:valid?) && !survivor_handle.valid?
-              return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+            unless DuplicateGeometrySemantics.strict_handle_live?(survivor_handle)
+              if survivor_handle.nil?
+                return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
+              elsif survivor_handle.respond_to?(:valid?)
+                return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+              else
+                return { valid: false, reason: "survivor_handle_malformed_no_valid_predicate: #{survivor_id.inspect}" }
+              end
             end
           end
           # (2) Every to_remove member resolves to exactly
           # one current host handle. Per Round-5 §2 step 2,
           # ANY missing member is failure -- not filtered out.
+          # Per FIX-C: same strict liveness requirement.
           to_remove.each do |id|
             h = workspace.handle_for(id)
-            if h.nil?
-              return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
-            end
-            if h.respond_to?(:valid?) && !h.valid?
-              return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
+            unless DuplicateGeometrySemantics.strict_handle_live?(h)
+              if h.nil?
+                return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
+              elsif h.respond_to?(:valid?)
+                return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
+              else
+                return { valid: false, reason: "non_survivor_handle_malformed_no_valid_predicate: #{id.inspect}" }
+              end
             end
           end
           # (3) Survivor appears exactly once and is not in
@@ -388,28 +412,39 @@ module SUAnalysis
       # code.
       # ------------------------------------------------------------
       def final_live_handle_proof(workspace:, per_action:)
+        # Per FIX-C: strict_handle_live? is the single source
+        # of truth for handle-liveness in the destructive
+        # path. A handle that lacks :valid?, returns nil /
+        # false from :valid?, or raises :valid? is NOT
+        # proven live and MUST trigger failure here.
         per_action.each do |act, to_remove, _present_ids, _invalid_ids|
           survivor_id = act.before_summary.is_a?(Hash) ?
                           act.before_summary['survivor_derived_id'].to_s : nil
           survivor_handle = nil
           if survivor_id && !survivor_id.empty?
             survivor_handle = workspace.handle_for(survivor_id)
-            if survivor_handle.nil?
-              return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
-            end
-            if survivor_handle.respond_to?(:valid?) && !survivor_handle.valid?
-              return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+            unless DuplicateGeometrySemantics.strict_handle_live?(survivor_handle)
+              if survivor_handle.nil?
+                return { valid: false, reason: "survivor_handle_missing: #{survivor_id.inspect}" }
+              elsif survivor_handle.respond_to?(:valid?)
+                return { valid: false, reason: "survivor_handle_invalidated: #{survivor_id.inspect}" }
+              else
+                return { valid: false, reason: "survivor_handle_malformed_no_valid_predicate: #{survivor_id.inspect}" }
+              end
             end
           end
           # Each to_remove member resolves to exactly one
-          # current host handle.
+          # current host handle (strict liveness).
           to_remove.each do |id|
             h = workspace.handle_for(id)
-            if h.nil?
-              return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
-            end
-            if h.respond_to?(:valid?) && !h.valid?
-              return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
+            unless DuplicateGeometrySemantics.strict_handle_live?(h)
+              if h.nil?
+                return { valid: false, reason: "non_survivor_handle_missing: #{id.inspect}" }
+              elsif h.respond_to?(:valid?)
+                return { valid: false, reason: "non_survivor_handle_invalidated: #{id.inspect}" }
+              else
+                return { valid: false, reason: "non_survivor_handle_malformed_no_valid_predicate: #{id.inspect}" }
+              end
             end
           end
           # Survivor appears exactly once and is not in the
@@ -448,30 +483,35 @@ module SUAnalysis
       # failed/non-ready.
       # ------------------------------------------------------------
       def precommit_host_shape_observation(workspace:, per_action:, adapter:, model:)
+        # Per FIX-C: use strict_handle_live? consistently for
+        # "is this handle still live?" checks. A removal
+        # handle is "no longer live" if (a) handle_for returns
+        # nil (handle cleared), (b) handle is present but
+        # !strict_handle_live? (invalidated), OR (c) the host
+        # disposed but the workspace never observed the
+        # invalidation -- in which case strict_handle_live?
+        # may still return true and we report host-shape
+        # mismatch.
         per_action.each do |act, to_remove, _present_ids, _invalid_ids|
           survivor_id = act.before_summary.is_a?(Hash) ?
                           act.before_summary['survivor_derived_id'].to_s : nil
-          # (1) Survivors still live/valid.
+          # (1) Survivors still live/valid (strict).
           if survivor_id && !survivor_id.empty?
             sh = workspace.handle_for(survivor_id)
-            if sh.nil? || (sh.respond_to?(:valid?) && !sh.valid?)
+            unless DuplicateGeometrySemantics.strict_handle_live?(sh)
               return { valid: false, reason: "precommit_survivor_handle_not_live: #{survivor_id.inspect}" }
             end
           end
           # (2) Planned removals observably no longer live/valid.
           to_remove.each do |id|
             h = workspace.handle_for(id)
-            if h.nil?
-              # handle was cleared by dispose -- expected.
-              next
+            # If the handle is still strictly live after
+            # dispose, that's a host-shape mismatch.
+            if DuplicateGeometrySemantics.strict_handle_live?(h)
+              return { valid: false, reason: "precommit_removal_handle_still_live: #{id.inspect}" }
             end
-            if h.respond_to?(:valid?) && !h.valid?
-              # handle invalidated by dispose -- expected.
-              next
-            end
-            # Handle still appears live/valid after dispose --
-            # this is a host-shape mismatch.
-            return { valid: false, reason: "precommit_removal_handle_still_live: #{id.inspect}" }
+            # Otherwise (handle nil OR !strict_handle_live?)
+            # this is expected.
           end
           # (3) Identities still match the proven batch.
           # This is the same check as the live-handle proof
@@ -556,10 +596,12 @@ module SUAnalysis
           ]
         end
         # Live-handle proof re-check on this single action.
+        # Per FIX-C: strict_handle_live? is the single source
+        # of truth.
         survivor_id = action.before_summary.is_a?(Hash) ? action.before_summary['survivor_derived_id'].to_s : nil
         if survivor_id && !survivor_id.empty?
           sh = workspace.handle_for(survivor_id)
-          if sh.nil? || (sh.respond_to?(:valid?) && !sh.valid?)
+          unless DuplicateGeometrySemantics.strict_handle_live?(sh)
             return [
               workspace,
               fail_action(action, reason: "survivor_handle_invalid: #{survivor_id.inspect}")
@@ -567,8 +609,10 @@ module SUAnalysis
           end
         end
         disposable_handles = to_remove.map { |id| [id, workspace.handle_for(id)] }
+        # Per FIX-C: a handle lacking valid? is NOT proven
+        # live and is NOT in `valid_pairs`.
         valid_pairs = disposable_handles.select do |_id, handle|
-          handle.respond_to?(:valid?) ? handle.valid? : true
+          DuplicateGeometrySemantics.strict_handle_live?(handle)
         end
         invalid_ids = disposable_handles.reject { |id, h| valid_pairs.any? { |vid, _vh| vid == id } }.map(&:first)
         begin
@@ -692,7 +736,9 @@ module SUAnalysis
                           act.before_summary['survivor_derived_id'].to_s :
                           nil
           next if survivor_id.nil? || survivor_id.empty?
-          next if workspace.handle_for(survivor_id).nil?
+          # Per FIX-C: the survivor handle must be strictly
+          # live for replacement to apply.
+          next unless DuplicateGeometrySemantics.strict_handle_live?(workspace.handle_for(survivor_id))
           updates[survivor_id] = Array(act.source_occurrence_ids).map(&:to_s)
         end
         updates
@@ -706,13 +752,15 @@ module SUAnalysis
           id.to_s
         }.reject { |id| removed_set.include?(id) }.sort
         tol = DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
-        unless DuplicateGeometrySemantics.valid_tolerance?(tol)
-          tol = DEFAULT_DUPLICATE_TOLERANCE
-        end
+        # Per FIX-A: if captured tolerance is missing /
+        # invalid we DO NOT silently fall back to
+        # DEFAULT_DUPLICATE_TOLERANCE. `tol` stays nil. The
+        # returned Hash surfaces the missing tolerance so the
+        # caller can fail closed.
         records = workspace.respond_to?(:entities) ? workspace.entities : []
         records = records.select { |r| r.is_a?(SUAnalysis::Core::DerivedEntityRecord) && r.kind == :edge }
         pre_classes = nil
-        if defined?(SUAnalysis::Core::DerivedDuplicateValidator)
+        if defined?(SUAnalysis::Core::DerivedDuplicateValidator) && DuplicateGeometrySemantics.valid_tolerance?(tol)
           pre_classes = SUAnalysis::Core::DerivedDuplicateValidator.group_derived_duplicates(
             workspace,
             tol
@@ -723,7 +771,8 @@ module SUAnalysis
           survivor_replacement_keys: (survivor_updates || {}).keys.sort,
           pre_classes_count:        pre_classes.is_a?(Hash) ? pre_classes.length : 0,
           pre_classes_keys:         pre_classes.is_a?(Hash) ? pre_classes.keys.sort : [],
-          captured_tolerance:       tol
+          captured_tolerance:       tol,
+          tolerance_valid:          DuplicateGeometrySemantics.valid_tolerance?(tol)
         }.freeze
       end
 

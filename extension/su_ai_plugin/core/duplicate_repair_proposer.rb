@@ -317,19 +317,29 @@ module SUAnalysis
         "geom|#{pair[0].join(',')}|#{pair[1].join(',')}|layer=#{norm_layer}"
       end
 
+      # Read the captured duplicate tolerance from a source
+      # snapshot. Per FIX-A: missing/invalid/non-numeric
+      # captured tolerance returns NIL, NOT a runtime
+      # fallback to DEFAULT_DUPLICATE_TOLERANCE. Production
+      # callers (the proposer and the audit summary) MUST
+      # treat nil as "no V1.5 auto-repair" or "no pair
+      # metric under missing tolerance".
       def read_duplicate_tolerance(source_snapshot)
-        return DEFAULT_DUPLICATE_TOLERANCE if source_snapshot.nil?
+        return nil if source_snapshot.nil?
         ec = source_snapshot.respond_to?(:execution_config) ? source_snapshot.execution_config : nil
-        return DEFAULT_DUPLICATE_TOLERANCE if ec.nil?
+        return nil if ec.nil?
         vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
-        return DEFAULT_DUPLICATE_TOLERANCE unless vals.is_a?(Hash)
+        return nil unless vals.is_a?(Hash)
         v = vals[:duplicate] || vals['duplicate']
-        v ? v.to_f : DEFAULT_DUPLICATE_TOLERANCE
+        return nil if v.nil?
+        DuplicateGeometrySemantics.parse_strict_tolerance(v)
       end
 
-      # Resolve captured tolerance. Captured wins; explicit
-      # workspace nil falls back to default ONLY when the
-      # workspace has no execution_config at all (defensive).
+      # Resolve captured tolerance. Captured wins; if the
+      # workspace cannot supply a captured value, fall back
+      # to the source snapshot's execution_config. Per FIX-A:
+      # missing/invalid captured tolerance returns NIL, NOT
+      # DEFAULT_DUPLICATE_TOLERANCE.
       def resolve_tolerance(source_snapshot, workspace)
         cap = DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
         return cap if cap
@@ -339,13 +349,10 @@ module SUAnalysis
           vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
           if vals.is_a?(Hash)
             v = vals[:duplicate] || vals['duplicate']
-            if v
-              f = v.to_f
-              return f if DuplicateGeometrySemantics.valid_tolerance?(f)
-            end
+            return DuplicateGeometrySemantics.parse_strict_tolerance(v) unless v.nil?
           end
         end
-        DEFAULT_DUPLICATE_TOLERANCE
+        nil
       end
 
       def finite_point?(p)
@@ -711,19 +718,34 @@ module SUAnalysis
         end
         # (3,4,5,6) Live-handle uniqueness + survivor
         # disjointness. Only when the workspace is supplied.
+        # Per FIX-C: a destructive batch member is live only
+        # when the handle is non-nil, exposes `valid?`, and
+        # `valid? == true` without raising. A handle that
+        # lacks `valid?`, returns nil from `valid?`, returns
+        # false from `valid?`, or RAISES while checking
+        # validity must NOT be treated as proven live.
         if !workspace.nil? && workspace.respond_to?(:handle_for)
           live_handles = {}
           members.each do |d|
             h = workspace.handle_for(d.derived_id.to_s)
-            if h.nil?
-              return { valid: false,
-                       reason: "duplicate derived record #{d.derived_id.inspect} has no live host handle (missing)",
-                       reason_code: REASON_HANDLE_MISSING }
-            end
-            if h.respond_to?(:valid?) && !h.valid?
-              return { valid: false,
-                       reason: "duplicate derived record #{d.derived_id.inspect} has an invalidated live host handle",
-                       reason_code: REASON_HANDLE_INVALID }
+            unless DuplicateGeometrySemantics.strict_handle_live?(h)
+              if h.nil?
+                return { valid: false,
+                         reason: "duplicate derived record #{d.derived_id.inspect} has no live host handle (missing)",
+                         reason_code: REASON_HANDLE_MISSING }
+              end
+              # Distinguish INVALID (handle exists but is no
+              # longer live/valid) from MALFORMED (handle does
+              # not expose `valid?` or `valid?` raises).
+              if h.respond_to?(:valid?)
+                return { valid: false,
+                         reason: "duplicate derived record #{d.derived_id.inspect} has an invalidated live host handle",
+                         reason_code: REASON_HANDLE_INVALID }
+              else
+                return { valid: false,
+                         reason: "duplicate derived record #{d.derived_id.inspect} host handle does not expose valid? (BLOCK-001 fail-closed)",
+                         reason_code: REASON_HANDLE_INVALID }
+              end
             end
             if live_handles.values.any? { |prev| prev.equal?(h) }
               return { valid: false,

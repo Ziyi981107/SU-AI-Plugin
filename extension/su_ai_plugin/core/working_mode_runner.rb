@@ -573,15 +573,40 @@ module SUAnalysis
         # DuplicateGeometrySemantics.count_direct_pairs (NOT
         # a surrogate). The captured tolerance is the one
         # the executor already used.
+        # Per FIX-A: when the captured tolerance is missing /
+        # invalid we DO NOT silently fall back to
+        # DEFAULT_DUPLICATE_TOLERANCE / the legacy 1e-4
+        # default. We report `nil` and surface a
+        # `tolerance_status` field so the UI can render the
+        # honest answer.
+        tolerance_status = if pre_workspace.respond_to?(:source_snapshot)
+                             cap = pre_workspace.source_snapshot.respond_to?(:execution_config) ?
+                                     pre_workspace.source_snapshot.execution_config : nil
+                             vals = cap.respond_to?(:tolerance_values) ? cap.tolerance_values : nil
+                             v = vals.is_a?(Hash) ? (vals[:duplicate] || vals['duplicate']) : nil
+                             if v.nil?
+                               'missing_captured_tolerance'
+                             elsif SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(v)
+                               'captured'
+                             else
+                               'invalid_captured_tolerance'
+                             end
+                           else
+                             'missing_captured_tolerance'
+                           end
         before_pairs = if pre_workspace.respond_to?(:entities)
                          tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(pre_workspace)
-                         unless SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(tol)
-                           tol = pre_workspace.respond_to?(:source_snapshot) ? SUAnalysis::Core::DuplicateRepairProposer.read_duplicate_tolerance(pre_workspace.source_snapshot) : nil
+                         if SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(tol)
+                           records = Array(pre_workspace.entities).select { |r| r.is_a?(SUAnalysis::Core::DerivedEntityRecord) && r.kind == :edge }
+                           SUAnalysis::Core::DuplicateGeometrySemantics.count_direct_pairs(records, tol)
+                         else
+                           # FIX-A: missing/invalid captured
+                           # tolerance; pair count is nil (not
+                           # a defaulted number).
+                           nil
                          end
-                         records = Array(pre_workspace.entities).select { |r| r.is_a?(SUAnalysis::Core::DerivedEntityRecord) && r.kind == :edge }
-                         SUAnalysis::Core::DuplicateGeometrySemantics.count_direct_pairs(records, tol)
                        else
-                         0
+                         nil
                        end
         # ---- duplicate_pairs_after ----
         # Measured from the actual post-batch workspace using
@@ -592,13 +617,28 @@ module SUAnalysis
         end
         if after_pairs.nil? && post_workspace.respond_to?(:entities)
           tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(post_workspace)
-          unless SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(tol)
-            tol = post_workspace.respond_to?(:source_snapshot) ? SUAnalysis::Core::DuplicateRepairProposer.read_duplicate_tolerance(post_workspace.source_snapshot) : nil
+          if SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(tol)
+            records = Array(post_workspace.entities).select { |r| r.is_a?(SUAnalysis::Core::DerivedEntityRecord) && r.kind == :edge }
+            after_pairs = SUAnalysis::Core::DuplicateGeometrySemantics.count_direct_pairs(records, tol)
+          else
+            after_pairs = nil
           end
-          records = Array(post_workspace.entities).select { |r| r.is_a?(SUAnalysis::Core::DerivedEntityRecord) && r.kind == :edge }
-          after_pairs = SUAnalysis::Core::DuplicateGeometrySemantics.count_direct_pairs(records, tol)
         end
-        after_pairs = 0 if after_pairs.nil?
+        # ---- normalize for stable UI consumption ----
+        # If we could not measure pairs (nil), we surface the
+        # honest answer (nil) plus a tolerance_status field.
+        # Existing UI consumers can render `nil` as "N/A".
+        # To preserve the existing JSON contract (integer
+        # fields), we coerce nil -> 0 only as a UI fallback
+        # when tolerance is genuinely missing/invalid; the
+        # `tolerance_status` field tells the UI to render an
+        # explanatory label rather than "0 duplicate pairs".
+        if before_pairs.nil? && tolerance_status == 'captured'
+          before_pairs = 0
+        end
+        if after_pairs.nil? && tolerance_status == 'captured'
+          after_pairs = 0
+        end
         # ---- class counts ----
         pre_count = pre_classes.is_a?(Hash) ? pre_classes.length : 0
         post_count = post_validation.is_a?(Hash) ? post_validation['duplicate_classes_after'].to_i : pre_count
@@ -634,6 +674,7 @@ module SUAnalysis
           'duplicate_classes_after'   => post_count,
           'derived_edge_count_before' => before_edge_count,
           'derived_edge_count_after'  => after_edge_count,
+          'tolerance_status'          => tolerance_status,
           'actions'                   => actions_list
         }.freeze
       end

@@ -65,11 +65,15 @@ module SUAnalysis
       end
 
       def resolve_tolerance(workspace, tolerance)
-        # Prefer explicit value, then captured, then default.
-        return tolerance.to_f if DuplicateGeometrySemantics.valid_tolerance?(tolerance)
-        cap = DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
-        return cap if cap
-        DEFAULT_TOLERANCE
+        # Prefer explicit value, then captured. Per FIX-A:
+        # missing/invalid captured tolerance returns NIL
+        # (NOT a runtime fallback to DEFAULT_TOLERANCE).
+        # Production callers MUST treat nil as "no
+        # auto-repair / no topology measurement".
+        if DuplicateGeometrySemantics.valid_tolerance?(tolerance)
+          return DuplicateGeometrySemantics.parse_strict_tolerance(tolerance)
+        end
+        DuplicateGeometrySemantics.resolve_captured_tolerance(workspace)
       end
 
       # Extract a tuple from a DerivedEntityRecord.

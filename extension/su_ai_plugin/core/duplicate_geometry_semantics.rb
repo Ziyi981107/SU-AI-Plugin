@@ -60,29 +60,94 @@ module SUAnalysis
       end
 
       # ===========================================================
-      # Tolerance validation. Per AIPM Round-5 §3:
+      # Strict tolerance parsing / validation.
+      # Per AIPM TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX
+      # §2 (FIX-A BLOCK-002A + 004):
       #   1. finite > 0  -> valid (tolerance-grid path)
       #   2. finite == 0 -> valid (exact-match path)
       #   3. missing / negative / NaN / ±Inf / non-numeric -> invalid
+      #   4. Permissive Ruby `.to_f` coercion is NOT used to
+      #      establish validity. A bare `t.to_f` would let
+      #      `"abc"`, `""`, `"  "`, `"1foo"` silently become a
+      #      valid 0.0 / 1.0. We use a strict parser that
+      #      accepts only:
+      #         - Numeric (Float / Integer) that is finite
+      #           and non-negative;
+      #         - String that strictly parses to a finite
+      #           non-negative Float via `Float(value)` (which
+      #           raises ArgumentError on partial or non-
+      #           numeric input, so `"1foo"` is rejected).
+      #      Anything else -> invalid.
       # The caller MUST treat invalid as "no V1.5 auto-repair".
       # Captured 0.0 must NEVER become 0.0001.
       # ===========================================================
 
+      def parse_strict_tolerance(value)
+        return nil if value.nil?
+        # Booleans are not tolerances.
+        return nil if value == true || value == false
+        # String: must strictly parse to a finite non-negative Float.
+        if value.is_a?(String)
+          s = value.to_s.strip
+          return nil if s.empty?
+          begin
+            f = Float(s)
+          rescue ArgumentError, TypeError
+            return nil
+          end
+          return nil unless f.respond_to?(:finite?) && f.finite?
+          return nil if f < 0.0
+          return f
+        end
+        # Numeric (Float, Integer, Rational, etc.): accept any
+        # finite non-negative value; coerce to Float so callers
+        # always receive a Float. Integer is accepted because
+        # the captured config may store the duplicate
+        # tolerance as an Integer literal.
+        if value.is_a?(Numeric)
+          f = value.to_f
+          return nil unless f.respond_to?(:finite?) && f.finite?
+          return nil if f < 0.0
+          return f
+        end
+        # Arbitrary non-numeric, non-string object: invalid.
+        nil
+      end
+
       def valid_tolerance?(tolerance)
-        return false if tolerance.nil?
-        v = tolerance.to_f
-        return false unless v.respond_to?(:finite?) && v.finite?
-        v >= 0.0
+        !parse_strict_tolerance(tolerance).nil?
+      end
+
+      # ===========================================================
+      # Strict destructive live-handle predicate (FIX-C).
+      # A handle is "live for destructive use" iff:
+      #   - handle is non-nil
+      #   - handle responds to :valid?
+      #   - handle.valid? returns true (without raising)
+      # A handle that:
+      #   - lacks :valid?
+      #   - returns nil from valid?
+      #   - returns false from valid?
+      #   - raises while checking valid?
+      # is NOT treated as proven live.
+      # ===========================================================
+      def strict_handle_live?(handle)
+        return false if handle.nil?
+        return false unless handle.respond_to?(:valid?)
+        begin
+          result = handle.valid?
+          return result == true
+        rescue StandardError
+          return false
+        end
       end
 
       # Round-5 helper: explicit tolerance category.
       # Returns one of :positive | :zero | :invalid.
       def tolerance_category(tolerance)
-        return :invalid if tolerance.nil?
-        v = tolerance.to_f
-        return :invalid unless v.respond_to?(:finite?) && v.finite?
-        return :invalid if v < 0.0
-        return :zero if v == 0.0
+        f = parse_strict_tolerance(tolerance)
+        return :invalid if f.nil?
+        return :zero if f == 0.0
         :positive
       end
 
@@ -219,16 +284,20 @@ module SUAnalysis
         enumerate_candidates_grid(tuples, tol)
       end
 
-      # Exact-zero path (BLOCK-002A Round-5). No grid math,
-      # no division. Orientation-insensitive endpoint-pair hash.
-      # Forward/reversed exact duplicates share one key.
+      # Exact-zero path (BLOCK-002A Round-5 + FIX-A §2.4). No
+      # grid math, no division. Orientation-insensitive
+      # endpoint-pair hash. Forward/reversed exact duplicates
+      # share one key. The normalized layer name IS part of
+      # the bucket key, so identical geometry on different
+      # non-equivalent layers does NOT share the same bucket.
       def enumerate_candidates_exact_zero(tuples)
         # Group tuples by orientation-insensitive exact edge
-        # key (lex-ordered endpoint triples, normalized numeric
-        # zero so -0.0 and +0.0 hash identically).
+        # key (lex-ordered endpoint triples + normalized
+        # layer; normalized numeric zero so -0.0 and +0.0
+        # hash identically).
         buckets = {}
         tuples.each_with_index do |t, i|
-          k = exact_edge_key(t[:start], t[:finish])
+          k = exact_edge_key(t[:start], t[:finish], t[:layer])
           (buckets[k] ||= []) << i
         end
         candidates = []
@@ -242,7 +311,9 @@ module SUAnalysis
             pair = [i, j]
             next if seen[pair]
             # Final authority is the shared direct_match? at
-            # tolerance 0 (exact endpoint equality).
+            # tolerance 0 (exact endpoint equality AND
+            # normalized layer equality). `direct_match?`
+            # already enforces layer equality.
             t_a = tuples[i]
             t_b = tuples[j]
             kind = direct_match?(t_a[:start], t_a[:finish], t_b[:start], t_b[:finish],
@@ -259,32 +330,32 @@ module SUAnalysis
       # Lex-orders the two endpoint triples and joins them
       # with the normalized layer. -0.0 and +0.0 produce the
       # same key (numeric zero normalization).
-      def exact_edge_key(s, f)
+      #
+      # Per FIX-A §2.4: the normalized layer IS part of the
+      # key so that identical geometry on different non-
+      # equivalent layers does not share a bucket. The
+      # previous implementation had a comment claiming layer
+      # was in the key but the implementation always passed
+      # `nil` (via `normalize_layer_bare`). That bug is fixed.
+      def exact_edge_key(s, f, layer)
         a = exact_endpoint_point(s)
         b = exact_endpoint_point(f)
-        layer = normalize_layer_bare(a[:layer])
+        # FIX-A §2.4: normalize the layer and put it in the
+        # key.
+        norm_layer = normalize_layer(layer)
         # Lex-order the two endpoints.
         pair = [a[:point], b[:point]].sort_by { |p| p.map(&:to_s).join(',') }
-        "exact|#{pair[0].join(',')}|#{pair[1].join(',')}|layer=#{layer}"
+        "exact|#{pair[0].join(',')}|#{pair[1].join(',')}|layer=#{norm_layer}"
       end
 
       # Extract a normalized endpoint triple. Numeric zero
       # is normalized so -0.0 and +0.0 collapse; finite
       # 3-Array Float is returned.
       def exact_endpoint_point(p)
-        return { point: [nil, nil, nil], layer: nil } unless finite_point?(p)
+        return { point: [nil, nil, nil] } unless finite_point?(p)
         pt = [p[0].to_f, p[1].to_f, p[2].to_f]
         pt = pt.map { |v| v == 0.0 ? 0.0 : v } # -0.0 -> 0.0
         { point: pt }
-      end
-
-      def normalize_layer_bare(_name)
-        # Internal layer normalization for keying. We need the
-        # layer name in the bucket key for non-zero tolerance
-        # semantics too. For exact-zero we keep the simple
-        # nil/empty/canonical normalization consistent with
-        # the existing normalize_layer.
-        nil
       end
 
       # Positive-tolerance grid path (Round-4 contract).
@@ -378,6 +449,11 @@ module SUAnalysis
       # fallback default). Production code must treat nil as
       # "no auto-repair" (BLOCK-004: no silent fallback to the
       # historical 1e-4 default).
+      #
+      # Per FIX-A: the captured value is parsed with
+      # `parse_strict_tolerance` so that `"abc"`, `""`, `"  "`,
+      # `"1foo"` are rejected -- permissive `.to_f` coercion is
+      # NEVER used as a validity proof.
       # ===========================================================
 
       def resolve_captured_tolerance(workspace)
@@ -390,9 +466,7 @@ module SUAnalysis
         return nil unless vals.is_a?(Hash)
         v = vals[:duplicate] || vals['duplicate']
         return nil if v.nil?
-        f = v.to_f
-        return nil unless valid_tolerance?(f)
-        f
+        parse_strict_tolerance(v)
       end
 
       # ===========================================================

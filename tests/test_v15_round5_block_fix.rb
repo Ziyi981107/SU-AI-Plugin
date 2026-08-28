@@ -1244,6 +1244,18 @@ test 'V15-B003-INV-I: pure-data applied_component_residual_duplicate_pair_in_exp
     'applied_action_ids'   => (state['applied_action_ids'] + ['phantom-action-2']).sort,
     'survivor_provenance_unions' => state['survivor_provenance_unions'].merge(
       new_survivor_id => ['occ-residual-1']
+    ),
+    # FIX-B invariant D: the pre-state-derived union must
+    # ALSO be populated for the phantom survivor so the
+    # exact-union invariant passes. The phantom survivor's
+    # pre-state record is the new entry in pre_inventory_ids
+    # (added above). For the purposes of invariant D-fix
+    # only, mirror the action's claimed union into the
+    # pre-state-derived map. The bug this test exercises is
+    # the residual direct-pair in post-geometry (invariant
+    # I), not the union mismatch.
+    'survivor_provenance_unions_from_pre_state' => (state['survivor_provenance_unions_from_pre_state'] || {}).merge(
+      new_survivor_id => ['occ-residual-1']
     )
   )
   # Recompute fingerprint to bypass Invariant E.
@@ -1543,4 +1555,847 @@ test 'V15-B005-PROD-1: production-path detection seam -- handle.valid? == false 
   # production observation seam.
   refute adapter.respond_to?(:host_state_changed?),
          'production-path: detection MUST NOT rely on a test-only adapter flag'
+end
+
+# ============================================================
+# Round-5 Source Review corrective regressions
+# Dispatch: SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01
+# Frozen Guidance: AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX
+# Covers FIX-A (strict tolerance + exact-zero layer key) +
+# FIX-B (exact deterministic provenance union) +
+# FIX-C (strict handle liveness).
+# ============================================================
+
+# ============================================================
+# FIX-A unit-level strict tolerance parsing
+# ============================================================
+
+test 'V15-FIXA-STR-1: parse_strict_tolerance("abc") is invalid (no permissive .to_f)' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('abc')
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('abc')
+  assert_equal :invalid, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category('abc')
+end
+
+test 'V15-FIXA-STR-2: parse_strict_tolerance("") is invalid' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('')
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('')
+  assert_equal :invalid, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category('')
+end
+
+test 'V15-FIXA-STR-3: parse_strict_tolerance("1foo") is invalid (no partial numeric coercion)' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('1foo')
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('1foo')
+  assert_equal :invalid, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category('1foo')
+end
+
+test 'V15-FIXA-STR-4: parse_strict_tolerance("  ") (blank) is invalid' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('  ')
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('  ')
+end
+
+test 'V15-FIXA-STR-5: parse_strict_tolerance("-1.0") (negative numeric string) is invalid' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('-1.0')
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('-1.0')
+end
+
+test 'V15-FIXA-STR-6: parse_strict_tolerance("0.0") (numeric zero string) is :zero' do
+  assert_equal 0.0,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('0.0')
+  assert SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?('0.0')
+  assert_equal :zero, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category('0.0')
+end
+
+test 'V15-FIXA-STR-7: parse_strict_tolerance("1.0") (positive numeric string) is :positive' do
+  assert_equal 1.0,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance('1.0')
+  assert_equal :positive, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category('1.0')
+end
+
+test 'V15-FIXA-STR-8: parse_strict_tolerance(arbitrary non-numeric object) is invalid' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance([])
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance({})
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?([])
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?({})
+end
+
+test 'V15-FIXA-STR-9: parse_strict_tolerance(Integer 5) is valid :positive' do
+  assert_equal 5.0,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance(5)
+  assert_equal :positive, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category(5)
+end
+
+test 'V15-FIXA-STR-10: parse_strict_tolerance(Integer 0) is valid :zero' do
+  assert_equal 0.0,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance(0)
+  assert_equal :zero, SUAnalysis::Core::DuplicateGeometrySemantics.tolerance_category(0)
+end
+
+test 'V15-FIXA-STR-11: parse_strict_tolerance(true / false) is invalid (Boolean is not tolerance)' do
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance(true)
+  assert_equal nil,
+               SUAnalysis::Core::DuplicateGeometrySemantics.parse_strict_tolerance(false)
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(true)
+  refute SUAnalysis::Core::DuplicateGeometrySemantics.valid_tolerance?(false)
+end
+
+# ============================================================
+# FIX-A: exact-zero layer-key correction
+# ============================================================
+
+test 'V15-FIXA-KEY-1: exact-zero identical geometry on different non-equivalent layers is NOT bucketed' do
+  # Two records with the same geometry on different
+  # non-equivalent layers must NOT produce a direct-match
+  # pair under exact-zero tolerance. The layer-key
+  # correction in exact_edge_key prevents them from
+  # sharing a bucket, and the shared direct_match? at
+  # tolerance 0 enforces normalized layer equality.
+  recs = [
+    { derived_id: 'a', start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], layer: 'WALL' },
+    { derived_id: 'b', start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], layer: 'DOOR' }
+  ]
+  pairs = SUAnalysis::Core::DuplicateGeometrySemantics.enumerate_candidates(recs, 0.0)
+  assert_equal [], pairs, 'different-layer exact duplicates MUST NOT match'
+end
+
+test 'V15-FIXA-KEY-2: exact-zero identical geometry on Layer0 vs layer0 (case-insensitive canonical) IS bucketed' do
+  # The layer canonicalization rules treat 'Layer0', 'layer0',
+  # 'LAYER0', 'default', 'untagged' all as 'Layer0'. So
+  # these two records MUST match.
+  recs = [
+    { derived_id: 'a', start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], layer: 'Layer0' },
+    { derived_id: 'b', start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], layer: 'layer0' }
+  ]
+  pairs = SUAnalysis::Core::DuplicateGeometrySemantics.enumerate_candidates(recs, 0.0)
+  assert_equal [[0, 1]], pairs, 'Layer0 case variants MUST match under exact-zero'
+end
+
+test 'V15-FIXA-KEY-3: exact-zero forward/reversed same-layer duplicates share key (1 pair)' do
+  recs = [
+    { derived_id: 'a', start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], layer: 'Layer0' },
+    { derived_id: 'b', start: [10.0, 0.0, 0.0], finish: [0.0, 0.0, 0.0], layer: 'Layer0' }
+  ]
+  pairs = SUAnalysis::Core::DuplicateGeometrySemantics.enumerate_candidates(recs, 0.0)
+  assert_equal [[0, 1]], pairs, 'forward/reversed same-layer duplicates MUST match under exact-zero'
+end
+
+test 'V15-FIXA-KEY-4: exact-edge key string includes the normalized layer' do
+  # Direct unit test of exact_edge_key -- the key must
+  # include layer=Layer0 (or its normalized form) so that
+  # different-layer records produce different keys.
+  k1 = SUAnalysis::Core::DuplicateGeometrySemantics.exact_edge_key(
+    [0.0, 0.0, 0.0], [10.0, 0.0, 0.0], 'WALL'
+  )
+  k2 = SUAnalysis::Core::DuplicateGeometrySemantics.exact_edge_key(
+    [0.0, 0.0, 0.0], [10.0, 0.0, 0.0], 'DOOR'
+  )
+  refute_equal k1, k2, 'identical geometry on different layers MUST produce different keys'
+  assert_match(/layer=WALL/, k1)
+  assert_match(/layer=DOOR/, k2)
+end
+
+# ============================================================
+# FIX-A: proposer / topology no-fallback regressions
+# ============================================================
+
+# Build a snapshot whose execution_config has tolerance_values
+# WITHOUT a :duplicate key (missing captured tolerance).
+def r5_exec_config_missing_duplicate
+  cap = ExecutionConfigSnapshot.from_live_config(
+    AnalysisConfig.new(profile_name: 'test'),
+    rule_set_digest: 'r5-rule-digest',
+    source_snapshot_schema_version: '1'
+  )
+  ExecutionConfigSnapshot.new(
+    profile_id: cap.profile_id,
+    profile_version: cap.profile_version,
+    rule_set_id: cap.rule_set_id,
+    rule_set_version: cap.rule_set_version,
+    rule_set_digest: cap.rule_set_digest,
+    tolerance_schema_version: cap.tolerance_schema_version,
+    tolerance_values: {}, # MISSING :duplicate key
+    session_overrides: cap.session_overrides,
+    source_snapshot_schema_version: cap.source_snapshot_schema_version
+  )
+end
+
+# Build a snapshot whose execution_config has an INVALID
+# captured duplicate tolerance (a string that permissive
+# .to_f would have silently coerced to 0.0).
+def r5_exec_config_invalid_duplicate(value)
+  cap = ExecutionConfigSnapshot.from_live_config(
+    AnalysisConfig.new(profile_name: 'test'),
+    rule_set_digest: 'r5-rule-digest',
+    source_snapshot_schema_version: '1'
+  )
+  ExecutionConfigSnapshot.new(
+    profile_id: cap.profile_id,
+    profile_version: cap.profile_version,
+    rule_set_id: cap.rule_set_id,
+    rule_set_version: cap.rule_set_version,
+    rule_set_digest: cap.rule_set_digest,
+    tolerance_schema_version: cap.tolerance_schema_version,
+    tolerance_values: { duplicate: value },
+    session_overrides: cap.session_overrides,
+    source_snapshot_schema_version: cap.source_snapshot_schema_version
+  )
+end
+
+test 'V15-FIXA-NOFALLBACK-1: proposer with missing captured duplicate tolerance -> skipped audit row, 0 applied' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  bad_ec = r5_exec_config_missing_duplicate
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  # No applied actions -- missing captured tolerance means
+  # the proposer emits an explicit skipped audit row.
+  assert_equal 0, snap['duplicate_repair']['actions_applied']
+  # tolerance_status MUST be 'missing_captured_tolerance'.
+  assert_equal 'missing_captured_tolerance', snap['duplicate_repair']['tolerance_status']
+  # No silent 0.0001 fallback: the pair count is reported as
+  # the honest nil/0 (per FIX-A no-fallback contract).
+  assert snap['duplicate_repair']['duplicate_pairs_before'].nil? || snap['duplicate_repair']['duplicate_pairs_before'] == 0
+end
+
+test 'V15-FIXA-NOFALLBACK-2: proposer with invalid captured duplicate tolerance ("abc") -> 0 applied, no default fallback' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  bad_ec = r5_exec_config_invalid_duplicate('abc')
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 0, snap['duplicate_repair']['actions_applied']
+  assert_equal 'invalid_captured_tolerance', snap['duplicate_repair']['tolerance_status']
+end
+
+test 'V15-FIXA-NOFALLBACK-3: proposer with negative captured duplicate tolerance -> 0 applied, no default fallback' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  bad_ec = r5_exec_config_invalid_duplicate(-0.5)
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 0, snap['duplicate_repair']['actions_applied']
+  assert_equal 'invalid_captured_tolerance', snap['duplicate_repair']['tolerance_status']
+end
+
+test 'V15-FIXA-NOFALLBACK-4: topology resolve_tolerance with no valid explicit/captured -> nil (no hidden default)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1])
+  bad_ec = r5_exec_config_missing_duplicate
+  src = r5_src_with_tolerance(base, bad_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  # resolve_tolerance must return nil, not 1.0e-4.
+  got = SUAnalysis::Core::DuplicateRepairProposer.resolve_tolerance(src, ws)
+  assert_nil got, "FIX-A: resolve_tolerance MUST return nil for missing captured (got #{got.inspect})"
+  # Also: DuplicateGeometrySemantics.resolve_captured_tolerance.
+  got2 = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  assert_nil got2, "FIX-A: resolve_captured_tolerance MUST return nil for missing captured (got #{got2.inspect})"
+  # And DerivedDuplicateTopology.resolve_tolerance.
+  got3 = SUAnalysis::Core::DerivedDuplicateTopology.resolve_tolerance(ws, nil)
+  assert_nil got3, "FIX-A: DerivedDuplicateTopology.resolve_tolerance MUST return nil (got #{got3.inspect})"
+end
+
+test 'V15-FIXA-NOFALLBACK-5: audit reports tolerance_status="captured" for valid tolerance, no fallback to DEFAULT_TOLERANCE' do
+  # Sanity: with a VALID captured tolerance (0.0),
+  # tolerance_status MUST be 'captured' (not 'missing' or
+  # 'invalid'). This guards against silent fallbacks.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  base = r5_snapshot(edges: [e1, e2])
+  good_ec = r5_exec_config_zero_tolerance
+  src = r5_src_with_tolerance(base, good_ec)
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_workspace, ws)
+  SUAnalysis::Core::WorkingModeRunner.instance_variable_set(:@current_source, src)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  snap = SUAnalysis::Core::WorkingModeRunner.snapshot
+  assert_equal 'captured', snap['duplicate_repair']['tolerance_status']
+  assert_equal 1, snap['duplicate_repair']['actions_applied']
+end
+
+# ============================================================
+# FIX-B: exact deterministic provenance union
+# ============================================================
+
+test 'V15-FIXB-PR-1: exact full union -> expected state is valid (baseline)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  assert_equal true, state['valid'], 'baseline: normal flow must produce valid state'
+  # survivor_provenance_unions_from_pre_state MUST equal
+  # survivor_provenance_unions for every survivor.
+  state['survivor_provenance_unions'].each do |sid, occs|
+    assert_equal Array(occs).map(&:to_s).uniq.sort,
+                 Array(state['survivor_provenance_unions_from_pre_state'][sid]).map(&:to_s).uniq.sort,
+                 "FIX-B baseline: #{sid} provenance union must equal pre-state-derived union"
+  end
+end
+
+test 'V15-FIXB-PR-2: union non-empty but missing one occurrence -> validate! detects before begin' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  assert_equal true, state['valid']
+  survivor_id = state['survivor_derived_ids'].first
+  # Drop one occurrence from the action's claimed union
+  # (the pre-state-derived union stays full).
+  claimed_full = Array(state['survivor_provenance_unions'][survivor_id]).map(&:to_s).uniq.sort
+  refute_empty claimed_full
+  truncated = claimed_full[0..-2]
+  refute_equal claimed_full, truncated
+  mutated_unions = state['survivor_provenance_unions'].dup
+  mutated_unions[survivor_id] = truncated
+  mutated = state.merge('survivor_provenance_unions' => mutated_unions)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid], 'FIX-B: missing occurrence MUST invalidate state'
+  assert_match(/survivor_provenance_union_mismatch/, v[:reason])
+end
+
+test 'V15-FIXB-PR-3: union has one extra occurrence -> validate! detects' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  survivor_id = state['survivor_derived_ids'].first
+  claimed_full = Array(state['survivor_provenance_unions'][survivor_id]).map(&:to_s).uniq.sort
+  expanded = (claimed_full + ['occ-phantom-extra']).uniq.sort
+  mutated_unions = state['survivor_provenance_unions'].dup
+  mutated_unions[survivor_id] = expanded
+  mutated = state.merge('survivor_provenance_unions' => mutated_unions)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid], 'FIX-B: extra occurrence MUST invalidate state'
+  assert_match(/survivor_provenance_union_mismatch/, v[:reason])
+end
+
+test 'V15-FIXB-PR-4: survivor provenance entry missing from action map -> validate! detects' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  survivor_id = state['survivor_derived_ids'].first
+  # Remove the survivor entry from the action map; the
+  # pre-state-derived map still has it.
+  mutated_unions = state['survivor_provenance_unions'].dup
+  mutated_unions.delete(survivor_id)
+  mutated = state.merge('survivor_provenance_unions' => mutated_unions)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/survivor_provenance_union_key_mismatch/, v[:reason])
+end
+
+test 'V15-FIXB-PR-5: action provenance disagrees with authoritative pre-state union (3 distinct occurrences) -> invalid' do
+  # Build a fixture where 3 source-occurrence IDs participate
+  # in the applied component. Then mutate the action's
+  # claimed union so it loses one of those occurrences
+  # while the pre-state-derived map still has it. The
+  # validator must catch the mismatch BEFORE begin.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e_a = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 200)
+  e_b = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 201)
+  e_c = r5_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 202)
+  src = r5_snapshot(edges: [e_a, e_b, e_c])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e_a.start_point, finish: e_a.end_point, source_edge: e_a),
+    r5_derived_edge(derived_id: 'der-1', start: e_b.start_point, finish: e_b.end_point, source_edge: e_b),
+    r5_derived_edge(derived_id: 'der-2', start: e_c.start_point, finish: e_c.end_point, source_edge: e_c)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|0|2', edge_ids: [0, 2], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|1|2', edge_ids: [1, 2], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  assert_equal true, state['valid'], 'baseline: 3-member clique must produce valid state'
+  survivor_id = state['survivor_derived_ids'].first
+  pre_state_union = Array(state['survivor_provenance_unions_from_pre_state'][survivor_id]).map(&:to_s).uniq.sort
+  assert pre_state_union.length >= 3, "fixture sanity: pre-state union must have >=3 occurrences (got #{pre_state_union.length})"
+  # Mutate the action's claimed union: drop one occurrence.
+  truncated = pre_state_union - [pre_state_union.first]
+  mutated_unions = state['survivor_provenance_unions'].dup
+  mutated_unions[survivor_id] = truncated
+  mutated = state.merge('survivor_provenance_unions' => mutated_unions)
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(mutated, ws)
+  assert_equal false, v[:valid]
+  assert_match(/survivor_provenance_union_mismatch/, v[:reason])
+end
+
+test 'V15-FIXB-PR-6: correct provenance still yields exact prevalidated post fingerprint' do
+  # The fingerprint is computed from post_inventory +
+  # post_geometry. After FIX-B, the post_geometry for
+  # survivors carries the exact union. The recomputed
+  # fingerprint MUST equal the stored fingerprint.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  tol = SUAnalysis::Core::DuplicateGeometrySemantics.resolve_captured_tolerance(ws)
+  state = SUAnalysis::Core::DuplicateRepairExpectedPostState.build(
+    workspace: ws, applied_actions: runnable, captured_tolerance: tol
+  )
+  # Recompute fingerprint from post_inventory + post_geometry.
+  recomputed = SUAnalysis::Core::DuplicateRepairExpectedPostState.send(
+    :compute_expected_fingerprint, state['post_inventory_ids'], state['post_geometry']
+  )
+  assert_equal state['post_fingerprint'], recomputed
+  # Also: validate! must agree.
+  v = SUAnalysis::Core::DuplicateRepairExpectedPostState.validate!(state, ws)
+  assert_equal true, v[:valid]
+end
+
+test 'V15-FIXB-PR-EXEC: provenance mismatch at executor -> begin=0, no disposal/commit, no READY, source immutable' do
+  # Wire an executor-level test that injects a provenance
+  # mismatch (via the action's source_occurrence_ids
+  # disagreeing with the pre-state records) and asserts
+  # the executor fails closed BEFORE begin_operation.
+  # We achieve this by rebuilding the workspace with each
+  # derived record having a truncated source_occurrence_ids
+  # (one fewer than the original). The proposer's action
+  # carries the original union (3 occurrences); the
+  # post-state validator's pre-state-derived union has 2
+  # occurrences; mismatch -> fail before begin.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e_a = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 200)
+  e_b = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 201)
+  e_c = r5_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100], pid: 202)
+  src = r5_snapshot(edges: [e_a, e_b, e_c])
+  full_records = [
+    r5_derived_edge(derived_id: 'der-0', start: e_a.start_point, finish: e_a.end_point, source_edge: e_a),
+    r5_derived_edge(derived_id: 'der-1', start: e_b.start_point, finish: e_b.end_point, source_edge: e_b),
+    r5_derived_edge(derived_id: 'der-2', start: e_c.start_point, finish: e_c.end_point, source_edge: e_c)
+  ]
+  ws_full = r5_workspace(snapshot: src, records: full_records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|0|2', edge_ids: [0, 2], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|1|2', edge_ids: [1, 2], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_full, registry: registry, snapshot: src)
+  # Build a new workspace where each record has a
+  # truncated source_occurrence_ids (drop last).
+  adapter = ws_full.instance_variable_get(:@adapter)
+  model   = ws_full.instance_variable_get(:@model)
+  truncated_pairs = ws_full.instance_variable_get(:@entity_pairs).map do |id, rec|
+    truncated_occs = Array(rec.source_occurrence_ids)[0..-2] || []
+    replacement = SUAnalysis::Core::DerivedEntityRecord.new(
+      derived_id:            rec.derived_id,
+      kind:                  rec.kind,
+      source_occurrence_ids: truncated_occs.freeze,
+      geometry_summary:      rec.geometry_summary,
+      parent_derived_id:     rec.parent_derived_id,
+      host_assigned_ids:     rec.host_assigned_ids
+    )
+    [id, replacement]
+  end
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_full.workspace_id,
+    source_snapshot: ws_full.source_snapshot,
+    adapter:         adapter,
+    model:           model,
+    state:           :ready,
+    entity_pairs:    truncated_pairs,
+    handle_registry: ws_full.instance_variable_get(:@handle_registry),
+    fingerprint:     ws_full.send(:compute_fingerprint_from_pairs, truncated_pairs),
+    last_error:      nil,
+    build_started_at: ws_full.build_started_at
+  )
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  pre_fp = ws.fingerprint
+  pre_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+    workspace: ws, plan: plan
+  )
+  # The executor MUST detect the provenance union mismatch
+  # in the expected post-state validation and fail BEFORE
+  # begin_operation.
+  assert_equal 0, counter[:begin_calls],
+               "FIX-B provenance mismatch MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.none? { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+  assert_equal :failed, new_ws.state
+  assert_match(/survivor_provenance_union_mismatch|expected_post_state_invalid/, new_ws.last_error.to_s)
+  # Logical pre-state retained.
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+  assert_equal pre_fp, new_ws.fingerprint
+  # Source immutable.
+  post_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  assert_equal pre_src_fp, post_src_fp
+end
+
+# ============================================================
+# FIX-C: strict destructive handle liveness hardening
+# ============================================================
+
+# A handle object that DOES NOT respond to :valid? at all.
+# Per FIX-C, this MUST be detected as non-live for
+# destructive execution.
+class NoValidPredicateHandle
+  attr_reader :name
+  def initialize(name); @name = name.to_s; end
+  def erase!; @erased = true; true; end
+  def erased?; @erased == true; end
+end
+
+# A handle object whose :valid? returns nil. Per FIX-C,
+# this MUST be detected as non-live (only valid? == true
+# is live).
+class NilValidPredicateHandle
+  attr_reader :name
+  def initialize(name); @name = name.to_s; @valid = true; end
+  def valid?; nil; end
+  def erase!; @valid = false; true; end
+end
+
+# A handle object whose :valid? raises. Per FIX-C, this
+# MUST be detected as non-live.
+class RaiseValidPredicateHandle
+  attr_reader :name
+  def initialize(name); @name = name.to_s; end
+  def valid?; raise StandardError, 'valid? raised for test'; end
+  def erase!; true; end
+end
+
+test 'V15-FIXC-HDL-1: destructive member handle missing :valid? -> fail before begin' do
+  # Build a normal workspace + plan, then rebuild the
+  # workspace with ONE removal handle replaced by a
+  # NoValidPredicateHandle (no :valid? at all). The
+  # executor's strict_handle_live? predicate must detect
+  # the missing valid? and fail the batch before
+  # begin_operation.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  removal_ids = runnable.flat_map { |a| Array(a.affected_derived_ids) }.uniq
+  survivor_id = runnable.first.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  # Rebuild the workspace with the removal handle
+  # replaced by one that does NOT respond to :valid?.
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = NoValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+    workspace: ws, plan: plan
+  )
+  assert_equal 0, counter[:begin_calls],
+               "FIX-C: handle missing :valid? MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.none? { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+  assert_equal :failed, new_ws.state
+  assert_match(/handle_invalidated|malformed_no_valid_predicate|final_live_handle_proof_failed|preflight_failed/, new_ws.last_error.to_s)
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids, 'exact logical pre-state: entity inventory unchanged'
+end
+
+test 'V15-FIXC-HDL-2: valid? returns nil -> fail before begin' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  removal_ids = runnable.flat_map { |a| Array(a.affected_derived_ids) }.uniq
+  survivor_id = runnable.first.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = NilValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+    workspace: ws, plan: plan
+  )
+  assert_equal 0, counter[:begin_calls],
+               "FIX-C: valid? returning nil MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.none? { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+  assert_equal :failed, new_ws.state
+  assert_match(/handle_invalidated|final_live_handle_proof_failed|preflight_failed/, new_ws.last_error.to_s)
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+end
+
+test 'V15-FIXC-HDL-3: valid? raises StandardError -> fail before begin' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  removal_ids = runnable.flat_map { |a| Array(a.affected_derived_ids) }.uniq
+  survivor_id = runnable.first.before_summary['survivor_derived_id']
+  removal_id = (removal_ids - [survivor_id]).first
+  new_handles = ws_seed.instance_variable_get(:@handle_registry).dup
+  new_handles[removal_id] = RaiseValidPredicateHandle.new(removal_id)
+  ws = SUAnalysis::Core::DerivedGeometryWorkspace.new_with_inventory(
+    workspace_id:    ws_seed.workspace_id,
+    source_snapshot: ws_seed.source_snapshot,
+    adapter:         ws_seed.instance_variable_get(:@adapter),
+    model:           ws_seed.instance_variable_get(:@model),
+    state:           :ready,
+    entity_pairs:    ws_seed.instance_variable_get(:@entity_pairs),
+    handle_registry: new_handles.freeze,
+    fingerprint:     ws_seed.fingerprint,
+    last_error:      nil,
+    build_started_at: ws_seed.build_started_at
+  )
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+    workspace: ws, plan: plan
+  )
+  assert_equal 0, counter[:begin_calls],
+               "FIX-C: valid? raising StandardError MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.none? { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+  assert_equal :failed, new_ws.state
+  assert_match(/handle_invalidated|final_live_handle_proof_failed|preflight_failed/, new_ws.last_error.to_s)
+end
+
+test 'V15-FIXC-HDL-4: strict_handle_live? unit tests' do
+  assert_equal false, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(nil)
+  assert_equal false, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(NoValidPredicateHandle.new('h'))
+  assert_equal false, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(NilValidPredicateHandle.new('h'))
+  assert_equal false, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(RaiseValidPredicateHandle.new('h'))
+  # valid handle
+  valid_handle = Object.new
+  def valid_handle.valid?; true; end
+  assert_equal true, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(valid_handle)
+  # valid? returns false
+  invalid_handle = Object.new
+  def invalid_handle.valid?; false; end
+  assert_equal false, SUAnalysis::Core::DuplicateGeometrySemantics.strict_handle_live?(invalid_handle)
+end
+
+test 'V15-FIXC-HDL-5: existing valid-handle success path remains green (sanity)' do
+  # Sanity check: a normal workspace with valid handles
+  # still produces 1 applied action. This guards against
+  # FIX-C accidentally breaking the happy path.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws, registry: registry, snapshot: src)
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply_batch(
+    workspace: ws, plan: plan
+  )
+  applied = updated.select { |a| a.is_a?(SUAnalysis::Core::RepairAction) && a.status == :applied }
+  assert_equal 1, applied.length, 'happy path: 1 applied action'
+  assert_equal :ready, new_ws.state
 end
