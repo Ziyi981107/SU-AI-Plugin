@@ -354,7 +354,8 @@ Per AIPM Source Review verdict and the dispatch §5:
 | Item | Value |
 |---|---|
 | Implementation commit | `874149dc7488ff8c844e16fb6e0e6013df9abfa6` |
-| Final stable commit | `874149dc7488ff8c844e16fb6e0e6013df9abfa6` (local-only on `dev/v1.5`; SHA-stamp commit follows) |
+| SHA-stamp commit | `b868cf4bad78bff2e3510481368e838e1459320c` |
+| Final stable commit (HEAD) | `b868cf4bad78bff2e3510481368e838e1459320c` (local-only on `dev/v1.5`) |
 | Push status | `PUSH NOT POSSIBLE — NO REMOTE` |
 | `git status --short` (after stable commit + SHA stamp) | untracked: 7 AIPM review evidence `.txt` files preserved per dispatch §Preflight |
 | `git diff --check` | clean |
