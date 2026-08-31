@@ -246,7 +246,7 @@ module SUAnalysis
           member_derived_ids = member_records.map { |d| d.derived_id.to_s }.sort
           sorted_ids = member_derived_ids.dup
           survivor_id = sorted_ids.first
-          removed_ids = sorted_ids[1..] || []
+          removed_ids = sorted_ids[1..-1] || []
           # Round-4 BLOCK-002: derive the BASIS KIND for the
           # action from the survivor-vs-next-member geometric
           # relationship. The canonical class is orientation-
@@ -887,7 +887,7 @@ module SUAnalysis
         members = c[:members]
         sorted_ids = members.map { |d| d.derived_id.to_s }.sort
         survivor_id = sorted_ids.first
-        removed_ids = sorted_ids[1..] || []
+        removed_ids = sorted_ids[1..-1] || []
         provenance_union = members
                              .flat_map { |d| Array(d.source_occurrence_ids).map(&:to_s) }
                              .uniq
