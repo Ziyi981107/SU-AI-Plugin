@@ -3,13 +3,13 @@
 Project: SU-AI-Plugin
 Version: V1.5
 Stage: Round-5 AIPM Source Review corrective NARROW CONTINUATION
-Dispatch: `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01` (NARROW CONTINUATION of the SAME dispatch)
+Dispatch: `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01` (NARROW CONTINUATION of the SAME dispatch; this update covers the CRASH-RECOVERY RESUME for FIX-SR-04)
 Dispatcher: ChatGPT / AIPM
 AIPM reviewed commit: `874149dc7488ff8c844e16fb6e0e6013df9abfa6` (the prior Round-5 corrective implementation)
 AIPM verdict: FIX REQUIRED — narrow implementation correction
 Frozen Guidance (unchanged): `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
 Branch: `dev/v1.5`
-Status: **IMPLEMENTATION COMPLETE — PUSHED — STOPPED awaiting AIPM direct GitHub Source Review**
+Status: **FIX-SR-04 IMPLEMENTATION COMPLETE — PUSHED — STOPPED awaiting AIPM direct GitHub Source Review**
 
 ---
 
@@ -401,5 +401,217 @@ full V15 147/147 PASS, full Ruby 811/811 PASS, RBZ smoke
 RBZ rebuilt with new SHA-256
 `49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF`
 (size 641,652 bytes, 59 entries); pushed to
+`origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi
+STOPPED awaiting AIPM direct GitHub Source Review.**
+
+---
+
+## §14. CRASH-RECOVERY RESUME — FIX-SR-04 (THIS UPDATE)
+
+This is a NARROW CONTINUATION of the SAME dispatch
+`SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`. It is NOT
+a new Round, NOT a new Dispatch ID, NOT a redesign.
+
+AIPM directly reviewed commit `8895485…` (the prior NARROW
+CONTINUATION implementation) and reported that the public
+single-action entry `DuplicateRepairExecutor.apply(...)`
+still pre-filtered nil removal handles out before calling
+`apply_atomic`:
+
+```ruby
+present = to_remove.select { |id| !workspace.handle_for(id).nil? }
+```
+
+This created an unsafe mixed-state path:
+- removal A = valid/live;
+- removal B = nil;
+
+B was filtered out before strict preflight saw it; A alone
+would be disposed, producing host/logical divergence.
+
+The previous Pi process terminated unexpectedly. The local
+repo MAY have contained partial FIX-SR-04 work. This is the
+CRASH-RECOVERY RESUME.
+
+### 14.0 Crash-recovery classification
+
+| Item | Value |
+|---|---|
+| Recovery case | **A — no FIX-SR-04 work exists** |
+| Starting local HEAD | `9099f66a0c7d43ba149b83e4a3399361f863d383` |
+| Starting `origin/dev/v1.5` HEAD | `9099f66a0c7d43ba149b83e4a3399361f863d383` |
+| Local HEAD == origin HEAD | YES (both `9099f66`) |
+| Tracked modifications at start | NONE (`git diff --stat` empty) |
+| Stash entries | NONE |
+| Untracked files preserved | 7 AIPM Review evidence `.txt` files |
+| Untracked files added / deleted / committed | NO |
+| `git diff --check` at start | clean |
+| `git reset` / `clean` / `stash` / `merge` / `rebase` | NOT performed |
+
+Crash-recovery classification = **CASE A**, no partial
+work, so FIX-SR-04 implemented from scratch within the same
+frozen Guidance.
+
+### 14.1 FIX-SR-04 — required behavior
+
+- ALL intended removal handles nil → keep historical
+  `already_applied` behavior (no host mutation, action
+  transitions to `:skipped`).
+- MIXED (some nil, some non-nil) → fail closed BEFORE
+  host mutation:
+  - `begin_calls == 0`, `dispose_calls == 0`,
+    `commit_calls == 0`, `abort_calls == 0`;
+  - action is NOT `:applied` (transitions to `:failed`);
+  - no partial deletion;
+  - logical entity inventory unchanged;
+  - logical workspace fingerprint unchanged;
+  - source immutable;
+  - truthful stable reason
+    `removal_handle_not_strictly_live: [<id>:missing; ...]`.
+- ALL non-nil → existing strict-liveness path
+  (FIX-SR-01 already in place).
+
+### 14.2 FIX-SR-04 — implementation summary
+
+`extension/su_ai_plugin/core/duplicate_repair_executor.rb`
+
+- Removed the pre-filter step
+  `present = to_remove.select { |id| !workspace.handle_for(id).nil? }`
+  and the dead `present.empty?` branch.
+- Pass the COMPLETE intended `to_remove` set into
+  `apply_atomic` (Option B from the dispatch).
+- Reuse the existing `apply_atomic` strict-liveness
+  contract (FIX-SR-01):
+  - `strict_handle_live?(handle)` returns `false` for
+    nil, no-`:valid?`, nil-`valid?`, false-`valid?`, or
+    raise-`valid?`;
+  - the existing `unless invalid_ids.empty?` fail-closed
+    branch handles nil-removal members transparently;
+  - a MIXED set therefore fails closed BEFORE
+    `begin_operation`, with no partial execution and no
+    host/logical divergence.
+- No new predicate, no new architecture. Smallest repo-
+  fitting correction. Historical `already_applied`
+  behavior preserved (the `to_remove.all? { nil? }`
+  early-return is unchanged and remains the first thing
+  `apply()` checks).
+
+### 14.3 Changed files (THIS UPDATE)
+
+| File | Change |
+|---|---|
+| `extension/su_ai_plugin/core/duplicate_repair_executor.rb` | `apply()` no longer pre-filters nil removal handles; passes the complete intended `to_remove` set into `apply_atomic` so the existing strict-liveness contract (FIX-SR-01) rejects any nil / non-live member before `begin_operation`. Historical `already_applied` semantics preserved. |
+| `tests/test_v15_round5_block_fix.rb` | +2 focused regressions: V15-SR04-1 (mixed nil + live removal -> fail closed, no partial execution, fingerprint unchanged, source immutable), V15-SR04-2 (all removals nil -> preserved `already_applied` `:skipped` skip, no `:failed`, no host calls). |
+
+No other production / test files modified.
+
+### 14.4 Regression results (THIS UPDATE)
+
+| Suite | Result |
+|---|---|
+| FIX-SR-04 focused | 2/2 PASS (added) |
+| NARROW CONTINUATION (SR01/02/03/04) | 18/18 PASS |
+| Full V15 | **149/149 PASS** |
+| Full Ruby suite | **813/813 PASS** |
+| RBZ smoke | 9/9 PASS (post-rebuild) |
+| Node DOM | 163/163 PASS |
+| `git diff --check` | clean |
+
+Implementation / test evidence only. Do not by themselves
+close the AIPM BLOCK on BLOCK-005, prove real-host
+behavior, or substitute for Owner verification.
+
+### 14.5 RBZ evidence (THIS UPDATE)
+
+Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+
+| Property | Value |
+|---|---|
+| Size | 642,033 bytes |
+| Entries | 59 |
+| SHA-256 | `D48B6ED0DC29C8B574946C46DB3DCE122FC54797D4D4384CE89A2FECA5605E84` |
+| Previous NARROW CONTINUATION SHA | `49C3182845CDE8CD8561FDF6BDF83D0AFF5907C267D0C4D5BFFCB7772AA598DF` |
+
+Production source is changed (1 file), so the RBZ hash is
+NEW. Build command:
+
+```bash
+.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb
+```
+
+Build output:
+
+```text
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 642033 bytes
+    entries: 59
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+This RBZ is **not approved for Owner installation** until
+the AIPM Owner verification file is republished AND (if
+AIPM chooses) the next Codex narrow xHigh recheck passes.
+
+### 14.6 AIPM finding -> implementation -> regression mapping
+
+| AIPM finding (FIX-SR-04) | Implementation site | Regressions |
+|---|---|---|
+| `apply()` pre-filtered `present = to_remove.select { !nil? }`, hiding nil members from strict preflight and producing partial-action host/logical divergence. | `duplicate_repair_executor.rb#apply` — pass the COMPLETE `to_remove` set into `apply_atomic`. Reuses existing strict-liveness contract. | V15-SR04-1 (mixed set -> fail closed before begin, no partial execution, fingerprint unchanged, source immutable, valid removal handle remains strictly live) + V15-SR04-2 (all nil -> preserved `:skipped` `already_applied` behavior, no `:failed`, no host calls, workspace state unchanged, fingerprint unchanged, source immutable). |
+
+### 14.7 Git / Push summary
+
+| Item | Value |
+|---|---|
+| Starting HEAD | `9099f66a0c7d43ba149b83e4a3399361f863d383` |
+| Implementation commit | (see §14.8) |
+| `git status --short` (before commit) | modified: 2 tracked files; untracked: 7 AIPM evidence `.txt` files (preserved) |
+| `git diff --check` (final) | clean |
+| Pushed to | `origin/dev/v1.5` |
+| `main` pushed / merged | no |
+| force-push | no |
+| release / tag | no |
+| BLOCK-005 touched | no |
+| V1.6 started | no |
+| Untracked AIPM evidence files modified / deleted | no |
+
+### 14.8 Hard STOP
+
+Per the CRASH-RECOVERY RESUME instruction §7 and §8:
+
+> Return: crash-recovery case, starting HEAD,
+> starting origin HEAD, partial-work status, preserved
+> work, final implementation commit, final HEAD, origin
+> SHA, changed files, implementation summary,
+> regression results, RBZ evidence, final
+> `git status --short`. Then STOP.
+
+STOP is in effect. Control returns to AIPM for direct
+GitHub Source Review of the FIX-SR-04 packet, then
+Owner-checklist republish, then optional Codex narrow
+xHigh recheck.
+
+---
+
+# One-Line FIX-SR-04 Update
+
+**V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
+(CRASH-RECOVERY RESUME) is complete within the same frozen
+`Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`:
+FIX-SR-04 removes the `present = to_remove.select { !nil? }`
+pre-filter in `DuplicateRepairExecutor.apply` and passes the
+COMPLETE intended `to_remove` set into `apply_atomic`, so
+the existing strict-liveness contract (FIX-SR-01) rejects
+any nil / non-live member and a MIXED removal set fails
+closed BEFORE `begin_operation` (no partial execution, no
+host/logical divergence); the historical `already_applied`
+all-nil path is preserved; 2 new focused regressions added
+(V15-SR04-1 mixed set -> fail closed, V15-SR04-2 all nil
+-> preserved `:skipped` `already_applied`); full V15
+149/149 PASS, full Ruby 813/813 PASS, RBZ smoke 9/9 PASS,
+Node DOM 163/163 PASS, `git diff --check` clean; RBZ
+rebuilt with new SHA-256
+`D48B6ED0DC29C8B574946C46DB3DCE122FC54797D4D4384CE89A2FECA5605E84`
+(size 642,033 bytes, 59 entries); pushed to
 `origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi
 STOPPED awaiting AIPM direct GitHub Source Review.**
