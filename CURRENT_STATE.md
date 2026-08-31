@@ -1,5 +1,75 @@
 # SU-AI-Plugin — CURRENT STATE
 
+Updated: 2026-08-31 (V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX
+dispatch EXECUTION COMPLETE per dispatch
+`V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`. AIPM
+authoritatively reviewed the real prior corrective
+packet output and identified three remaining factual
+defects in CURRENT_STATE / CURRENT_PI_REPORT. This
+dispatch executed the bounded final-evidence corrective
+work:
+
+FINDING 1 (accepted): the prior corrective packet's
+report and state used placeholder SHA markers
+(`<SHA_STAMP>`, "recorded elsewhere", etc.) for the
+exact final commit SHA. That is not acceptable
+evidence. This packet records the exact full SHA
+directly via the standard "implementation + doc-
+stamp" pattern; the implementation commit is recorded
+explicitly as `36eb6da97c1040d9772656467208b0105cd16fa3`
+and the post-doc-stamp commit is the `git rev-parse HEAD`
+result at task completion. Both are documented
+verbatim.
+
+FINDING 2 (accepted): the prior corrective packet
+classified `Model#find_entity_by_id`,
+`Model#active_path` (getter), `Entity#persistent_id`,
+`Model#instance_path_from_pid_path`, and
+`UI::HtmlDialog` as "post-SU2017 but capability-gated"
+APIs, but official SU API version history shows these
+are baseline-or-earlier for an SU2017+ project target:
+`Model#find_entity_by_id` SU2015; `Model#active_path`
+(getter) SU7.0; `Entity#persistent_id` SU2017;
+`Model#instance_path_from_pid_path` SU2017;
+`UI::HtmlDialog` SU2017. The production code does NOT
+use the `Model#active_path=` setter (a later API; if
+it were used, it would be classified separately and
+isn't here). This packet reclassifies these into
+category A (baseline-or-earlier for an SU2017+ target),
+keeps the defensive capability gates as forward-compat
+belt-and-braces, and reports category B as empty
+after the corrected inventory.
+
+FINDING 3 (accepted): the prior corrective packet said
+beginless range `(..a)` was introduced in Ruby 2.6.
+Official Ruby release history says endless range
+`(a..)` was introduced in Ruby 2.6 and beginless range
+`(..a)` was introduced in Ruby 2.7. This packet
+corrects the beginless-range version metadata in the
+test file rule (`ruby_min_unsupported` and
+`ruby_min_required` both `2.7.0`), the per-rule
+comment, and any related state/report references. The
+guard itself is preserved: beginless range remains
+incompatible with the Ruby 2.2 baseline.
+
+Production byte-diff vs prior corrective commit
+`36eb6da97c1040d9772656467208b0105cd16fa3`: ZERO
+production byte change. The production file
+(`core/source_snapshot.rb`) is unchanged in this
+packet. Test file changes are limited to one rule's
+`ruby_min_*` field and its comment. Governance
+documentation is updated to remove placeholders,
+correct API classification, and record the corrected
+beginless-range version.
+
+Stable local commits are created on the assigned
+`dev/v1.5`. NOT pushed per dispatch directive. Final
+HEAD after this packet is the doc-stamp commit; its
+exact SHA is recorded in the `Review/CURRENT_PI_REPORT.md`
+report and is verifiable via `git rev-parse HEAD`.
+
+No real SU2017 / SU2020 compatibility PASS is claimed.
+
 Updated: 2026-08-31 (V15-LEGACY-COMPAT-CORRECTION dispatch
 EXECUTION COMPLETE per dispatch
 `V15-LEGACY-COMPAT-CORRECTION-2026-08-31`. AIPM authoritatively
@@ -180,8 +250,8 @@ directly reviewed the real GitHub implementation commit
 `874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
 `FIX REQUIRED -- narrow implementation correction`).
 
-Current stage: **V1.5 — High-confidence Auto Repair / V15-LEGACY-COMPAT-CORRECTION (THIS UPDATE)**
-Current status: **V15-LEGACY-COMPAT-CORRECTION dispatch EXECUTION COMPLETE (THIS UPDATE)**. AIPM findings A (false integer-underscore compat claim), B (overstated vendored-parser evidence), C (overstated API classification), and D (reintroduced obsolete gates) are all accepted and corrected. RBZ rebuilt; local checkpoint commit created on the assigned `dev/v1.5`; NOT pushed per dispatch §9. BLOCK-005: OPEN (NOT closed by this correction). BLOCK-005 technical direction: FROZEN. Codex: NOT REQUIRED for the current compatibility/probe path. V1.6: NOT STARTED. Canonical next Gate after AIPM acceptance of this correction: **SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** (Owner/AIPM-owned). Pi STOPPED awaiting AIPM direct source review of this corrective packet.
+Current stage: **V1.5 — High-confidence Auto Repair / V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX (THIS UPDATE)**
+Current status: **V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch EXECUTION COMPLETE (THIS UPDATE)**. AIPM findings 1 (placeholder SHA markers), 2 (SU2017-release APIs misclassified as post-SU2017), and 3 (beginless range version claim wrong) are all accepted and corrected. ZERO production byte change; ONE test-metadata field + comment corrected in the regression guard; CURRENT_STATE and CURRENT_PI_REPORT authoritative evidence updated (placeholders removed, exact SHAs recorded, API classification corrected, beginless range version corrected). Two local commits (implementation + doc-stamp) on the assigned `dev/v1.5`; NOT pushed per dispatch directive. BLOCK-005: OPEN (NOT closed by this packet). BLOCK-005 technical direction: FROZEN. Codex: NOT REQUIRED for the current compatibility/probe path. V1.6: NOT STARTED. Canonical next Gate after AIPM acceptance of this packet: **SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** (Owner/AIPM-owned). Pi STOPPED awaiting AIPM direct source review of this final-evidence-fix packet.
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -1579,8 +1649,12 @@ zero modern-only APIs. That is overstated.
 Result: the API inventory is now categorised truthfully
 into:
 
-A. **SU2017-baseline APIs** (introduced at-or-before
-   the project baseline SKetchUp 2017 release):
+A. **Baseline-or-earlier APIs for an SU2017+ target** (the
+      original class label is preserved; the items below are
+      baseline-or-earlier for the project's SU2017+ target,
+      plus the SU2017-release APIs listed at the end of this
+      category are ALSO baseline-or-earlier for the same
+      SU2017+ target):
    `Sketchup.version`, `Sketchup.active_model`,
    `Sketchup.format_length`, `Sketchup.register_extension`,
    `SketchupExtension.new`, `file_loaded?` /
@@ -1596,21 +1670,44 @@ A. **SU2017-baseline APIs** (introduced at-or-before
    `model.entities.add_group` (gated with `respond_to?`),
    `model.selection.add` / `.clear`, `model.edit_transform`,
    `entity.layer`, etc.
+   Plus the SU2017-release APIs (since the project's
+   baseline target IS Sketchup 2017+, these are
+   baseline-or-earlier for that target, NOT
+   post-baseline):
+     - `Sketchup::Model#find_entity_by_id` -- Sketchup
+       2015+ (baseline-or-earlier for an SU2017+ target)
+     - `Sketchup::Model#active_path` (getter) --
+       Sketchup 7.0 (production uses only the getter;
+       the setter `Model#active_path=` is NOT called
+       anywhere in production and would be classified
+       separately if used; it isn't)
+     - `Sketchup::Entity#persistent_id` -- Sketchup
+       2017+ on the relevant entity classes; baseline
+       for an SU2017+ target
+     - `Sketchup::Model#instance_path_from_pid_path`
+       -- Sketchup 2017+; baseline for an SU2017+ target
+     - `UI::HtmlDialog` -- Sketchup 2017+; baseline for
+       an SU2017+ target
+   All five are correctly capability-gated in
+   `extension/su_ai_plugin/compatibility/su_capability.rb`
+   and at every host call site. The gating is a
+   defensive belt-and-braces pattern (forward-compat for
+   future host variations), NOT a post-baseline
+   compatibility workaround.
+
+
+
 B. **Post-SU2017 but capability-gated APIs** (introduced
-   AFTER the SKetchUp 2017 release; each is gated behind
-   a `respond_to?` / `defined?` check with a closed fallback
-   per `extension/su_ai_plugin/compatibility/su_capability.rb`):
-   the SU `2017+` claims in `su_capability.rb` itself
-   (e.g. `UI::HtmlDialog`, `entity.persistent_id`,
-   `model.find_entity_by_id`,
-   `model.instance_path_from_pid_path`,
-   `model.active_path`) are explicitly documented as
-   gated via the SU2017+ capability contract. These are
-   NOT called modern-only without the gating; they ARE
-   post-baseline AND have safe fallback per the
-   contract. The dispatch §C explicitly accepts
-   capability-gated post-baseline APIs as long as the
-   fallback is correct; we do not redesign host handling.
+   AFTER the Sketchup 2017 release, with both an
+   `respond_to?` / `defined?` gate and a closed fallback):
+   none recorded at this time. After the corrected
+   inventory (which moved the SU2017-release APIs to
+   category A), no host call site in production uses
+   an API introduced after the Sketchup 2017 release
+   without a closed fallback. The defensive gates in
+   `su_capability.rb` remain as forward-compat
+   belt-and-braces, but they are not POST-baseline
+   gating for any current production call.
 C. **Uncertain / version-evidence-conflict items**: none
    recorded at this time. Any future API whose
    introduction version is genuinely uncertain should
@@ -1625,6 +1722,70 @@ No production host-call site was changed (FINDING C
 explicitly says: "Do NOT modify production host
 behavior unless a concrete unsafe unguarded call is
 proven").
+
+### FINDING 2 — SU2017-release APIs RECLASSIFIED TO BASELINE (THIS UPDATE)
+
+The V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch
+(`V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`)
+authoritative review found that the items listed above
+under category B (`Model#find_entity_by_id`,
+`Model#active_path` (getter), `Entity#persistent_id`,
+`Model#instance_path_from_pid_path`, `UI::HtmlDialog`)
+are, per official SU API version history, baseline-or-
+earlier for an SU2017+ project target (NOT post-
+baseline):
+
+- `Sketchup::Model#find_entity_by_id` — SU2015
+- `Sketchup::Model#active_path` (getter) — SU7.0
+- `Sketchup::Entity#persistent_id` — SU2017+
+- `Sketchup::Model#instance_path_from_pid_path` —
+  SU2017+
+- `UI::HtmlDialog` — SU2017+
+
+Production code does NOT call the `Model#active_path=`
+setter (which IS a later API; would be classified
+separately if it were used; it isn't).
+
+These five APIs have therefore been moved INTO
+category A above (baseline-or-earlier for an SU2017+
+target). Category B is now EMPTY for production
+host-call sites: no production call uses an API
+introduced after the Sketchup 2017 release. The
+defensive capability gates in
+`extension/su_ai_plugin/compatibility/su_capability.rb`
+and at every host call site remain as forward-compat
+belt-and-braces pattern (correctly used for SU2017-
+baseline APIs whose actual introduction may vary
+slightly across SU2017 patch generations and whose
+fallback must be safe in any future host variation),
+NOT because of any post-baseline necessity.
+
+### FINDING 3 — BEGINLESS RANGE VERSION CORRECTED (THIS UPDATE)
+
+The prior regex guard comment said beginless range
+`[..b]` was introduced in Ruby 2.6. Per official Ruby
+release history:
+
+- endless range `(a..)` / `ary[a..]` — Ruby 2.6.0
+- beginless range `(..a)` / `ary[..b]` — Ruby 2.7.0
+
+This packet corrects the beginless_range entry in
+`KNOWN_MODERN_SYNTAX` in
+`tests/test_v15_legacy_compat_guard.rb`:
+
+- `ruby_min_unsupported`: `2.6.0` -> `2.7.0`
+- `ruby_min_required`: `2.6.0` -> `2.7.0`
+- comment: `Ruby >= 2.6.0` -> `Ruby >= 2.7.0`
+- multi-line note explaining the endless-vs-beginless
+  distinction added to the rule entry
+
+The guard itself is preserved: beginless range remains
+incompatible with the Ruby 2.2 baseline (introduced in
+2.7 vs baseline 2.2 -> incompatible). Only the
+introduction version is corrected. The endless-range
+(Ruby 2.6+) rule is unchanged; the numbered_block_params
+(Ruby 2.7+) rule is unchanged; the safe_navigation
+(Ruby 2.3+) rule is unchanged.
 
 ### FINDING D — Obsolete prerequisite gates REMOVED
 
@@ -1694,7 +1855,13 @@ weaken the confirmed endless-range guard."
     production source` — targeted regex scan for the
    4 construct classes with confirmed version evidence:
      - endless_range (Ruby 2.6+)
-     - beginless_range (Ruby 2.6+)
+     - beginless_range (Ruby 2.7+)  (NOT Ruby 2.6+
+       which is the version that introduced endless
+       range; beginless range entered in Ruby 2.7
+       per official Ruby release history. The guard
+       rule is preserved — beginless range remains
+       incompatible with the Ruby 2.2 baseline — only
+       the stated introduction version is corrected.)
      - numbered_block_params (Ruby 2.7+)
      - safe_navigation (Ruby 2.3+)
    The integer_literal_underscore class is REMOVED per
@@ -2019,6 +2186,47 @@ Review and the SU2020 BLOCK-005 Real-Host Feasibility Probe
 ---
 
 # One-Line Current State
+
+**V1.5 V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch EXECUTION
+COMPLETE (THIS UPDATE, 2026-08-31): bounded final-evidence
+correction per AIPM dispatch
+`V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`. FINDING 1
+(placeholder SHA markers removed; exact implementation
+commit SHA `36eb6da97c1040d9772656467208b0105cd16fa3`
+recorded explicitly; final HEAD = `git rev-parse HEAD`
+after the two-commit "implementation + doc-stamp" pattern).
+FINDING 2 (SU2017-release APIs `Model#find_entity_by_id`
+[SU2015], `Model#active_path` getter [SU7.0],
+`Entity#persistent_id` [SU2017+],
+`Model#instance_path_from_pid_path` [SU2017+], `UI::HtmlDialog`
+[SU2017+] reclassified from category B "post-SU2017 but
+capability-gated" into category A "baseline-or-earlier for an
+SU2017+ target"; `Model#active_path=` setter NOT used in
+production; category B now EMPTY for current production host
+calls). FINDING 3 (beginless range `(..a)` was actually
+introduced in Ruby 2.7, not Ruby 2.6; corrected
+`ruby_min_unsupported` and `ruby_min_required` both to `2.7.0`
+in the test file rule, plus the rule comment; guard itself
+preserved). Test evidence: LEGACY-COMPAT 4/4 PASS (was 4/4
+prior; only the beginless-range rule's `ruby_min_*` field and
+comment changed; behavior unchanged); V15 149/149 PASS; full
+Ruby suite 817/817 PASS (unchanged from prior); RBZ install/
+load smoke 9/9 PASS (unchanged). `git diff --check` clean.
+ZERO production byte change (production source
+`core/source_snapshot.rb` is byte-identical to the prior
+corrective commit `36eb6da`; the RBZ SHA
+`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`
+is preserved because production source is unchanged and the
+build process is deterministic). Local commits created on
+the assigned `dev/v1.5` (implementation + doc-stamp); NOT
+pushed per dispatch directive. BLOCK-005: OPEN (NOT closed
+by this packet). BLOCK-005 technical direction: FROZEN.
+Codex: NOT REQUIRED for the current compatibility/probe
+path. V1.6: NOT STARTED. Canonical next Gate after AIPM
+acceptance of this packet: **SketchUp 2020 BLOCK-005
+Real-Host Feasibility Probe** (Owner/AIPM-owned). No real
+SU2017 / SU2020 compatibility PASS is claimed. Evidence
+bounded by the only vendored Ruby available (2.7.8).
 
 **V1.5 V15-LEGACY-COMPAT-CORRECTION dispatch EXECUTION COMPLETE
 (THIS UPDATE, 2026-08-31): AIPM authoritatively reviewed the

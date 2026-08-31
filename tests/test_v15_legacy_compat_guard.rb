@@ -109,13 +109,18 @@ module Tests
         comment: 'Endless range syntax (`[a..]`) requires Ruby >= 2.6.0. Use `[a..-1]` for SU2020 (2.5.5) and SU2017 (2.2.4) compat.'
       },
       {
-        # Beginless range `[..b]` was added in Ruby 2.6.
-        # Same rationale as endless_range.
+        # Beginless range `[..b]` was added in Ruby 2.7
+        # (NOT Ruby 2.6, where endless range was added).
+        # Official Ruby release history:
+        #   endless range `(1..)` / `ary[1..]` — Ruby 2.6
+        #   beginless range `(..1)` / `ary[..3]` — Ruby 2.7
+        # SU2017 (Ruby 2.2.4) and SU2020 (Ruby 2.5.5) both
+        # REJECT this at parse time.
         id:    'beginless_range',
         regex: /\[\.{2,}\s*[a-zA-Z_0-9\-\+\*\/]+\]/,
-        ruby_min_unsupported: '2.6.0',
-        ruby_min_required: '2.6.0',
-        comment: 'Beginless range syntax (`[..b]`) requires Ruby >= 2.6.0. Use `[0..b-1]` for SU2020 (2.5.5) and SU2017 (2.2.4) compat.'
+        ruby_min_unsupported: '2.7.0',
+        ruby_min_required: '2.7.0',
+        comment: 'Beginless range syntax (`[..b]`) requires Ruby >= 2.7.0. Use `[0..b-1]` for SU2020 (2.5.5) and SU2017 (2.2.4) compat.'
       },
       {
         # Numbered block parameters (`_1`, `_2`, ...) added
