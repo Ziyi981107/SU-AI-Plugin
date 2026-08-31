@@ -68,11 +68,17 @@ module SUAnalysis
         if to_remove.all? { |id| workspace.handle_for(id).nil? }
           return [workspace, skip_action(action, reason: 'already_applied')]
         end
-        present = to_remove.select { |id| !workspace.handle_for(id).nil? }
-        if present.empty?
-          return [workspace, skip_action(action, reason: 'affected_derived_ids_not_in_workspace')]
-        end
-        apply_atomic(workspace: workspace, action: action, to_remove: present)
+        # FIX-SR-04: pass the COMPLETE intended `to_remove`
+        # set into `apply_atomic` (do NOT pre-filter nil
+        # handles out). The existing strict-liveness contract
+        # in `apply_atomic` (FIX-SR-01) already rejects any
+        # member that is not strictly live (nil / no-`:valid?`
+        # / nil-`valid?` / false-`valid?` / raise-`valid?`),
+        # so a MIXED removal set (some nil, some non-nil) will
+        # fail closed BEFORE `begin_operation` -- no partial
+        # execution, no host/logical divergence.
+        # Whole-action fail-closed contract preserved.
+        apply_atomic(workspace: workspace, action: action, to_remove: to_remove)
       end
 
       # ------------------------------------------------------------

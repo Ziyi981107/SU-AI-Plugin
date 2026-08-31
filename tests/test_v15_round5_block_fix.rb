@@ -3074,3 +3074,183 @@ test 'V15-SR03-3: non-finite endpoint geometry still uses the existing coordinat
   refute_equal 'skipped:invalid_or_missing_captured_tolerance', skip.confidence_basis.to_s,
                'FIX-SR-03: non-finite geometry MUST NOT use the captured-tolerance reason'
 end
+
+# ============================================================
+# FIX-SR-04: public apply() must NOT filter nil removals
+# before apply_atomic.
+#
+# Dispatch: SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01
+# (continuation).
+#
+# AIPM directly found that
+# DuplicateRepairExecutor.apply(...) pre-filtered nil
+# removal handles out via `present = to_remove.select { !nil? }`
+# before calling apply_atomic, creating an unsafe mixed-
+# state path: removal A = valid/live, removal B = nil =>
+# apply_atomic would execute A alone, producing host/
+# logical divergence (host actually disposes A; logical
+# state claims A + B removed).
+#
+# Required behavior:
+#   - all removals nil => keep historical `already_applied`
+#     skip behavior (no host mutation);
+#   - MIXED (some nil, some non-nil) => fail closed BEFORE
+#     begin_operation. begin=0, dispose=0, commit=0,
+#     abort=0, no :applied action, no partial deletion,
+#     logical inventory unchanged, logical fingerprint
+#     unchanged, source immutable, truthful stable reason;
+#   - all removals non-nil => existing strict-liveness path.
+# ============================================================
+
+test 'V15-SR04-1: apply() (single-action) -> MIXED nil + live removals -> fail closed BEFORE begin (no partial execution)' do
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e3 = r5_edge(id: 2, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2, e3])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2),
+    r5_derived_edge(derived_id: 'der-2', start: e3.start_point, finish: e3.end_point, source_edge: e3)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|0|2', edge_ids: [0, 2], location: [5.0, 0.0, 0.0]),
+    r5_dup_issue(issue_id: 'dup|1|2', edge_ids: [1, 2], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  refute_equal 1, removal_ids.length,
+               'fixture sanity: this test requires a multi-removal action'
+  valid_removal_id = removal_ids[0]
+  nil_removal_id   = removal_ids[1]
+  # Mutate: REMOVE the nil_removal_id from the handle_registry
+  # entirely. valid_removal_id + survivor keep their valid
+  # handles. handle_for(nil_removal_id) MUST now be nil.
+  ws = r5_workspace_without_handle(ws_seed, nil_removal_id)
+  assert_nil ws.handle_for(nil_removal_id),
+             "FIX-SR-04 fixture sanity: handle_for(#{nil_removal_id}) must be nil"
+  # Sanity: the valid removal is still strictly live.
+  assert_equal true, ws.handle_for(valid_removal_id).respond_to?(:valid?) &&
+                       ws.handle_for(valid_removal_id).valid?,
+             'FIX-SR-04 fixture sanity: valid removal handle must be strictly live'
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  pre_ws_fp       = ws.fingerprint
+  pre_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  # FIX-SR-04: atomic no-begin failure. The valid removal
+  # handle MUST NOT be partially disposed because the
+  # other removal is nil. Whole-action fail-closed
+  # contract.
+  assert_equal 0, counter[:begin_calls],
+               "FIX-SR-04: mixed nil+live removals MUST trigger atomic no-begin failure (begin_calls=#{counter[:begin_calls]})"
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls],
+               'FIX-SR-04: valid removal MUST NOT be partially disposed when another removal is nil'
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  refute_equal :applied, updated.status
+  assert_equal :failed, updated.status
+  assert_match(/removal_handle_not_strictly_live/, updated.confidence_basis.to_s)
+  assert_equal :failed, new_ws.state
+  # Logical pre-state retained.
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+  # Workspace logical fingerprint unchanged (the workspace
+  # object transitioned to :failed but its logical
+  # entity inventory was preserved). Compare by `==`
+  # on the DerivedWorkspaceFingerprint (which has its
+  # own `==` / `hash`); `to_s` returns the default
+  # Ruby object-identity string.
+  assert_equal pre_ws_fp, new_ws.fingerprint,
+               'FIX-SR-04: workspace logical fingerprint must be unchanged'
+  # The valid removal handle is still strictly live in
+  # the original workspace (no host mutation occurred).
+  assert_equal true, ws.handle_for(valid_removal_id).respond_to?(:valid?) &&
+                       ws.handle_for(valid_removal_id).valid?,
+             'FIX-SR-04: valid removal handle must remain strictly live (no partial disposal)'
+  # Source immutable.
+  post_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  assert_equal pre_src_fp, post_src_fp
+end
+
+test 'V15-SR04-2: apply() (single-action) -> ALL removals nil -> preserved historical already_applied behavior' do
+  # The historical `already_applied` skip path MUST be
+  # preserved: if EVERY intended removal handle is nil
+  # (cleared from the workspace registry), the action is
+  # treated as already applied -- no host mutation, no
+  # host/logical divergence, no false READY publication.
+  # FIX-SR-04 must NOT redesign this behavior.
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  e1 = r5_edge(id: 0, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  e2 = r5_edge(id: 1, start: [0.0, 0.0, 0.0], finish: [10.0, 0.0, 0.0], parent_pid_path: [100])
+  src = r5_snapshot(edges: [e1, e2])
+  records = [
+    r5_derived_edge(derived_id: 'der-0', start: e1.start_point, finish: e1.end_point, source_edge: e1),
+    r5_derived_edge(derived_id: 'der-1', start: e2.start_point, finish: e2.end_point, source_edge: e2)
+  ]
+  ws_seed = r5_workspace(snapshot: src, records: records)
+  registry = r5_registry([
+    r5_dup_issue(issue_id: 'dup|0|1', edge_ids: [0, 1], location: [5.0, 0.0, 0.0])
+  ])
+  plan = r5_build_valid_plan(ws: ws_seed, registry: registry, snapshot: src)
+  runnable = plan.actions.select { |a|
+    a.is_a?(SUAnalysis::Core::RepairAction) && [:validated, :proposed].include?(a.status)
+  }
+  action = runnable.first
+  removal_ids = Array(action.affected_derived_ids).map(&:to_s)
+  survivor_id = action.before_summary['survivor_derived_id']
+  # Sanity: this is a 2-record fixture, so the action's
+  # affected_derived_ids are survivor + 1 removal.
+  # Build a workspace where BOTH the survivor handle AND
+  # the removal handle have been cleared from the
+  # handle_registry. handle_for returns nil for both.
+  ws = r5_workspace_without_handle(ws_seed, survivor_id)
+  ws = r5_workspace_without_handle(ws, removal_ids.find { |id| id != survivor_id })
+  assert_nil ws.handle_for(survivor_id),
+             'FIX-SR-04 fixture sanity: survivor handle must be nil'
+  assert_nil ws.handle_for(removal_ids.find { |id| id != survivor_id }),
+             'FIX-SR-04 fixture sanity: removal handle must be nil'
+  adapter = ws.instance_variable_get(:@adapter)
+  counter = r5_instrument_adapter(adapter)
+  pre_entity_ids = ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  pre_ws_fp       = ws.fingerprint
+  pre_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  new_ws, updated = SUAnalysis::Core::DuplicateRepairExecutor.apply(
+    workspace: ws, action: action
+  )
+  # Historical already_applied semantics: no host
+  # mutation, status -> :skipped, workspace state
+  # unchanged, source immutable. Workspace MUST NOT be
+  # transitioned to :failed.
+  assert_equal 0, counter[:begin_calls]
+  assert_equal 0, counter[:commit_calls]
+  assert_equal 0, counter[:abort_calls]
+  assert_equal 0, counter[:dispose_calls]
+  assert updated.is_a?(SUAnalysis::Core::RepairAction)
+  assert_equal :skipped, updated.status
+  refute_equal :applied, updated.status
+  refute_equal :failed, updated.status
+  # Workspace state unchanged (not :failed, no false
+  # READY claim).
+  refute_equal :failed, new_ws.state
+  assert_equal ws.state, new_ws.state
+  # Logical pre-state retained.
+  post_entity_ids = new_ws.instance_variable_get(:@entity_pairs).map(&:first).sort
+  assert_equal pre_entity_ids, post_entity_ids
+  assert_equal pre_ws_fp, new_ws.fingerprint,
+               'FIX-SR-04: workspace logical fingerprint must be unchanged'
+  # Source immutable.
+  post_src_fp = src.fingerprint.respond_to?(:digest) ? src.fingerprint.digest.to_s : src.fingerprint.to_s
+  assert_equal pre_src_fp, post_src_fp
+end
