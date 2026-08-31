@@ -678,3 +678,192 @@ commits preserved; remote HEAD still `9099f66`; AIPM can
 retry push from a reachable environment); BLOCK-005
 remains OPEN by design; Pi STOPPED awaiting AIPM direct
 GitHub Source Review.**
+
+---
+
+## §15. BLOCK-005 DOCUMENTATION-ONLY SYNC (THIS UPDATE, 2026-08-31)
+
+This is a **documentation-only update** per AIPM directive.
+It is NOT a new implementation round and does NOT assign
+BLOCK-005 work to Pi.
+
+### 15.1 What changed
+
+This update synchronizes the canonical project state
+(`CURRENT_STATE.md` + this report) with the AIPM research
+decision that has now been completed and frozen.
+
+What Pi did:
+
+- Read the full bootstrap stack
+  (`PI_START_HERE.md`, `AGENTS.md`, `PROJECT_HANDOFF.md`,
+  `PROJECT_MASTER_PLAN_V1X.md`, `CURRENT_STATE.md`,
+  `Prompt/CURRENT_PI_DISPATCH.md`,
+  `Review/CURRENT_AIPM_REVIEW.md`).
+- Read the BLOCK-005 frozen Technical Guidance shared by
+  AIPM in chat (status: FROZEN / BLOCK-005: OPEN / Pi:
+  STOP / Codex: NOT REQUIRED / Remaining gate: SketchUp
+  2020 real-host feasibility proof).
+- Confirmed this documentation-only directive is a small
+  bounded continuation that does not alter frozen
+  architecture, product contract, Stage scope, or release
+  authority.
+- Executed minimum documentation updates to make the
+  canonical project state truthful.
+
+What Pi did NOT do (per the AIPM directive):
+
+- Did NOT modify production Ruby code.
+- Did NOT add ModelObserver / EntitiesObserver.
+- Did NOT implement BLOCK-005.
+- Did NOT change runtime behavior.
+- Did NOT invent additional architecture.
+- Did NOT call or prepare work for Codex.
+- Did NOT perform the SketchUp 2020 real-host feasibility
+  proof on behalf of Owner/AIPM.
+- Did NOT rebuild the RBZ.
+- Did NOT rerun tests.
+- Did NOT push.
+
+### 15.2 Documentation files changed
+
+| File | Change |
+|---|---|
+| `CURRENT_STATE.md` | Top-level "Updated:" block now records the BLOCK-005 documentation-only sync. `Current stage` / `Current status` headers updated. `Current project rule` adds the BLOCK-005 frozen direction. §1 Completed adds a new entry for this update; §1 Waiting points to the new canonical next gate (SU2020 BLOCK-005 Real-Host Feasibility Probe); §1 Not started lists the probe and updates V1.6 prerequisites. §4 adds a dedicated "BLOCK-005 dedicated technical research (AIPM-side, THIS UPDATE)" subsection recording the frozen direction, explicit "no"s, closure condition, and current BLOCK-005 status. §5 "Production code gap status (BLOCK-005)" updated to reflect the new frozen state. §7 NEXT ACTION replaced with the canonical next gate. §12 CURRENT AUTHORITY SUMMARY exception block adds a BLOCK-005 documentation-only sync paragraph. One-Line Current State replaced. |
+| `Review/CURRENT_PI_REPORT.md` | Adds this §15 documenting the sync. No implementation evidence is added (none was produced by this update). |
+
+### 15.3 Canonical next gate (after THIS UPDATE)
+
+**SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** —
+Owner/AIPM-owned.
+
+Pi is NOT assigned the probe.
+
+Probe goal: verify on a real SketchUp 2020 host that the
+existing V1.5 `validate-on-next-interaction -> detect host
+mismatch -> fail closed / invalidate -> host-authoritative
+prepare/rebuild` seam satisfies the BLOCK-005 closure
+condition:
+
+- native Undo/Redo cannot leave stale plugin state falsely
+  READY;
+- stale destructive handles cannot reach destructive
+  execution;
+- host mismatch fails closed before destructive operation;
+- normal product recovery rebuilds fresh inventory /
+  handles / UI from the current SketchUp host;
+- source CAD remains immutable.
+
+### 15.4 Frozen BLOCK-005 direction recorded
+
+V1.5 remains on:
+
+```text
+validate-on-next-interaction
+-> detect host mismatch
+-> fail closed / invalidate
+-> host-authoritative prepare/rebuild
+```
+
+SketchUp Model remains the geometry Source of Truth.
+
+Explicit V1.5 boundaries (frozen):
+
+- No global ModelObserver / EntitiesObserver architecture is added in V1.5.
+- Entity-level observer event replay is rejected as a correctness mechanism.
+- `persistent_id` is not the correctness Source of Truth.
+- Old Ruby Entity handles must never be trusted after host-state divergence.
+- ModelObserver invalidation is only an approved fallback if the
+  SketchUp 2020 real-host probe proves the existing validation seam
+  insufficient. EntitiesObserver-based incremental reconciliation
+  and plugin-side Undo replay remain out of scope even if escalation
+  becomes necessary.
+
+### 15.5 BLOCK-005 status (THIS UPDATE)
+
+- **OPEN**
+- Technical direction: **FROZEN**
+- Pi implementation: **STOP**
+- Codex: **NOT REQUIRED**
+- V1.6: **NOT STARTED**
+
+### 15.6 Governance preservation
+
+Per the directive:
+
+- Existing governance authority rules in `AGENTS.md`,
+  `PROJECT_HANDOFF.md`, `PROJECT_MASTER_PLAN_V1X.md` are
+  preserved.
+- Historical Prompt/Review evidence is NOT overwritten.
+- Only the minimum documentation changes necessary to make
+  the canonical project state truthful were made.
+- `Prompt/CURRENT_PI_DISPATCH.md` was NOT modified (the
+  active dispatch remains as-is; it explicitly does not
+  assign BLOCK-005, which is still true after this update).
+- `Review/CURRENT_AIPM_REVIEW.md` was NOT modified (AIPM's
+  review record; AIPM may update it for the FIX-SR-04
+  verdict and for the BLOCK-005 probe outcome).
+- `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+  was NOT modified (the active corrective frozen Guidance
+  is unchanged).
+- The BLOCK-005 frozen Technical Guidance that AIPM shared
+  in chat is recorded as substance in `CURRENT_STATE.md`
+  §4 / §5 / §7 (frozen direction + explicit no's + closure
+  condition). No separate durable Blueprint file was
+  created because AIPM did not request one and the active
+  dispatch does not reference one.
+
+### 15.7 Git / Push summary (this update)
+
+| Item | Value |
+|---|---|
+| Starting HEAD | `1761adb50bc3efebb0f674ce9728cebbe6228986` |
+| `origin/dev/v1.5` HEAD (start) | `1761adb50bc3efebb0f674ce9728cebbe6228986` |
+| Local HEAD == origin HEAD | YES (both `1761adb`) |
+| Tracked modifications at start | NONE (only the 7 untracked AIPM Review evidence `.txt` files) |
+| Files modified | `CURRENT_STATE.md`, `Review/CURRENT_PI_REPORT.md` |
+| `git diff --check` | to be verified clean before commit |
+| Stash / reset / clean / merge / rebase | NOT performed |
+| Push attempted | no |
+| `main` pushed / merged | no |
+| force-push / history rewrite | no |
+| release / tag | no |
+| Production code modified | NO |
+| Tests rerun | NO |
+| RBZ rebuilt | NO |
+| Codex called | NO |
+| BLOCK-005 implemented | NO |
+| Untracked AIPM evidence files modified / deleted | NO |
+
+### 15.8 Hard STOP
+
+Per the AIPM directive:
+
+> After completion: report exactly which documentation
+> files changed, report the new canonical next gate, report
+> git diff summary, create a local documentation checkpoint
+> commit if permitted by current repository Git policy, do
+> NOT push, STOP and return control to AIPM.
+
+STOP is in effect. Control returns to AIPM for the
+SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe and
+the AIPM direct GitHub Source Review of the prior
+FIX-SR-04 packet.
+
+---
+
+# One-Line BLOCK-005 Documentation-Only Sync Report
+
+**V1.5 BLOCK-005 documentation-only sync (THIS UPDATE,
+2026-08-31) is complete: AIPM-side technical research is
+COMPLETE, technical direction is FROZEN on the existing
+`validate-on-next-interaction` architecture with the
+SketchUp Model as geometry Source of Truth; explicit V1.5
+"no"s recorded (no global ModelObserver / EntitiesObserver,
+no entity-event replay as correctness, `persistent_id` not
+Source of Truth, old handles untrusted after host-state
+divergence, ModelObserver invalidation only an approved
+fallback); canonical next gate is the **SketchUp 2020
+BLOCK-005 Real-Host Feasibility Probe** (Owner/AIPM-owned);
+no production code touched, no tests rerun, no RBZ
+rebuilt, no push attempted; Pi STOPPED.**

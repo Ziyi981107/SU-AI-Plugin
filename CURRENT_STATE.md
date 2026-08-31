@@ -1,5 +1,26 @@
 # SU-AI-Plugin — CURRENT STATE
 
+Updated: 2026-08-31 (BLOCK-005 documentation-only sync
+per AIPM directive. This is NOT a new implementation round
+and does NOT assign BLOCK-005 work to Pi. BLOCK-005
+dedicated AIPM technical research is now COMPLETE;
+technical direction is FROZEN on
+`validate-on-next-interaction -> detect host mismatch ->
+fail closed / invalidate -> host-authoritative
+prepare/rebuild` with the SketchUp Model as geometry
+Source of Truth. No global ModelObserver / EntitiesObserver
+architecture is added in V1.5. Entity-level observer event
+replay is rejected as a correctness mechanism. `persistent_id`
+is not the correctness Source of Truth. Old Ruby Entity
+handles must never be trusted after host-state divergence.
+ModelObserver invalidation is only an approved fallback if
+the SU2020 real-host probe proves the existing validation
+seam insufficient. The canonical next gate is the **SketchUp
+2020 BLOCK-005 Real-Host Feasibility Probe**, owned by
+Owner/AIPM. Pi is not assigned the probe and remains
+STOPPED. No production code was modified by this update;
+no RBZ was rebuilt; no tests were rerun; no push was
+attempted.)
 Updated: 2026-08-28 (CRASH-RECOVERY RESUME of the same
 dispatch `SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`;
 AIPM directly reviewed the real GitHub implementation
@@ -14,8 +35,8 @@ directly reviewed the real GitHub implementation commit
 `874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
 `FIX REQUIRED -- narrow implementation correction`).
 
-Current stage: **V1.5 — High-confidence Auto Repair / Round-5 AIPM Source Review NARROW CONTINUATION (FIX-SR-04 crash-recovery resume THIS UPDATE)**
-Current status: **FIX-SR-04 implementation complete; pushed to origin/dev/v1.5; awaiting AIPM direct GitHub Source Review per CRASH-RECOVERY RESUME §8 Hard STOP**
+Current stage: **V1.5 — High-confidence Auto Repair / BLOCK-005 documentation-only sync (THIS UPDATE)**
+Current status: **BLOCK-005 dedicated AIPM technical research COMPLETE; technical direction FROZEN; canonical next gate is the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe (Owner/AIPM-owned); Pi STOPPED**
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -45,6 +66,7 @@ Current project rule:
 - Historical Prompt/Review artifacts remain durable evidence only and cannot become current through filename, numbering, mtime, or stale ACTIVE status.
 - Git is the normal fine-grained implementation history; separately named durable artifacts remain allowed for important design/Gate/release evidence.
 - This V1.5 Round-5 Source Review corrective case has reached Pi's execution window completion. Pi is STOPPED. AIPM direct source review + the Owner-checklist republish + (if AIPM chooses) the next Codex narrow xHigh recheck are the next gates per `PROJECT_MASTER_PLAN_V1X.md` §13.
+- BLOCK-005 dedicated technical research is COMPLETE on the AIPM side; technical direction is FROZEN on `validate-on-next-interaction -> detect host mismatch -> fail closed / invalidate -> host-authoritative prepare/rebuild`; the canonical next gate for BLOCK-005 is the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe (Owner/AIPM-owned; Pi is not assigned).
 
 ---
 
@@ -66,7 +88,9 @@ Current project rule:
   `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
   design.
 - V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
-  CRASH-RECOVERY RESUME — FIX-SR-04 is complete (THIS UPDATE):
+  CRASH-RECOVERY RESUME — FIX-SR-04 is complete (history,
+  implementation commit `3043219`, documentation commits
+  `aabfa7e` + `1761adb`):
   removed the `present = to_remove.select { !nil? }`
   pre-filter in `DuplicateRepairExecutor.apply`; the
   COMPLETE intended `to_remove` set is passed into
@@ -76,30 +100,64 @@ Current project rule:
   `begin_operation`. The historical `already_applied`
   all-nil skip path is preserved. Same frozen Guidance,
   same dispatch ID. 2 new focused regressions added.
+  Pushed to `origin/dev/v1.5` (final remote HEAD =
+  `1761adb50bc3efebb0f674ce9728cebbe6228986`).
+- V1.5 BLOCK-005 documentation-only sync is complete (THIS UPDATE):
+  per AIPM directive, the canonical project state has been
+  synchronized to record that BLOCK-005 dedicated AIPM
+  technical research is COMPLETE, the technical direction is
+  FROZEN on the existing `validate-on-next-interaction`
+  architecture, the SketchUp Model remains the geometry
+  Source of Truth, no global ModelObserver / EntitiesObserver
+  architecture is added in V1.5, entity-level observer event
+  replay is rejected as a correctness mechanism,
+  `persistent_id` is not the correctness Source of Truth, and
+  old Ruby Entity handles must never be trusted after
+  host-state divergence. The canonical next gate is the
+  SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
+  (Owner/AIPM-owned). No production code, no tests, no RBZ,
+  no push were touched by this update.
 
 ### In progress
 - Nothing is currently being implemented by Pi.
 
 ### Waiting
 - AIPM direct GitHub Source Review of the Round-5 NARROW
-  CONTINUATION Pi packet (`Review/CURRENT_PI_REPORT.md`).
+  CONTINUATION + FIX-SR-04 crash-recovery resume Pi packet
+  (`Review/CURRENT_PI_REPORT.md`).
 - AIPM republish of the Owner verification file
   (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`),
   per Round-5 §9; the previously published version was invalidated by the
   Round-4 Codex verdict.
-- If AIPM chooses after its direct source re-review, a Codex narrow
-  xHigh recheck of the V1.5 BLOCK set
-  (`V15-STAGE-BLOCK-001..005`), dispatched only AFTER AIPM review and
-  Owner-checklist republish.
+- **Canonical next gate (THIS UPDATE):** SketchUp 2020 BLOCK-005
+  Real-Host Feasibility Probe (Owner/AIPM-owned). The probe verifies
+  on a real SketchUp 2020 host that the existing V1.5
+  `validate-on-next-interaction -> detect host mismatch -> fail
+  closed / invalidate -> host-authoritative prepare/rebuild` seam
+  satisfies the BLOCK-005 closure condition (native Undo/Redo
+  cannot leave stale plugin state falsely READY; stale destructive
+  handles cannot reach destructive execution; host mismatch fails
+  closed before destructive operation; normal product recovery
+  rebuilds fresh inventory / handles / UI from the current SketchUp
+  host; source CAD remains immutable). Pi is NOT assigned the probe.
+- If AIPM chooses after the probe + its direct source re-review,
+  a Codex narrow xHigh recheck of the V1.5 BLOCK set
+  (`V15-STAGE-BLOCK-001..005`), dispatched only AFTER AIPM review
+  and Owner-checklist republish.
 
 ### Not started
 - V1.6 Planar Normalization / Z Policy.
+- SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
+  (Owner/AIPM-owned; Pi is NOT assigned).
 
 V1.6 must not begin until:
 1. V1.5's active BLOCK set is formally closed;
-2. required Owner verification for V1.5 is completed as applicable;
-3. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
-4. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
+2. the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
+   has produced evidence sufficient for AIPM to formally close
+   BLOCK-005 (THIS UPDATE);
+3. required Owner verification for V1.5 is completed as applicable;
+4. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
+5. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
    V1.6 Stage Technical Blueprint as required.
 
 ---
@@ -373,6 +431,55 @@ Status:
 > set remains NOT formally closed; awaiting AIPM direct source
 > re-review, Owner-checklist republish, and (if AIPM chooses)
 > the next Codex narrow xHigh recheck.**
+
+### BLOCK-005 dedicated technical research (AIPM-side, THIS UPDATE)
+
+> BLOCK-005 dedicated technical research is **COMPLETE** on
+> the AIPM side. Technical direction is **FROZEN**. The
+> canonical next gate is the **SketchUp 2020 BLOCK-005
+> Real-Host Feasibility Probe** (Owner/AIPM-owned; Pi is NOT
+> assigned the probe).
+
+V1.5 remains on the existing architecture:
+
+```text
+validate-on-next-interaction
+-> detect host mismatch
+-> fail closed / invalidate
+-> host-authoritative prepare/rebuild
+```
+
+SketchUp Model remains the geometry Source of Truth.
+
+Explicit V1.5 boundaries (frozen, THIS UPDATE):
+
+- No global ModelObserver / EntitiesObserver architecture is added in V1.5.
+- Entity-level observer event replay is rejected as a correctness mechanism.
+- `persistent_id` is not the correctness Source of Truth.
+- Old Ruby Entity handles must never be trusted after host-state divergence.
+- ModelObserver invalidation is only an approved fallback if the
+  SketchUp 2020 real-host probe proves the existing validation seam
+  insufficient. EntitiesObserver-based incremental reconciliation and
+  plugin-side Undo replay remain out of scope even if escalation
+  becomes necessary.
+
+BLOCK-005 closure condition (the probe must produce real-host
+evidence proving all of the following, THIS UPDATE):
+
+- native Undo/Redo cannot leave stale plugin state falsely READY;
+- stale destructive handles cannot reach destructive execution;
+- host mismatch fails closed before destructive operation;
+- normal product recovery rebuilds fresh inventory / handles / UI
+  from the current SketchUp host;
+- source CAD remains immutable.
+
+BLOCK-005 status (THIS UPDATE):
+
+- **OPEN**
+- Technical direction: FROZEN
+- Pi implementation: **STOP**
+- Codex: **NOT REQUIRED**
+- V1.6: **NOT STARTED**
 
 Do not write "BLOCKs closed" until both AIPM direct source
 PASS and Owner verification gates pass.
@@ -705,8 +812,8 @@ files; the RBZ hash is therefore NEW.
 ### Production code gap status (BLOCK-005)
 
 BLOCK-005 (discard -> SketchUp Undo -> next interaction
-reconciliation) remains OPEN by design and is NOT part of the
-current corrective dispatch. Per AIPM Source Review verdict:
+reconciliation) remains **OPEN by design** and is NOT part of
+the corrective dispatch cycle. Per AIPM Source Review verdict:
 
 > BLOCK-005 is classified as an AIPM technical-design gap,
 > not a Pi implementation-choice gap. BLOCK-005 is
@@ -716,8 +823,28 @@ current corrective dispatch. Per AIPM Source Review verdict:
 > ModelObserver / EntitiesObserver, entity lifecycle /
 > persistent identity, license constraints.
 
+**THIS UPDATE (BLOCK-005 documentation-only sync):**
+
+- BLOCK-005 dedicated AIPM technical research is **COMPLETE**.
+- Technical direction is **FROZEN** on the existing
+  `validate-on-next-interaction -> detect host mismatch ->
+  fail closed / invalidate -> host-authoritative
+  prepare/rebuild` architecture.
+- SketchUp Model remains the geometry Source of Truth.
+- No global ModelObserver / EntitiesObserver architecture is
+  added in V1.5.
+- Entity-level observer event replay is rejected as a
+  correctness mechanism.
+- `persistent_id` is not the correctness Source of Truth.
+- Old Ruby Entity handles must never be trusted after
+  host-state divergence.
+- ModelObserver invalidation is only an approved fallback if
+  the SketchUp 2020 real-host probe proves the existing
+  validation seam insufficient.
+
 Pi must NOT invent a new Observer / Undo architecture while
-the BLOCK-005 design is being researched.
+the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe is
+being run by Owner/AIPM.
 
 ### Round-5 NARROW CONTINUATION (THIS UPDATE) — narrow
 implementation corrections to the same dispatch
@@ -978,27 +1105,62 @@ If a material design gap remains:
 
 ## 7. NEXT ACTION
 
-### Immediate
-1. AIPM directly reviews the Round-5 NARROW CONTINUATION Pi
-   packet on GitHub (`Review/CURRENT_PI_REPORT.md`).
+### Canonical next gate (THIS UPDATE)
+
+**SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** —
+Owner/AIPM-owned.
+
+Pi is NOT assigned this probe.
+
+### Probe goal
+
+Verify on a real SketchUp 2020 host that the existing V1.5
+`validate-on-next-interaction -> detect host mismatch -> fail
+closed / invalidate -> host-authoritative prepare/rebuild`
+seam is sufficient to satisfy the BLOCK-005 closure
+condition:
+
+- native Undo/Redo cannot leave stale plugin state falsely
+  READY;
+- stale destructive handles cannot reach destructive
+  execution;
+- host mismatch fails closed before destructive operation;
+- normal product recovery rebuilds fresh inventory / handles /
+  UI from the current SketchUp host;
+- source CAD remains immutable.
+
+### Parallel gates for the remaining BLOCK set
+1. AIPM directly reviews the Round-5 NARROW CONTINUATION +
+   FIX-SR-04 crash-recovery resume Pi packet on GitHub
+   (`Review/CURRENT_PI_REPORT.md`) for the BLOCK-001..004
+   closure path.
 2. AIPM republishes the canonical Owner verification file
    `Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`
    (BLOCK-005 deliverable, Pi is not the author).
-3. AIPM decides whether to dispatch the next Codex narrow
-   xHigh recheck.
 
-### If AIPM direct source PASS
-1. close the V1.5 active BLOCK set;
-2. AIPM determines whether the current Owner real-SketchUp
-   verification path is technically ready;
-3. Owner runs the approved real-host verification;
-4. AIPM reviews the result and formally closes V1.5 when
-   acceptance evidence is sufficient;
-5. AIPM designs and freezes `V1.6` Stage Technical Blueprint;
-6. only then dispatch Pi into V1.6.
+### If the SU2020 real-host probe proves the existing seam sufficient
+1. AIPM records the probe result in
+   `Review/CURRENT_AIPM_REVIEW.md`.
+2. BLOCK-005 is formally closed.
+3. The V1.5 BLOCK set may be formally closed only after AIPM
+   direct source PASS for the remaining implementation gates
+   and Owner real-SketchUp verification is complete.
+4. AIPM designs and freezes a V1.6 Stage Technical Blueprint
+   before any V1.6 implementation begins.
 
-### If Codex remains BLOCKED
-1. Codex reports only remaining/new causally related material
+### If the SU2020 real-host probe proves the seam insufficient
+1. The only approved first escalation is a deferred /
+   debounced ModelObserver transaction event that marks plugin
+   state dirty / stale, followed by host-authoritative re-read
+   + rebuild. EntitiesObserver-based incremental reconciliation
+   and plugin-side Undo replay remain out of scope even in
+   this escalation.
+2. AIPM updates the BLOCK-005 technical design as required.
+3. A new AIPM dispatch assigns the bounded fix to Pi.
+4. Codex (if AIPM chooses) performs a narrow recheck.
+
+### If Codex is later required for a BLOCK recheck
+1. Codex reports only remaining / new causally related material
    BLOCKs;
 2. Codex provides evidence + minimum acceptable outcome +
    recheck evidence;
@@ -1165,36 +1327,46 @@ narrow recheck -> closure / next fix.
 Pi is **STOPPED** awaiting AIPM direct GitHub Source Review
 on the FIX-SR-04 crash-recovery resume.
 
+**BLOCK-005 documentation-only sync (THIS UPDATE, 2026-08-31):**
+BLOCK-005 dedicated AIPM technical research is COMPLETE;
+technical direction is FROZEN on the existing
+`validate-on-next-interaction` architecture. The canonical
+next gate for BLOCK-005 is the SketchUp 2020 BLOCK-005
+Real-Host Feasibility Probe (Owner/AIPM-owned; Pi is not
+assigned). Pi did NOT modify production code, did NOT run
+the probe, did NOT rebuild the RBZ, did NOT rerun tests,
+and did NOT push. The prior "FIX-SR-04 awaiting AIPM source
+review" gate remains in effect for BLOCK-001..004 closure.
+Pi is STOPPED awaiting both the AIPM direct GitHub Source
+Review and the SU2020 BLOCK-005 Real-Host Feasibility Probe
+(the latter is Owner/AIPM-owned and requires no Pi action).
+
 ---
 
 # One-Line Current State
 
-**V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
-(CRASH-RECOVERY RESUME — FIX-SR-04) is complete within the
-same frozen
-`Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
-design: FIX-SR-04 removes the `present = to_remove.select { !nil? }`
-pre-filter in `DuplicateRepairExecutor.apply` and passes
-the COMPLETE intended `to_remove` set into `apply_atomic`,
-so the existing strict-liveness contract (FIX-SR-01)
-rejects nil / non-live removal members and a MIXED removal
-set fails closed BEFORE `begin_operation` (no partial
-execution, no host/logical divergence); the historical
-`already_applied` all-nil skip path is preserved; 2 new
-focused regressions added (V15-SR04-1 mixed set -> fail
-closed, V15-SR04-2 all nil -> preserved `:skipped`
-`already_applied`); combined NARROW CONTINUATION (SR01-04)
-18/18 PASS; full V15 149/149 PASS, full Ruby 813/813 PASS,
-RBZ smoke 9/9 PASS, Node DOM 163/163 PASS, `git diff --check`
-clean; RBZ rebuilt with new SHA-256
-`D48B6ED0DC29C8B574946C46DB3DCE122FC54797D4D4384CE89A2FECA5605E84`
-(size 642,033 bytes, 59 entries); implementation commit
-`3043219`, documentation commit `aabfa7e`, final local
-HEAD `aabfa7e97a1dbb55a39e14afe072939159bea8d1`; **`git
-push origin dev/v1.5` BLOCKED by environment network
-failure** (github.com:443 unreachable; local stable
-commits preserved; remote HEAD still `9099f66`; AIPM can
-retry push from a reachable environment); BLOCK-005
-remains OPEN by design; Pi is STOPPED awaiting AIPM direct
-GitHub Source Review; V1.6 must wait for AIPM/Owner
-closure and a new AIPM V1.6 Technical Blueprint.**
+**V1.5 BLOCK-005 documentation-only sync (THIS UPDATE,
+2026-08-31) is complete: BLOCK-005 dedicated AIPM technical
+research is COMPLETE, technical direction is FROZEN on the
+existing `validate-on-next-interaction -> detect host
+mismatch -> fail closed / invalidate -> host-authoritative
+prepare/rebuild` architecture with the SketchUp Model as
+geometry Source of Truth; no global ModelObserver /
+EntitiesObserver architecture is added in V1.5; entity-level
+observer event replay is rejected as a correctness
+mechanism; `persistent_id` is not the correctness Source of
+Truth; old Ruby Entity handles must never be trusted after
+host-state divergence; ModelObserver invalidation is only an
+approved fallback if the SU2020 real-host probe proves the
+existing validation seam insufficient. The canonical next
+gate is the **SketchUp 2020 BLOCK-005 Real-Host Feasibility
+Probe** (Owner/AIPM-owned; Pi is NOT assigned). No production
+code was modified, no tests were rerun, no RBZ was rebuilt,
+and no push was attempted by this update. Prior state (the
+V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
+CRASH-RECOVERY RESUME — FIX-SR-04) remains on the same
+branch `dev/v1.5` with local HEAD `1761adb50bc3efebb0f674ce9728cebbe6228986`
+(in sync with `origin/dev/v1.5`); BLOCK-001..004 closure
+remains gated on AIPM direct GitHub Source Review of the
+FIX-SR-04 packet; BLOCK-005 closure is now gated on the
+SU2020 real-host probe. Pi is STOPPED.**
