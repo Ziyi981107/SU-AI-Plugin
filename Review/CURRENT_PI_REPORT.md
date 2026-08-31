@@ -564,18 +564,74 @@ AIPM chooses) the next Codex narrow xHigh recheck passes.
 | Item | Value |
 |---|---|
 | Starting HEAD | `9099f66a0c7d43ba149b83e4a3399361f863d383` |
-| Implementation commit | (see §14.8) |
-| `git status --short` (before commit) | modified: 2 tracked files; untracked: 7 AIPM evidence `.txt` files (preserved) |
+| Implementation commit | `3043219` (FIX-SR-04 production + tests) |
+| Documentation commit | `aabfa7e` (state + report update) |
+| Final `git rev-parse HEAD` | `aabfa7e97a1dbb55a39e14afe072939159bea8d1` |
+| `git status --short` (before commit) | modified: 2 tracked files (production + test); untracked: 7 AIPM evidence `.txt` files (preserved) |
+| `git status --short` (final, after commit) | untracked: 7 AIPM evidence `.txt` files (preserved); no tracked modifications |
 | `git diff --check` (final) | clean |
 | Pushed to | `origin/dev/v1.5` |
+| `git push` result | **PUSH BLOCKED — REMOTE UNREACHABLE (environment network failure, NOT a code or dispatch issue)** |
 | `main` pushed / merged | no |
 | force-push | no |
 | release / tag | no |
 | BLOCK-005 touched | no |
 | V1.6 started | no |
 | Untracked AIPM evidence files modified / deleted | no |
+| Stash / reset / clean / merge / rebase | NOT performed |
 
-### 14.8 Hard STOP
+### 14.8 Push BLOCKED — environment network failure (details)
+
+After the implementation + documentation commits, `git
+push origin dev/v1.5` was attempted multiple times. Every
+attempt failed identically with:
+
+```
+fatal: unable to access 'https://github.com/Ziyi107/SU-AI-Plugin.git/':
+       Failed to connect to github.com:443 after 21048..21075 ms:
+       Could not connect to server
+```
+
+A direct `curl -I https://github.com` also returns
+connection-refused after a 21-second timeout. The remote
+itself is configured (`origin
+https://github.com/Ziyi107/SU-AI-Plugin.git`) and was
+reachable in prior sessions (the prior NARROW CONTINUATION
+`8895485` was successfully pushed); this is a transient
+network / proxy / firewall failure on this host.
+
+Per `CURRENT_STATE.md` §10 and `PROJECT_HANDOFF.md` §16:
+
+> Environment/toolchain failure is not automatically
+> product-code failure. Environment failure is not evidence
+> of product-code regression.
+
+The local commits are stable, the RBZ is built, all
+required tests pass, `git diff --check` is clean, and the
+implementation is complete. The dispatch's push submission
+contract requires this to be reported, not silently
+worked around by:
+
+- force-push;
+- rewriting history;
+- changing the remote;
+- merging `main`;
+- skipping the test evidence;
+- fabricating a "pushed" claim.
+
+The final local state is therefore:
+
+- Local `dev/v1.5` HEAD:
+  `aabfa7e97a1dbb55a39e14afe072939159bea8d1`
+- `origin/dev/v1.5` HEAD (unchanged by THIS UPDATE):
+  `9099f66a0c7d43ba149b83e4a3399361f863d383`
+
+AIPM can retry the push from any reachable environment
+when the network is restored. The local commits are
+self-contained, atomic, and match the dispatch's
+implementation evidence.
+
+### 14.9 Hard STOP
 
 Per the CRASH-RECOVERY RESUME instruction §7 and §8:
 
@@ -596,7 +652,8 @@ xHigh recheck.
 # One-Line FIX-SR-04 Update
 
 **V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
-(CRASH-RECOVERY RESUME) is complete within the same frozen
+(CRASH-RECOVERY RESUME — FIX-SR-04) is complete within the
+same frozen
 `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`:
 FIX-SR-04 removes the `present = to_remove.select { !nil? }`
 pre-filter in `DuplicateRepairExecutor.apply` and passes the
@@ -612,6 +669,12 @@ all-nil path is preserved; 2 new focused regressions added
 Node DOM 163/163 PASS, `git diff --check` clean; RBZ
 rebuilt with new SHA-256
 `D48B6ED0DC29C8B574946C46DB3DCE122FC54797D4D4384CE89A2FECA5605E84`
-(size 642,033 bytes, 59 entries); pushed to
-`origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi
-STOPPED awaiting AIPM direct GitHub Source Review.**
+(size 642,033 bytes, 59 entries); implementation commit
+`3043219`, documentation commit `aabfa7e`, final local
+HEAD `aabfa7e97a1dbb55a39e14afe072939159bea8d1`; **`git
+push origin dev/v1.5` BLOCKED by environment network
+failure** (github.com:443 unreachable; local stable
+commits preserved; remote HEAD still `9099f66`; AIPM can
+retry push from a reachable environment); BLOCK-005
+remains OPEN by design; Pi STOPPED awaiting AIPM direct
+GitHub Source Review.**

@@ -227,15 +227,29 @@ Starting HEAD (pre-task, also `origin/dev/v1.5`):
 `9099f66a0c7d43ba149b83e4a3399361f863d383`
 
 Implementation commit:
-- see `git log -1 dev/v1.5` after the implementation
-  commit (created in this update).
+`3043219` (FIX-SR-04 production + tests)
 
 Documentation commit:
-- see `git log -1 dev/v1.5` after the state + report
-  update commit (created in this update).
+`aabfa7e` (state + report update)
 
-Final `git rev-parse HEAD` == `origin/dev/v1.5`:
-- see `git rev-parse HEAD` at submission time.
+Final `git rev-parse HEAD`:
+`aabfa7e97a1dbb55a39e14afe072939159bea8d1`
+
+Push status:
+**PUSH BLOCKED — REMOTE UNREACHABLE.** `git push origin
+dev/v1.5` was attempted multiple times; every attempt
+failed identically with `Failed to connect to
+github.com:443 after 21s: Could not connect to server`.
+A direct `curl -I https://github.com` also returns
+connection-refused. The remote is configured and was
+reachable in prior sessions; this is a transient
+network / proxy / firewall failure on this host, not a
+code or dispatch issue. The local commits are stable,
+self-contained, and atomic. AIPM can retry the push
+from any reachable environment.
+
+`origin/dev/v1.5` HEAD (unchanged by THIS UPDATE):
+`9099f66a0c7d43ba149b83e4a3399361f863d383`
 
 Working tree (THIS UPDATE, after the implementation +
 documentation commits):
@@ -1174,8 +1188,13 @@ closed, V15-SR04-2 all nil -> preserved `:skipped`
 RBZ smoke 9/9 PASS, Node DOM 163/163 PASS, `git diff --check`
 clean; RBZ rebuilt with new SHA-256
 `D48B6ED0DC29C8B574946C46DB3DCE122FC54797D4D4384CE89A2FECA5605E84`
-(size 642,033 bytes, 59 entries); pushed to
-`origin/dev/v1.5`; BLOCK-005 remains OPEN by design; Pi is
-STOPPED awaiting AIPM direct GitHub Source Review; V1.6
-must wait for AIPM/Owner closure and a new AIPM V1.6
-Technical Blueprint.**
+(size 642,033 bytes, 59 entries); implementation commit
+`3043219`, documentation commit `aabfa7e`, final local
+HEAD `aabfa7e97a1dbb55a39e14afe072939159bea8d1`; **`git
+push origin dev/v1.5` BLOCKED by environment network
+failure** (github.com:443 unreachable; local stable
+commits preserved; remote HEAD still `9099f66`; AIPM can
+retry push from a reachable environment); BLOCK-005
+remains OPEN by design; Pi is STOPPED awaiting AIPM direct
+GitHub Source Review; V1.6 must wait for AIPM/Owner
+closure and a new AIPM V1.6 Technical Blueprint.**
