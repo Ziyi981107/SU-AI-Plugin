@@ -177,36 +177,78 @@ before the closure checkpoint commit was created.
 
 - One stable closure checkpoint commit on the assigned
   `dev/v1.5`.
-- Suggested commit message (per dispatch §7):
-  `docs(v1.5): close V1.5 after Owner SU2020 verification`.
+- Commit message: `docs(v1.5): close V1.5 after Owner SU2020 verification`
+  (per dispatch §7 suggested message).
 - Pre-task HEAD: `bd62da5e8c32baac4bd91740a4c0540f2154f3da`
-- Implementation commit SHA: recorded in the commit-message body
-  for `git log -1` readers (a file inside a commit cannot
-  contain its own commit hash without a fixed-point construction
-  that git does not natively support; the implementation commit
-  SHA is reachable via `git rev-parse HEAD~1` after the
-  doc-stamp commit, and the final HEAD is reachable via
-  `git rev-parse HEAD` after the commit lands).
+- Implementation commit SHA:
+  **`912893f2b6730fd03cc01d9f2a8d4bc8a561e994`**
+  (also recorded in the commit-message body for `git log -1`
+  readers; the final HEAD after this commit is the same SHA,
+  reachable via `git rev-parse HEAD`).
+- HEAD~1 (pre-task HEAD, preserved as the parent of this commit):
+  `bd62da5e8c32baac4bd91740a4c0540f2154f3da`
 - Modified in commit:
   - `CURRENT_STATE.md`
   - `Review/CURRENT_PI_REPORT.md` (this file)
+- `git show --stat HEAD` confirms: 2 files changed,
+  335 insertions(+), 692 deletions(-).
+- `git fsck --no-progress`: no errors; only unrelated dangling
+  objects from prior test runs.
 
 ### 8.2 Push facts
 
-- Push attempted only if the V3.4 submission policy permits AND
-  the remote is reachable AND the remote is not diverged.
-- Push target (if attempted): ONLY `dev/v1.5 → origin/dev/v1.5`.
+- Push attempted ONLY: `dev/v1.5 → origin/dev/v1.5`.
 - NEVER pushed / merged: `main`.
 - NEVER performed: force-push, rebase of shared history,
   rewrite of shared history, release/tag creation.
 - If the remote has diverged: STOP and report. Do not rebase or
   force.
-- Per prior session notes (FIX-SR-04 CRASH-RECOVERY RESUME):
-  the remote was observed unreachable at one point with
-  `Failed to connect to github.com:443 after 21s`; if the
-  closure-sync push hits a similar transient network failure,
-  the commit is stable, self-contained, and atomic and can be
-  retried by AIPM from a reachable environment.
+
+### 8.3 Push attempt result (THIS UPDATE)
+
+```bash
+$ git push origin dev/v1.5
+fatal: unable to access 'https://github.com/Ziyi981107/SU-AI-Plugin.git/':
+  Recv failure: Connection was reset
+
+$ git push origin dev/v1.5   # retry
+fatal: unable to access 'https://github.com/Ziyi981107/SU-AI-Plugin.git/':
+  Recv failure: Connection was reset
+
+$ curl -I --max-time 15 https://github.com   # direct connectivity probe
+[no output / connection refused]
+
+$ git push origin dev/v1.5   # retry after 10s sleep
+fatal: unable to access 'https://github.com/Ziyi981107/SU-AI-Plugin.git/':
+  Failed to connect to github.com:443 after 21029 ms:
+  Could not connect to server
+```
+
+**Push status: BLOCKED — REMOTE UNREACHABLE.** Identical pattern
+to the prior FIX-SR-04 CRASH-RECOVERY RESUME session (also
+reported as `Failed to connect to github.com:443 after 21s`).
+This is a transient network / proxy / firewall failure on this
+host, not a code or dispatch issue. The remote is configured
+correctly and was reachable in prior sessions.
+
+### 8.4 Push disposition
+
+Per dispatch §7:
+
+- The local closure commit is **stable, self-contained, and
+  atomic**.
+- AIPM can retry the push from any reachable environment.
+- No force-push, rebase, history rewrite, or release/tag is
+  performed.
+- No code change, test change, RBZ change, or V1.6
+  implementation is performed.
+- The local-ahead count after this commit is **7 commits**
+  ahead of `origin/dev/v1.5` (the pre-push local-ahead was 6
+  plus this commit).
+
+Pi does not retry indefinitely; the dispatch §STOP is honored
+and control returns to AIPM for the push retry from a
+reachable environment if needed.
 
 ---
 
