@@ -12,7 +12,9 @@ Status:
 - **BLOCK-005: CLOSED**
 - **Owner SketchUp 2020 V1.5 verification: PASS** (Final Product Owner confirmation recorded by AIPM)
 - **BLOCK-005 technical direction (unchanged, frozen):** `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild`. No global ModelObserver / EntitiesObserver architecture added in V1.5. `persistent_id` is not the correctness Source of Truth. Old Ruby Entity handles must never be trusted after host-state divergence.
-- **V1.6: NOT STARTED** (a V1.6 Stage Technical Blueprint exists in `Prompt/` but requires a separate ACTIVE `CURRENT_PI_DISPATCH` referencing it before any V1.6 implementation begins)
+- **V1.6: PI IMPLEMENTATION COMPLETE / AWAITING AIPM SOURCE REVIEW** (per dispatch `V16-PLANAR-NORMALIZATION-IMPLEMENTATION-2026-08-31`, on assigned `dev/v1.6`).
+- **V1.6: OWNER REAL-HOST VERIFICATION NOT YET RUN** (SketchUp 2020 Owner / Owner-AIPM step remains after AIPM source review).
+- **V1.6: NOT CLOSED** (closure is Owner / AIPM-side per dispatch §15 + §9; V1.6 frozen Blueprint §13 requires real-SU2020 Owner verification before closure).
 - **V1.7: NOT STARTED**
 - **V2 / MCP: OUT OF SCOPE**
 
@@ -23,7 +25,94 @@ Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
 - Entries: **59**
 - SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
 
-Next expected AIPM action: activate a new `CURRENT_PI_DISPATCH` that references the frozen V1.6 Stage Technical Blueprint (`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`). Pi remains STOPPED.
+V1.6 PI-implementation RBZ candidate (this dispatch):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **733,504 bytes**
+- Entries: **62** (+3 vs V1.5: `planar_normalization_analyzer.rb`,
+  `planar_normalization_proposer.rb`,
+  `planar_normalization_executor.rb`)
+- SHA-256: **`c1e4b641b1ac8f509c7bfede52770bbd6d8a2f771f3003f4f5e572341dc72b68`**
+
+Next expected AIPM action: AIPM direct source review of the V1.6
+implementation packet against the frozen Blueprint, then (on AIPM
+PASS) the Owner SU2020 real-host verification gate. Codex review is
+NOT a routine reviewer for V1.6 and was NOT invoked.
+
+## V1.6 PI-IMPLEMENTATION DISPATCH (THIS UPDATE)
+
+Updated: 2026-08-31 (V16-PLANAR-NORMALIZATION-IMPLEMENTATION-2026-08-31
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The frozen V1.6
+Stage Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`
+is fully implemented: deterministic PlanarNormalizationAnalyzer +
+host-aware PlanarNormalizationProposer + PlanarNormalizationExecutor +
+Tolerance.planar_z_snap + WorkingModeRunner compute/apply +
+dialog callbacks + Adapter edge_curve / edge_faces_count /
+edge_endpoints / transform_vertices_by_vectors / vertex_position
++ 25 V1.6 regression tests. V1.6 OWNER REAL-HOST VERIFICATION
+NOT YET RUN. V1.6 NOT CLOSED.)
+
+Implementation map (Blueprint requirement → production symbol →
+test evidence):
+
+| Blueprint | Symbol / file | Test |
+|-----------|---------------|------|
+| §4.1 `planar_z_snap` tolerance | `Tolerance#planar_z_snap` | T1, T2 |
+| §4.2 schema/version/equality | `Tolerance.to_h`, `ExecutionConfigSnapshot` | T3 |
+| §6.1 eligible vertices | `PlanarNormalizationProposer#propose` | G1, G5 |
+| §6.1 unsafe scope | `adapter.edge_curve`, `adapter.edge_faces_count` | G3, G4 |
+| §6.2 sliding window | `PlanarNormalizationAnalyzer.analyze` | P2, P3, P4 |
+| §6.2 strict majority | `PlanarNormalizationAnalyzer.analyze` | P5 |
+| §6.2 tied windows | `PlanarNormalizationAnalyzer.analyze` | P6 |
+| §6.3 inliers / outliers | `PlanarNormalizationAnalyzer.analyze` | P4, G5 |
+| §6.4 shared-vertex safety | `PlanarNormalizationProposer#propose` | G2 |
+| §7 preview states | `planar_normalization` snapshot field | I1, I2 |
+| §8.1 preflight | `PlanarNormalizationExecutor.apply` | H1 |
+| §8.2 host mutation | `adapter.transform_vertices_by_vectors` | H2 |
+| §8.3 commit / failure | `PlanarNormalizationExecutor.apply` | H3, H4 |
+| §9 post-validation | `PlanarNormalizationExecutor.apply` | H2 |
+| §10 provenance | `_attach_planar_normalization_to_snapshot` | I2 |
+| §11 lean UX | dialog_runner.rb callbacks | (UI harness) |
+| §17 implementation order | (this dispatch) | n/a |
+
+Source immutability: G1+G6 + the source fingerprint contract
+prove source CAD is unchanged before/after Apply. The proposer
++ executor operate exclusively on derived workspace geometry.
+
+Working tree (THIS UPDATE):
+- Modified production files: 7 (tolerance.rb, analysis_config.rb,
+  derived_workspace_adapter.rb, planar_normalization_analyzer.rb,
+  planar_normalization_proposer.rb, planar_normalization_executor.rb,
+  su_derived_workspace_adapter.rb, working_mode_runner.rb,
+  dialog_runner.rb, main.rb).
+- Added production files: 3
+  (planar_normalization_analyzer.rb,
+  planar_normalization_proposer.rb,
+  planar_normalization_executor.rb).
+- Added test file: 1 (test_v16_planar_normalization.rb — 25 tests).
+- Tracked AIPM authority: 2 (V1.5 closure record + V1.6
+  Stage Technical Blueprint).
+- RBZ rebuilt: yes (size 733504, entries 62, SHA-256
+  `c1e4b641b1ac8f509c7bfede52770bbd6d8a2f771f3003f4f5e572341dc72b68`).
+- Local checkpoints on `dev/v1.6`: 5
+  (V1.6 doc-stamp + 3 implementation + final RBZ state — see
+  `git log --oneline -10` for the exact SHAs).
+- Push: NOT PUSHED per dispatch §14 (bounded retry against
+  `origin/dev/v1.6` may be attempted from a reachable
+  environment; same RBZ is available on the RBZ file system
+  path for the Owner SU2020 verification gate regardless).
+- `git diff --check`: clean.
+
+V1.5 regression coverage preserved: V1.0–V1.5 full suite
+(817 pre-existing tests + 25 V1.6 tests = 842 total) all PASS.
+Full Ruby suite: 842 pass / 0 fail / 0 error. RBZ smoke:
+9/9 PASS. Node DOM (test_html_render_dom.js): PASS.
+
+Owner / AIPM SU2020 real-host verification is NOT YET RUN
+per dispatch §15 STOP condition.
+
+---
 
 ---
 
