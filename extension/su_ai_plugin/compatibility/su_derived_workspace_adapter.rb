@@ -347,6 +347,193 @@ module SUAnalysis
         end
         ids
       end
+
+      # ---- V1.6 Planar Normalization / Z Policy adapter methods ----
+
+      # V1.6 Blueprint §6.1 / §8.2: report whether a derived
+      # Edge belongs to a Curve / Arc. Returns the edge's curve
+      # (Sketchup::Curve, an Array of edges, etc.) or nil. The
+      # proposal builder treats any non-nil / non-empty return
+      # as "edge is INELIGIBLE for auto-normalization".
+      #
+      # IMPORTANT: this method accepts BOTH an EDGE handle
+      # AND a GROUP handle (the V1.4 handle_registry stores
+      # the GROUP handle per derived_id; the V1.6 proposer
+      # passes the group handle). For a group handle, we
+      # inspect every edge inside the group.
+      def edge_curve(handle)
+        return nil unless handle
+        if _is_edge?(handle)
+          return handle.respond_to?(:curve) ? handle.curve : nil
+        end
+        # Group handle: inspect every edge inside.
+        return nil unless handle.respond_to?(:entities)
+        ents = handle.entities
+        return nil unless ents && ents.respond_to?(:each)
+        ents.each do |e|
+          return e.curve if e.respond_to?(:curve) && e.curve
+        end
+        nil
+      end
+
+      # V1.6 Blueprint §6.1: count adjacent faces for a derived
+      # Edge. Returns Integer (0 if edge has no adjacent
+      # faces). The proposal builder treats >0 as "edge is
+      # INELIGIBLE for auto-normalization".
+      def edge_faces_count(handle)
+        return 0 unless handle
+        if _is_edge?(handle)
+          return handle.respond_to?(:faces) && handle.faces.respond_to?(:length) ?
+                   handle.faces.length : 0
+        end
+        return 0 unless handle.respond_to?(:entities)
+        ents = handle.entities
+        return 0 unless ents
+        total = 0
+        ents.each do |e|
+          if e.respond_to?(:faces) && e.faces.respond_to?(:length)
+            total += e.faces.length
+          end
+        end
+        total
+      end
+
+      # V1.6 Blueprint §6.1: enumerate the edge's two host
+      # vertex handles. Returns [start_vertex, end_vertex]
+      # (Sketchup::Vertex objects) or nil if the edge lacks
+      # the standard `start` / `end` accessors.
+      #
+      # Accepts BOTH an EDGE handle AND a GROUP handle. For a
+      # group handle, we use the first edge inside.
+      def edge_endpoints(handle)
+        return nil unless handle
+        edge = if _is_edge?(handle)
+                 handle
+               elsif handle.respond_to?(:entities)
+                 _first_edge(handle.entities)
+               end
+        return nil unless edge
+        s = edge.respond_to?(:start) ? edge.start : nil
+        e = edge.respond_to?(:end)   ? edge.end   : nil
+        return nil if s.nil? || e.nil?
+        [s, e]
+      end
+
+      # ---- V1.6 internals ----
+
+      def _is_edge?(handle)
+        return false unless handle
+        handle.respond_to?(:start) && handle.respond_to?(:end) &&
+          handle.respond_to?(:curve)
+      end
+
+      def _first_edge(entities)
+        return nil unless entities && entities.respond_to?(:each)
+        entities.each do |e|
+          return e if _is_edge?(e)
+        end
+        nil
+      end
+
+      # V1.6 Blueprint §8.2: apply a batch of Z-only translation
+      # vectors to the supplied host vertex handles. Uses the
+      # approved legacy-compatible host primitive
+      # `Sketchup::Entities#transform_by_vectors(entities, vectors)`
+      # which takes an Array of entities and an Array of
+      # matching-length translation vectors.
+      #
+      # Preflight contract (Blueprint §8.1): any vector with
+      # non-zero X or Y is REJECTED BEFORE any mutation; any
+      # non-finite component is rejected; any length mismatch
+      # is rejected. All vectors MUST be exactly `[0, 0, dz]`.
+      def transform_vertices_by_vectors(vertex_handles, vectors)
+        unless vertex_handles.is_a?(Array) && vectors.is_a?(Array)
+          raise ArgumentError,
+                "transform_vertices_by_vectors requires Array handles + Array vectors"
+        end
+        unless vertex_handles.length == vectors.length
+          raise ArgumentError,
+                "transform_vertices_by_vectors: handle/vector length mismatch " \
+                "(#{vertex_handles.length} vs #{vectors.length})"
+        end
+        if vertex_handles.empty?
+          return 0
+        end
+        # Pre-validate every vector before any mutation.
+        vectors.each_with_index do |vec, i|
+          unless vec.is_a?(Array) && vec.length >= 3
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be Array length >= 3; got #{vec.inspect}"
+          end
+          unless vec[0].is_a?(Numeric) && vec[1].is_a?(Numeric) && vec[2].is_a?(Numeric)
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be all-numeric; got #{vec.inspect}"
+          end
+          if (vec[0].respond_to?(:finite?) && !vec[0].finite?) ||
+             (vec[1].respond_to?(:finite?) && !vec[1].finite?) ||
+             (vec[2].respond_to?(:finite?) && !vec[2].finite?)
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be all-finite; got #{vec.inspect}"
+          end
+          if vec[0] != 0.0 || vec[1] != 0.0
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be Z-only [0, 0, dz]; got #{vec.inspect}"
+          end
+        end
+        # The Sketchup API requires the entities to share a
+        # common `Sketchup::Entities` collection. The proposal
+        # builder guarantees this contract (every vertex must
+        # belong to the same owner); if the caller violates
+        # this contract, the SU API may raise a TypeError.
+        # We treat any raised StandardError as a host-side
+        # failure; the caller maps that to FAILED.
+        ents = _resolve_entities_collection(vertex_handles)
+        if ents.nil? || !ents.respond_to?(:transform_by_vectors)
+          raise ArgumentError,
+                "transform_vertices_by_vectors: cannot resolve shared Sketchup::Entities for the supplied vertex set"
+        end
+        ents.transform_by_vectors(vertex_handles, vectors)
+        vertex_handles.length
+      end
+
+      # V1.6 Blueprint §9 post-validation: read the current
+      # world-coord position of a host vertex (Sketchup::Vertex).
+      # Returns a 3-Float Array `[x, y, z]` or nil.
+      def vertex_position(vertex_handle)
+        return nil unless vertex_handle
+        if vertex_handle.respond_to?(:position)
+          p = vertex_handle.position
+          if p.respond_to?(:to_a)
+            arr = p.to_a
+            return [arr[0].to_f, arr[1].to_f, arr[2].to_f] if arr.length >= 3
+          end
+        end
+        nil
+      end
+
+      # ---- V1.6 internals ----
+
+      # V1.6 Blueprint §8.2 ownership proof: every supplied
+      # vertex handle must share the same Sketchup::Entities
+      # collection (transform_by_vectors requires it). We
+      # derive the owner by inspecting each vertex's parent
+      # group (`.parent` / `.entities`). When the test env
+      # has no real SketchUp, this returns nil (the adapter's
+      # delegate method below the test env never invokes
+      # this path because begin_operation + transform happen
+      # inside SU's caller stack).
+      def _resolve_entities_collection(vertex_handles)
+        first = vertex_handles.first
+        return nil unless first
+        if first.respond_to?(:parent) && first.parent &&
+           first.parent.respond_to?(:entities)
+          return first.parent.entities
+        end
+        if first.respond_to?(:entities) && first.entities
+          return first.entities
+        end
+        nil
+      end
     end
   end
 end

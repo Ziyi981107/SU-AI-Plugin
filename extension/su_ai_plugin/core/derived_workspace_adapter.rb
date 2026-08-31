@@ -97,6 +97,92 @@ module SUAnalysis
         raise NotImplementedError, 'subclass must implement host_assigned_ids_of'
       end
 
+      # V1.6 Planar Normalization / Z Policy: report whether a
+      # derived Edge belongs to a Curve / Arc. Returning a truthy
+      # value marks the edge as INELIGIBLE for auto-normalization
+      # (the analyzer will skip its vertices). Per Blueprint §6.1,
+      # Curve / Arc members must not be auto-normalized.
+      # Default for the abstract base: raises NotImplementedError;
+      # production + fake adapters override.
+      def edge_curve(_handle)
+        raise NotImplementedError, 'subclass must implement edge_curve'
+      end
+
+      # V1.6 Planar Normalization / Z Policy: count the
+      # adjacent Faces for a derived Edge. Returning >0 marks
+      # the edge as INELIGIBLE for auto-normalization. Per
+      # Blueprint §6.1, Face-adjacent edges must not be
+      # auto-normalized. Default for the abstract base: raises
+      # NotImplementedError; production + fake adapters
+      # override.
+      def edge_faces_count(_handle)
+        raise NotImplementedError, 'subclass must implement edge_faces_count'
+      end
+
+      # V1.6 Planar Normalization / Z Policy: inspect a derived
+      # edge for safety under the host's `transform_by_vectors`
+      # mutation. The base contract is: returns a Hash
+      # `{safe: true | false, reasons: [...]}`. Subclasses MAY
+      # override to add host-specific safety checks; the default
+      # covers curve/face safety via edge_curve + edge_faces_count
+      # (subclasses are responsible for implementing those).
+      # This method is intentionally NOT an abstract raise: the
+      # base class can compose a default answer from the two
+      # subclass-provided primitives.
+      def edge_safety(edge_handle)
+        reasons = []
+        curve = edge_curve(edge_handle)
+        unless curve.nil? || (curve.respond_to?(:empty?) && curve.empty?)
+          reasons << 'curve_membership'
+        end
+        fc = edge_faces_count(edge_handle)
+        if fc.is_a?(Integer) && fc > 0
+          reasons << 'face_adjacency'
+        end
+        {
+          'safe'    => reasons.empty?,
+          'reasons' => reasons.freeze
+        }.freeze
+      end
+
+      # V1.6 Planar Normalization / Z Policy: mutate multiple
+      # host vertices with one Z-only translation vector. Used by
+      # the production path. The base contract: returns the
+      # number of vertices actually mutated, OR raises on
+      # failure. The vectors must be `[0, 0, dz]`; the adapter
+      # MUST reject vectors with non-zero X or Y per Blueprint
+      # §8.2 (Z-only movement).
+      def transform_vertices_by_vectors(_vertex_handles, _vectors)
+        raise NotImplementedError, 'subclass must implement transform_vertices_by_vectors'
+      end
+
+      # V1.6 Planar Normalization / Z Policy: read the current
+      # world-coord position of a host vertex (returned as a
+      # 3-Float Array). Used by the post-validation path. Default
+      # for the abstract base: raises NotImplementedError.
+      def vertex_position(_vertex_handle)
+        raise NotImplementedError, 'subclass must implement vertex_position'
+      end
+
+      # V1.6 Planar Normalization / Z Policy: enumerate every
+      # unique host vertex belonging to the supplied derived
+      # edge handle. Returns an Array of host vertex handles
+      # (length 2 for a faithful edge). The base contract:
+      # subclasses override. Used by the proposal builder to
+      # resolve analyzer-proposed vertex indices to live host
+      # handles.
+      #
+      # IMPORTANT: the V1.4 handle_registry stores the GROUP
+      # handle per derived_id (one SU-AI-Derived-* group per
+      # source Edge, with the edge inside the group). The
+      # proposer therefore calls edge_endpoints with the
+      # GROUP handle, not the EDGE handle. Implementations
+      # MUST accept BOTH (resolve the inner edge when given a
+      # group handle).
+      def edge_endpoints(_handle)
+        raise NotImplementedError, 'subclass must implement edge_endpoints'
+      end
+
       # V1.4 CodeX BLOCK fix (Stage 4): begin a SketchUp
       # operation. Production adapter wraps this in
       # `model.start_operation(label, true)`. FakeAdapter
@@ -196,6 +282,28 @@ module SUAnalysis
           true
         end
       end
+      # V1.6 Planar Normalization / Z Policy: a fake host
+      # vertex stand-in. Stores a 3-Float position; supports
+      # position read + transform by a single `[0, 0, dz]`
+      # vector (the fake's transform model is a plain Z
+      # assignment so the test can assert Z movement while
+      # proving XY is preserved).
+      FakeVertex = Struct.new(:x, :y, :z, :valid) do
+        def valid?
+          self[:valid] != false
+        end
+        def position
+          [self[:x], self[:y], self[:z]]
+        end
+        # Apply a single translation vector. For V1.6 (Z-only
+        # normalization), the fake ignores X/Y and updates Z.
+        # Returns the new position.
+        def apply_vector(vec)
+          return position unless vec.is_a?(Array) && vec.length >= 3
+          self[:z] = (self[:z].to_f + vec[2].to_f)
+          position
+        end
+      end
       FakeFace = Struct.new(:derived_id, :layer, :vertex_count, :valid, :vertices) do
         def valid?
           self[:valid] != false
@@ -204,7 +312,8 @@ module SUAnalysis
 
       attr_reader :created_handles, :disposed_handles,
                   :operation_log, :operation_open,
-                  :added_edges, :added_faces
+                  :added_edges, :added_faces,
+                  :vertex_handles_by_edge
 
       def initialize
         @created_handles = []
@@ -216,6 +325,12 @@ module SUAnalysis
         @added_faces = []
         @id_counter = 0
         @next_entity_id = 0
+        # V1.6 Planar Normalization / Z Policy: track every
+        # fake host vertex handle created by add_edge_to_group
+        # so the proposal builder can resolve analyzer-proposed
+        # vertex indices to live host handles. Keyed by
+        # FakeEdge (Struct-equality by identity).
+        @vertex_handles_by_edge = {}
         # V1.4 CodeX BLOCK fix (Stage 4): operation-wrapping
         # observability.
         @operation_open = false
@@ -280,6 +395,14 @@ module SUAnalysis
       # endpoints EXACTLY. No Z lift, no extra Face. The
       # FakeEdge handle is returned so tests can assert the
       # endpoint identity via edge.start / edge.end.
+      #
+      # V1.6 Planar Normalization / Z Policy: the fake adapter
+      # ALSO creates a pair of FakeVertex handles for the
+      # edge's endpoints and stores them in
+      # @vertex_handles_by_edge[edge] = [v_start, v_end]. The
+      # proposal builder reads this map to resolve analyzer-
+      # proposed vertex indices back to host vertex handles
+      # for `transform_vertices_by_vectors`.
       def add_edge_to_group(group_handle, start_point, end_point)
         unless group_handle && group_handle.respond_to?(:add_child)
           raise ArgumentError,
@@ -296,6 +419,19 @@ module SUAnalysis
           (group_handle.respond_to?(:name) ? 'Layer0' : nil),
           true
         )
+        # V1.6 Planar Normalization / Z Policy: create the
+        # two fake host vertex handles for this edge and
+        # record them. The fake model does NOT dedupe
+        # vertices across edges (each edge owns its own pair);
+        # the proposal builder applies the analyzer's
+        # unique-vertex dedupe at the world-coord level.
+        v_start = FakeVertex.new(
+          start_point[0].to_f, start_point[1].to_f, start_point[2].to_f, true
+        )
+        v_end = FakeVertex.new(
+          end_point[0].to_f,   end_point[1].to_f,   end_point[2].to_f,   true
+        )
+        @vertex_handles_by_edge[edge] = [v_start, v_end].freeze
         @added_edges << edge
         group_handle.add_child(edge)
         edge
@@ -376,6 +512,107 @@ module SUAnalysis
           { 'fake_derived_id' => handle.derived_id }
         else
           {}
+        end
+      end
+
+      # ---- V1.6 Planar Normalization / Z Policy adapter methods ----
+
+      # V1.6 Blueprint §6.1 / §8.2: the fake model has no
+      # Curve membership or Face adjacency for its
+      # faithfully-derived Edges; safe by default.
+      def edge_curve(_handle)
+        nil
+      end
+
+      def edge_faces_count(_handle)
+        0
+      end
+
+      # V1.6 Blueprint §6.1: enumerate the edge's two host
+      # vertex handles (start, end). Accepts BOTH an EDGE
+      # handle (recorded in @vertex_handles_by_edge by
+      # add_edge_to_group) AND a GROUP handle (the V1.4
+      # handle_registry stores the GROUP handle per
+      # derived_id). For GROUP handles we traverse to the
+      # first edge child of the group.
+      def edge_endpoints(handle)
+        return nil unless handle
+        if @vertex_handles_by_edge.key?(handle)
+          return @vertex_handles_by_edge[handle]
+        end
+        if handle.respond_to?(:children) && handle.children.respond_to?(:edges)
+          first_edge = handle.children.edges.first
+          return @vertex_handles_by_edge[first_edge] if first_edge
+        end
+        nil
+      end
+
+      # V1.6 Blueprint §8.2: apply a batch of Z-only translation
+      # vectors to the supplied host vertex handles. The fake
+      # model updates each vertex's stored Z by the vector's
+      # Z component; X/Y are NOT mutated. Returns the number of
+      # vertices actually mutated (length of the input when
+      # all vectors are valid `[0, 0, dz]`).
+      #
+      # Defensive contract (Blueprint §8.1 preflight): any
+      # vector with non-zero X or Y, OR any non-finite
+      # component, raises ArgumentError BEFORE any mutation.
+      # The caller is expected to have already verified the
+      # inputs; this is the last-line defense.
+      def transform_vertices_by_vectors(vertex_handles, vectors)
+        unless vertex_handles.is_a?(Array) && vectors.is_a?(Array)
+          raise ArgumentError,
+                "transform_vertices_by_vectors requires Array handles + Array vectors"
+        end
+        unless vertex_handles.length == vectors.length
+          raise ArgumentError,
+                "transform_vertices_by_vectors: handle/vector length mismatch " \
+                "(#{vertex_handles.length} vs #{vectors.length})"
+        end
+        # Pre-validate every vector BEFORE any mutation.
+        vectors.each_with_index do |vec, i|
+          unless vec.is_a?(Array) && vec.length >= 3
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be Array length >= 3; got #{vec.inspect}"
+          end
+          unless vec[0].is_a?(Numeric) && vec[1].is_a?(Numeric) && vec[2].is_a?(Numeric)
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be all-numeric; got #{vec.inspect}"
+          end
+          if (vec[0].respond_to?(:finite?) && !vec[0].finite?) ||
+             (vec[1].respond_to?(:finite?) && !vec[1].finite?) ||
+             (vec[2].respond_to?(:finite?) && !vec[2].finite?)
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be all-finite; got #{vec.inspect}"
+          end
+          if vec[0] != 0.0 || vec[1] != 0.0
+            raise ArgumentError,
+                  "transform_vertices_by_vectors: vector[#{i}] must be Z-only [0, 0, dz]; got #{vec.inspect}"
+          end
+        end
+        vertex_handles.each_with_index do |v, i|
+          next if v.nil?
+          if v.respond_to?(:apply_vector)
+            v.apply_vector(vectors[i])
+          elsif v.respond_to?(:position=) || v.respond_to?(:[]=)
+            # Generic fallback: treat as a position struct.
+            v[2] = v[2].to_f + vectors[i][2].to_f
+          end
+        end
+        vertex_handles.length
+      end
+
+      # V1.6 Blueprint §9 post-validation: read the current
+      # world-coord position of a host vertex. For the fake
+      # model we delegate to the FakeVertex#position accessor
+      # (3-Float Array).
+      def vertex_position(vertex_handle)
+        if vertex_handle.respond_to?(:position)
+          vertex_handle.position
+        elsif vertex_handle.is_a?(Array) && vertex_handle.length >= 3
+          [vertex_handle[0], vertex_handle[1], vertex_handle[2]]
+        else
+          nil
         end
       end
 

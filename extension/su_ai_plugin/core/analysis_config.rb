@@ -42,6 +42,15 @@ module SUAnalysis
       def large_coordinate
         @tolerance.large_coordinate
       end
+
+      # V1.6 Planar Normalization / Z Policy: passthrough so
+      # the V1.6 analyzer can read
+      #   config.planar_z_snap
+      # without needing to know the Tolerance attribute layout.
+      # Mirrors the existing big_z / large_coordinate pattern.
+      def planar_z_snap
+        @tolerance.planar_z_snap
+      end
     end
   end
 end
