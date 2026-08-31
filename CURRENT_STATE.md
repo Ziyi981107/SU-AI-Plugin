@@ -1,5 +1,56 @@
 # SU-AI-Plugin — CURRENT STATE
 
+Updated: 2026-08-31 (V15-LEGACY-COMPAT-HARDENING dispatch
+EXECUTION COMPLETE per dispatch
+`V15-LEGACY-COMPAT-HARDENING-2026-08-31`. The dispatched
+audit was performed on the COMPLETE production Ruby load
+tree used by the installed RBZ (root loader `extension/
+su_ai_plugin.rb` + `extension/su_ai_plugin/` support
+folder + `scripts/build_rbz.rb`). The audit found ONE
+production-reachable Ruby 2.5+-only parse-time hazard
+(`1_000_000` integer literal underscore syntax in
+`core/source_snapshot.rb`, inside the `rescue LoadError`
+SecureRandom fallback at line 447) which would have
+rejected SU2017 (Ruby 2.2.4) and SU2018 (Ruby 2.4.4) at
+parse time even though the rescue branch is dead at runtime
+on any host that ships stdlib `securerandom`. The fix is
+semantically identical (`1_000_000` -> `1000000`) and
+preserves all frozen product/technical behavior per
+dispatch §9. No production-touchable change was made
+to: duplicate detection, tolerance semantics,
+complete-graph-or-skip, repair eligibility, source/derived
+ownership, destructive handle requirements, source-CAD
+immutability, repair transaction semantics, audit/
+provenance semantics, UI workflow, user-visible repair
+authority, or BLOCK-005 recovery policy. New regression
+guard `tests/test_v15_legacy_compat_guard.rb` added:
+5/5 PASS (vendored-Ruby parse on every production file
+via `RubyVM::InstructionSequence.compile`; Ripper.sexp
+AST parse on every production file; targeted-regex scan
+for integer literal underscores / endless ranges /
+beginless ranges / numbered block parameters / safe
+navigation that the vendored Ruby silently accepts but
+the SU minimum baseline rejects; plus two FIX-specific
+guards pinning the integer-underscore and endless-range
+findings the dispatch set out to harden). The guard
+catches intentional reintroduction (verified during
+this dispatch by temporarily reverting the fix and
+re-running the regression: 3/5 PASS, 2 FAIL with
+explicit file:line + id); restoring the fix returns
+5/5 PASS. RBZ rebuilt from current source via the
+existing `scripts/build_rbz.rb`. RBZ contents
+verified: packaged `core/source_snapshot.rb` is identical
+to in-tree source (RBZ contains the post-fix code;
+no stale pre-fix copy). RBZ install/load smoke: 9/9 PASS.
+Full Ruby suite: **818/818 PASS** (was 813 prior to
+adding +5 LEGACY-COMPAT tests; no other regressions).
+V15 substring: 149/149 PASS. `git diff --check` clean.
+Local checkpoint commit created on the assigned
+`dev/v1.5`. NOT pushed per dispatch §16. BLOCK-005
+remains OPEN; BLOCK-005 technical direction remains
+FROZEN; Owner SU2020 real-host probe remains the next
+Gate. V1.6 remains NOT STARTED.)
+
 Updated: 2026-08-31 (BLOCK-005 documentation-only sync
 per AIPM directive. This is NOT a new implementation round
 and does NOT assign BLOCK-005 work to Pi. BLOCK-005
@@ -36,7 +87,7 @@ directly reviewed the real GitHub implementation commit
 `FIX REQUIRED -- narrow implementation correction`).
 
 Current stage: **V1.5 — High-confidence Auto Repair / BLOCK-005 documentation-only sync (THIS UPDATE)**
-Current status: **BLOCK-005 dedicated AIPM technical research COMPLETE; technical direction FROZEN; canonical next gate is the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe (Owner/AIPM-owned); Pi STOPPED**
+Current status: **V15-LEGACY-COMPAT-HARDENING dispatch EXECUTION COMPLETE (THIS UPDATE); RBZ rebuilt; local checkpoint commit created on `dev/v1.5`; NOT pushed per dispatch §16; BLOCK-005 dedicated technical research COMPLETE; technical direction FROZEN; canonical next gate remains the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe (Owner/AIPM-owned); Pi STOPPED awaiting AIPM direct source review + Owner-checklist republish + (if AIPM chooses) the next Codex narrow xHigh recheck**
 Next stage: **V1.6 — NOT STARTED**
 
 Canonical durable context:
@@ -102,7 +153,7 @@ Current project rule:
   same dispatch ID. 2 new focused regressions added.
   Pushed to `origin/dev/v1.5` (final remote HEAD =
   `1761adb50bc3efebb0f674ce9728cebbe6228986`).
-- V1.5 BLOCK-005 documentation-only sync is complete (THIS UPDATE):
+- V1.5 BLOCK-005 documentation-only sync is complete (history):
   per AIPM directive, the canonical project state has been
   synchronized to record that BLOCK-005 dedicated AIPM
   technical research is COMPLETE, the technical direction is
@@ -117,6 +168,47 @@ Current project rule:
   SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
   (Owner/AIPM-owned). No production code, no tests, no RBZ,
   no push were touched by this update.
+- V1.5 V15-LEGACY-COMPAT-HARDENING dispatch EXECUTION COMPLETE (THIS UPDATE):
+  per AIPM dispatch `V15-LEGACY-COMPAT-HARDENING-2026-08-31`,
+  the COMPLETE production Ruby load tree used by the installed
+  RBZ was audited for Ruby 2.2+ parse-time compatibility (the
+  frozen SU2017+ baseline) and Ruby core/stdlib API
+  compatibility. The Ruby syntax audit (Phase A) and the
+  Ruby core/stdlib API audit (Phase B) and the SketchUp API
+  audit (Phase C) found ONE production-reachable parse-time
+  hazard: integer literal underscore `1_000_000` in
+  `extension/su_ai_plugin/core/source_snapshot.rb:447` (Ruby
+  2.5+ only; SU2017/SU2018 would reject at parse time even
+  though the rescue branch is dead at runtime on hosts that
+  ship stdlib `securerandom`). Fixed to the semantically
+  identical `1000000`; comments added to document the
+  rationale. A new lightweight regression guard
+  `tests/test_v15_legacy_compat_guard.rb` was added with
+  5 focused tests: (1) vendored-Ruby parse on every
+  production .rb file via `RubyVM::InstructionSequence
+  .compile`; (2) `Ripper.sexp` AST parse on every
+  production .rb file; (3) targeted regex scan for the
+  five known modern-syntax constructs the vendored Ruby
+  silently accepts but the SU minimum baseline rejects
+  (integer literal underscore, endless range, beginless
+  range, numbered block parameters, safe navigation);
+  (4) per-file guard pinning the integer-literal-
+  underscore finding on `core/source_snapshot.rb`; and
+  (5) per-tree guard pinning the endless-range finding
+  (the historical bug that triggered this dispatch).
+  Guard verified to catch intentional regression
+  (verified during this dispatch by temporarily reverting
+  the fix: 3/5 PASS, 2 FAIL with explicit file:line + id;
+  restoring the fix returns 5/5 PASS). RBZ rebuilt via
+  the existing `scripts/build_rbz.rb`; packaged
+  `core/source_snapshot.rb` is identical to the in-tree
+  post-fix source. Full Ruby suite **818/818 PASS** (was
+  813 prior; +5 LEGACY-COMPAT tests; no other
+  regressions). V15 substring: 149/149 PASS. RBZ
+  smoke: 9/9 PASS. `git diff --check`: clean. Local
+  checkpoint commit created on the assigned `dev/v1.5`.
+  NOT pushed per dispatch §16. BLOCK-005 remains
+  untouched architecturally.
 
 ### In progress
 - Nothing is currently being implemented by Pi.
@@ -125,11 +217,13 @@ Current project rule:
 - AIPM direct GitHub Source Review of the Round-5 NARROW
   CONTINUATION + FIX-SR-04 crash-recovery resume Pi packet
   (`Review/CURRENT_PI_REPORT.md`).
+- AIPM direct review of the V15-LEGACY-COMPAT-HARDENING
+  dispatch execution packet (`Review/CURRENT_PI_REPORT.md`).
 - AIPM republish of the Owner verification file
   (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`),
   per Round-5 §9; the previously published version was invalidated by the
   Round-4 Codex verdict.
-- **Canonical next gate (THIS UPDATE):** SketchUp 2020 BLOCK-005
+- **Canonical next gate:** SketchUp 2020 BLOCK-005
   Real-Host Feasibility Probe (Owner/AIPM-owned). The probe verifies
   on a real SketchUp 2020 host that the existing V1.5
   `validate-on-next-interaction -> detect host mismatch -> fail
@@ -154,7 +248,7 @@ V1.6 must not begin until:
 1. V1.5's active BLOCK set is formally closed;
 2. the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
    has produced evidence sufficient for AIPM to formally close
-   BLOCK-005 (THIS UPDATE);
+   BLOCK-005;
 3. required Owner verification for V1.5 is completed as applicable;
 4. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
 5. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
@@ -165,6 +259,112 @@ V1.6 must not begin until:
 ## 2. CURRENT GIT / BUILD STATE
 
 Current branch: `dev/v1.5`
+
+V15-LEGACY-COMPAT-HARDENING local checkpoint (THIS UPDATE):
+
+- Starting local HEAD (pre-task):
+  `f61c35254ccbcc3c64dc52d7fa5d73ac7571228a`
+  (the prior Ruby 2.5+ endless-range compat fix that
+  shipped the 2 endless-range-with-1.. replacements)
+- Implementation commit (THIS UPDATE):
+  - awaiting final SHA stamp (1 implementation commit
+    covering the 1_000_000 -> 1000000 fix +
+    the new `tests/test_v15_legacy_compat_guard.rb`
+    regression guard).
+- `origin/dev/v1.5` HEAD (unchanged by THIS UPDATE):
+  `1761adb50bc3efebb0f674ce9728cebbe6228986`
+- Local-ahead count after THIS UPDATE: 3 commits
+  (the prior `f61c352` endless-range fix + `ae256d9`
+  BLOCK-005 doc sync, plus THIS UPDATE).
+- NOT PUSHED per dispatch §16.
+- The dispatch §16 explicitly forbids pushing this
+  hardening packet; the complete-task submission will be
+  pushed after AIPM direct source review of the
+  hardening evidence, per the formal
+  `dev/vX.Y` submit contract in
+  `PROJECT_HANDOFF.md` §14.
+
+Working tree (THIS UPDATE, post-implementation/pre-commit):
+- Modified production files (1):
+  - `extension/su_ai_plugin/core/source_snapshot.rb`
+    (FIX-COMPAT-1: `1_000_000` -> `1000000` on line 447
+    inside the SecureRandom fallback `rescue LoadError`
+    branch; semantics identical; comment added to
+    document the rationale.)
+- Added test files (1):
+  - `tests/test_v15_legacy_compat_guard.rb` (NEW; 5
+    focused LEGACY-COMPAT tests covering vendored-Ruby
+    parse, Ripper.sexp AST parse, modern-syntax regex
+    scan across the 5 known constructs, +2 FIX-specific
+    guards pinning the integer-underscore and endless-
+    range findings that triggered the dispatch.)
+- Updated governance / report files (will be updated as
+  part of commit):
+  - `CURRENT_STATE.md` (THIS UPDATE)
+  - `Review/CURRENT_PI_REPORT.md` (THIS UPDATE)
+- Untracked AIPM Review evidence files preserved (7):
+  - `Review/AIPM_V1_5_R5_FUNCTIONAL_DIFF.txt`
+  - `Review/AIPM_V1_5_R5_SOURCE_SNAPSHOT.txt`
+  - `Review/AIPM_V1_5_R5_TEST_SNAPSHOT.txt`
+  - `Review/V3_4_GOVERNANCE_CANONICAL_FILES.txt`
+  - `Review/V3_4_GOVERNANCE_CORRECTION_DIFF.txt`
+  - `Review/V3_4_GOVERNANCE_MIGRATION_DIFF.txt`
+  - `Review/V3_4_PI_APPEND_SYSTEM_FINAL.txt`
+- The `Prompt/CURRENT_PI_DISPATCH.md` is modified (by
+  AIPM) to the active V15-LEGACY-COMPAT-HARDENING
+  dispatch; this is the active dispatch and remains in
+  place exactly as AIPM wrote it.
+
+V15-LEGACY-COMPAT-HARDENING RBZ candidate (THIS UPDATE):
+
+`D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+
+Evidence recorded in this file:
+- Size: 642,296 bytes
+  (was 642,037 bytes; delta is the comment expansion
+  around line 447 of `core/source_snapshot.rb` plus the
+  integer-underscore removal)
+- Entries: 59 (unchanged)
+- SHA-256:
+  `36CD3FCCADF212CA6CDC3257C01406EA97267BA04AE6D0EF4F020C02BA426C2A`
+
+Build command:
+
+`.\.vendor\ruby\rubyinstaller-2.7.8-1-x64\bin\ruby.exe scripts/build_rbz.rb`
+
+Verifications performed:
+- packaged `core/source_snapshot.rb` is identical to
+  in-tree source (RBZ contains the post-fix code; no
+  stale pre-fix copy);
+- root registration loader `su_ai_plugin.rb` is at the
+  RBZ root as expected (not inside the support folder);
+- support folder `su_ai_plugin/` exists alongside the
+  registration loader and contains `main.rb`;
+- dialog asset trio (`html/index.html`, `html/app.js`,
+  `html/style.css`) is shipped;
+- dev-only paths (`tests/`, `scripts/`, `Review/`,
+  `Prompt/`, `.vendor/`, `.git/`) are excluded;
+- the existing RBZ smoke test
+  (`tests/test_rbz_smoke.rb`) ran all 9 RBZ tests
+  successfully on the new artifact (incl. `RBZ: install
+  smoke — extract to temp dir, verify entry-point +
+  assets + all .rb files parse` which compiles every
+  shipped .rb via `RubyVM::InstructionSequence.compile`;
+  and `RBZ: install smoke — extracted entry-point boots
+  through FakeUI; menu registered; on_analyze_selection
+  no-op fallback`).
+
+This RBZ candidate is unblocked for Owner SketchUp 2020
+real-host verification of the BLOCK-005 closure
+condition once the AIPM Owner verification file is
+republished AND (if AIPM chooses) the next Codex narrow
+xHigh recheck passes. It is NOT approved for Owner
+SU2017 real-host verification: dispatch §3 explicitly
+forbids claiming SU2017 PASS without real SU2017
+evidence, and the dispatch §15 forbids marking
+`release ready` without real evidence.
+
+Round-5 NARROW CONTINUATION (FIX-SR-04) RBZ (history, unchanged):
 
 Governance migration base HEAD (pre-Round-4 carrier of this `CURRENT_STATE.md`):
 `43854c879a1c1fcb57bcd2bea7743c02e73d0c05`
@@ -365,7 +565,47 @@ chooses) the next Codex narrow xHigh recheck passes.
 
 ## 3. CURRENT TEST EVIDENCE
 
-Round-5 NARROW CONTINUATION evidence (THIS UPDATE):
+V15-LEGACY-COMPAT-HARDENING evidence (THIS UPDATE):
+
+- LEGACY-COMPAT targeted regressions (new):
+  - `LEGACY-COMPAT: vendored Ruby parses every production
+    .rb file (extension/ + scripts/)` (1/1 PASS)
+  - `LEGACY-COMPAT: Ripper.sexp parses every production
+    .rb file (extension/ + scripts/)` (1/1 PASS)
+  - `LEGACY-COMPAT: no known modern-syntax constructs in
+    production source` (1/1 PASS — 5 known construct
+    classes scanned)
+  - `LEGACY-COMPAT: no integer literal underscore in
+    core/source_snapshot.rb (FIX-COMPAT-INT)`
+    (1/1 PASS — the integer-underscore finding the
+    dispatch set out to harden; pinning the SPECIFIC fix)
+  - `LEGACY-COMPAT: no endless-range [n..] in production
+    source (FIX-COMPAT-RANGE)`
+    (1/1 PASS — the endless-range finding that
+    triggered this dispatch at line 1 of the prior
+    chat session; pinning the SPECIFIC fix)
+  - Total LEGACY-COMPAT: **5/5 PASS**
+- Full V15: **149/149 PASS**
+- Full Ruby suite: **818/818 PASS**
+  (was 813 before adding the +5 LEGACY-COMPAT tests; no
+  other regressions across the existing 813)
+- RBZ smoke (post-rebuild): **9/9 PASS**
+  (includes `RBZ: install smoke — extract to temp dir,
+  verify entry-point + assets + all .rb files parse`
+  which runs `RubyVM::InstructionSequence.compile` on
+  every packaged .rb; and `RBZ: install smoke —
+  extracted entry-point boots through FakeUI` which
+  exercises the production `boot!` require_relative
+  chain + Loader.register!)
+- `git diff --check`: clean
+
+Implementation / test evidence only. They do not by themselves
+close the AIPM BLOCK on BLOCK-005, prove real-host
+behavior, or substitute for Owner verification. They
+do not claim SU2017 real-host PASS (dispatch §3
+explicitly forbids this without real SU2017 evidence).
+
+Round-5 NARROW CONTINUATION evidence (history):
 
 - Targeted Round-5 NARROW CONTINUATION + FIX-SR-04
   regressions
@@ -1072,6 +1312,149 @@ AIPM chooses) the next Codex narrow xHigh recheck passes.
 
 ---
 
+## 5A. V15-LEGACY-COMPAT-HARDENING IMPLEMENTATION SUMMARY
+
+The current file records the material V15-LEGACY-COMPAT-HARDENING
+changes (the hardening packet modifies 1 production file in
+a behavior-preserving way, so the RBZ hash changed from the
+prior f61c352 Ruby 2.5 endless-range compat fix RBZ SHA
+`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`
+to the hardened SHA
+`36CD3FCCADF212CA6CDC3257C01406EA97267BA04AE6D0EF4F020C02BA426C2A`).
+
+### Audit coverage
+
+Per dispatch §5/§6/§7, the COMPLETE production Ruby load tree
+audited:
+
+- Root registration loader `extension/su_ai_plugin.rb` (1 file)
+- Support folder `extension/su_ai_plugin/**/*.rb` (57 files)
+- Production script `scripts/build_rbz.rb` (1 file)
+  (Note: the other PowerShell `.ps1` files in `scripts/`
+  are NOT Ruby and are NOT in the RBZ.)
+- Total production Ruby files audited: 59 (matches the
+  59 entries in the rebuilt RBZ)
+
+### Phases
+
+| Phase | Scope | Method | Findings |
+|---|---|---|---|
+| A. Ruby syntax | every production `.rb` | regex scan for the 5 known modern-syntax constructs (integer literal underscore, endless range, beginless range, numbered block parameters, safe navigation) | 1 finding: integer literal underscore in `core/source_snapshot.rb:447` (Phase A FIX-COMPAT-1) |
+| A. Ruby's vendored parser | every production `.rb` | `RubyVM::InstructionSequence.compile(text, file)` (same mechanism `tests/test_rbz_smoke.rb` uses to parse the extracted RBZ) | 0 findings |
+| B. Ruby core/stdlib API | every production `.rb` | grep across Array / Hash / Enumerable / String / Object / Numeric / File/Path APIs for any usage that maps to a Ruby 2.5+ / 2.6+ / 2.7+ / 3.0+ method | 0 findings |
+| C. SketchUp host API | every `extension/su_ai_plugin/**` file | grep across `Sketchup`, `Sketchup::Model`, `Sketchup::Entities`, `Sketchup::Entity` subclasses, `UI`, `Geom`, observer APIs, HtmlDialog-related host APIs | 0 findings (all SketchUp API calls are gated by `respond_to?` / `defined?` and the existing `SUCapability` shim enforces the SU2017+ capability contract) |
+
+### Phase A FIX-COMPAT-1 — Integer literal underscore
+`extension/su_ai_plugin/core/source_snapshot.rb`
+
+The `rescue LoadError` SecureRandom fallback at line 447
+contained `(Time.now.to_f * 1_000_000).to_i.to_s(16)[-2 * n, 2 * n]`.
+The integer literal underscore syntax `1_000_000` is
+Ruby 2.5+ (SketchUp 2020 Ruby 2.5.5 supports it; SketchUp
+2017 Ruby 2.2.4 does NOT; SketchUp 2018 Ruby 2.4.4 does
+NOT). Although the `begin; require 'securerandom'; rescue
+LoadError; module SecureRandom; ...` pattern means the
+rescue branch is dead at runtime on every SketchUp 2017+
+host (securerandom has been in stdlib since Ruby 1.9),
+the rescue branch IS still PARSED at file load time.
+A Ruby 2.2.4 / 2.4.4 host would reject the file at parse
+time and the whole `extension/su_ai_plugin/core/source_snapshot.rb`
+file would fail to load via the production require chain
+(`dialog_runner.rb:23 require_relative 'core/source_snapshot'`)
+even though the rescue branch is unreachable.
+
+Fix is `1_000_000` -> `1000000` (semantically identical; no
+behavior change). Comment added to document the rationale.
+
+### Production code gap status (BLOCK-005 boundary confirmation)
+
+Per dispatch §8:
+
+- BLOCK-005 production architecture modified: **NO**
+- Observers added: **NO**
+- Undo reconciliation redesigned: **NO**
+
+V1.5 remains on the frozen
+`validate-on-next-interaction -> detect host mismatch ->
+fail closed / invalidate -> host-authoritative
+prepare/rebuild` architecture.
+
+### Regression guard
+
+`tests/test_v15_legacy_compat_guard.rb` (NEW; 5 tests):
+
+1. `LEGACY-COMPAT: vendored Ruby parses every production .rb
+    file (extension/ + scripts/)`
+   - Uses `RubyVM::InstructionSequence.compile(text, file)`
+     on every production `.rb` (same mechanism used by
+     `tests/test_rbz_smoke.rb` for the extracted RBZ).
+   - Catches Ruby ≤ 2.7.8 parser incompatibilities (a strict
+     superset of what SU2017/SU2018 would catch).
+2. `LEGACY-COMPAT: Ripper.sexp parses every production .rb
+    file (extension/ + scripts/)`
+   - Uses `Ripper.sexp` on every production `.rb` as a
+     semantic AST cross-check.
+3. `LEGACY-COMPAT: no known modern-syntax constructs in
+    production source`
+   - Targeted regex scan for the 5 construct classes
+     documented above.
+4. `LEGACY-COMPAT: no integer literal underscore in
+    core/source_snapshot.rb (FIX-COMPAT-INT)`
+   - Pins the SPECIFIC fix on the SPECIFIC file.
+5. `LEGACY-COMPAT: no endless-range [n..] in production
+    source (FIX-COMPAT-RANGE)`
+   - Pins the SPECIFIC class of finding that triggered
+     this dispatch in the prior chat session.
+
+The guard was verified to catch intentional regression by
+temporarily reverting the fix:
+- 3/5 PASS, 2 FAIL with explicit file:line + id and
+  human-readable message.
+Restoring the fix returns 5/5 PASS.
+
+This satisfies dispatch §11's "lightweight regression
+guard" requirement without inventing a Ruby-version-
+targeted parser. It explicitly does NOT claim to prove
+SU2017 real-host PASS (dispatch §3 / §15 forbidden). It
+provides a BEST-EFFORT cross-check using the only vendored
+Ruby available in the project (2.7.8).
+
+### Production behavior freeze (§9 confirmation)
+
+Per dispatch §9, this dispatch did NOT change:
+
+- what is considered a duplicate (`NO`)
+- duplicate tolerance semantics (`NO`)
+- complete-graph-or-skip behavior (`NO`)
+- repair eligibility (`NO`)
+- source-vs-derived ownership (`NO`)
+- destructive handle requirements (`NO`)
+- source CAD immutability (`NO`)
+- repair transaction semantics (`NO`)
+- audit/provenance semantics (`NO`)
+- UI workflow (`NO`)
+- user-visible repair authority (`NO`)
+- BLOCK-005 recovery policy (`NO`)
+
+Only the integer literal underscore was changed. Semantics
+are preserved bit-for-bit.
+
+### Scale/safety limit (§13 confirmation)
+
+- Production files requiring semantic modifications: **1**
+  (`core/source_snapshot.rb`, single-line integer literal
+  semantic-preserving replacement).
+- No broad compatibility architecture deficiency.
+- No many modern-only host APIs requiring new abstractions.
+- No required minimum-version product decision.
+- No transaction/recovery implications.
+- No source/provenance implications.
+
+The task did NOT turn into a whole-codebase refactor; it
+remained bounded as the dispatch intended.
+
+---
+
 ## 6. CODEX RECHECK BOUNDARY
 
 The next Codex engagement (if dispatched by AIPM after its
@@ -1345,28 +1728,36 @@ Review and the SU2020 BLOCK-005 Real-Host Feasibility Probe
 
 # One-Line Current State
 
-**V1.5 BLOCK-005 documentation-only sync (THIS UPDATE,
-2026-08-31) is complete: BLOCK-005 dedicated AIPM technical
-research is COMPLETE, technical direction is FROZEN on the
-existing `validate-on-next-interaction -> detect host
-mismatch -> fail closed / invalidate -> host-authoritative
-prepare/rebuild` architecture with the SketchUp Model as
-geometry Source of Truth; no global ModelObserver /
-EntitiesObserver architecture is added in V1.5; entity-level
-observer event replay is rejected as a correctness
-mechanism; `persistent_id` is not the correctness Source of
-Truth; old Ruby Entity handles must never be trusted after
-host-state divergence; ModelObserver invalidation is only an
-approved fallback if the SU2020 real-host probe proves the
-existing validation seam insufficient. The canonical next
-gate is the **SketchUp 2020 BLOCK-005 Real-Host Feasibility
-Probe** (Owner/AIPM-owned; Pi is NOT assigned). No production
-code was modified, no tests were rerun, no RBZ was rebuilt,
-and no push was attempted by this update. Prior state (the
-V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
-CRASH-RECOVERY RESUME — FIX-SR-04) remains on the same
-branch `dev/v1.5` with local HEAD `1761adb50bc3efebb0f674ce9728cebbe6228986`
-(in sync with `origin/dev/v1.5`); BLOCK-001..004 closure
-remains gated on AIPM direct GitHub Source Review of the
-FIX-SR-04 packet; BLOCK-005 closure is now gated on the
-SU2020 real-host probe. Pi is STOPPED.**
+**V1.5 V15-LEGACY-COMPAT-HARDENING dispatch EXECUTION COMPLETE
+(THIS UPDATE, 2026-08-31): the COMPLETE production Ruby load
+tree used by the installed RBZ was audited for Ruby 2.2+
+parse-time compatibility (the frozen SU2017+ baseline).
+Phase A (Ruby syntax) + Phase B (Ruby core/stdlib API) +
+Phase C (SketchUp API) found ONE production-reachable
+Ruby 2.5+ parse-time hazard: `1_000_000` integer literal
+underscore on `extension/su_ai_plugin/core/source_snapshot.rb:447`
+(inside the SecureRandom `rescue LoadError` fallback; would
+have rejected SU2017/SU2018 at parse time even though the
+rescue branch is dead at runtime on hosts that ship stdlib
+securerandom). Fixed to the semantically identical `1000000`
+(no behavior change; no frozen-contract change). New
+lightweight regression guard `tests/test_v15_legacy_compat_guard.rb`
+added (5 tests: vendored-Ruby parse, Ripper.sexp AST parse,
+5-class modern-syntax regex scan, +2 FIX-specific guards
+pinning integer underscore + endless range). Guard verified
+to catch intentional regression. RBZ rebuilt from current
+source via the existing `scripts/build_rbz.rb`; packaged
+`core/source_snapshot.rb` is identical to in-tree source;
+size **642,296 bytes** (was 642,037); entries 59 (unchanged);
+SHA-256
+`36CD3FCCADF212CA6CDC3257C01406EA97267BA04AE6D0EF4F020C02BA426C2A`.
+Full Ruby suite **818/818 PASS** (was 813; +5 LEGACY-COMPAT
+tests; no other regressions). V15: 149/149 PASS. RBZ
+install/load smoke: 9/9 PASS. `git diff --check`: clean.
+Local checkpoint commit created on the assigned `dev/v1.5`;
+NOT pushed per dispatch §16. BLOCK-005 remains OPEN;
+BLOCK-005 technical direction remains FROZEN;
+Owner SU2020 real-host probe remains the next Gate; V1.6
+remains NOT STARTED. Pi is STOPPED awaiting AIPM direct
+source review of this hardening packet (in addition to the
+prior gates noted in §12).**

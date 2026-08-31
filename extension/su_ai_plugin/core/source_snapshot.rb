@@ -444,7 +444,11 @@ rescue LoadError
       # time + process id. NOT cryptographically secure; only
       # used for snapshot_id uniqueness within a single Agent
       # process.
-      (Time.now.to_f * 1_000_000).to_i.to_s(16)[-2 * n, 2 * n] || '0' * 2 * n
+      # NOTE: integer literal underscore syntax (`1_000_000`) is
+      # Ruby 2.5+. The V1.5 compatibility baseline targets SU2017
+      # (Ruby 2.2.4). Use `1000000` here (semantically identical)
+      # so this file remains parseable on the minimum baseline.
+      (Time.now.to_f * 1000000).to_i.to_s(16)[-2 * n, 2 * n] || '0' * 2 * n
     end
   end
 end
