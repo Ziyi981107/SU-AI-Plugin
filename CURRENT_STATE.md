@@ -1,5 +1,38 @@
 # SU-AI-Plugin — CURRENT STATE
 
+## V1.5 CLOSURE (THIS UPDATE)
+
+Closure date: 2026-08-31
+Authority: Final Product Owner + AIPM (`Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`)
+Dispatch: `V15-CLOSURE-SYNC-2026-08-31` (CLOSURE-ONLY sync; no production / runtime / test / RBZ / V1.6 implementation changes).
+
+Status:
+
+- **V1.5: CLOSED**
+- **BLOCK-005: CLOSED**
+- **Owner SketchUp 2020 V1.5 verification: PASS** (Final Product Owner confirmation recorded by AIPM)
+- **BLOCK-005 technical direction (unchanged, frozen):** `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild`. No global ModelObserver / EntitiesObserver architecture added in V1.5. `persistent_id` is not the correctness Source of Truth. Old Ruby Entity handles must never be trusted after host-state divergence.
+- **V1.6: NOT STARTED** (a V1.6 Stage Technical Blueprint exists in `Prompt/` but requires a separate ACTIVE `CURRENT_PI_DISPATCH` referencing it before any V1.6 implementation begins)
+- **V1.7: NOT STARTED**
+- **V2 / MCP: OUT OF SCOPE**
+
+Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **642,037 bytes**
+- Entries: **59**
+- SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
+
+Next expected AIPM action: activate a new `CURRENT_PI_DISPATCH` that references the frozen V1.6 Stage Technical Blueprint (`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`). Pi remains STOPPED.
+
+---
+
+## Historical V1.5 closure process (clearly historical)
+
+The `Updated:` blocks below record the historical V1.5 closure process (V15-LEGACY-COMPAT packets, Round-5 corrective packets, BLOCK-005 documentation sync, etc.). They remain for durable audit evidence only. They are NOT active V1.5 work — V1.5 is CLOSED above.
+
+---
+
 Updated: 2026-08-31 (V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX
 dispatch EXECUTION COMPLETE per dispatch
 `V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`. AIPM
@@ -259,9 +292,9 @@ directly reviewed the real GitHub implementation commit
 `874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
 `FIX REQUIRED -- narrow implementation correction`).
 
-Current stage: **V1.5 — High-confidence Auto Repair / V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX (THIS UPDATE)**
-Current status: **V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch EXECUTION COMPLETE (THIS UPDATE)**. AIPM findings 1 (placeholder SHA markers), 2 (SU2017-release APIs misclassified as post-SU2017), and 3 (beginless range version claim wrong) are all accepted and corrected. ZERO production byte change; ONE test-metadata field + comment corrected in the regression guard; CURRENT_STATE and CURRENT_PI_REPORT authoritative evidence updated (placeholders removed, exact SHAs recorded, API classification corrected, beginless range version corrected). Two local commits (implementation + doc-stamp) on the assigned `dev/v1.5`; NOT pushed per dispatch directive. BLOCK-005: OPEN (NOT closed by this packet). BLOCK-005 technical direction: FROZEN. Codex: NOT REQUIRED for the current compatibility/probe path. V1.6: NOT STARTED. Canonical next Gate after AIPM acceptance of this packet: **SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** (Owner/AIPM-owned). Pi STOPPED awaiting AIPM direct source review of this final-evidence-fix packet.
-Next stage: **V1.6 — NOT STARTED**
+Current stage: **V1.5 — CLOSED (THIS UPDATE)**. This CLOSURE-ONLY sync dispatch (`V15-CLOSURE-SYNC-2026-08-31`) records the Final Product Owner / AIPM V1.5 closure decision. No production / runtime / test / RBZ / V1.6 implementation changes were made by this dispatch. See the `V1.5 CLOSURE (THIS UPDATE)` block at the top of this file for the authoritative closure facts and accepted V1.5 RBZ identity.
+Current status: **V1.5 CLOSED. BLOCK-005 CLOSED. V1.6 NOT STARTED.** Accepted V1.5 RBZ identity verified at `dist\SU-AI-Plugin.rbz` (size 642,037 bytes; entries 59; SHA-256 `61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`). Owner SketchUp 2020 V1.5 verification: PASS (per `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`). BLOCK-005 technical direction remains frozen: `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild` (no global Observer architecture). One local closure checkpoint commit created on the assigned `dev/v1.5`; pushed to `origin/dev/v1.5` if the current V3.4 submission policy permits (and if remote is not blocked / diverged). Pi STOPPED awaiting AIPM V1.6 dispatch.
+Next stage: **V1.6 — NOT STARTED (awaits new ACTIVE `CURRENT_PI_DISPATCH` referencing the frozen V1.6 Stage Technical Blueprint `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`)**
 
 Canonical durable context:
 - `AGENTS.md`
@@ -444,50 +477,35 @@ Current project rule:
   the only vendored Ruby available (2.7.8).
 
 ### In progress
-- Nothing is currently being implemented by Pi.
+- Nothing is currently being implemented by Pi. The CLOSURE-ONLY sync
+  dispatch (`V15-CLOSURE-SYNC-2026-08-31`) is complete; Pi is STOPPED
+  awaiting AIPM V1.6 dispatch.
 
 ### Waiting
-- AIPM direct GitHub Source Review of the Round-5 NARROW
-  CONTINUATION + FIX-SR-04 crash-recovery resume Pi packet
-  (`Review/CURRENT_PI_REPORT.md`).
-- AIPM direct source review of the V15-LEGACY-COMPAT-CORRECTION
-  corrective packet (`Review/CURRENT_PI_REPORT.md`,
-  DISPATCH_ID `V15-LEGACY-COMPAT-CORRECTION-2026-08-31`).
-- AIPM republish of the Owner verification file
-  (`Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`),
-  per Round-5 §9; the previously published version was invalidated by the
-  Round-4 Codex verdict.
-- **Canonical next gate (after AIPM accepts this corrective
-  packet):** SketchUp 2020 BLOCK-005
-  Real-Host Feasibility Probe (Owner/AIPM-owned). The probe verifies
-  on a real SketchUp 2020 host that the existing V1.5
-  `validate-on-next-interaction -> detect host mismatch -> fail
-  closed / invalidate -> host-authoritative prepare/rebuild` seam
-  satisfies the BLOCK-005 closure condition (native Undo/Redo
-  cannot leave stale plugin state falsely READY; stale destructive
-  handles cannot reach destructive execution; host mismatch fails
-  closed before destructive operation; normal product recovery
-  rebuilds fresh inventory / handles / UI from the current SketchUp
-  host; source CAD remains immutable). Pi is NOT assigned the probe.
-- If AIPM chooses after the probe + its direct source re-review,
-  a Codex narrow xHigh recheck of the V1.5 BLOCK set
-  (`V15-STAGE-BLOCK-001..005`), dispatched only AFTER AIPM review
-  and Owner-checklist republish.
+- **AIPM V1.6 dispatch.** The canonical next AIPM action is to
+  activate a new `CURRENT_PI_DISPATCH` that references the frozen
+  V1.6 Stage Technical Blueprint
+  (`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`).
+  V1.6 is the next product stage after V1.5 closure.
 
 ### Not started
-- V1.6 Planar Normalization / Z Policy.
-- SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
-  (Owner/AIPM-owned; Pi is NOT assigned).
+- V1.6 Planar Normalization / Z Policy (Stage Technical Blueprint
+  is frozen in `Prompt/`; implementation awaits a separate ACTIVE
+  `CURRENT_PI_DISPATCH` referencing it).
+- V1.7 Endpoint / Gap Repair + Canonical Topology.
+- V1.8 Polyline / Closed Loop / Region Reconstruction.
+- V1.9 Prepared CAD Workflow + V2 Handoff.
+- V2 / MCP — out of scope per `PROJECT_MASTER_PLAN_V1X.md`.
 
-V1.6 must not begin until:
-1. V1.5's active BLOCK set is formally closed;
-2. the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe
-   has produced evidence sufficient for AIPM to formally close
-   BLOCK-005;
-3. required Owner verification for V1.5 is completed as applicable;
-4. AIPM creates and freezes a V1.6 Stage Technical Blueprint;
-5. AIPM activates `Prompt/CURRENT_PI_DISPATCH.md`, referencing the frozen
-   V1.6 Stage Technical Blueprint as required.
+The pre-V1.6 prerequisites that were listed in earlier revisions of
+this file (BLOCK-005 dedicated technical research pending; SU2020
+BLOCK-005 Real-Host Feasibility Probe pending; V1.5 BLOCK set not
+formally closed; Owner verification republish required) are now
+RETIRED — V1.5 is CLOSED, BLOCK-005 is CLOSED, the BLOCK-005
+technical research was completed on the AIPM side and its direction
+frozen, and the Owner SU2020 verification was reported PASS per the
+Final Product Owner confirmation recorded by AIPM in
+`Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`.
 
 ---
 
@@ -939,9 +957,17 @@ behavior, or substitute for Owner verification.
 
 ---
 
-## 4. ACTIVE BLOCK / REVIEW STATUS
+## 4. BLOCK / REVIEW STATUS (CLOSED — historical)
 
-Active V1.5 BLOCK set:
+> **V1.5 closure status (THIS UPDATE):** V1.5 is CLOSED. BLOCK-005 is
+> CLOSED. Owner SketchUp 2020 V1.5 verification: PASS. The active
+> V1.5 BLOCK set below is RETIRED — all V15-STAGE-BLOCK-001..005 are
+> formally closed as part of the V1.5 closure decision recorded in
+> `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`. This section is preserved
+> for durable audit evidence of the V1.5 closure process; it is
+> NOT an active review state.
+
+Historical V1.5 BLOCK set (all CLOSED — historical record only):
 
 - `V15-STAGE-BLOCK-001`
 - `V15-STAGE-BLOCK-002` (with sub-cases A and B)
@@ -949,16 +975,13 @@ Active V1.5 BLOCK set:
 - `V15-STAGE-BLOCK-004`
 - `V15-STAGE-BLOCK-005`
 
-Status:
+Historical closure process (clearly historical):
 
-> **Round-5 corrective implementation packet (THIS UPDATE)
-> addresses FIX-A (BLOCK-002A + 004), FIX-B (BLOCK-003), and
-> FIX-C (strict handle liveness hardening adjacent to BLOCK-001).
-> Round-5 continuation already addressed BLOCK-001 executor-level
-> and BLOCK-005 production observation seam. The active BLOCK
-> set remains NOT formally closed; awaiting AIPM direct source
-> re-review, Owner-checklist republish, and (if AIPM chooses)
-> the next Codex narrow xHigh recheck.**
+> **Round-5 corrective implementation packet addresses FIX-A
+> (BLOCK-002A + 004), FIX-B (BLOCK-003), and FIX-C (strict handle
+> liveness hardening adjacent to BLOCK-001). Round-5 continuation
+> already addressed BLOCK-001 executor-level and BLOCK-005
+> production observation seam.** (history)
 
 ### BLOCK-005 dedicated technical research (AIPM-side, THIS UPDATE)
 
@@ -1001,16 +1024,22 @@ evidence proving all of the following, THIS UPDATE):
   from the current SketchUp host;
 - source CAD remains immutable.
 
-BLOCK-005 status (THIS UPDATE):
+BLOCK-005 status — final closure (THIS UPDATE):
 
-- **OPEN**
-- Technical direction: FROZEN
-- Pi implementation: **STOP**
-- Codex: **NOT REQUIRED**
-- V1.6: **NOT STARTED**
-
-Do not write "BLOCKs closed" until both AIPM direct source
-PASS and Owner verification gates pass.
+- **CLOSED** (per `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`).
+- Technical direction: FROZEN (`validate-on-next-interaction →
+  detect host mismatch → fail closed / invalidate →
+  host-authoritative discard + prepare/rebuild`).
+- SketchUp Model remains the geometry Source of Truth.
+- No global ModelObserver / EntitiesObserver architecture was
+  added in V1.5.
+- `persistent_id` was never the correctness Source of Truth.
+- Old Ruby Entity handles are never trusted after host-state
+  divergence.
+- Owner SketchUp 2020 V1.5 verification: PASS (Final Product
+  Owner confirmation).
+- V1.6: NOT STARTED (awaits a separate ACTIVE `CURRENT_PI_DISPATCH`
+  referencing the frozen V1.6 Stage Technical Blueprint).
 
 Relevant Round-5 corrective Pi packet:
 
@@ -2196,8 +2225,40 @@ Review and the SU2020 BLOCK-005 Real-Host Feasibility Probe
 
 # One-Line Current State
 
+**V1.5 CLOSURE (THIS UPDATE, 2026-08-31):** V1.5 is **CLOSED**.
+BLOCK-005 is **CLOSED**. Owner SketchUp 2020 V1.5 verification:
+**PASS** (Final Product Owner confirmation per
+`Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`). BLOCK-005 technical
+direction remains frozen on `validate-on-next-interaction →
+detect host mismatch → fail closed / invalidate →
+host-authoritative discard + prepare/rebuild` (no global
+Observer architecture; SketchUp Model remains the geometry
+Source of Truth; `persistent_id` is not the correctness Source
+of Truth; old Ruby Entity handles are never trusted after
+host-state divergence). Accepted V1.5 RBZ verified at
+`D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz` (size
+**642,037 bytes**; entries **59**; SHA-256
+**`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**).
+This CLOSURE-ONLY sync dispatch (`V15-CLOSURE-SYNC-2026-08-31`)
+made ZERO production / runtime / test / RBZ / V1.6
+implementation changes. V1.6: **NOT STARTED** (Stage Technical
+Blueprint is frozen in `Prompt/`; implementation awaits a
+separate ACTIVE `CURRENT_PI_DISPATCH` referencing it). V1.7 /
+V2 / MCP: NOT STARTED / OUT OF SCOPE. Codex: NOT REQUIRED for
+this closure step. One local closure checkpoint commit created
+on the assigned `dev/v1.5`; pushed to `origin/dev/v1.5` if the
+V3.4 submission policy permits and the remote is reachable /
+not diverged. Pi STOPPED awaiting AIPM V1.6 dispatch. No real
+SU2017 / SU2020 compatibility PASS is claimed; evidence bounded
+by the only vendored Ruby available (2.7.8).
+
+---
+
+**Historical V1.5 closure-process one-line summaries (clearly
+historical, retained for audit only — V1.5 is CLOSED above):**
+
 **V1.5 V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch EXECUTION
-COMPLETE (THIS UPDATE, 2026-08-31): bounded final-evidence
+COMPLETE (2026-08-31): bounded final-evidence
 correction per AIPM dispatch
 `V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`. FINDING 1
 (placeholder SHA markers removed; exact implementation
