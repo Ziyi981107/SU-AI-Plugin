@@ -57,6 +57,16 @@ module SUAnalysis
         # BLOCK-001, 2026-08-25 V1.5 Owner-Gate Readiness Review).
         require_relative 'core/duplicate_repair_proposer'
         require_relative 'core/duplicate_repair_executor'
+        # V1.6 Planar Normalization / Z Policy: load the
+        # pure analyzer, the proposer (host-aware bridge), and
+        # the executor (host mutation). All three are required
+        # by the production boot chain so the WorkingModeRunner
+        # can reach them at runtime (CodeX BLOCK-001, 2026-08-25
+        # lesson: relying on a test-only require is not a
+        # substitute for production loading).
+        require_relative 'core/planar_normalization_analyzer'
+        require_relative 'core/planar_normalization_proposer'
+        require_relative 'core/planar_normalization_executor'
         require_relative 'analyzers_runner'
         require_relative 'issue_locator'
         require_relative 'display_unit_formatter'

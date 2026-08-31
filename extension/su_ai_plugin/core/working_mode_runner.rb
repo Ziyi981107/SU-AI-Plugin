@@ -33,6 +33,12 @@
 
 require_relative 'derived_geometry_workspace'
 require_relative 'derived_duplicate_validator'
+require_relative 'tolerance'
+# V1.6 Planar Normalization / Z Policy: load the proposer +
+# executor so the runner can delegate to them without per-test
+# requires.
+require_relative 'planar_normalization_proposer'
+require_relative 'planar_normalization_executor'
 
 module SUAnalysis
   module Core
@@ -51,6 +57,16 @@ module SUAnalysis
       # V1.5 Phase 1: duplicate-repair summary Hash (or nil).
       # Populated by record_duplicate_repair_summary; read by snapshot.
       @duplicate_repair_summary = nil
+      # V1.6 Planar Normalization / Z Policy: captured
+      # proposal + audit Hashes (or nil). Populated by
+      # compute_planar_normalization and apply_planar_normalization;
+      # read by snapshot.
+      @planar_normalization_proposal = nil
+      @planar_normalization_audit    = nil
+      # V1.6: cached tolerance derived from the captured
+      # SourceSnapshot's execution_config.tolerance_values.
+      # Recomputed on prepare()/rebuild().
+      @planar_normalization_tolerance = nil
 
       STATES = [:none, :building, :ready, :discarded, :failed].freeze
 
@@ -141,6 +157,14 @@ module SUAnalysis
         @current_adapter_kind  = _adapter_kind_of(adapter)
         @current_model         = model
         @current_workspace     = ws
+        # V1.6 Planar Normalization / Z Policy: capture the
+        # tolerance from the SourceSnapshot's execution_config
+        # (so a rebuild from the same source yields the same
+        # tolerance and the same proposal idempotently).
+        @planar_normalization_tolerance = _tolerance_from_snapshot(source)
+        # Reset per-build V1.6 state.
+        @planar_normalization_proposal  = nil
+        @planar_normalization_audit     = nil
 
         # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): the prepare
         # path is the SINGLE operation owner for the build.
@@ -267,9 +291,15 @@ module SUAnalysis
       # V1.5 Phase 1: discard also clears the duplicate-repair
       # summary so the next snapshot doesn't report stale
       # numbers from a discarded workspace.
+      # V1.6 Planar Normalization / Z Policy: discard also
+      # clears the planar normalization proposal + audit so
+      # the UI doesn't render stale normalization rows against
+      # the discarded workspace.
       def discard
         _discard_if_present
         @duplicate_repair_summary = nil
+        @planar_normalization_proposal = nil
+        @planar_normalization_audit    = nil
         # NOTE: do NOT clear @current_workspace here. The
         # discarded workspace carries the :discarded state
         # that the UI needs to render. The next prepare()
@@ -343,6 +373,11 @@ module SUAnalysis
           if @duplicate_repair_summary.is_a?(Hash) && !@duplicate_repair_summary.empty?
             snap['duplicate_repair'] = stringify_duplicate_repair_summary(@duplicate_repair_summary)
           end
+          # V1.6 Planar Normalization / Z Policy: include the
+          # last-known proposal + audit in the snapshot so the
+          # UI's Working Mode row remains stable across
+          # renderings.
+          _attach_planar_normalization_to_snapshot(snap)
           snap
         else
           ws = @current_workspace
@@ -375,6 +410,8 @@ module SUAnalysis
           if @duplicate_repair_summary.is_a?(Hash) && !@duplicate_repair_summary.empty?
             snap['duplicate_repair'] = stringify_duplicate_repair_summary(@duplicate_repair_summary)
           end
+          # V1.6 Planar Normalization / Z Policy.
+          _attach_planar_normalization_to_snapshot(snap)
           snap
         end
       end
@@ -685,6 +722,143 @@ module SUAnalysis
         @duplicate_repair_summary = nil
       end
 
+      # ===========================================================
+      # V1.6 Planar Normalization / Z Policy
+      # ===========================================================
+      #
+      # Operating on the CURRENT workspace. Two-step user flow:
+      #   1. compute_planar_normalization  -> snapshot['planar_normalization']
+      #      (a frozen PlanarNormalizationProposer Hash with
+      #      state + proposal; NO host mutation);
+      #   2. apply_planar_normalization   -> snapshot (post-
+      #      mutation; state transitions to :applied or
+      #      :failed).
+      #
+      # All actions operate on the runner-owned workspace;
+      # source remains untouched. The source fingerprint is
+      # preserved by construction (SourceSnapshot is immutable).
+
+      # Step 1: compute (without mutating) the planar
+      # normalization proposal for the current workspace.
+      # Idempotent: repeated calls on the same workspace +
+      # tolerance return the same proposal Hash (Blueprint
+      # P9). Clears the audit so the UI shows "READY_TO_NORMALIZE"
+      # before the user applies.
+      def compute_planar_normalization
+        if @current_workspace.nil? || @current_source.nil? || @current_adapter.nil?
+          @planar_normalization_proposal = nil
+          return snapshot
+        end
+        if @current_workspace.state != :ready
+          @planar_normalization_proposal = nil
+          return snapshot
+        end
+        tol = @planar_normalization_tolerance || _tolerance_from_snapshot(@current_source)
+        @planar_normalization_tolerance = tol
+        proposal = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+          workspace: @current_workspace,
+          adapter:   @current_adapter,
+          tolerance: tol
+        )
+        # Strip the non-JSON-safe vertex handle Array (the
+        # proposal builder's private host-handle resolution)
+        # before caching. The UI sees state + counts + audit;
+        # the executor (which runs in this same Ruby process)
+        # re-resolves host handles from the proposal's
+        # `unique_vertex_records` (which is JSON-safe).
+        proposal_for_snapshot = proposal.dup
+        if proposal_for_snapshot[:proposal].is_a?(Hash)
+          stripped = proposal_for_snapshot[:proposal].dup
+          stripped.delete(:unique_vertex_handles)
+          proposal_for_snapshot = proposal_for_snapshot.merge(proposal: stripped)
+        end
+        @planar_normalization_proposal = proposal_for_snapshot.freeze
+        @planar_normalization_audit    = nil
+        snapshot
+      end
+
+      # Step 2: apply the previously-computed proposal to the
+      # live workspace. One user-triggered action. Idempotent
+      # at the apply level: a second call on an already-
+      # applied workspace returns the existing audit without
+      # re-running host mutation. On failure the workspace
+      # transitions to :failed and the audit captures the
+      # reason.
+      def apply_planar_normalization
+        if @current_workspace.nil? || @current_source.nil? || @current_adapter.nil?
+          return snapshot
+        end
+        if @current_workspace.state != :ready
+          return snapshot
+        end
+        # Re-build the live proposal (with vertex handles) on
+        # demand; the cached snapshot-stripped proposal does
+        # not carry the host handles.
+        tol = @planar_normalization_tolerance || _tolerance_from_snapshot(@current_source)
+        full_proposal = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+          workspace: @current_workspace,
+          adapter:   @current_adapter,
+          tolerance: tol
+        )
+        if full_proposal[:state] != SUAnalysis::Core::PlanarNormalizationAnalyzer::STATE_READY_TO_NORMALIZE
+          # The workspace no longer matches the previous
+          # READY_TO_NORMALIZE state (e.g. user discarded /
+          # rebuilt). Do not apply; refresh the snapshot.
+          @planar_normalization_proposal = full_proposal.dup.tap { |p|
+            p.delete(:unique_vertex_handles) if p[:proposal].is_a?(Hash)
+          }.freeze
+          @planar_normalization_audit = {
+            'status' => :skipped,
+            'reason' => 'workspace_changed_before_apply'
+          }.freeze
+          return snapshot
+        end
+        # Run the executor.
+        result = SUAnalysis::Core::PlanarNormalizationExecutor.apply(
+          workspace:      @current_workspace,
+          adapter:        @current_adapter,
+          proposal_hash:  full_proposal,
+          tolerance:      tol
+        )
+        if result[:status] == :failed
+          # Workspace transitioned to :failed via the executor.
+          @current_workspace = result[:post_workspace]
+          @planar_normalization_audit = _planar_normalization_audit_to_jsonable(result[:audit])
+          # Strip the (now stale) cached proposal so the UI
+          # shows REVIEW_REQUIRED instead of pretending the
+          # batch is still pending.
+          @planar_normalization_proposal = nil
+          return snapshot
+        end
+        # Applied successfully. Refresh the cached proposal
+        # (now stale; the next compute will be a no-op since
+        # all vertices are at target_z).
+        @current_workspace = result[:post_workspace]
+        @planar_normalization_audit = _planar_normalization_audit_to_jsonable(result[:audit])
+        @planar_normalization_proposal = nil
+        snapshot
+      end
+
+      # Read-only accessor for tests. Returns the cached
+      # proposal Hash (without host handles) or nil.
+      def planar_normalization_proposal
+        @planar_normalization_proposal
+      end
+
+      # Read-only accessor for tests. Returns the cached
+      # audit Hash or nil.
+      def planar_normalization_audit
+        @planar_normalization_audit
+      end
+
+      # Test-only: clear the V1.6 state (called by
+      # reset_for_tests).
+      def clear_planar_normalization
+        @planar_normalization_proposal  = nil
+        @planar_normalization_audit     = nil
+        @planar_normalization_tolerance = nil
+      end
+
       # V1.5 Phase 1: read-only accessor for tests / Owner
       # verification scripts. Returns the current summary Hash
       # or nil.
@@ -983,6 +1157,11 @@ module SUAnalysis
         # discard (the prior workspace's repair summary no longer
         # applies).
         @duplicate_repair_summary = nil
+        # V1.6 Planar Normalization / Z Policy: discard also
+        # clears the V1.6 state so the next snapshot doesn't
+        # render stale normalization rows.
+        @planar_normalization_proposal  = nil
+        @planar_normalization_audit     = nil
       end
 
       def _adapter_kind_of(adapter)
@@ -1011,6 +1190,107 @@ module SUAnalysis
 
       def _empty_snapshot
         snapshot
+      end
+
+      # ---- V1.6 Planar Normalization / Z Policy internals ----
+
+      # Resolve a Tolerance from a SourceSnapshot's captured
+      # execution_config. The captured execution_config
+      # carries the canonical tolerance_values Hash from the
+      # Tolerance.to_h at the time of capture (per
+      # ExecutionConfigSnapshot.from_live_config). Re-build a
+      # fresh Tolerance from that Hash so V1.6 reads the
+      # captured values, NOT the live host Tolerance (which
+      # may drift between Prepare and Apply).
+      def _tolerance_from_snapshot(source)
+        return SUAnalysis::Core::Tolerance.default if source.nil?
+        ec = source.respond_to?(:execution_config) ? source.execution_config : nil
+        return SUAnalysis::Core::Tolerance.default if ec.nil?
+        vals = ec.respond_to?(:tolerance_values) ? ec.tolerance_values : nil
+        return SUAnalysis::Core::Tolerance.default unless vals.is_a?(Hash)
+        # Use the V1.6-aware Tolerance constructor (defaults
+        # for any missing key preserve backward compatibility
+        # with pre-V1.6 captured snapshots).
+        begin
+          SUAnalysis::Core::Tolerance.new(
+            duplicate:          vals[:duplicate]          || vals['duplicate']          || SUAnalysis::Core::Tolerance::DEFAULT_DUPLICATE,
+            short_edge:         vals[:short_edge]         || vals['short_edge']         || SUAnalysis::Core::Tolerance::DEFAULT_SHORT_EDGE,
+            gap_search:         vals[:gap_search]         || vals['gap_search']         || SUAnalysis::Core::Tolerance::DEFAULT_GAP_SEARCH,
+            coordinate_epsilon: vals[:coordinate_epsilon] || vals['coordinate_epsilon'] || SUAnalysis::Core::Tolerance::DEFAULT_COORDINATE_EPSILON,
+            big_z:              vals[:big_z]              || vals['big_z']              || SUAnalysis::Core::Tolerance::DEFAULT_BIG_Z,
+            large_coordinate:   vals[:large_coordinate]   || vals['large_coordinate']   || SUAnalysis::Core::Tolerance::DEFAULT_LARGE_COORDINATE,
+            planar_z_snap:      vals[:planar_z_snap]      || vals['planar_z_snap']      || SUAnalysis::Core::Tolerance::PLANAR_Z_SNAP_DEFAULT
+          )
+        rescue ArgumentError, TypeError
+          # Fall back to the default if the captured values
+          # are themselves invalid (defensive; the captured
+          # snapshot SHOULD always validate at capture time).
+          SUAnalysis::Core::Tolerance.default
+        end
+      end
+
+      # Attach the planar_normalization sub-snapshot Hash to
+      # the given snap Hash. JSON-safe (string keys + primitive
+      # values only).
+      def _attach_planar_normalization_to_snapshot(snap)
+        sub = {}
+        if @planar_normalization_proposal.is_a?(Hash)
+          sub['proposal'] = _stringify_planar_normalization_proposal(@planar_normalization_proposal)
+        end
+        if @planar_normalization_audit.is_a?(Hash)
+          sub['audit'] = @planar_normalization_audit
+        end
+        # If we have NO proposal + NO audit, surface a stable
+        # summary so the UI can render the "Planar
+        # normalization: not computed" row consistently.
+        if sub.empty?
+          sub['computed'] = false
+          sub['state']    = 'NOT_COMPUTED'
+        else
+          sub['computed'] = true
+          if sub['proposal'].is_a?(Hash)
+            sub['state'] = sub['proposal']['state'].to_s
+          end
+        end
+        snap['planar_normalization'] = sub.freeze
+      end
+
+      # Convert the cached proposal Hash to a JSON-safe Hash
+      # with String keys. The strip step already removed the
+      # host handles; this method normalizes the remaining
+      # keys + nested structures.
+      #
+      # For UI ergonomics we ALSO flatten the nested
+      # `:proposal` keys (the inner host-mutation plan with
+      # `target_z`, `outlier_count`, `affected_derived_ids`,
+      # etc.) up one level. This avoids the
+      # `result.proposal.proposal.target_z` ladder and lets
+      # the UI render fields like
+      # `result.proposal.target_z` /
+      # `result.proposal.outlier_count` directly.
+      def _stringify_planar_normalization_proposal(proposal)
+        out = {}
+        proposal.each do |k, v|
+          ks = k.to_s
+          out[ks] = stringify_duplicate_repair_value(v)
+        end
+        inner = out.delete('proposal')
+        if inner.is_a?(Hash)
+          inner.each do |k, v|
+            # Don't shadow top-level keys.
+            ks = k.to_s
+            out[ks] = v unless out.key?(ks)
+          end
+        end
+        out.freeze
+      end
+
+      # Convert the executor audit Hash to a JSON-safe Hash.
+      # The audit may carry Ruby Symbols for :applied / :failed;
+      # we coerce to Strings.
+      def _planar_normalization_audit_to_jsonable(audit)
+        return nil unless audit.is_a?(Hash)
+        stringify_duplicate_repair_summary(audit)
       end
 
       # ===========================================================
@@ -1148,6 +1428,11 @@ module SUAnalysis
         @current_adapter_kind = nil
         @current_model        = nil
         @duplicate_repair_summary = nil
+        # V1.6 Planar Normalization / Z Policy: clear all V1.6
+        # runner state on test reset.
+        @planar_normalization_proposal  = nil
+        @planar_normalization_audit     = nil
+        @planar_normalization_tolerance = nil
       end
 
       # V1.5 Phase 1 (internal): convert the duplicate-repair

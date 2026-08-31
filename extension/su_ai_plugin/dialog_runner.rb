@@ -100,6 +100,20 @@ module SUAnalysis
         dialog.add_action_callback('rebuild_workspace') do |_ctx|
           on_rebuild_workspace(dialog, controller)
         end
+        # V1.6 Planar Normalization / Z Policy: callbacks
+        # for the "Planar normalization" row in Working Mode.
+        # Two-step user flow:
+        #   - compute_planar_normalization  -> preview
+        #   - apply_planar_normalization    -> explicit apply
+        # Each handler delegates to WorkingModeRunner and
+        # re-pushes the payload so the UI updates after each
+        # action. Source CAD is NEVER touched.
+        dialog.add_action_callback('compute_planar_normalization') do |_ctx|
+          on_compute_planar_normalization(dialog, controller)
+        end
+        dialog.add_action_callback('apply_planar_normalization') do |_ctx|
+          on_apply_planar_normalization(dialog, controller)
+        end
         # set_on_closed releases the Loader-side cache so the window
         # can be GC'd after the user closes it.
         dialog.set_on_closed do
@@ -214,6 +228,34 @@ module SUAnalysis
               registry: registry
             )
           end
+        end
+      end
+
+      # V1.6 Planar Normalization / Z Policy: handler for
+      # `compute_planar_normalization`. Computes (without
+      # mutating) the deterministic safe-batch proposal on the
+      # CURRENT workspace and re-pushes the payload so the UI
+      # updates the "Planar normalization" row. Per Blueprint
+      # §7 the state can be NO_CANDIDATE / READY_TO_NORMALIZE
+      # / REVIEW_REQUIRED / APPLIED / FAILED. Source CAD is
+      # NEVER touched.
+      def on_compute_planar_normalization(dialog, controller)
+        _safe_invoke(dialog, controller, 'compute_planar_normalization') do
+          SUAnalysis::Core::WorkingModeRunner.compute_planar_normalization
+        end
+      end
+
+      # V1.6 Planar Normalization / Z Policy: handler for
+      # `apply_planar_normalization`. This is the SOLE
+      # user-triggered action that mutates derived geometry.
+      # Per Blueprint §1.4: "User performs one explicit batch
+      # approval: Apply Safe Normalization." Source CAD is
+      # NEVER touched; only derived vertices move; XY is
+      # preserved; outliers remain unchanged; the existing
+      # Discard / Rebuild / host Undo safety remains.
+      def on_apply_planar_normalization(dialog, controller)
+        _safe_invoke(dialog, controller, 'apply_planar_normalization') do
+          SUAnalysis::Core::WorkingModeRunner.apply_planar_normalization
         end
       end
 
