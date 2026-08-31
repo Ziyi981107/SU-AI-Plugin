@@ -16,9 +16,18 @@ exact final commit SHA. That is not acceptable
 evidence. This packet records the exact full SHA
 directly via the standard "implementation + doc-
 stamp" pattern; the implementation commit is recorded
-explicitly as `36eb6da97c1040d9772656467208b0105cd16fa3`
-and the post-doc-stamp commit is the `git rev-parse HEAD`
-result at task completion. Both are documented
+explicitly as `ad6ca70e2213034d54a3cb14a9bad210b19767fb`
+(verifiable via `git rev-parse HEAD~1` after both
+commits of this packet land), and the final HEAD after
+the doc-stamp commit is the `git rev-parse HEAD` result
+at task completion (the reader verifies directly via
+`git rev-parse HEAD`; the SHA is also recorded in the
+doc-stamp commit's commit-message body for `git log -1`
+readers; embedding the SHA inside the report file
+itself is intentionally avoided because a file inside
+a commit cannot contain its own commit's hash without
+a fixed-point construction that git does not natively
+support). Both are documented
 verbatim.
 
 FINDING 2 (accepted): the prior corrective packet

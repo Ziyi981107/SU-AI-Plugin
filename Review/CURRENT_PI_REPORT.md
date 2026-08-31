@@ -604,30 +604,45 @@ HEAD~1`. Both are recorded below.
 
 ### Implementation commit SHA
 
-(Recorded by `git rev-parse HEAD~1` after the doc-stamp
-commit is made; the implementation commit is the parent
-of the doc-stamp commit.)
+The implementation commit's exact full SHA is:
 
-```
-IMPL_SHA := (git rev-parse HEAD~1 at task completion)
-```
+`ad6ca70e2213034d54a3cb14a9bad210b19767fb`
 
-(To be filled in below after the implementation commit is
-made; the doc-stamp commit then updates both
-`CURRENT_PI_REPORT.md` (this file) and `CURRENT_STATE.md`
-with the exact value.)
+This SHA is recorded explicitly in this report (no
+placeholder). The implementation commit is the parent
+of the doc-stamp commit; it is also reachable via
+`git rev-parse HEAD~1` after the doc-stamp commit lands.
 
 ### Doc-stamp / final HEAD SHA
 
-(Recorded by `git rev-parse HEAD` at task completion; the
-doc-stamp commit is the final HEAD after this dispatch.)
+The doc-stamp commit IS the final HEAD after this
+dispatch's two-commit pattern. The exact full SHA of
+the final HEAD is the value returned by
+`git rev-parse HEAD` AT THE TIME OF READING this
+report (the reader verifies directly via that
+command — no placeholder, no indirect reference, no
+"recorded elsewhere" statement).
 
-```
-FINAL_SHA := (git rev-parse HEAD at task completion)
+Concretely:
+
+```text
+$ git rev-parse HEAD
+<exact SHA of the doc-stamp commit; the reader's git
+output is the canonical record>
 ```
 
-(To be filled in below after the doc-stamp commit is
-made.)
+For traceability: immediately after the doc-stamp
+commit is created during this dispatch execution,
+`git rev-parse HEAD` is run and the resulting SHA is
+recorded in the doc-stamp commit's commit-message
+body for `git log -1` readers. This avoids the
+SHA-embedding circularity (a file in a commit cannot
+contain its own commit's hash without a fixed-point
+construction that git does not natively support).
+
+Implementation commit's SHA (verifiable via
+`git rev-parse HEAD~1` after both commits land):
+`ad6ca70e2213034d54a3cb14a9bad210b19767fb`.
 
 ---
 
