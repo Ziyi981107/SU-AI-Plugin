@@ -1,18 +1,19 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.6 UI-CN-SIMPLIFICATION DISPATCH (THIS UPDATE)
+## V1.6 UI-CN-SIMPLIFICATION-FIX DISPATCH (THIS UPDATE)
 
-Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-2026-09-01
+Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01
 dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
-prior V1.6 UI-INTEGRATION-CORRECTION packet is intact; this
-dispatch performed the bounded frontend productization pass:
-Simplified Chinese localization of all normal user-facing
-text + materially simpler default UI + ONE primary CTA
-hierarchy + collapsed `技术详情` block preserving the full
-data contract. The frozen V1.6 Stage Technical Blueprint +
-the V1.6 backend (Planar Normalization analyzer / proposer /
-executor / tolerance / adapter / working mode runner /
-dialog runner) are untouched.)
+prior V16-UI-CN-SIMPLIFICATION packet is intact; this
+dispatch performed ONE bounded frontend UX regression fix
+per Owner real-host finding: in workspace state `discarded`
+(and `failed`, by the "same class of mistake" review), the
+primary CTA is now `准备处理` (so the user can create a
+fresh SourceSnapshot + Derived Workspace from a NEW
+selection), with `重新生成` remaining as a secondary action
+under `更多操作` for replaying the previously captured
+workspace. The frozen V1.6 Stage Technical Blueprint + the
+V1.6 backend are untouched.)
 
 Closure date for the prior V1.5 closure: 2026-08-31
 (unchanged).
@@ -30,11 +31,13 @@ Status:
   architecture added in V1.5. `persistent_id` is not the
   correctness Source of Truth. Old Ruby Entity handles must
   never be trusted after host-state divergence.
-- **V1.6: UI CN SIMPLIFICATION COMPLETE / AWAITING AIPM SOURCE
-  REVIEW** (per dispatch `V16-UI-CN-SIMPLIFICATION-2026-09-01`,
-  on assigned `dev/v1.6`). The prior V1.6 UI-INTEGRATION-
-  CORRECTION packet is intact; this dispatch performed the
-  bounded frontend productization pass described in
+- **V1.6: UI CN SIMPLIFICATION + UI CN SIMPLIFICATION FIX
+  COMPLETE / AWAITING AIPM SOURCE REVIEW** (per dispatch
+  `V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01`, on assigned
+  `dev/v1.6`). The prior V16-UI-CN-SIMPLIFICATION packet is
+  intact; this dispatch fixed the Owner real-host
+  regression (discarded state primary CTA = `准备处理`,
+  Rebuild as secondary) per
   `Review/CURRENT_PI_REPORT.md`.
 - **V1.6: OWNER REAL-HOST VERIFICATION NOT YET RUN** (SketchUp
   2020 Owner / Owner-AIPM step remains after AIPM source
@@ -52,7 +55,7 @@ Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
 - Entries: **59**
 - SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
 
-V1.6 UI-INTEGRATION-CORRECTION RBZ (prior dispatch, superseded by this dispatch's RBZ):
+V1.6 UI-INTEGRATION-CORRECTION RBZ (prior dispatch, superseded by later dispatches' RBZ):
 
 - Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 - Size: **744,607 bytes** (+11,103 vs V1.6 PI-impl RBZ, the delta is the
@@ -61,7 +64,7 @@ V1.6 UI-INTEGRATION-CORRECTION RBZ (prior dispatch, superseded by this dispatch'
 - Entries: **62** (unchanged from V1.6 PI-impl).
 - SHA-256: **`c9c1f4f0503957a1fe5073957df2d67996be6ec74cff0d95d5c046ab6bfa585d`**
 
-V1.6 UI-CN-SIMPLIFICATION RBZ candidate (this dispatch):
+V1.6 UI-CN-SIMPLIFICATION RBZ (prior dispatch, superseded by this dispatch's RBZ):
 
 - Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 - Size: **762,012 bytes** (+17,405 vs V1.6 UI-INTEGRATION-
@@ -74,19 +77,32 @@ V1.6 UI-CN-SIMPLIFICATION RBZ candidate (this dispatch):
 - Entries: **62** (unchanged).
 - SHA-256: **`BBDF9BC1277878AD1B8B83A5FA1C9B37A6F26EC75D979F8BE6CFC8BCBAB0F7D9`**
 
+V1.6 UI-CN-SIMPLIFICATION-FIX RBZ candidate (this dispatch):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **764,857 bytes** (+2,845 vs V1.6 UI-CN-SIMPLIFICATION
+  RBZ, the delta is the `discarded` + `failed` state primary
+  CTA fix in app.js + the V16-FIX DOM regression tests).
+- Entries: **62** (unchanged).
+- SHA-256: **`A8326FE595FD4F3E99F63AD43BA7B540422650264FE449F8A2E94F662CA3074F`**
+
 Packaged `html/app.js` SHA-256:
-**`40133806BA6626B331DAB874C1B8CF6A3645810A0223BB88E0E728D00A96AE11`**
+**`7CF8A33BF5AE4FE74FDB0E0DA85BAFAB8A2CF4D02B5B72A6B86F6D43A55C30A0`**
 Packaged `html/index.html` SHA-256:
 **`6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`**
+(index.html unchanged from prior V16-UI-CN-SIMPLIFICATION
+dispatch)
 Packaged `html/style.css` SHA-256:
 **`3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`**
+(style.css unchanged from prior V16-UI-CN-SIMPLIFICATION
+dispatch)
 
 All three packaged dialog assets are byte-identical to the
 in-tree source (per the existing smoke-test contract).
 
 Next expected AIPM action: AIPM direct source review of the V1.6
-UI CN simplification packet against the frozen Blueprint + the
-prior V1.6 review evidence, then (on AIPM PASS) the Owner
+UI CN simplification fix packet against the frozen Blueprint +
+the prior V1.6 review evidence, then (on AIPM PASS) the Owner
 SU2020 real-host verification gate. Codex review is NOT a
 routine reviewer for V1.6 and was NOT invoked.
 
@@ -359,6 +375,119 @@ the internal `data-action="apply_planar_normalization"`
 callback name is preserved verbatim).
 
 V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN. V1.6 NOT CLOSED.
+
+## V1.6 UI-CN-SIMPLIFICATION-FIX DISPATCH (THIS UPDATE)
+
+Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
+prior V16-UI-CN-SIMPLIFICATION packet is intact; this
+dispatch performed ONE bounded frontend UX regression fix
+per Owner real-host finding.)
+
+Owner real-host finding (per dispatch §0):
+
+> After the previous workspace is discarded, Working Mode
+> shows “处理工作区 — 工作副本已放弃” but the UI exposes only
+> “更多操作 -> 重新生成” and does NOT expose “准备处理”. This
+> is incorrect. After Discard, the user may select a NEW
+> CAD/source selection and must be able to create a fresh
+> SourceSnapshot + Derived Workspace from the CURRENT
+> selection. Rebuild is not a substitute for Prepare because
+> it may rebuild from the previously captured workspace/
+> source state.
+
+Concretely this dispatch changed:
+
+  - `extension/su_ai_plugin/html/app.js`:
+    - `renderPrimaryAction()` now emits `准备处理` as the
+      primary CTA for BOTH `none` AND `discarded` AND `failed`
+      workspace states. The `discarded` + `failed` branches
+      were missing in the prior packet (only Rebuild was
+      available under `更多操作`).
+    - The `ready` branch is unchanged: `检查平面偏差` for
+      `NOT_COMPUTED`, `应用平面校正` for `READY_TO_NORMALIZE`,
+      no destructive button for REVIEW_REQUIRED / NO_CANDIDATE
+      / APPLIED / FAILED / INVALID_*.
+    - The `building` branch is unchanged: no buttons
+      (in-progress).
+    - `renderMoreActions()` is unchanged in code; the
+      `discarded` + `failed` branches already showed `重新生成`
+      as a secondary control. Now `准备处理` is the primary
+      CTA on top + `重新生成` is the secondary under `更多操作`.
+
+Action-state matrix (per dispatch §5):
+
+| Workspace state | Primary CTA                | Secondary in `更多操作` |
+|-----------------|----------------------------|--------------------------|
+| `none`          | `准备处理`                 | (none)                   |
+| `discarded`     | `准备处理` (Owner fix)      | `重新生成`               |
+| `failed`        | `准备处理` (Owner fix)      | `重新生成`               |
+| `ready` + `NOT_COMPUTED` | `检查平面偏差`     | `放弃工作副本` + `重新生成` |
+| `ready` + `READY_TO_NORMALIZE` | `应用平面校正` | `放弃工作副本` + `重新生成` |
+| `ready` + (REVIEW_REQUIRED / NO_CANDIDATE / APPLIED / FAILED / INVALID_*) | (none) | `放弃工作副本` + `重新生成` |
+| `building`      | (none; in-progress)        | (none)                   |
+
+The destructive `应用平面校正` button is rendered ONLY when
+`workspaceState === 'ready'` AND `pnState === 'READY_TO_NORMALIZE'`
+(per the prior packet's locked contract).
+
+Production files NOT modified by this dispatch:
+- All V1.6 backend files (planar_normalization_*.rb,
+  tolerance.rb, analysis_config.rb,
+  derived_workspace_adapter.rb,
+  su_derived_workspace_adapter.rb, working_mode_runner.rb,
+  dialog_runner.rb, main.rb). The V1.6 frozen Blueprint +
+  the V1.6 backend are unchanged.
+- `extension/su_ai_plugin/html/index.html`
+- `extension/su_ai_plugin/html/style.css`
+
+Test files modified by this dispatch:
+  - `tests/test_html_render_dom.js`:
+    - Added V16-FIX assertions for the `discarded` state:
+      - Primary CTA is Simplified Chinese `准备处理` (data-
+        action="prepare_workspace", enabled, NO disabled attr).
+      - `更多操作` block contains `重新生成` as secondary.
+      - `放弃工作副本` is NOT rendered (already discarded).
+      - ZERO disabled buttons anywhere in the `discarded`
+        state (unavailable actions are HIDDEN, not disabled).
+      - Clicking `准备处理` calls prepare_workspace EXACTLY
+        ONCE; does NOT call rebuild_workspace; does NOT call
+        discard_workspace.
+      - Clicking `重新生成` (secondary) calls
+        rebuild_workspace EXACTLY ONCE; does NOT call
+        prepare_workspace.
+    - Added V16-FIX assertions for the `failed` state (same
+      class of mistake, by symmetry):
+      - Primary CTA is Simplified Chinese `准备处理`.
+      - `更多操作` block contains `重新生成` as secondary.
+      - Clicking `准备处理` calls prepare_workspace EXACTLY
+        ONCE; does NOT call rebuild_workspace.
+
+Test evidence (this dispatch):
+
+- Full Ruby suite: **843 / 843 PASS** / 0 fail / 0 error
+  (no Ruby-side change was required for this UI fix; the
+  Ruby regression suite covers the existing V1.6 backend
+  contract, which is unchanged).
+- V16 substring: **26 / 26 PASS** (P1-P9, G1-G6, H1-H6,
+  T1-T3, I1-I3) — V1.6 backend behavior is unchanged.
+- V15 substring: **149 / 149 PASS** (BLOCK-005 closed).
+- Node DOM (`tests/test_html_render_dom.js`):
+ **307 / 307 PASS** (294 existing + 13 new V16-FIX).
+- RBZ smoke substring: **9 / 9 PASS**.
+- `git diff --check`: clean.
+
+CODEX_TRIGGER: **NO** (per dispatch §8). No new architecture
+was added; no V1.6 normalization algorithm was changed; no
+Source-of-Truth / Undo / transaction / provenance / observer
+was touched. The destructive `apply_planar_normalization`
+callback name is preserved verbatim — only the action-state
+matrix in the simplified renderer was corrected (no backend
+semantics, no Source-of-Truth, no Undo/reconciliation, no
+transaction, no provenance).
+
+V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN.
+V1.6 NOT CLOSED.
 
 ## V1.6 PI-IMPLEMENTATION DISPATCH
 
