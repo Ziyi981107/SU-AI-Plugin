@@ -1,144 +1,738 @@
 # CURRENT PI DISPATCH
 
+DISPATCH_ID: V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01
 STATUS: ACTIVE
-DISPATCH_ID: SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01
-Project: SU-AI-Plugin
-Dispatcher: ChatGPT / AIPM
-Version: V1.5
-Stage: V1.5 — Round-5 AIPM Source Review corrective continuation
-TARGET_BRANCH: dev/v1.5
-V1.6: NOT STARTED
+PROJECT: SU-AI-Plugin
+STAGE: V1.6 — Planar Normalization / Z Policy
+TARGET_BRANCH: dev/v1.6
 
-## Read first
+Dispatcher / Product + Technical Authority: AIPM
+Final Product Owner: Owner
+Implementation Agent: Pi
 
-1. `AGENTS.md`
-2. `PROJECT_HANDOFF.md`
-3. `PROJECT_MASTER_PLAN_V1X.md`
-4. `CURRENT_STATE.md`
-5. `Prompt/CURRENT_PI_DISPATCH.md`
-6. `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
-7. `Review/CURRENT_AIPM_REVIEW.md`
-8. the existing Round-5 frozen Guidance only where referenced by the new Guidance
+FROZEN V1.6 BLUEPRINT:
+Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md
 
-Historical Prompt/Review files are evidence only and cannot override this dispatch.
+PRIOR ACCEPTED DISPATCHES (history):
+- V16-UI-CN-SIMPLIFICATION-2026-09-01 (主 UX pass; COMPLETE)
+- V16-UI-INTEGRATION-CORRECTION-2026-09-01 (PRIOR ACCEPTED FUNCTIONAL UI INTEGRATION)
 
-## Mission
+---
 
-Implement ONLY the bounded AIPM Source Review fixes frozen in:
+# 0. SCOPE — BOUNDED UX REGRESSION FIX
 
-`Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+Owner real-host testing of the V16-UI-CN-SIMPLIFICATION RBZ
+found ONE concrete workflow blocker:
 
-Assigned scope:
+After the previous workspace is discarded, Working Mode shows
+“处理工作区 — 工作副本已放弃” but the UI exposes only
+“更多操作 -> 重新生成” and does NOT expose “准备处理”.
+This is incorrect: after Discard, the user may select a NEW
+CAD/source selection and must be able to create a fresh
+SourceSnapshot + Derived Workspace from the CURRENT selection.
+Rebuild is not a substitute for Prepare because it may rebuild
+from the previously captured workspace/source state.
 
-- FIX-A: strict tolerance parsing + eliminate missing/invalid runtime fallback + exact-zero layer-key correction;
-- FIX-B: exact deterministic survivor provenance union;
-- FIX-C: strict destructive handle-liveness hardening;
-- focused/full regression and package evidence.
+This dispatch performs ONE bounded frontend correction to fix
+this regression. Do NOT change backend semantics / V1.6
+normalization algorithms / Source-of-Truth / Undo /
+transaction / provenance / observer architecture.
 
-Explicitly NOT assigned:
+After this fix the next Gate remains: Owner / AIPM SketchUp
+2020 V1.6 real-host verification. Do NOT run Owner
+verification on behalf of Owner. Do NOT start V1.7. Do NOT
+invoke Codex.
 
-- BLOCK-005 discard/Undo recovery redesign;
-- Observer architecture;
-- Owner verification;
-- V1.6;
-- product/UX changes;
-- topology policy changes;
-- source-CAD mutation;
-- Codex review.
+---
 
-## Preflight
+# 0. OWNER DECISION
 
-Before editing:
+Before Owner SU2020 real-host verification, perform ONE bounded frontend
+productization pass.
 
-- `git branch --show-current`
-- `git rev-parse HEAD`
-- `git status --short`
-- inspect current diff / untracked files
+Owner requirements:
 
-Expected branch:
-`dev/v1.5`
+1. The user-facing interface must be Simplified Chinese.
+2. The default UI must be much simpler.
+3. Technical/debug information that normal users do not need must NOT dominate
+   the screen.
+4. Secondary / diagnostic information may remain available through collapsed
+   detail sections.
+5. Do not change V1.6 normalization algorithms, host mutation semantics,
+   Source-of-Truth, Undo/reconciliation, or product scope.
 
-The repository may contain untracked AIPM Review evidence `.txt` files generated for review.
-Preserve them. Do not add, delete, or commit them.
+This is a PRODUCT UX correction, not an architecture rewrite.
 
-If unexpected tracked production/test/governance modifications exist:
-STOP and report exact paths.
+After this dispatch the next Gate remains:
 
-Do not reset/rebase/clean away another agent's evidence.
+Owner / AIPM SketchUp 2020 V1.6 real-host verification.
 
-## Implementation authority
+Do NOT run Owner verification on behalf of Owner.
+Do NOT start V1.7.
+Do NOT invoke Codex unless a genuinely new architectural blocker appears.
 
-Pi may:
+---
 
-- modify the production/test seams required by FIX-A/B/C;
-- add focused regressions;
-- make small local refactors strictly needed to centralize the frozen semantics;
-- run tests/build/package;
-- update `CURRENT_STATE.md`;
-- overwrite `Review/CURRENT_PI_REPORT.md`;
-- create local stable checkpoints.
+# 1. UX PRINCIPLE
 
-Pi must NOT invent architecture outside the Guidance.
+The plugin is for architectural CAD preparation, not for debugging the internal
+pipeline.
 
-If the Guidance is insufficient against repository reality:
-STOP the affected scope and report the exact gap to AIPM.
+Default screen should answer only four user questions:
 
-## Evidence
+1. 当前选中的 CAD 有没有问题？
+2. 工作副本现在是什么状态？
+3. 系统建议我做什么？
+4. 我现在可以点哪个按钮？
 
-Run at minimum:
+Everything else is secondary.
 
-- focused corrective regressions;
-- existing Round-5 regressions;
-- full V1.5;
-- full Ruby;
-- Node DOM;
-- RBZ smoke/package;
-- rebuild RBZ;
-- `git diff --check`.
+Use:
 
-`Review/CURRENT_PI_REPORT.md` must include:
+PRIMARY ACTION
+→ current recommended next action
 
-- this exact DISPATCH_ID;
-- branch / starting HEAD / final HEAD;
-- changed production/test files;
-- AIPM finding -> implementation -> regression mapping;
-- exact tolerance/fallback search result;
-- exact provenance invariant evidence;
-- handle-liveness evidence;
-- focused/full/package test results;
-- RBZ path/size/entries/hash;
-- known open BLOCK-005 statement;
-- unresolved issues;
-- final stable commit;
-- push status;
-- final `git status --short`;
-- STOP.
+SECONDARY ACTIONS
+→ safe operational controls
 
-## Git submission
+TECHNICAL DETAILS
+→ collapsed by default
 
-Pi may create local checkpoint commits.
+Do not make normal users read:
+- snapshot IDs
+- fingerprint hashes
+- config digests
+- rule IDs
+- action IDs
+- survivor IDs
+- source occurrence counts
+- internal state enum names
+- raw audit rows
+unless they deliberately expand technical details.
 
-At completion:
-- create one final stable submission commit;
-- push only `dev/v1.5` if a remote is already configured and normal V3.4 dev-branch submission is possible;
-- do NOT configure a new remote;
-- do NOT push/merge `main`;
-- do NOT force-push or rewrite history.
+---
 
-If there is still no remote:
-record `PUSH NOT POSSIBLE — NO REMOTE`, keep the stable local commit, and STOP.
+# 2. LANGUAGE — SIMPLIFIED CHINESE
 
-## Hard STOP
+All normal user-facing text in the shipped dialog must be Simplified Chinese.
 
-After all assigned FIX-A/B/C work and evidence are complete:
+Do NOT translate internal data identifiers in storage / API contracts.
+Translate only presentation.
 
-STOP.
+## 2.1 Main title
 
-Do not:
-- continue into BLOCK-005;
-- run/request Codex;
-- ask Owner for verification;
-- start V1.6;
-- select another task.
+`CAD Analyzer Result`
+→ `CAD 检查结果`
 
-Return control to AIPM for real source review.
+`No selection`
+→ `未选择对象`
+
+## 2.2 Core summary labels
+
+Use concise Chinese:
+
+- Edges → 线段
+- Vertices → 顶点
+- Faces → 面
+- Faces With Holes → 含洞面
+- Non Zero Z Vertices → 非零 Z 顶点
+- Warnings → 警告
+
+Avoid exposing zero-value technical counters in the default primary summary if
+they add no user value.
+
+## 2.3 Issue type labels
+
+At minimum:
+
+- duplicate_edge_candidate → 重复线候选
+- short_edge → 短线
+- open_endpoint → 未闭合端点
+- gap_candidate → 间隙候选
+- significant_non_zero_z → 明显非零 Z
+- abnormal_large_coord → 异常大坐标
+- deep_nesting → 嵌套层级过深
+
+Severity:
+- high → 高
+- medium → 中
+- low → 低
+
+Standard known issue descriptions should be presented in Chinese where the
+frontend can map them deterministically.
+
+Do not invent Chinese meaning for unknown backend messages.
+Unknown/unmapped messages may appear under technical details rather than
+polluting the primary UX.
+
+## 2.4 Layer / visibility labels
+
+- Layers → 图层
+- Issues by Layer → 按图层查看问题
+- Face Inventory → 面信息
+- Dimension → 尺寸标注
+- Annotation → 注释
+- Guide → 辅助线
+- Construction → 构造线
+- Unknown → 未识别
+- Visible → 可见
+- Off-screen / Hidden → 隐藏
+- Visibility unknown → 可见性未知
+
+## 2.5 Working Mode
+
+`Working Mode`
+→ `处理工作区`
+
+Workspace states:
+
+- none → 未准备
+- building → 正在准备
+- ready → 已准备
+- discarded → 已放弃
+- failed → 处理失败
+
+Buttons:
+
+- Prepare → 准备处理
+- Discard → 放弃工作副本
+- Rebuild → 重新生成
+- Analyze Planarity → 检查平面偏差
+- Apply Safe Normalization → 应用平面校正
+
+## 2.6 Planar normalization
+
+`Planar Normalization`
+→ `平面校正`
+
+State labels:
+
+- NOT_COMPUTED → 未检查
+- READY_TO_NORMALIZE → 可安全校正
+- REVIEW_REQUIRED → 需要人工确认
+- NO_CANDIDATE → 无需校正
+- APPLIED → 已校正
+- FAILED → 校正失败
+- INVALID_TOLERANCE → 配置无效
+- INVALID_INPUT → 数据无效
+
+Field labels:
+
+- Target Z → 目标 Z
+- Eligible Vertices → 可处理顶点
+- Proposed Movable → 待移动顶点
+- Affected Derived Edges → 受影响线段
+- Outliers → 异常点
+- Skipped / Ambiguous Scope → 已跳过
+- Max Proposed Movement → 最大校正量
+- Review Reason → 原因
+- Moved / Applied → 已移动
+- Outliers Unchanged → 保留异常项
+- Failure Reason → 失败原因
+
+Internal reason strings may be mapped to concise Chinese presentation where
+stable, but the raw reason must remain available in technical details.
+
+---
+
+# 3. DEFAULT INFORMATION ARCHITECTURE
+
+The default UI should be visibly simpler than V1.5.
+
+Use the existing page structure where possible; do not introduce a frontend
+framework.
+
+## 3.1 Primary visible area
+
+Default expanded / visible content:
+
+### A. Header
+
+`CAD 检查结果`
+
+One short selection line.
+
+### B. 问题概览
+
+Show only useful user-level facts.
+
+Recommended:
+- `发现 X 个问题`
+- concise grouped issue list
+- severity badge
+- Chinese issue label/message
+
+Do NOT make the primary summary look like a developer dashboard full of zero
+counters.
+
+If all counts are still retained for diagnostics, put them in collapsed
+`检查详情`.
+
+### C. 处理工作区
+
+Show one short status sentence, for example:
+
+- `尚未准备工作副本`
+- `工作副本已准备，共 32 条线`
+- `工作副本已放弃`
+- `处理失败，需要重新生成`
+
+Then show contextual action(s).
+
+### D. 平面校正
+
+Only show this card/block when a working copy exists.
+
+Examples:
+
+NOT_COMPUTED:
+`尚未检查平面偏差。`
+
+READY_TO_NORMALIZE:
+`检测到可安全校正的轻微 Z 偏差。`
+`目标 Z：...`
+`待校正：... 个顶点`
+`异常项：...`
+PRIMARY CTA:
+`应用平面校正`
+
+REVIEW_REQUIRED:
+`检测到多组高度，无法安全自动判断。`
+No destructive action.
+
+NO_CANDIDATE:
+`当前几何无需平面校正。`
+
+APPLIED:
+`平面校正已完成。`
+Show only moved count + max movement + outlier count by default.
+
+FAILED:
+`平面校正失败。`
+Show a concise Chinese reason and recovery action.
+
+---
+
+# 4. ONE PRIMARY ACTION AT A TIME
+
+Reduce visual button clutter.
+
+The primary workflow should expose ONE clear next action whenever possible.
+
+## 4.1 No workspace
+
+Primary:
+`准备处理`
+
+## 4.2 Workspace ready + normalization NOT_COMPUTED
+
+Primary:
+`检查平面偏差`
+
+Secondary:
+- `放弃工作副本`
+- `重新生成`
+
+## 4.3 READY_TO_NORMALIZE
+
+Primary:
+`应用平面校正`
+
+Secondary:
+- `放弃工作副本`
+- `重新生成`
+
+## 4.4 REVIEW_REQUIRED / NO_CANDIDATE / APPLIED
+
+No destructive normalization CTA.
+
+Secondary workspace controls remain accessible.
+
+## 4.5 Secondary action presentation
+
+Do NOT show disabled irrelevant buttons such as a disabled `Prepare` next to
+every ready-state action.
+
+Preferred:
+
+Primary button visible normally.
+
+Secondary operational controls placed in a small collapsed:
+
+`更多操作`
+
+containing:
+- 放弃工作副本
+- 重新生成
+
+If implementing a collapsed More Actions container creates disproportionate
+complexity, use clearly secondary buttons below the primary CTA, but HIDE
+unavailable actions rather than rendering many disabled buttons.
+
+Preserve all existing callbacks.
+
+---
+
+# 5. COLLAPSED SECONDARY INFORMATION
+
+These sections should remain available but collapsed by default:
+
+## 5.1 `检查详情`
+
+May contain:
+- full scalar counters
+- per-issue-type zero/non-zero counts
+- original technical issue message if useful
+
+## 5.2 `按图层查看问题`
+
+Existing Issues by Layer.
+Collapsed by default.
+
+## 5.3 `图层信息`
+
+Existing Layers.
+Collapsed by default.
+
+## 5.4 `面信息`
+
+Existing Face Inventory.
+Collapsed by default.
+
+## 5.5 `技术详情`
+
+Create/reuse a single collapsed technical detail area inside or below Working
+Mode for information such as:
+
+- Source Snapshot ID
+- Source Fingerprint
+- Execution Config digest
+- raw workspace state
+- duplicate repair technical audit
+- per-action action_id
+- rule_id
+- survivor_id
+- source occurrence count
+- raw normalization reason string
+- raw normalization audit fields
+
+Normal user should not see these fields without intentionally opening
+`技术详情`.
+
+Do NOT delete the data contract.
+Only change presentation hierarchy.
+
+---
+
+# 6. DUPLICATE REPAIR PRESENTATION
+
+V1.5 audit evidence must remain inspectable, but simplify the visible row.
+
+Default user-facing row:
+
+`重复线清理：已处理 X，跳过 Y，失败 Z`
+
+Optional:
+`线段：A → B`
+
+Do NOT show in the default view:
+- duplicate class counts
+- duplicate pair counts
+- survivor derived ID
+- action ID
+- rule ID
+- source occurrence count
+
+Put those inside `技术详情`.
+
+No V1.5 behavior change is authorized.
+
+---
+
+# 7. ISSUE ROW SIMPLIFICATION
+
+Default issue card should contain:
+
+- Chinese issue label
+- Chinese severity badge
+- one concise Chinese explanation
+
+Keep issue ID hidden from the primary row.
+
+Issue ID may be:
+- tooltip;
+- data attribute;
+- technical details.
+
+Locatable behavior remains unchanged.
+
+Do NOT change source-locate semantics.
+
+---
+
+# 8. TECHNICAL IMPLEMENTATION BOUNDARY
+
+Primary expected files:
+
+- `extension/su_ai_plugin/html/app.js`
+- `extension/su_ai_plugin/html/index.html`
+- `extension/su_ai_plugin/html/style.css`
+- `tests/test_html_render_dom.js`
+
+Small Ruby UI-mapper changes are allowed ONLY if required to expose a stable
+presentation field that cannot safely be derived in JS.
+
+Do NOT modify:
+
+- PlanarNormalizationAnalyzer semantics
+- PlanarNormalizationProposer semantics
+- PlanarNormalizationExecutor semantics
+- Tolerance semantics
+- transform_by_vectors route
+- source/derived ownership
+- transaction/Undo architecture
+- provenance semantics
+- V1.5 duplicate-repair semantics
+
+If UI productization reveals a real backend contract flaw, STOP and report it
+instead of silently redesigning.
+
+---
+
+# 9. FRONTEND SAFETY / COMPATIBILITY
+
+Preserve current safety rules:
+
+- no `eval`
+- no `new Function`
+- no user-supplied `innerHTML`
+- no `document.write`
+- text through `textContent`
+- callback actions through `window.sketchup.<callback>`
+
+Keep syntax compatible with the existing shipped HtmlDialog / SketchUp 2020
+environment.
+
+All HTML remains UTF-8.
+
+Chinese text must display correctly in the RBZ / real SU2020 HtmlDialog.
+
+---
+
+# 10. REQUIRED DOM / UX TESTS
+
+Tests must load the ACTUAL shipped frontend.
+
+At minimum:
+
+CN1 — Main title / selection empty-state are Chinese.
+
+CN2 — Issue type / severity labels are Chinese.
+
+CN3 — Working Mode visible labels/buttons are Chinese.
+
+CN4 — Planar Normalization states/buttons are Chinese.
+
+CN5 — READY_TO_NORMALIZE:
+only the correct destructive primary CTA exists:
+`应用平面校正`.
+
+CN6 — NOT_COMPUTED:
+primary action is:
+`检查平面偏差`.
+
+CN7 — REVIEW_REQUIRED:
+Chinese review-required explanation visible;
+no Apply action.
+
+CN8 — NO_CANDIDATE:
+Chinese no-action explanation visible;
+no Apply action.
+
+CN9 — APPLIED:
+Chinese completion summary;
+no stale Apply action.
+
+CN10 — FAILED:
+Chinese failure summary;
+no Apply action.
+
+CN11 — source snapshot / fingerprint / config digest are NOT visible in the
+default primary Working Mode area and are available under `技术详情`.
+
+CN12 — duplicate action IDs / rule IDs / survivor IDs are hidden by default and
+available under technical details.
+
+CN13 — Issues by Layer / Layers / Face Inventory are Chinese and collapsed by
+default.
+
+CN14 — unavailable actions are hidden rather than producing button clutter.
+
+CN15 — existing callback dispatch still works:
+- 准备处理 -> prepare_workspace
+- 放弃工作副本 -> discard_workspace
+- 重新生成 -> rebuild_workspace
+- 检查平面偏差 -> compute_planar_normalization
+- 应用平面校正 -> apply_planar_normalization
+
+CN16 — missing/malformed payload degrades safely.
+
+CN17 — no `[object Object]`, `undefined`, `NaN` in visible normal UI.
+
+CN18 — technical details still retain the audit evidence needed by AIPM/Pi.
+
+---
+
+# 11. VISUAL CHECK
+
+Pi must perform a static DOM/screenshot-capable review if the existing tooling
+allows it, checking:
+
+- Chinese text does not overflow obvious buttons/cards;
+- primary action hierarchy is visually clear;
+- technical detail sections are collapsed;
+- default screen is materially less dense than before.
+
+Do not claim real SketchUp rendering from Node tests.
+
+Owner will perform the real SU2020 visual check.
+
+---
+
+# 12. REGRESSION / RBZ
+
+Run:
+
+1. updated Node DOM suite
+2. focused V1.6 Ruby tests
+3. V1.5 regression
+4. full Ruby suite
+5. legacy compatibility suite
+6. RBZ smoke/load tests
+7. git diff --check
+
+Rebuild RBZ.
+
+Verify packaged:
+- app.js
+- index.html
+- style.css
+match in-tree current files byte-for-byte.
+
+Report:
+- RBZ path
+- size
+- entry count
+- SHA-256
+- app.js SHA-256
+- index.html SHA-256
+- style.css SHA-256
+
+---
+
+# 13. OWNER ACCEPTANCE AFTER THIS DISPATCH
+
+Do NOT run Owner verification.
+
+Prepare the final real-host Owner test using the Chinese UI.
+
+The first Owner scenario should read approximately:
+
+1. 安装最新 RBZ，重启 SketchUp 2020。
+2. 选择存在轻微 Z 偏差的线。
+3. 打开插件。
+4. 点击 `准备处理`。
+5. 点击 `检查平面偏差`。
+6. 确认显示 `可安全校正`。
+7. 点击 `应用平面校正`。
+8. 确认工作副本被校正、原始 CAD 不变。
+
+Owner test instructions must use ONLY Chinese labels that actually exist in the
+final RBZ.
+
+---
+
+# 14. CURRENT STATE / REPORT
+
+Update CURRENT_STATE.md:
+
+- V1.6 functional implementation remains complete;
+- V1.6 Chinese simplified UX pass complete;
+- Owner SU2020 verification NOT YET RUN;
+- V1.6 NOT CLOSED;
+- V1.7 NOT STARTED.
+
+Overwrite:
+
+Review/CURRENT_PI_REPORT.md
+
+DISPATCH_ID:
+V16-UI-CN-SIMPLIFICATION-2026-09-01
+
+Report:
+
+A. product UX changes
+B. Chinese label map
+C. default-visible vs collapsed information
+D. action hierarchy
+E. exact files changed
+F. DOM test evidence
+G. Ruby regression evidence
+H. RBZ identity
+I. Owner Chinese test instructions
+J. remaining real-host unknowns
+K. Git/network facts
+L. CODEX_TRIGGER
+
+Expected:
+`CODEX_TRIGGER: NO`
+
+unless a genuine architecture blocker appears.
+
+---
+
+# 15. GIT / NETWORK
+
+Create one or two meaningful local commits.
+
+Suggested:
+
+`feat(v1.6): localize and simplify plugin UI`
+
+`test(v1.6): cover Chinese simplified UX`
+
+Do NOT:
+- push/merge main
+- force-push
+- rebase shared history
+- rewrite history
+- tag/release
+
+Use existing bounded network policy at completion.
+GitHub being unreachable must not block local completion.
+
+---
+
+# 16. DEFINITION OF DONE
+
+This dispatch is complete when:
+
+- all normal user-facing interface text is Simplified Chinese;
+- default interface is materially simpler;
+- one clear primary next action is shown;
+- unavailable actions do not clutter the UI;
+- technical identifiers/audit internals are collapsed under `技术详情`;
+- layer / face / per-layer information remains available but collapsed;
+- V1.6 planar normalization remains fully operable;
+- V1.5 duplicate-repair evidence remains inspectable;
+- callback behavior is unchanged;
+- DOM tests prove the Chinese simplified UX;
+- full regressions are green;
+- new RBZ contains the Chinese frontend;
+- Owner instructions exactly match the final Chinese UI;
+- V1.6 remains NOT CLOSED;
+- V1.7 remains NOT STARTED.
+
+Then STOP.
+
+Return control to AIPM for Owner SU2020 real-host verification.
