@@ -125,7 +125,16 @@ var mockElements = {
   // uses these element IDs (placed AFTER #face-inventory-section).
   'working-mode-summary': new MockElement('summary'),
   'working-mode-list':    new MockElement('div'),
-  'working-mode-actions': new MockElement('div')
+  'working-mode-actions': new MockElement('div'),
+  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): the
+  // `技术详情` block preserves the full data contract (source
+  // snapshot id / fingerprint / config digest / raw workspace
+  // state / per-action audit / raw normalization audit /
+  // reason / failure_reason). It is rendered CLOSED by
+  // default and is the source of truth for AIPM/Pi/Owner
+  // diagnosis without polluting the default screen.
+  'technical-details-summary': new MockElement('summary'),
+  'technical-details-list':    new MockElement('div')
 };
 
 var mockDocument = {
@@ -263,43 +272,48 @@ function assert(name, cond) {
 }
 
 // Locked scalar header rows.
-assert('summary: Edges: 4 present',
-       summaryTexts.indexOf('Edges: 4') !== -1);
-assert('summary: Vertices: 5 present',
-       summaryTexts.indexOf('Vertices: 5') !== -1);
-assert('summary: Non Zero Z Vertices: 0 present',
-       summaryTexts.indexOf('Non Zero Z Vertices: 0') !== -1);
-assert('summary: Warnings: 1 present',
-       summaryTexts.indexOf('Warnings: 1') !== -1);
+// V1.6 UI-CN-SIMPLIFICATION: scalar labels are Simplified
+// Chinese (线段 / 顶点 / 非零 Z 顶点 / 警告 / 面 / 含洞面).
+assert('summary: 线段: 4 present',
+       summaryTexts.indexOf('线段: 4') !== -1);
+assert('summary: 顶点: 5 present',
+       summaryTexts.indexOf('顶点: 5') !== -1);
+assert('summary: 非零 Z 顶点: 0 present',
+       summaryTexts.indexOf('非零 Z 顶点: 0') !== -1);
+assert('summary: 警告: 1 present',
+       summaryTexts.indexOf('警告: 1') !== -1);
 
 // Per-issue-type counters in the locked order.
-assert('summary: Duplicate Candidates: 0 present',
-       summaryTexts.indexOf('Duplicate Candidates: 0') !== -1);
-assert('summary: Short Edges: 1 present',
-       summaryTexts.indexOf('Short Edges: 1') !== -1);
-assert('summary: Open Endpoints: 0 present',
-       summaryTexts.indexOf('Open Endpoints: 0') !== -1);
-assert('summary: Gap Candidates: 0 present',
-       summaryTexts.indexOf('Gap Candidates: 0') !== -1);
-assert('summary: Significant Non-zero Z: 0 present',
-       summaryTexts.indexOf('Significant Non-zero Z: 0') !== -1);
-assert('summary: Abnormal Large Coordinate: 0 present',
-       summaryTexts.indexOf('Abnormal Large Coordinate: 0') !== -1);
-assert('summary: Deep Nesting: 0 present',
-       summaryTexts.indexOf('Deep Nesting: 0') !== -1);
+// V1.6 UI-CN-SIMPLIFICATION: per-issue-type labels are
+// Simplified Chinese (重复线候选 / 短线 / 未闭合端点 / 间隙候选 /
+// 明显非零 Z / 异常大坐标 / 嵌套层级过深).
+assert('summary: 重复线候选: 0 present',
+       summaryTexts.indexOf('重复线候选: 0') !== -1);
+assert('summary: 短线: 1 present',
+       summaryTexts.indexOf('短线: 1') !== -1);
+assert('summary: 未闭合端点: 0 present',
+       summaryTexts.indexOf('未闭合端点: 0') !== -1);
+assert('summary: 间隙候选: 0 present',
+       summaryTexts.indexOf('间隙候选: 0') !== -1);
+assert('summary: 明显非零 Z: 0 present',
+       summaryTexts.indexOf('明显非零 Z: 0') !== -1);
+assert('summary: 异常大坐标: 0 present',
+       summaryTexts.indexOf('异常大坐标: 0') !== -1);
+assert('summary: 嵌套层级过深: 0 present',
+       summaryTexts.indexOf('嵌套层级过深: 0') !== -1);
 
 // No "[object Object]" string anywhere in the rendered output.
 assert('summary: no "[object Object]" in any rendered text',
        fullText.indexOf('[object Object]') === -1);
 
 // Locked order: scalar rows come before per-issue-type rows.
-var idxShortEdges   = summaryTexts.indexOf('Short Edges: 1');
-var idxEdges        = summaryTexts.indexOf('Edges: 4');
-var idxDup          = summaryTexts.indexOf('Duplicate Candidates: 0');
-var idxDeep         = summaryTexts.indexOf('Deep Nesting: 0');
-assert('order: Edges header comes before per-issue rows',
+var idxShortEdges   = summaryTexts.indexOf('短线: 1');
+var idxEdges        = summaryTexts.indexOf('线段: 4');
+var idxDup          = summaryTexts.indexOf('重复线候选: 0');
+var idxDeep         = summaryTexts.indexOf('嵌套层级过深: 0');
+assert('order: 线段 header comes before per-issue rows',
        idxEdges !== -1 && idxShortEdges !== -1 && idxEdges < idxShortEdges);
-assert('order: per-issue rows in canonical order (Duplicate Candidates before Deep Nesting)',
+assert('order: per-issue rows in canonical order (重复线候选 before 嵌套层级过深)',
        idxDup !== -1 && idxDeep !== -1 && idxDup < idxDeep);
 
 // Selection-info carries the locked shape (no duplication of the
@@ -562,14 +576,14 @@ var dimRoleBadge  = findChildByClass(dimRow, 'role-badge');
 var dimVisBadge   = findChildByClass(dimRow, 'visibility-badge');
 var dimEdgesCell  = findChildByClass(dimRow, 'edge-count');
 var dimIssuesCell = findChildByClass(dimRow, 'issue-count');
-assert('L4.3: role-badge textContent matches role_label',
-       dimRoleBadge && dimRoleBadge.textContent === 'Dimension');
-assert('L4.3: visibility-badge textContent matches visibility_label',
-       dimVisBadge && dimVisBadge.textContent === 'Visible');
-assert('L4.3: edge-count renders the layer edge count (plural form for n=4)',
-       dimEdgesCell && dimEdgesCell.textContent === '4 edges');
-assert('L4.3: issue-count renders the layer issue count (singular form for n=1)',
-       dimIssuesCell && dimIssuesCell.textContent === '1 issue');
+assert('L4.3: role-badge textContent is the Simplified Chinese label (尺寸标注 for role=dimension)',
+       dimRoleBadge && dimRoleBadge.textContent === '尺寸标注');
+assert('L4.3: visibility-badge textContent is the Simplified Chinese label (可见 for visible=true)',
+       dimVisBadge && dimVisBadge.textContent === '可见');
+assert('L4.3: edge-count renders the layer edge count ("4 条" for n=4)',
+       dimEdgesCell && dimEdgesCell.textContent === '4 条');
+assert('L4.3: issue-count renders the layer issue count ("1 个问题" for n=1)',
+       dimIssuesCell && dimIssuesCell.textContent === '1 个问题');
 // L4.3.1 — Per Owner Gate 2 V1.1 NIT: a visible separator between
 // the edge count and the issue count. The separator is a real DOM
 // node carrying class "layer-count-sep" and textContent "·" so that
@@ -596,7 +610,7 @@ function joinChildTexts(el) {
 // separator visible to Owners and to the L4.10 "no object-
 // stringification" guard.
 assert('L4.3.1: row direct-children text concatenates with the middle-dot separator',
-       dimRow && joinChildTexts(dimRow) === 'DIM-XXDimensionVisible4 edges\u00B71 issue');
+       dimRow && joinChildTexts(dimRow) === 'DIM-XX尺寸标注可见4 条\u00B71 个问题');
 assert('L4.3.1: middle-dot separator is a real DOM node carrying class layer-count-sep',
        dimSepCell && dimSepCell.textContent === '\u00B7');
 
@@ -610,23 +624,25 @@ assert('L4.4: issue_count > 0 gets the has-issues class',
 // issue_count=0; check those here.
 var l0EdgesCell  = findChildByClass(l0Row, 'edge-count');
 var l0IssuesCell = findChildByClass(l0Row, 'issue-count');
-assert('L4.4.1: edge_count=2 pluralizes to "2 edges"',
-       l0EdgesCell && l0EdgesCell.textContent === '2 edges');
-assert('L4.4.1: issue_count=0 pluralizes to "0 issues"',
-       l0IssuesCell && l0IssuesCell.textContent === '0 issues');
+assert('L4.4.1: edge_count=2 renders as "2 条"',
+       l0EdgesCell && l0EdgesCell.textContent === '2 条');
+assert('L4.4.1: issue_count=0 renders as "0 个问题"',
+       l0IssuesCell && l0IssuesCell.textContent === '0 个问题');
 assert('L4.4.1: issue_count=0 has NO .has-issues class',
        l0IssuesCell && l0IssuesCell.classes.indexOf('has-issues') === -1);
 
 // L4.5 — hidden layer has data-visible="false" AND a separate
-// visibility badge "Off-screen" (NOT a fused role label).
+// visibility badge "隐藏" (NOT a fused role label). V1.6
+// UI-CN-SIMPLIFICATION: role + visibility labels are Simplified
+// Chinese.
 assert('L4.5: hidden layer row has data-visible="false"',
        l0Row && l0Row.attrs['data-visible'] === 'false');
-assert('L4.5: hidden layer row role_label is still "Construction" (NOT fused)',
+assert('L4.5: hidden layer row role_label is still "构造线" (NOT fused)',
        findChildByClass(l0Row, 'role-badge') &&
-       findChildByClass(l0Row, 'role-badge').textContent === 'Construction');
-assert('L4.5: hidden layer row visibility badge text is "Off-screen"',
+       findChildByClass(l0Row, 'role-badge').textContent === '构造线');
+assert('L4.5: hidden layer row visibility badge text is "隐藏"',
        findChildByClass(l0Row, 'visibility-badge') &&
-       findChildByClass(l0Row, 'visibility-badge').textContent === 'Off-screen');
+       findChildByClass(l0Row, 'visibility-badge').textContent === '隐藏');
 
 // L4.6 — visible layer has data-visible="true".
 assert('L4.6: visible layer row has data-visible="true"',
@@ -668,8 +684,10 @@ assert('L4.10: no "[object Object]" in any rendered layer row text',
 // the details (ChatGPT §11.5). Mock initial state was empty; after
 // render it MUST carry the formatted count string.
 var layersSummaryEl = mockElements['layers-summary'];
-assert('L4.11: #layers-summary textContent is "Layers — N total (M with issues)"',
-       layersSummaryEl.textContent === 'Layers \u2014 2 total (1 with issues)');
+// V1.6 UI-CN-SIMPLIFICATION: section header text is
+// Simplified Chinese: "图层信息— N 个图层（M 个存在问题）".
+assert('L4.11: #layers-summary textContent is Simplified Chinese ("图层信息— N 个图层（M 个存在问题）")',
+       layersSummaryEl.textContent === '图层信息\u2014 2 个图层（1 个存在问题）');
 
 // L4.12 — payload.layerGroups undefined -> #layers-list is empty
 // (no error). reset then re-render.
@@ -681,8 +699,8 @@ renderWithPayload({
 });
 assert('L4.12: undefined layerGroups -> #layers-list empty',
        mockElements['layers-list'].children.length === 0);
-assert('L4.12: undefined layerGroups -> summary shows "Layers — 0 total (0 with issues)"',
-       mockElements['layers-summary'].textContent === 'Layers \u2014 0 total (0 with issues)');
+assert('L4.12: undefined layerGroups -> summary shows "图层信息— 0 个图层（0 个存在问题）"',
+       mockElements['layers-summary'].textContent === '图层信息\u2014 0 个图层（0 个存在问题）');
 
 // L4.13 — empty array layerGroups is the same as undefined (defensive).
 renderWithPayload({
@@ -694,7 +712,7 @@ renderWithPayload({
 assert('L4.13: empty array layerGroups -> #layers-list empty',
        mockElements['layers-list'].children.length === 0);
 assert('L4.13: empty array layerGroups -> summary still computes N correctly',
-       mockElements['layers-summary'].textContent === 'Layers \u2014 0 total (0 with issues)');
+       mockElements['layers-summary'].textContent === '图层信息\u2014 0 个图层（0 个存在问题）');
 
 // L4.14 — visibility_unknown: true surfaces "Visibility: unknown"
 // badge (R011). The data-visibility-unknown attribute must be "true".
@@ -717,33 +735,49 @@ renderWithPayload({
 var unkRow = mockElements['layers-list'].children[0];
 assert('L4.14: visibility_unknown: true -> data-visibility-unknown="true"',
        unkRow.attrs['data-visibility-unknown'] === 'true');
-assert('L4.14: visibility_unknown: true -> visibility badge text is "Visibility: unknown"',
+// V1.6 UI-CN-SIMPLIFICATION: visibility_unknown surfaces the
+// Simplified Chinese "可见性未知" badge; role badge is "未识别".
+assert('L4.14: visibility_unknown: true -> visibility badge text is "可见性未知" (Simplified Chinese)',
        findChildByClass(unkRow, 'visibility-badge') &&
-       findChildByClass(unkRow, 'visibility-badge').textContent === 'Visibility: unknown');
-assert('L4.14: visibility_unknown: true -> role badge still "Unknown" (NOT fused)',
+       findChildByClass(unkRow, 'visibility-badge').textContent === '可见性未知');
+assert('L4.14: visibility_unknown: true -> role badge still "未识别" (Simplified Chinese, NOT fused)',
        findChildByClass(unkRow, 'role-badge') &&
-       findChildByClass(unkRow, 'role-badge').textContent === 'Unknown');
+       findChildByClass(unkRow, 'role-badge').textContent === '未识别');
+// V1.6 UI-CN-SIMPLIFICATION: the canonical Simplified Chinese
+// label map is exposed on ROOT for harness introspection.
+assert('L4.14: ROOT.LAYER_VISIBILITY_LABELS_CN has visible/hidden/unknown',
+       context.window.SUAIP.LAYER_VISIBILITY_LABELS_CN &&
+       context.window.SUAIP.LAYER_VISIBILITY_LABELS_CN.visible === '可见' &&
+       context.window.SUAIP.LAYER_VISIBILITY_LABELS_CN.hidden === '隐藏' &&
+       context.window.SUAIP.LAYER_VISIBILITY_LABELS_CN.unknown === '可见性未知');
+assert('L4.14: ROOT.LAYER_ROLE_LABELS_CN has 5 canonical Simplified Chinese roles',
+       Array.isArray(context.window.SUAIP.LAYER_ROLE_LABELS_CN) &&
+       context.window.SUAIP.LAYER_ROLE_LABELS_CN.length === 5 &&
+       context.window.SUAIP.LAYER_ROLE_LABELS_CN.map(function (p) { return p[0]; }).join(',') ===
+         'dimension,annotation,guide,construction,unknown' &&
+       context.window.SUAIP.LAYER_ROLE_LABELS_CN.map(function (p) { return p[1]; }).join(',') ===
+         '尺寸标注,注释,辅助线,构造线,未识别');
 
-// L4.15 — ROOT.LAYER_ROLE_LABELS exposed with the 5 canonical roles
-// (NO OFFSCREEN) in locked order.
-var lrl = context.window.SUAIP.LAYER_ROLE_LABELS;
-assert('L4.15: ROOT.LAYER_ROLE_LABELS is defined',
+// L4.15 — ROOT.LAYER_ROLE_LABELS_CN exposed with the 5 canonical roles
+// (NO OFFSCREEN) in locked order (V1.6 UI-CN-SIMPLIFICATION).
+var lrl = context.window.SUAIP.LAYER_ROLE_LABELS_CN;
+assert('L4.15: ROOT.LAYER_ROLE_LABELS_CN is defined',
        Array.isArray(lrl) && lrl.length === 5);
 var expectedRoleOrder = ['dimension', 'annotation', 'guide',
                          'construction', 'unknown'];
 var actualRoleOrder = lrl.map(function (pair) { return pair[0]; });
-assert('L4.15: ROOT.LAYER_ROLE_LABELS in canonical order (dimension, annotation, guide, construction, unknown)',
+assert('L4.15: ROOT.LAYER_ROLE_LABELS_CN in canonical order (dimension, annotation, guide, construction, unknown)',
        actualRoleOrder.join(',') === expectedRoleOrder.join(','));
-assert('L4.15: ROOT.LAYER_ROLE_LABELS does NOT include OFFSCREEN (R007)',
+assert('L4.15: ROOT.LAYER_ROLE_LABELS_CN does NOT include OFFSCREEN (R007)',
        actualRoleOrder.indexOf('offscreen') === -1);
 
-// L4.16 — ROOT.LAYER_VISIBILITY_LABELS exposed with 3 keys (visible,
-// hidden, unknown).
-var lvl = context.window.SUAIP.LAYER_VISIBILITY_LABELS;
-assert('L4.16: ROOT.LAYER_VISIBILITY_LABELS is defined with visible/hidden/unknown',
-       lvl && lvl.visible === 'Visible' &&
-       lvl.hidden === 'Off-screen' &&
-       lvl.unknown === 'Visibility: unknown');
+// L4.16 — ROOT.LAYER_VISIBILITY_LABELS_CN exposed with 3 keys
+// (visible, hidden, unknown). V1.6 UI-CN-SIMPLIFICATION.
+var lvl = context.window.SUAIP.LAYER_VISIBILITY_LABELS_CN;
+assert('L4.16: ROOT.LAYER_VISIBILITY_LABELS_CN is defined with visible/hidden/unknown (Simplified Chinese)',
+       lvl && lvl.visible === '可见' &&
+       lvl.hidden === '隐藏' &&
+       lvl.unknown === '可见性未知');
 
 // L4.17 — ROOT.renderLayers is exposed (so other scripts can call it).
 assert('L4.17: ROOT.renderLayers is exposed',
@@ -804,17 +838,17 @@ var v12LayerIssuesSummary = mockElements['layer-issues-summary'];
 
 assert('V12: layer-issues-list contains one .layer-issue-bucket per non-empty bucket',
        v12LayerIssuesList && v12LayerIssuesList.children.length === 2);
-assert('V12: layer-issues-summary populated BEFORE the user opens the section',
+assert('V12: layer-issues-summary populated BEFORE the user opens the section (Simplified Chinese)',
        v12LayerIssuesSummary && v12LayerIssuesSummary.textContent ===
-         'Issues by Layer \u2014 2 layers (2 issues)');
+         '按图层查看问题\u2014 2 个图层（2 个问题）');
 assert('V12: each bucket is a <details> element',
        v12LayerIssuesList.children.every(function (c) {
          return c.tag === 'details';
        }));
 var _b0 = v12LayerIssuesList.children[0].children[0].textContent;
 var _b1 = v12LayerIssuesList.children[1].children[0].textContent;
-assert('V12: bucket summary shows layer name + issue count (correct singular form for n=1)',
-       _b0 === 'DIM-WALLS (1 issue)' && _b1 === 'TXT-LABELS (1 issue)');
+assert('V12: bucket summary shows layer name + issue count (Simplified Chinese, "1 个问题" for n=1)',
+       _b0 === 'DIM-WALLS（1 个问题）' && _b1 === 'TXT-LABELS（1 个问题）');
 assert('V12: each bucket body contains the issue row(s) from renderIssue',
        v12LayerIssuesList.children[0].children.length === 2 &&
        v12LayerIssuesList.children[0].children[1].classes.indexOf('issue') !== -1);
@@ -873,9 +907,9 @@ renderWithPayload({
 });
 assert('V12: empty layerIssueGroups -> #layer-issues-list empty',
        mockElements['layer-issues-list'].children.length === 0);
-assert('V12: empty layerIssueGroups -> summary "Issues by Layer — 0 layers (0 issues)"',
+assert('V12: empty layerIssueGroups -> summary "按图层查看问题— 0 个图层（0 个问题）"',
        mockElements['layer-issues-summary'].textContent ===
-         'Issues by Layer \u2014 0 layers (0 issues)');
+         '按图层查看问题\u2014 0 个图层（0 个问题）');
 
 // V12: undefined layerIssueGroups is the default-empty path.
 renderWithPayload({
@@ -885,10 +919,10 @@ renderWithPayload({
   layerGroups: [],
   layerIssueGroups: undefined  // V1.0 / V1.1 caller path
 });
-assert('V12: undefined layerIssueGroups -> empty list + zero-summary',
+assert('V12: undefined layerIssueGroups -> empty list + zero-summary (Simplified Chinese)',
        mockElements['layer-issues-list'].children.length === 0 &&
        mockElements['layer-issues-summary'].textContent ===
-         'Issues by Layer \u2014 0 layers (0 issues)');
+         '按图层查看问题\u2014 0 个图层（0 个问题）');
 
 // V12: bucket summary plural form (n > 1 -> plural wording).
 renderWithPayload({
@@ -908,8 +942,8 @@ renderWithPayload({
   ]
 });
 var v12MultiBucket = mockElements['layer-issues-list'].children[0];
-assert('V12: bucket summary plural form for n=2 ("2 issues")',
-       v12MultiBucket.children[0].textContent === 'DIM-XX (2 issues)');
+assert('V12: bucket summary plural form for n=2 ("2 个问题")',
+       v12MultiBucket.children[0].textContent === 'DIM-XX（2 个问题）');
 assert('V12: bucket body has 2 issue rows',
        v12MultiBucket.children.length === 3 &&
        v12MultiBucket.children[1].classes.indexOf('issue') !== -1 &&
@@ -965,9 +999,9 @@ renderWithPayload({
     }
   ]
 });
-assert('V12-NIT-001: summary uses singular form for n=1 layer ("Issues by Layer \u2014 1 layer (1 issues)")',
+assert('V12-NIT-001: summary uses singular form for n=1 layer (Simplified Chinese: "按图层查看问题— 1 个图层（1 个问题）")',
        mockElements['layer-issues-summary'].textContent ===
-         'Issues by Layer \u2014 1 layer (1 issues)');
+         '按图层查看问题\u2014 1 个图层（1 个问题）');
 
 // --- V1.3 (per directive 027): "Face Inventory" section tests -----
 
@@ -995,14 +1029,16 @@ var v13FaceInvSummary = mockElements['face-inventory-summary'];
 
 assert('V13: face-inventory-list contains one .face-inventory-row per layer bucket',
        v13FaceInvList && v13FaceInvList.children.length === 2);
-assert('V13: face-inventory-summary populated BEFORE opening with format "N total (H with holes)"',
+// V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
+// Chinese ("面信息— N 个面（H 个含洞）").
+assert('V13: face-inventory-summary populated BEFORE opening with Simplified Chinese format',
        v13FaceInvSummary && v13FaceInvSummary.textContent ===
-         'Face Inventory \u2014 2 total (1 with holes)');
+         '面信息\u2014 2 个面（1 个含洞）');
 assert('V13: each row has class face-inventory-row',
        v13FaceInvList.children.every(function (c) {
          return c.classes.indexOf('face-inventory-row') !== -1;
        }));
-assert('V13: row 1 (DIM-WALLS) renders layer name + role badge + visibility badge + face count + holes count',
+assert('V13: row 1 (DIM-WALLS) renders layer name + role badge + visibility badge + face count + holes count (Simplified Chinese)',
        (function () {
          var row = v13FaceInvList.children[0];
          if (!row) return false;
@@ -1017,19 +1053,19 @@ assert('V13: row 1 (DIM-WALLS) renders layer name + role badge + visibility badg
          if (layerName.textContent !== 'DIM-WALLS') return false;
          if (roleBadge.textContent !== 'Dimension') return false;
          if (visBadge.textContent !== 'Visible') return false;
-         if (facesCell.textContent !== '1 face') return false;
-         if (holesCell.textContent !== '1 face with holes') return false;
+         if (facesCell.textContent !== '1 个面') return false;
+         if (holesCell.textContent !== '1 个含洞面') return false;
          if (sep.textContent !== '\u00B7') return false;
          return true;
        })());
-assert('V13: face_count singular form for n=1 ("1 face")',
+assert('V13: face_count singular form for n=1 ("1 个面")',
        v13FaceInvList.children[0].children
          .filter(function (c) { return c.classes.indexOf('face-count') !== -1; })[0]
-         .textContent === '1 face');
-assert('V13: faces_with_holes_count singular form for n=1 ("1 face with holes")',
+         .textContent === '1 个面');
+assert('V13: faces_with_holes_count singular form for n=1 ("1 个含洞面")',
        v13FaceInvList.children[0].children
          .filter(function (c) { return c.classes.indexOf('holes-count') !== -1; })[0]
-         .textContent === '1 face with holes');
+         .textContent === '1 个含洞面');
 assert('V13: data-layer-name attribute carries the layer name verbatim',
        v13FaceInvList.children[0].attrs['data-layer-name'] === 'DIM-WALLS');
 assert('V13: data-role attribute mirrors the server-composed role',
@@ -1059,9 +1095,9 @@ renderWithPayload({
 });
 assert('V13: empty faceInventoryGroups -> #face-inventory-list empty',
        mockElements['face-inventory-list'].children.length === 0);
-assert('V13: empty faceInventoryGroups -> summary "Face Inventory — 0 total (0 with holes)"',
+assert('V13: empty faceInventoryGroups -> summary "面信息— 0 个面（0 个含洞）"',
        mockElements['face-inventory-summary'].textContent ===
-         'Face Inventory \u2014 0 total (0 with holes)');
+         '面信息\u2014 0 个面（0 个含洞）');
 
 // V13: undefined faceInventoryGroups is the default-empty path.
 renderWithPayload({
@@ -1071,10 +1107,10 @@ renderWithPayload({
   groups:  [], layerGroups: [], layerIssueGroups: [],
   faceInventoryGroups: undefined  // V1.0/V1.1/V1.2 caller path
 });
-assert('V13: undefined faceInventoryGroups -> empty list + zero-summary',
+assert('V13: undefined faceInventoryGroups -> empty list + zero-summary (Simplified Chinese)',
        mockElements['face-inventory-list'].children.length === 0 &&
        mockElements['face-inventory-summary'].textContent ===
-         'Face Inventory \u2014 0 total (0 with holes)');
+         '面信息\u2014 0 个面（0 个含洞）');
 
 // V13: hidden layer row gets data-visible="false" + opacity (via CSS attr).
 renderWithPayload({
@@ -1175,7 +1211,9 @@ assert('V13: ROOT.renderFaceInventoryRow is exposed',
        typeof context.window.SUAIP.renderFaceInventoryRow === 'function');
 
 // V13: Faces / Faces With Holes scalar counters in #summary block.
-assert('V13: summary block contains "Faces: 1" + "Faces With Holes: 0" scalars',
+// V1.6 UI-CN-SIMPLIFICATION: scalar labels are Simplified
+// Chinese (面 / 含洞面).
+assert('V13: summary block contains "面: 1" + "含洞面: 0" scalars',
        (function () {
          var summaryEl = mockElements['summary'];
          var texts = [];
@@ -1185,7 +1223,7 @@ assert('V13: summary block contains "Faces: 1" + "Faces With Holes: 0" scalars',
          }
          collect(summaryEl);
          var all = texts.join(' | ');
-         return all.indexOf('Faces: 1') !== -1 && all.indexOf('Faces With Holes: 0') !== -1;
+         return all.indexOf('面: 1') !== -1 && all.indexOf('含洞面: 0') !== -1;
        })());
 
 // --- V1.4 (per directive 030 Stage 4): "Working Mode" section tests -----
@@ -1203,8 +1241,10 @@ var wmSummary = mockElements['working-mode-summary'];
 var wmList    = mockElements['working-mode-list'];
 var wmActions = mockElements['working-mode-actions'];
 
-assert('V14: working-mode-summary populated with idle text on state="none"',
-       wmSummary && wmSummary.textContent === 'Working Mode — no working copy');
+// V1.6 UI-CN-SIMPLIFICATION: working-mode-summary text is
+// Simplified Chinese ("处理工作区— 尚未准备工作副本" for state='none').
+assert('V14: working-mode-summary populated with idle Simplified Chinese text on state="none"',
+       wmSummary && wmSummary.textContent === '处理工作区\u2014 尚未准备工作副本');
 assert('V14: working-mode-list contains one row describing the idle state',
        wmList && wmList.children.length === 1);
 assert('V14: idle row uses data-state="none" + .working-mode-row class',
@@ -1214,13 +1254,17 @@ assert('V14: idle row uses data-state="none" + .working-mode-row class',
 assert('V14: idle row text uses textContent (no [object Object])',
        wmList && wmList.children[0] &&
        wmList.children[0].textContent.indexOf('[object Object]') === -1);
-// In state='none' ONLY the Prepare button is enabled.
+// V1.6 UI-CN-SIMPLIFICATION (dispatch §4): in state='none' only
+// the primary Prepare CTA is rendered (unavailable actions are
+// HIDDEN rather than rendered as disabled buttons). Secondary
+// controls live in a collapsed "更多操作" block; with no
+// workspace the block is collapsed-empty.
 var wmActionBtns = wmActions ? wmActions.children : [];
-assert('V14: state="none" produces exactly ONE action button (Prepare only)',
+assert('V14: state="none" produces exactly ONE top-level action button (Prepare CTA)',
        wmActionBtns.length === 1);
 assert('V14: state="none" Prepare button has data-action="prepare_workspace"',
        wmActionBtns[0] && wmActionBtns[0].attrs['data-action'] === 'prepare_workspace' &&
-       wmActionBtns[0].textContent === 'Prepare' &&
+       wmActionBtns[0].textContent === '准备处理' &&
        !wmActionBtns[0].hasAttribute('disabled'));
 
 // Render with derivedWorkspace='ready' (active workspace).
@@ -1241,26 +1285,69 @@ renderWithPayload({
 var wmReadySummary = mockElements['working-mode-summary'];
 var wmReadyList    = mockElements['working-mode-list'];
 var wmReadyActions = mockElements['working-mode-actions'];
-assert('V14: ready state summary mentions "Working Mode — N entities ready"',
-       wmReadySummary && /Working Mode — \d+ entities? ready/.test(wmReadySummary.textContent));
-assert('V14: ready list has rows for source_snapshot_id + digests',
-       wmReadyList && wmReadyList.children.length >= 3);
-assert('V14: ready rows carry data-state="ready"',
-       wmReadyList && wmReadyList.children.every(function (c) {
-         return c.attrs['data-state'] === 'ready';
+// V1.6 UI-CN-SIMPLIFICATION: ready state summary is Simplified
+// Chinese ("处理工作区— 工作副本已准备，共 N 条记录").
+assert('V14: ready state summary mentions "处理工作区— 工作副本已准备，共 N 条记录"',
+       wmReadySummary && /处理工作区\u2014 工作副本已准备，共 \d+ 条记录/.test(wmReadySummary.textContent));
+// V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): the source
+// snapshot id / fingerprint / config digest rows are moved to
+// the collapsed `技术详情` block. The default Working Mode
+// list no longer carries them. We assert they are preserved
+// under 技术详情 here.
+var wmReadyTechList = mockElements['technical-details-list'];
+assert('V14: ready state 技术详情 block carries source_snapshot_id',
+       wmReadyTechList && wmReadyTechList.children.some(function (c) {
+         return c.textContent.indexOf('source_snapshot_id') !== -1 &&
+                c.textContent.indexOf('wm-snap-001') !== -1;
        }));
-// In state='ready' ALL THREE buttons appear; Discard enabled, Prepare
-// disabled (re-prepare requires discard first).
+assert('V14: ready state 技术详情 block carries source_fingerprint_digest',
+       wmReadyTechList && wmReadyTechList.children.some(function (c) {
+         return c.textContent.indexOf('source_fingerprint_digest') !== -1;
+       }));
+assert('V14: ready state 技术详情 block carries execution_config_digest',
+       wmReadyTechList && wmReadyTechList.children.some(function (c) {
+         return c.textContent.indexOf('execution_config_digest') !== -1 &&
+                c.textContent.indexOf('fedcba0987654321') !== -1;
+       }));
+// V1.6 UI-CN-SIMPLIFICATION: in state='ready' WITHOUT a
+// planar_normalization payload, the primary CTA is "检查平面偏差"
+// (NOT_COMPUTED is the safe default). The collapsed "更多操作"
+// block carries the secondary controls (放弃工作副本 + 重新生成).
+// Unavailable actions are HIDDEN rather than rendered as
+// disabled buttons.
 var wmReadyBtns = wmReadyActions ? wmReadyActions.children : [];
-assert('V14: state="ready" produces THREE action buttons',
-       wmReadyBtns.length === 3);
-var wmBtnActions = wmReadyBtns.map(function (b) { return b.attrs['data-action']; });
-assert('V14: state="ready" buttons are prepare/discard/rebuild (canonical order)',
-       wmBtnActions[0] === 'prepare_workspace' &&
-       wmBtnActions[1] === 'discard_workspace' &&
-       wmBtnActions[2] === 'rebuild_workspace');
-assert('V14: state="ready" Discard button is enabled (no disabled attr)',
-       wmReadyBtns[1] && !wmReadyBtns[1].hasAttribute('disabled'));
+assert('V14: state="ready" (no PN payload) produces TWO top-level elements (primary CTA + collapsed 更多操作)',
+       wmReadyBtns.length === 2);
+// First child: primary CTA "检查平面偏差".
+var wmReadyPrimaryCTA = wmReadyBtns[0];
+assert('V14: state="ready" primary CTA is "检查平面偏差" (Simplified Chinese, data-action=compute_planar_normalization)',
+       wmReadyPrimaryCTA && wmReadyPrimaryCTA.textContent === '检查平面偏差' &&
+       wmReadyPrimaryCTA.attrs['data-action'] === 'compute_planar_normalization' &&
+       !wmReadyPrimaryCTA.hasAttribute('disabled'));
+// Second child: collapsed 更多操作 block; the actionable
+// Discard / Rebuild buttons live INSIDE its .more-actions-inner.
+var wmMoreActions = wmReadyBtns[1];
+assert('V14: state="ready" 更多操作 block contains Discard + Rebuild (Simplified Chinese)',
+       wmMoreActions && (function () {
+         var inner = wmMoreActions.children.filter(function (c) {
+           return c.classes.indexOf('more-actions-inner') !== -1;
+         })[0];
+         if (!inner) return false;
+         var actions = inner.children.map(function (b) { return b.attrs['data-action']; });
+         return actions.indexOf('discard_workspace') !== -1 &&
+                actions.indexOf('rebuild_workspace') !== -1;
+       })());
+assert('V14: state="ready" Discard button inside 更多操作 is enabled and Simplified Chinese ("放弃工作副本")',
+       (function () {
+         var inner = wmMoreActions.children.filter(function (c) {
+           return c.classes.indexOf('more-actions-inner') !== -1;
+         })[0];
+         if (!inner) return null;
+         var btn = inner.children.filter(function (b) {
+           return b.attrs['data-action'] === 'discard_workspace';
+         })[0];
+         return btn && !btn.hasAttribute('disabled') && btn.textContent === '放弃工作副本';
+       })());
 
 // Render with derivedWorkspace='discarded' (post-discard state).
 renderWithPayload({
@@ -1278,8 +1365,10 @@ renderWithPayload({
   }
 });
 var wmDiscardedSummary = mockElements['working-mode-summary'];
-assert('V14: discarded state summary shows "Working Mode — discarded"',
-       wmDiscardedSummary && wmDiscardedSummary.textContent.indexOf('discarded') !== -1);
+// V1.6 UI-CN-SIMPLIFICATION: discarded state summary text is
+// Simplified Chinese ("处理工作区— 工作副本已放弃").
+assert('V14: discarded state summary shows "处理工作区— 工作副本已放弃"',
+       wmDiscardedSummary && wmDiscardedSummary.textContent.indexOf('工作副本已放弃') !== -1);
 
 // Render with derivedWorkspace='failed' (build failure state).
 renderWithPayload({
@@ -1298,12 +1387,16 @@ renderWithPayload({
   }
 });
 var wmFailedList = mockElements['working-mode-list'];
-assert('V14: failed state has a row labeled "Last Error" with the message',
+// V1.6 UI-CN-SIMPLIFICATION: failed state shows a concise
+// Chinese recovery sentence in the primary list. The raw
+// last_error is preserved under `技术详情` for Owner / AIPM
+// diagnosis (not asserted here; see CN11 below).
+assert('V14: failed state has a row describing "处理失败，请点击下方「重新生成」"',
        (function () {
          if (!wmFailedList) return false;
          var found = wmFailedList.children.filter(function (c) {
-           return c.textContent.indexOf('Last Error') !== -1 &&
-                  c.textContent.indexOf('host failure') !== -1;
+           return c.textContent.indexOf('处理失败') !== -1 &&
+                  c.textContent.indexOf('重新生成') !== -1;
          });
          return found.length >= 1;
        })());
@@ -1317,8 +1410,9 @@ renderWithPayload({
   faceInventoryGroups: []
   // derivedWorkspace is intentionally missing.
 });
-assert('V14: missing derivedWorkspace defaults to state="none" (defensive)',
-       mockElements['working-mode-summary'].textContent === 'Working Mode — no working copy');
+// V1.6 UI-CN-SIMPLIFICATION: default Simplified Chinese text.
+assert('V14: missing derivedWorkspace defaults to state="none" (Simplified Chinese: "处理工作区— 尚未准备工作副本")',
+       mockElements['working-mode-summary'].textContent === '处理工作区\u2014 尚未准备工作副本');
 
 // Action button click -> invokes window.SUAIP[callback].
 // (The previous assertion's wording was wrong: the host
@@ -1372,10 +1466,11 @@ renderWithPayload({
 });
 var wmNoneActions = mockElements['working-mode-actions'];
 var wmNoneBtns = wmNoneActions ? wmNoneActions.children : [];
-assert('V14-RUNTIME-BLOCK-001: state="none" produces exactly ONE button (Prepare only)',
+assert('V14-RUNTIME-BLOCK-001: state="none" produces ONE top-level action (Prepare CTA + collapsed More操作 block)',
        wmNoneBtns.length === 1);
 assert('V14-RUNTIME-BLOCK-001: state="none" Prepare button is enabled',
-       wmNoneBtns[0] && !wmNoneBtns[0].hasAttribute('disabled'));
+       wmNoneBtns[0] && !wmNoneBtns[0].hasAttribute('disabled') &&
+       wmNoneBtns[0].textContent === '准备处理');
 
 resetV14HostActionCalls();
 wmNoneBtns[0].fireEvent('click');
@@ -1399,8 +1494,18 @@ renderWithPayload({
 var wmReadyActions2 = mockElements['working-mode-actions'];
 var wmReadyBtns2 = wmReadyActions2 ? wmReadyActions2.children : [];
 resetV14HostActionCalls();
-// The Discard button is the 2nd (index 1); Rebuild is the 3rd (index 2).
-wmReadyBtns2[1].fireEvent('click');
+// V1.6 UI-CN-SIMPLIFICATION: the primary CTA "检查平面偏差"
+// is the first top-level button; the secondary Discard /
+// Rebuild buttons live INSIDE the collapsed `更多操作`
+// block (the second top-level element). Drill into the
+// .more-actions-inner child container to find them.
+var wmReady2Inner = wmReadyBtns2[1].children.filter(function (c) {
+  return c.classes.indexOf('more-actions-inner') !== -1;
+})[0];
+var wmDiscardBtn = wmReady2Inner.children.filter(function (b) {
+  return b.attrs['data-action'] === 'discard_workspace';
+})[0];
+wmDiscardBtn.fireEvent('click');
 assert('V14-RUNTIME-BLOCK-001: clicking Discard in state="ready" calls window.sketchup.discard_workspace EXACTLY ONCE',
        mockWindow.sketchup.discard_workspace_calls.length === 1);
 assert('V14-RUNTIME-BLOCK-001: clicking Discard does NOT call prepare / rebuild',
@@ -1410,7 +1515,10 @@ assert('V14-RUNTIME-BLOCK-001: clicking Discard does NOT invoke Locate',
        locateCalls.length === locateCountBefore);
 
 resetV14HostActionCalls();
-wmReadyBtns2[2].fireEvent('click');
+var wmRebuildBtn = wmReady2Inner.children.filter(function (b) {
+  return b.attrs['data-action'] === 'rebuild_workspace';
+})[0];
+wmRebuildBtn.fireEvent('click');
 assert('V14-RUNTIME-BLOCK-001: clicking Rebuild in state="ready" calls window.sketchup.rebuild_workspace EXACTLY ONCE',
        mockWindow.sketchup.rebuild_workspace_calls.length === 1);
 assert('V14-RUNTIME-BLOCK-001: clicking Rebuild does NOT call prepare / discard',
@@ -1430,16 +1538,31 @@ renderWithPayload({
 });
 var wmReady3 = mockElements['working-mode-actions'];
 var wmReady3Btns = wmReady3 ? wmReady3.children : [];
-// In state="ready" the Prepare button is the 1st (index 0)
-// and MUST be disabled (BLOCK-R4-1 ready-state policy).
+// V1.6 UI-CN-SIMPLIFICATION: in state="ready" the Prepare
+// CTA is HIDDEN (not rendered) because the user already has
+// a workspace. Re-prepare requires Discard first. We verify
+// no Prepare button is present at all (not even disabled).
 resetV14HostActionCalls();
-wmReady3Btns[0].fireEvent('click');
-assert('V14-RUNTIME-BLOCK-001: state="ready" Prepare button is disabled',
-       wmReady3Btns[0].hasAttribute('disabled'));
-assert('V14-RUNTIME-BLOCK-001: clicking a disabled Prepare does NOT invoke any host action',
-       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
-       mockWindow.sketchup.discard_workspace_calls.length === 0 &&
-       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+var wmReady3Prepare = wmReady3Btns[0].querySelector ? null : null;
+var wmReady3PrepareBtn = (function () {
+  // Search the entire actions tree for any button with
+  // data-action="prepare_workspace".
+  function search(el) {
+    if (!el) return null;
+    if (el.attrs && el.attrs['data-action'] === 'prepare_workspace') return el;
+    if (!el.children) return null;
+    for (var i = 0; i < el.children.length; i++) {
+      var found = search(el.children[i]);
+      if (found) return found;
+    }
+    return null;
+  }
+  return search(wmReady3);
+})();
+assert('V14-RUNTIME-BLOCK-001: state="ready" Prepare button is HIDDEN (unavailable actions are not rendered)',
+       wmReady3PrepareBtn === null);
+assert('V14-RUNTIME-BLOCK-001: clicking any rendered button in state="ready" does NOT invoke prepare_workspace',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0);
 
 // Source guard: app.js#addAction MUST mention
 // `window.sketchup` (host dispatch path) AND MUST NOT use
@@ -1495,14 +1618,16 @@ renderWithPayload({
   }
 });
 var v15ReadyList = mockElements['working-mode-list'];
-assert('V15: ready state with duplicate_repair renders a "Duplicate repairs" row',
+// V1.6 UI-CN-SIMPLIFICATION: the condensed user-facing
+// duplicate-repair row uses Simplified Chinese: "重复线清理：已处理 X，跳过 Y，失败 Z".
+assert('V15: ready state with duplicate_repair renders a Simplified Chinese "重复线清理" row',
        v15ReadyList && v15ReadyList.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
-                c.textContent.indexOf('applied 2') !== -1;
+         return c.textContent.indexOf('重复线清理') !== -1 &&
+                c.textContent.indexOf('已处理 2') !== -1;
        }));
 assert('V15: ready state duplicate_repair row uses data-state="ready"',
        v15ReadyList && v15ReadyList.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+         return c.textContent.indexOf('重复线清理') !== -1 &&
                 c.attrs['data-state'] === 'ready';
        }));
 assert('V15: ready state duplicate_repair row uses textContent (no innerHTML)',
@@ -1530,10 +1655,10 @@ renderWithPayload({
   }
 });
 var v15NoneList = mockElements['working-mode-list'];
-assert('V15: none state with duplicate_repair renders a "Duplicate repairs" row',
+assert('V15: none state with duplicate_repair renders a Simplified Chinese "重复线清理" row',
        v15NoneList && v15NoneList.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
-                c.textContent.indexOf('applied 1') !== -1;
+         return c.textContent.indexOf('重复线清理') !== -1 &&
+                c.textContent.indexOf('已处理 1') !== -1;
        }));
 
 // Without duplicate_repair, no Duplicate repairs row.
@@ -1546,9 +1671,9 @@ renderWithPayload({
   derivedWorkspace: { state: 'none' }
 });
 var v15NoDrList = mockElements['working-mode-list'];
-assert('V15: no duplicate_repair -> no "Duplicate repairs" row',
+assert('V15: no duplicate_repair -> no "重复线清理" row (Simplified Chinese)',
        v15NoDrList && !v15NoDrList.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1;
+         return c.textContent.indexOf('重复线清理') !== -1;
        }));
 
 // Stage 3 (§8): when duplicate_classes_before/after are present,
@@ -1577,12 +1702,15 @@ renderWithPayload({
   }
 });
 var v15ClassesList = mockElements['working-mode-list'];
-assert('V15: duplicate_repair with class counts renders the validation suffix',
+// V1.6 UI-CN-SIMPLIFICATION: the condensed user-facing
+// duplicate-repair row no longer surfaces the internal class
+// counts by default (those are preserved in the 技术详情
+// block). The condensed row reads only "重复线清理：已处理 X，跳过 Y，失败 Z".
+assert('V15: duplicate_repair with class counts renders the condensed Simplified Chinese row (no internal class counts by default)',
        v15ClassesList && v15ClassesList.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
-                c.textContent.indexOf('duplicate classes 1') !== -1 &&
-                c.textContent.indexOf('\u2192') !== -1 &&
-                c.textContent.indexOf(' 0') !== -1;
+         return c.textContent.indexOf('重复线清理') !== -1 &&
+                c.textContent.indexOf('已处理 1') !== -1 &&
+                c.textContent.indexOf('duplicate classes') === -1;
        }));
 
 // Source guard: renderWorkingMode MUST NOT use innerHTML for
@@ -1646,11 +1774,18 @@ renderWithPayload({
 var v15Block004List = mockElements['working-mode-list'];
 // Every per-action audit row MUST be a DOM row carrying the
 // audit fields as inspectable data-* attributes. We assert the
-// row exists and exposes each field independently.
-var v15Block004Row = v15Block004List && v15Block004List.children.find(function (c) {
+// V1.6 UI-CN-SIMPLIFICATION (per dispatch §6 + §5.5): the
+// per-action audit row (status / action_id / survivor_id /
+// removed_count / source_count / rule_id / basis) is moved
+// from the default primary Working Mode list to the
+// `技术详情` block. The default list shows only the condensed
+// Simplified Chinese summary row. We assert the per-action
+// audit data is preserved under 技术详情 here.
+var v15Block004TechList = mockElements['technical-details-list'];
+var v15Block004Row = v15Block004TechList && v15Block004TechList.children.find(function (c) {
   return c.attrs && c.attrs['data-action-id'] === 'act-block004-1';
 });
-assert('V15 BLOCK-004: per-action audit row has data-action-id attribute',
+assert('V15 BLOCK-004: per-action audit row has data-action-id attribute (preserved in 技术详情)',
        v15Block004Row !== undefined && v15Block004Row !== null);
 assert('V15 BLOCK-004: per-action audit row has data-action-status="applied"',
        v15Block004Row && v15Block004Row.attrs['data-action-status'] === 'applied');
@@ -1658,25 +1793,36 @@ assert('V15 BLOCK-004: per-action audit row has data-survivor-id="der-A"',
        v15Block004Row && v15Block004Row.attrs['data-survivor-id'] === 'der-A');
 assert('V15 BLOCK-004: per-action audit row carries a removed_count cell',
        v15Block004Row && v15Block004Row.children.some(function (c) {
-         return c.attrs && c.attrs['data-field'] === 'removed_count' && c.textContent === '1';
+         return c.attrs && c.attrs['data-field'] === 'removed_count' &&
+                c.textContent.indexOf('1') !== -1;
        }));
 assert('V15 BLOCK-004: per-action audit row carries a source_count cell',
        v15Block004Row && v15Block004Row.children.some(function (c) {
-         return c.attrs && c.attrs['data-field'] === 'source_count' && c.textContent === '2';
+         return c.attrs && c.attrs['data-field'] === 'source_count' &&
+                c.textContent.indexOf('2') !== -1;
        }));
 assert('V15 BLOCK-004: per-action audit row carries a survivor_id cell',
        v15Block004Row && v15Block004Row.children.some(function (c) {
-         return c.attrs && c.attrs['data-field'] === 'survivor_id' && c.textContent === 'der-A';
+         return c.attrs && c.attrs['data-field'] === 'survivor_id' &&
+                c.textContent.indexOf('der-A') !== -1;
        }));
 assert('V15 BLOCK-004: per-action audit row carries a status cell',
        v15Block004Row && v15Block004Row.children.some(function (c) {
-         return c.attrs && c.attrs['data-field'] === 'status' && c.textContent === 'applied';
+         return c.attrs && c.attrs['data-field'] === 'status' &&
+                c.textContent.indexOf('applied') !== -1;
        }));
 // Source guard: per-action audit row uses textContent (no innerHTML).
 assert('V15 BLOCK-004: per-action audit row uses textContent only (no innerHTML)',
        v15Block004Row && v15Block004Row.children.every(function (c) {
          return c.textContent.indexOf('[object Object]') === -1;
        }));
+// Default Working Mode list no longer contains the per-action
+// audit row (it was demoted to 技术详情 per dispatch §6).
+var v15Block004NoAuditInDefault = v15Block004List && !v15Block004List.children.some(function (c) {
+  return c.attrs && c.attrs['data-action-id'] === 'act-block004-1';
+});
+assert('V15 BLOCK-004: per-action audit row is NOT in the default Working Mode list (moved to 技术详情)',
+       v15Block004NoAuditInDefault === true);
 
 // =====================================================================
 // V1.6 Planar Normalization / Z Policy (per dispatch
@@ -1728,20 +1874,24 @@ renderWithPayload({
 var ui1List    = mockElements['working-mode-list'];
 var ui1Actions = mockElements['working-mode-actions'];
 
-assert('UI1: NOT_COMPUTED + ready workspace renders a "Planar Normalization" State row',
+// V1.6 UI-CN-SIMPLIFICATION: UI1 assertions now use
+// Simplified Chinese labels. The state name "NOT_COMPUTED" is
+// translated to "未检查" in the visible card. The internal
+// data field remains "state NOT_COMPUTED" inside 技术详情.
+assert('UI1: NOT_COMPUTED + ready workspace renders a "平面校正" State row in Simplified Chinese',
        ui1List && ui1List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state NOT_COMPUTED') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('未检查') !== -1;
        }));
-assert('UI1: NOT_COMPUTED + ready workspace renders an "Analyze Planarity" action button',
+assert('UI1: NOT_COMPUTED + ready workspace renders a "检查平面偏差" primary action button',
        ui1Actions && ui1Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity' &&
+         return b.textContent === '检查平面偏差' &&
                 b.attrs['data-action'] === 'compute_planar_normalization' &&
                 !b.hasAttribute('disabled');
        }));
-assert('UI1: NOT_COMPUTED + ready workspace does NOT render an "Apply Safe Normalization" button',
+assert('UI1: NOT_COMPUTED + ready workspace does NOT render an "应用平面校正" button',
        ui1Actions && !ui1Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization';
+         return b.textContent === '应用平面校正';
        }));
 // Reset host-action calls then click "Analyze Planarity".
 resetV14HostActionCalls();
@@ -1793,50 +1943,40 @@ renderWithPayload({
 var ui2List    = mockElements['working-mode-list'];
 var ui2Actions = mockElements['working-mode-actions'];
 
-assert('UI2: READY_TO_NORMALIZE renders a "Planar Normalization" State row',
+// V1.6 UI-CN-SIMPLIFICATION: READY_TO_NORMALIZE renders the
+// Simplified Chinese "可安全校正" state label. The condensed
+// Blueprint §11 rows show target_z + 待移动顶点 + 异常点
+// (no separate "Eligible Vertices" or "Affected Derived Edges"
+// row by default; those are preserved in 技术详情 per dispatch §5.5).
+assert('UI2: READY_TO_NORMALIZE renders a "平面校正" State row with Simplified Chinese "可安全校正" label',
        ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state READY_TO_NORMALIZE') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('可安全校正') !== -1;
        }));
-assert('UI2: READY_TO_NORMALIZE renders a "Target Z" row with the proposal target_z',
+assert('UI2: READY_TO_NORMALIZE renders a "目标 Z" row with the proposal target_z',
        ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Target Z') !== -1 &&
+         return c.textContent.indexOf('目标 Z') !== -1 &&
                 c.textContent.indexOf('1.003') !== -1;
        }));
-assert('UI2: READY_TO_NORMALIZE renders "Eligible Vertices" count',
+assert('UI2: READY_TO_NORMALIZE renders "待移动顶点" count',
        ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Eligible Vertices') !== -1 &&
-                c.textContent.indexOf('4 eligible vertices') !== -1;
+         return c.textContent.indexOf('待移动顶点') !== -1 &&
+                c.textContent.indexOf('3') !== -1;
        }));
-assert('UI2: READY_TO_NORMALIZE renders "Proposed Movable" count (plural)',
+assert('UI2: READY_TO_NORMALIZE renders "异常点" count',
        ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Proposed Movable') !== -1 &&
-                c.textContent.indexOf('3 movable vertices') !== -1;
+         return c.textContent.indexOf('异常点') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
        }));
-assert('UI2: READY_TO_NORMALIZE renders "Outliers" count',
-       ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Outliers') !== -1 &&
-                c.textContent.indexOf('1 outlier vertex') !== -1;
-       }));
-assert('UI2: READY_TO_NORMALIZE renders "Affected Derived Edges" count',
-       ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Affected Derived Edges') !== -1 &&
-                c.textContent.indexOf('3 affected derived edges') !== -1;
-       }));
-assert('UI2: READY_TO_NORMALIZE renders "Max Proposed Movement" row',
-       ui2List && ui2List.children.some(function (c) {
-         return c.textContent.indexOf('Max Proposed Movement') !== -1 &&
-                c.textContent.indexOf('0.007') !== -1;
-       }));
-assert('UI2: READY_TO_NORMALIZE renders "Apply Safe Normalization" action button (enabled)',
+assert('UI2: READY_TO_NORMALIZE renders the "应用平面校正" primary action button (enabled)',
        ui2Actions && ui2Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization' &&
+         return b.textContent === '应用平面校正' &&
                 b.attrs['data-action'] === 'apply_planar_normalization' &&
                 !b.hasAttribute('disabled');
        }));
-assert('UI2: READY_TO_NORMALIZE does NOT render "Analyze Planarity" button',
+assert('UI2: READY_TO_NORMALIZE does NOT render "检查平面偏差" button (already computed)',
        ui2Actions && !ui2Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity';
+         return b.textContent === '检查平面偏差';
        }));
 // Click the apply button and verify dispatch.
 resetV14HostActionCalls();
@@ -1844,15 +1984,15 @@ var ui2ApplyBtn = ui2Actions && ui2Actions.children.filter(function (b) {
   return b.attrs && b.attrs['data-action'] === 'apply_planar_normalization';
 })[0];
 ui2ApplyBtn.fireEvent('click');
-assert('UI2: clicking "Apply Safe Normalization" calls window.sketchup.apply_planar_normalization EXACTLY ONCE',
+assert('UI2: clicking "应用平面校正" calls window.sketchup.apply_planar_normalization EXACTLY ONCE',
        mockWindow.sketchup.apply_planar_normalization_calls.length === 1);
-assert('UI2: clicking "Apply Safe Normalization" does NOT call compute_planar_normalization',
+assert('UI2: clicking "应用平面校正" does NOT call compute_planar_normalization',
        mockWindow.sketchup.compute_planar_normalization_calls.length === 0);
-assert('UI2: clicking "Apply Safe Normalization" does NOT call any V1.4/V1.5 host action',
+assert('UI2: clicking "应用平面校正" does NOT call any V1.4/V1.5 host action',
        mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
        mockWindow.sketchup.discard_workspace_calls.length === 0 &&
        mockWindow.sketchup.rebuild_workspace_calls.length === 0);
-assert('UI2: clicking "Apply Safe Normalization" does NOT invoke Locate',
+assert('UI2: clicking "应用平面校正" does NOT invoke Locate',
        locateCalls.length === locateCountBefore);
 
 // UI3: REVIEW_REQUIRED.
@@ -1887,23 +2027,26 @@ renderWithPayload({
 var ui3List    = mockElements['working-mode-list'];
 var ui3Actions = mockElements['working-mode-actions'];
 
-assert('UI3: REVIEW_REQUIRED renders a State row',
+// V1.6 UI-CN-SIMPLIFICATION: REVIEW_REQUIRED renders the
+// Simplified Chinese "需要人工确认" state label + a Chinese
+// review-required explanation. The raw reason string is
+// preserved under 技术详情.
+assert('UI3: REVIEW_REQUIRED renders a "平面校正" State row with Simplified Chinese "需要人工确认" label',
        ui3List && ui3List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state REVIEW_REQUIRED') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('需要人工确认') !== -1;
        }));
-assert('UI3: REVIEW_REQUIRED renders a "Review Reason" row with the analyzer reason',
+assert('UI3: REVIEW_REQUIRED renders a Chinese review-required explanation ("检测到多组高度")',
        ui3List && ui3List.children.some(function (c) {
-         return c.textContent.indexOf('Review Reason') !== -1 &&
-                c.textContent.indexOf('tied_dominant_windows') !== -1;
+         return c.textContent.indexOf('检测到多组高度') !== -1;
        }));
-assert('UI3: REVIEW_REQUIRED does NOT render "Apply Safe Normalization" (destructive button absent)',
+assert('UI3: REVIEW_REQUIRED does NOT render "应用平面校正" (destructive button absent)',
        ui3Actions && !ui3Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization';
+         return b.textContent === '应用平面校正';
        }));
-assert('UI3: REVIEW_REQUIRED does NOT render "Analyze Planarity" (already computed)',
+assert('UI3: REVIEW_REQUIRED does NOT render "检查平面偏差" (already computed)',
        ui3Actions && !ui3Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity';
+         return b.textContent === '检查平面偏差';
        }));
 // NO destructive callback can be invoked -- verify by clicking
 // every existing action button and confirming the V1.6
@@ -1947,18 +2090,21 @@ renderWithPayload({
 var ui4List    = mockElements['working-mode-list'];
 var ui4Actions = mockElements['working-mode-actions'];
 
-assert('UI4: NO_CANDIDATE renders a State row',
+// V1.6 UI-CN-SIMPLIFICATION: NO_CANDIDATE renders the
+// Simplified Chinese "无需校正" state label + a Chinese
+// no-action explanation.
+assert('UI4: NO_CANDIDATE renders a "平面校正" State row with Simplified Chinese "无需校正" label',
        ui4List && ui4List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state NO_CANDIDATE') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('无需校正') !== -1;
        }));
-assert('UI4: NO_CANDIDATE does NOT render "Apply Safe Normalization"',
+assert('UI4: NO_CANDIDATE does NOT render "应用平面校正"',
        ui4Actions && !ui4Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization';
+         return b.textContent === '应用平面校正';
        }));
-assert('UI4: NO_CANDIDATE does NOT render "Analyze Planarity" (already computed)',
+assert('UI4: NO_CANDIDATE does NOT render "检查平面偏差" (already computed)',
        ui4Actions && !ui4Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity';
+         return b.textContent === '检查平面偏差';
        }));
 
 // UI5: APPLIED.
@@ -1996,38 +2142,37 @@ renderWithPayload({
 var ui5List    = mockElements['working-mode-list'];
 var ui5Actions = mockElements['working-mode-actions'];
 
-assert('UI5: APPLIED renders a State row showing state "APPLIED"',
+// V1.6 UI-CN-SIMPLIFICATION: APPLIED renders the Simplified
+// Chinese "已校正" state label + a Chinese completion
+// summary ("平面校正已完成。") + condensed Chinese user-facing
+// rows (已移动 / 最大校正量 / 保留异常项). Raw audit values are
+// preserved under 技术详情.
+assert('UI5: APPLIED renders a "平面校正" State row with Simplified Chinese "已校正" label',
        ui5List && ui5List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state APPLIED') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('已校正') !== -1;
        }));
-assert('UI5: APPLIED renders an "Applied Target Z" row with the audit target_z',
+assert('UI5: APPLIED renders a Chinese completion summary ("平面校正已完成。")',
        ui5List && ui5List.children.some(function (c) {
-         return c.textContent.indexOf('Applied Target Z') !== -1 &&
-                c.textContent.indexOf('1.003') !== -1;
+         return c.textContent.indexOf('平面校正已完成') !== -1;
        }));
-assert('UI5: APPLIED renders "Moved / Applied" count (plural)',
+assert('UI5: APPLIED renders "已移动" count',
        ui5List && ui5List.children.some(function (c) {
-         return c.textContent.indexOf('Moved / Applied') !== -1 &&
-                c.textContent.indexOf('4 vertices applied') !== -1;
+         return c.textContent.indexOf('已移动') !== -1 &&
+                c.textContent.indexOf('4') !== -1;
        }));
-assert('UI5: APPLIED renders "Max Movement" row',
+assert('UI5: APPLIED renders "保留异常项" count',
        ui5List && ui5List.children.some(function (c) {
-         return c.textContent.indexOf('Max Movement') !== -1 &&
-                c.textContent.indexOf('0.007') !== -1;
+         return c.textContent.indexOf('保留异常项') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
        }));
-assert('UI5: APPLIED renders "Outliers Unchanged" row',
-       ui5List && ui5List.children.some(function (c) {
-         return c.textContent.indexOf('Outliers Unchanged') !== -1 &&
-                c.textContent.indexOf('1 outlier edge unchanged') !== -1;
-       }));
-assert('UI5: APPLIED does NOT leave a stale "Apply Safe Normalization" button (no stale READY_TO_NORMALIZE action)',
+assert('UI5: APPLIED does NOT leave a stale "应用平面校正" button (no stale READY_TO_NORMALIZE action)',
        ui5Actions && !ui5Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization';
+         return b.textContent === '应用平面校正';
        }));
-assert('UI5: APPLIED does NOT render "Analyze Planarity" (already in terminal APPLIED state)',
+assert('UI5: APPLIED does NOT render "检查平面偏差" (already in terminal APPLIED state)',
        ui5Actions && !ui5Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity';
+         return b.textContent === '检查平面偏差';
        }));
 // Verify no destructive callback can be invoked from APPLIED.
 resetV14HostActionCalls();
@@ -2071,29 +2216,33 @@ renderWithPayload({
 var ui6List    = mockElements['working-mode-list'];
 var ui6Actions = mockElements['working-mode-actions'];
 
-assert('UI6: FAILED renders a State row showing state "FAILED"',
+// V1.6 UI-CN-SIMPLIFICATION: FAILED renders the Simplified
+// Chinese "校正失败" state label + a Chinese failure reason
+// ("失败原因"). The raw reason string is preserved under
+// 技术详情.
+assert('UI6: FAILED renders a "平面校正" State row with Simplified Chinese "校正失败" label',
        ui6List && ui6List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state FAILED') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('校正失败') !== -1;
        }));
-assert('UI6: FAILED renders a "Failure Reason" row with the audit reason',
+assert('UI6: FAILED renders a Chinese failure explanation',
        ui6List && ui6List.children.some(function (c) {
-         return c.textContent.indexOf('Failure Reason') !== -1 &&
-                c.textContent.indexOf('post_validation_failed') !== -1;
+         return c.textContent.indexOf('失败原因') !== -1;
        }));
-assert('UI6: FAILED does NOT render "Apply Safe Normalization"',
+assert('UI6: FAILED does NOT render "应用平面校正"',
        ui6Actions && !ui6Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization';
+         return b.textContent === '应用平面校正';
        }));
-assert('UI6: FAILED does NOT render "Analyze Planarity"',
+assert('UI6: FAILED does NOT render "检查平面偏差"',
        ui6Actions && !ui6Actions.children.some(function (b) {
-         return b.textContent === 'Analyze Planarity';
+         return b.textContent === '检查平面偏差';
        }));
-// Last Error row from the V1.5 failure contract still present.
-assert('UI6: FAILED still renders the V1.5 "Last Error" row (backwards compat)',
+// V1.5 failure contract: the failed workspace still surfaces
+// the concise Chinese recovery sentence ("处理失败，请点击下方「重新生成」").
+assert('UI6: FAILED still surfaces the V1.5 Chinese recovery sentence',
        ui6List && ui6List.children.some(function (c) {
-         return c.textContent.indexOf('Last Error') !== -1 &&
-                c.textContent.indexOf('host failure during build') !== -1;
+         return c.textContent.indexOf('处理失败') !== -1 &&
+                c.textContent.indexOf('重新生成') !== -1;
        }));
 
 // UI7: missing / malformed planar_normalization.
@@ -2114,17 +2263,28 @@ renderWithPayload({
 });
 var ui7List = mockElements['working-mode-list'];
 var ui7Actions = mockElements['working-mode-actions'];
-assert('UI7: missing planar_normalization -> no "Planar Normalization" row rendered (graceful degrade)',
+// UI7: a missing planar_normalization payload in a READY
+// workspace is treated as NOT_COMPUTED per dispatch §4.2.
+// The primary CTA is therefore "检查平面偏差" (the user can
+// still run the analyzer). The destructive "应用平面校正"
+// button MUST NOT be rendered in this state. The old
+// Working Mode still renders (no crash).
+assert('UI7: missing planar_normalization -> no "平面校正" card row rendered (graceful degrade)',
        ui7List && !ui7List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1;
        }));
-assert('UI7: missing planar_normalization -> no "Apply Safe Normalization" or "Analyze Planarity" button',
+assert('UI7: missing planar_normalization -> primary CTA is "检查平面偏差" (NOT_COMPUTED safe default)',
+       ui7Actions && ui7Actions.children.some(function (b) {
+         return b.textContent === '检查平面偏差' &&
+                b.attrs['data-action'] === 'compute_planar_normalization';
+       }));
+assert('UI7: missing planar_normalization -> destructive "应用平面校正" button is NOT rendered',
        ui7Actions && !ui7Actions.children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization' ||
-                b.textContent === 'Analyze Planarity';
+         return b.textContent === '应用平面校正';
        }));
-assert('UI7: missing planar_normalization -> old Working Mode still renders (no crash)',
-       ui7List && ui7List.children.length > 0);
+assert('UI7: missing planar_normalization -> working-mode-summary is populated (no crash)',
+       mockElements['working-mode-summary'] &&
+       mockElements['working-mode-summary'].textContent.indexOf('处理工作区') !== -1);
 assert('UI7: missing planar_normalization -> no [object Object] / undefined / NaN',
        (function () {
          var texts = [];
@@ -2142,7 +2302,9 @@ assert('UI7: missing planar_normalization -> no [object Object] / undefined / Na
 
 // UI7 (extended): a malformed planar_normalization (e.g.
 // a String) degrades safely -- no crash, no [object Object],
-// no destructive button rendered.
+// no destructive Apply button rendered. The primary CTA
+// stays "检查平面偏差" because the JS layer treats missing /
+// malformed pn as NOT_COMPUTED.
 renderWithPayload({
   selectionLabel: 'wm-v16-u7-malformed', selectionType: 'Group',
   summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
@@ -2157,12 +2319,12 @@ renderWithPayload({
   }
 });
 var ui7malList = mockElements['working-mode-list'];
-assert('UI7: malformed planar_normalization (String) -> graceful degrade, no crash',
-       ui7malList && ui7malList.children.length > 0);
-assert('UI7: malformed planar_normalization (String) -> no Apply/Compute button',
+assert('UI7: malformed planar_normalization (String) -> graceful degrade, working-mode-summary populated (no crash)',
+       ui7malList && mockElements['working-mode-summary'] &&
+       mockElements['working-mode-summary'].textContent.indexOf('处理工作区') !== -1);
+assert('UI7: malformed planar_normalization (String) -> destructive Apply button NOT rendered',
        !mockElements['working-mode-actions'].children.some(function (b) {
-         return b.textContent === 'Apply Safe Normalization' ||
-                b.textContent === 'Analyze Planarity';
+         return b.textContent === '应用平面校正';
        }));
 
 // UI8: V1.4/V1.5 controls remain UNCHANGED when V1.6 state is
@@ -2211,54 +2373,72 @@ renderWithPayload({
 var ui8List    = mockElements['working-mode-list'];
 var ui8Actions = mockElements['working-mode-actions'];
 
-assert('UI8: V1.5 Duplicate repairs row is still rendered (V1.6 wiring did not break V1.5 audit)',
+// V1.6 UI-CN-SIMPLIFICATION: the condensed Simplified Chinese
+// "重复线清理：已处理 X，跳过 Y，失败 Z" row is still rendered
+// (parallel presence with the planar_normalization card).
+assert('UI8: V1.5 Simplified Chinese "重复线清理" row is still rendered (V1.6 wiring did not break V1.5 audit)',
        ui8List && ui8List.children.some(function (c) {
-         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
-                c.textContent.indexOf('applied 2') !== -1;
+         return c.textContent.indexOf('重复线清理') !== -1 &&
+                c.textContent.indexOf('已处理 2') !== -1;
        }));
-assert('UI8: V1.6 Planar Normalization row is also rendered (parallel presence)',
+assert('UI8: V1.6 "平面校正" row is also rendered (parallel presence, Simplified Chinese)',
        ui8List && ui8List.children.some(function (c) {
-         return c.textContent.indexOf('Planar Normalization') !== -1 &&
-                c.textContent.indexOf('state READY_TO_NORMALIZE') !== -1;
+         return c.textContent.indexOf('平面校正') !== -1 &&
+                c.textContent.indexOf('可安全校正') !== -1;
        }));
-var ui8BtnActions = ui8Actions.children.map(function (b) {
+// V1.6 UI-CN-SIMPLIFICATION: the Simplified Chinese primary
+// CTA "应用平面校正" is the FIRST top-level child when the
+// planar normalization state is READY_TO_NORMALIZE. The
+// collapsed 更多操作 block (carrying Discard + Rebuild) is the
+// SECOND top-level child. The Prepare button is HIDDEN (not
+// disabled) in state="ready" because the user already has a
+// workspace (re-prepare requires Discard first).
+var ui8TopBtn = ui8Actions.children[0];
+assert('UI8: primary CTA "应用平面校正" is rendered as the top-level button (Simplified Chinese)',
+       ui8TopBtn && ui8TopBtn.textContent === '应用平面校正' &&
+       ui8TopBtn.attrs['data-action'] === 'apply_planar_normalization' &&
+       !ui8TopBtn.hasAttribute('disabled'));
+// Secondary Discard / Rebuild live INSIDE the collapsed
+// 更多操作 block (the SECOND top-level child of #working-mode-actions).
+var ui8MoreBlock = ui8Actions.children[1];
+var ui8MoreInner = ui8MoreBlock && ui8MoreBlock.children.filter(function (c) {
+  return c.classes.indexOf('more-actions-inner') !== -1;
+})[0];
+var ui8SecondaryActions = ui8MoreInner ? ui8MoreInner.children.map(function (b) {
   return b.attrs['data-action'];
-});
-assert('UI8: Prepare / Discard / Rebuild buttons are still present (V1.4 contract unchanged)',
-       ui8BtnActions.indexOf('prepare_workspace') !== -1 &&
-       ui8BtnActions.indexOf('discard_workspace') !== -1 &&
-       ui8BtnActions.indexOf('rebuild_workspace') !== -1);
-assert('UI8: Apply Safe Normalization button is present (V1.6 contract)',
-       ui8BtnActions.indexOf('apply_planar_normalization') !== -1);
-// Click each button and verify the right host callback fires
-// (UI8 source guard: V1.6 wiring did not break V1.4/V1.5
-// dispatch). In state="ready" the Prepare button is disabled
-// (per V1.4 contract: re-prepare requires Discard first), so
-// it does NOT fire its callback. The 3 enabled buttons
-// (Discard / Rebuild / Apply) each fire exactly once.
-resetV14HostActionCalls();
-ui8Actions.children.forEach(function (b) {
-  if (b.attrs['data-action'] === 'prepare_workspace') b.fireEvent('click');
-  if (b.attrs['data-action'] === 'discard_workspace') b.fireEvent('click');
-  if (b.attrs['data-action'] === 'rebuild_workspace') b.fireEvent('click');
-  if (b.attrs['data-action'] === 'apply_planar_normalization') b.fireEvent('click');
-});
-assert('UI8: clicking all buttons fires Discard / Rebuild / Apply exactly once each (Prepare is disabled in state=ready per V1.4 contract)',
-       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
-       mockWindow.sketchup.discard_workspace_calls.length === 1 &&
-       mockWindow.sketchup.rebuild_workspace_calls.length === 1 &&
-       mockWindow.sketchup.apply_planar_normalization_calls.length === 1);
-assert('UI8: Prepare button is disabled in state="ready" (V1.4 contract unchanged)',
+}) : [];
+assert('UI8: Discard + Rebuild buttons are still present inside the collapsed 更多操作 block (V1.4 contract preserved)',
+       ui8SecondaryActions.indexOf('discard_workspace') !== -1 &&
+       ui8SecondaryActions.indexOf('rebuild_workspace') !== -1);
+assert('UI8: Prepare button is HIDDEN (not rendered at all) in state="ready"',
        (function () {
-         var prepareBtn = ui8Actions.children.filter(function (b) {
-           return b.attrs['data-action'] === 'prepare_workspace';
-         })[0];
-         return prepareBtn && prepareBtn.hasAttribute('disabled');
+         function search(el) {
+           if (!el) return false;
+           if (el.attrs && el.attrs['data-action'] === 'prepare_workspace') return true;
+           if (!el.children) return false;
+           for (var i = 0; i < el.children.length; i++) {
+             if (search(el.children[i])) return true;
+           }
+           return false;
+         }
+         return !search(ui8Actions);
        })());
+// Click each rendered button and verify the right host callback fires.
+resetV14HostActionCalls();
+ui8TopBtn.fireEvent('click');
+if (ui8MoreInner) {
+  ui8MoreInner.children.forEach(function (b) { b.fireEvent('click'); });
+}
+assert('UI8: clicking the primary CTA + 更多操作 buttons fires Apply + Discard + Rebuild exactly once each',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 1 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 1 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 1);
 
-// Source guard: renderPlanarNormalization / renderPlanarNormalizationAction
-// MUST use textContent only and MUST NOT use innerHTML for
-// user-supplied strings.
+// Source guard: renderPlanarNormalization MUST use textContent
+// only and MUST NOT use innerHTML for user-supplied strings.
+// renderPlanarNormalizationAction is no longer used by the
+// simplified renderer; the primary CTA is rendered by
+// renderPrimaryAction.
 var appJsSrcV16 = fs.readFileSync(appJsPath, 'utf-8');
 assert('UI source guard: app.js mentions compute_planar_normalization host dispatch',
        appJsSrcV16.indexOf("'compute_planar_normalization'") >= 0 ||
@@ -2268,8 +2448,661 @@ assert('UI source guard: app.js mentions apply_planar_normalization host dispatc
        appJsSrcV16.indexOf('"apply_planar_normalization"') >= 0);
 assert('UI source guard: renderPlanarNormalization function defined',
        appJsSrcV16.indexOf('function renderPlanarNormalization') >= 0);
-assert('UI source guard: renderPlanarNormalizationAction function defined',
-       appJsSrcV16.indexOf('function renderPlanarNormalizationAction') >= 0);
+assert('UI source guard: renderPrimaryAction function defined',
+       appJsSrcV16.indexOf('function renderPrimaryAction') >= 0);
+assert('UI source guard: renderTechnicalDetails function defined',
+       appJsSrcV16.indexOf('function renderTechnicalDetails') >= 0);
+
+// =====================================================================
+// V1.6 UI-CN-SIMPLIFICATION (per dispatch
+// V16-UI-CN-SIMPLIFICATION-2026-09-01) — CN1..CN18: explicit
+// Simplified Chinese UX proof points. The previous UI1..UI8 /
+// L4 / V12 / V13 / V14 / V15 blocks already prove many of these
+// assertions; the CN block is the explicit owner-facing
+// dispatch-contract checklist.
+// =====================================================================
+
+// CN1 — Main title / selection empty-state are Chinese.
+// Verified against the SHIPPED index.html (no mock).
+var cn1IndexHtml = fs.readFileSync(
+  path.resolve(__dirname, '..', 'extension', 'su_ai_plugin', 'html', 'index.html'),
+  'utf-8'
+);
+assert('CN1: index.html <title> is Simplified Chinese ("CAD 检查结果")',
+       cn1IndexHtml.indexOf('<title>CAD 检查结果</title>') !== -1);
+assert('CN1: index.html <h1> is Simplified Chinese ("CAD 检查结果")',
+       cn1IndexHtml.indexOf('<h1>CAD 检查结果</h1>') !== -1);
+assert('CN1: index.html default #selection-info text is Simplified Chinese ("未选择对象")',
+       cn1IndexHtml.indexOf('未选择对象') !== -1);
+assert('CN1: index.html <html lang="zh-CN"> for accessibility',
+       cn1IndexHtml.indexOf('<html lang="zh-CN">') !== -1);
+// dialog_title in dialog_runner.rb must be Simplified Chinese.
+var cn1RunnerRb = fs.readFileSync(
+  path.resolve(__dirname, '..', 'extension', 'su_ai_plugin', 'dialog_runner.rb'),
+  'utf-8'
+);
+assert('CN1: dialog_runner.rb dialog_title is Simplified Chinese ("CAD 检查结果")',
+       cn1RunnerRb.indexOf("dialog_title:    'CAD 检查结果'") !== -1);
+
+// CN2 — Issue type / severity labels are Chinese.
+// Verified via ROOT.ISSUE_TYPE_LABELS_CN / ROOT.SEVERITY_LABELS_CN.
+var cn2IssueLabels = context.window.SUAIP.ISSUE_TYPE_LABELS_CN;
+assert('CN2: ROOT.ISSUE_TYPE_LABELS_CN has 7 Simplified Chinese issue types in canonical order',
+       Array.isArray(cn2IssueLabels) && cn2IssueLabels.length === 7 &&
+       cn2IssueLabels.map(function (p) { return p[0]; }).join(',') ===
+         'duplicate_edge_candidate,short_edge,open_endpoint,gap_candidate,significant_non_zero_z,abnormal_large_coord,deep_nesting' &&
+       cn2IssueLabels.map(function (p) { return p[1]; }).join('|') ===
+         '重复线候选|短线|未闭合端点|间隙候选|明显非零 Z|异常大坐标|嵌套层级过深');
+var cn2SeverityLabels = context.window.SUAIP.SEVERITY_LABELS_CN;
+assert('CN2: ROOT.SEVERITY_LABELS_CN has high/medium/low Simplified Chinese labels',
+       cn2SeverityLabels && cn2SeverityLabels.high === '高' &&
+       cn2SeverityLabels.medium === '中' && cn2SeverityLabels.low === '低');
+// Re-render with a multi-severity payload and confirm badge
+// text is Simplified Chinese (no English severity words).
+renderWithPayload({
+  selectionLabel: 'cn2-multi', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0,
+             issues: { short_edge: 1, deep_nesting: 1 } },
+  groups: [
+    { type: 'short_edge', count: 1, defaultOpen: true,
+      issues: [{ issue_id: 'short_edge|1|1', issue_type: 'short_edge',
+                 severity: 'high', locatable: true, message: 'short edge msg' }] },
+    { type: 'deep_nesting', count: 1, defaultOpen: false,
+      issues: [{ issue_id: 'deep_nesting|1|1', issue_type: 'deep_nesting',
+                 severity: 'low', locatable: false, message: 'deep nesting msg' }] }
+  ],
+  layerGroups: [], layerIssueGroups: [], faceInventoryGroups: []
+});
+var cn2Groups = mockElements['groups'];
+var cn2AllTexts = (function () {
+  var out = [];
+  function collect(el) { if (el.textContent) out.push(el.textContent);
+    for (var i = 0; i < el.children.length; i++) collect(el.children[i]); }
+  collect(cn2Groups);
+  return out.join(' | ');
+})();
+assert('CN2: severity badge text in DOM is Simplified Chinese (高 / 低, NOT English)',
+       cn2AllTexts.indexOf('高') !== -1 && cn2AllTexts.indexOf('低') !== -1 &&
+       cn2AllTexts.indexOf('high') === -1 && cn2AllTexts.indexOf('low') === -1);
+
+// CN3 — Working Mode visible labels/buttons are Chinese.
+// Verified by V14 assertions above + a focused string check.
+renderWithPayload({
+  selectionLabel: 'cn3-wm', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: { state: 'none' }
+});
+var cn3WmSummary = mockElements['working-mode-summary'];
+assert('CN3: working-mode-summary is Simplified Chinese ("处理工作区— ...")',
+       cn3WmSummary.textContent.indexOf('处理工作区') !== -1);
+assert('CN3: working-mode section <summary> element default text is Simplified Chinese ("处理工作区")',
+       cn1IndexHtml.indexOf('<summary id="working-mode-summary">处理工作区</summary>') !== -1);
+
+// CN4 — Planar Normalization states/buttons are Chinese.
+var cn4PnLabels = context.window.SUAIP.PN_STATE_LABELS_CN;
+assert('CN4: ROOT.PN_STATE_LABELS_CN has all canonical Simplified Chinese state labels',
+       cn4PnLabels &&
+       cn4PnLabels.NOT_COMPUTED === '未检查' &&
+       cn4PnLabels.READY_TO_NORMALIZE === '可安全校正' &&
+       cn4PnLabels.REVIEW_REQUIRED === '需要人工确认' &&
+       cn4PnLabels.NO_CANDIDATE === '无需校正' &&
+       cn4PnLabels.APPLIED === '已校正' &&
+       cn4PnLabels.FAILED === '校正失败');
+var cn4ActionLabels = context.window.SUAIP.ACTION_LABEL_CN;
+assert('CN4: ROOT.ACTION_LABEL_CN has Simplified Chinese action labels for all 5 callbacks',
+       cn4ActionLabels &&
+       cn4ActionLabels.prepare_workspace === '准备处理' &&
+       cn4ActionLabels.discard_workspace === '放弃工作副本' &&
+       cn4ActionLabels.rebuild_workspace === '重新生成' &&
+       cn4ActionLabels.compute_planar_normalization === '检查平面偏差' &&
+       cn4ActionLabels.apply_planar_normalization === '应用平面校正');
+
+// CN5 — READY_TO_NORMALIZE: ONLY the destructive primary CTA
+// "应用平面校正" is rendered; no other Apply / Compute button.
+renderWithPayload({
+  selectionLabel: 'cn5-rt', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'READY_TO_NORMALIZE',
+      proposal: { state: 'READY_TO_NORMALIZE', target_z: 1.003,
+                  eligible_count: 4, movable_count: 3, outlier_count: 1,
+                  affected_derived_ids: ['d1','d2','d3'], max_movement: 0.007 }
+    }
+  }
+});
+var cn5Actions = mockElements['working-mode-actions'];
+// Primary CTA (top-level button).
+var cn5Primary = cn5Actions.children[0];
+assert('CN5: READY_TO_NORMALIZE primary CTA is Simplified Chinese "应用平面校正"',
+       cn5Primary && cn5Primary.textContent === '应用平面校正' &&
+       cn5Primary.attrs['data-action'] === 'apply_planar_normalization');
+// Only ONE Apply button exists in the entire actions subtree.
+var cn5ApplyCount = 0;
+(function count(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['data-action'] === 'apply_planar_normalization') cn5ApplyCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) count(el.children[i]);
+})(cn5Actions);
+assert('CN5: READY_TO_NORMALIZE renders exactly ONE "应用平面校正" button (no Apply button clutter)',
+       cn5ApplyCount === 1);
+
+// CN6 — NOT_COMPUTED: primary action is "检查平面偏差".
+renderWithPayload({
+  selectionLabel: 'cn6-nc', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: { computed: false, state: 'NOT_COMPUTED' }
+  }
+});
+var cn6Actions = mockElements['working-mode-actions'];
+var cn6Primary = cn6Actions.children[0];
+assert('CN6: NOT_COMPUTED primary action is Simplified Chinese "检查平面偏差"',
+       cn6Primary && cn6Primary.textContent === '检查平面偏差' &&
+       cn6Primary.attrs['data-action'] === 'compute_planar_normalization' &&
+       !cn6Primary.hasAttribute('disabled'));
+
+// CN7 — REVIEW_REQUIRED: Chinese review-required explanation
+// visible; no Apply action.
+renderWithPayload({
+  selectionLabel: 'cn7-rr', selectionType: 'Group',
+  summary: { edges: 6, vertices: 12, non_zero_z_vertices: 12, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'REVIEW_REQUIRED',
+      proposal: { state: 'REVIEW_REQUIRED', reason: 'tied_dominant_windows',
+                  eligible_count: 6, movable_count: 0, outlier_count: 0,
+                  max_movement: 0.0 }
+    }
+  }
+});
+var cn7List = mockElements['working-mode-list'];
+assert('CN7: REVIEW_REQUIRED Chinese review-required explanation visible ("检测到多组高度")',
+       cn7List && cn7List.children.some(function (c) {
+         return c.textContent.indexOf('检测到多组高度') !== -1;
+       }));
+var cn7ApplyCount = 0;
+(function count(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['data-action'] === 'apply_planar_normalization') cn7ApplyCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) count(el.children[i]);
+})(mockElements['working-mode-actions']);
+assert('CN7: REVIEW_REQUIRED renders NO Apply action button (no destructive CTA)',
+       cn7ApplyCount === 0);
+
+// CN8 — NO_CANDIDATE: Chinese no-action explanation visible; no Apply action.
+renderWithPayload({
+  selectionLabel: 'cn8-noc', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'NO_CANDIDATE',
+      proposal: { state: 'NO_CANDIDATE', reason: 'already_planar',
+                  eligible_count: 4, already_planar: 4, movable_count: 0,
+                  outlier_count: 0, max_movement: 0.0 }
+    }
+  }
+});
+var cn8List = mockElements['working-mode-list'];
+assert('CN8: NO_CANDIDATE Chinese no-action explanation visible ("当前几何无需平面校正。")',
+       cn8List && cn8List.children.some(function (c) {
+         return c.textContent.indexOf('当前几何无需平面校正') !== -1;
+       }));
+var cn8ApplyCount = 0;
+(function count(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['data-action'] === 'apply_planar_normalization') cn8ApplyCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) count(el.children[i]);
+})(mockElements['working-mode-actions']);
+assert('CN8: NO_CANDIDATE renders NO Apply action button',
+       cn8ApplyCount === 0);
+
+// CN9 — APPLIED: Chinese completion summary; no stale Apply action.
+renderWithPayload({
+  selectionLabel: 'cn9-app', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'APPLIED',
+      audit: { status: 'applied', target_z: 1.003,
+               applied_count: 4, failed_count: 0, max_movement: 0.007,
+               outlier_derived_ids: ['d4'] }
+    }
+  }
+});
+var cn9List = mockElements['working-mode-list'];
+assert('CN9: APPLIED Chinese completion summary visible ("平面校正已完成。")',
+       cn9List && cn9List.children.some(function (c) {
+         return c.textContent.indexOf('平面校正已完成') !== -1;
+       }));
+var cn9ApplyCount = 0;
+(function count(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['data-action'] === 'apply_planar_normalization') cn9ApplyCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) count(el.children[i]);
+})(mockElements['working-mode-actions']);
+assert('CN9: APPLIED renders NO stale Apply action button (no stale READY_TO_NORMALIZE action)',
+       cn9ApplyCount === 0);
+
+// CN10 — FAILED: Chinese failure summary; no Apply action.
+renderWithPayload({
+  selectionLabel: 'cn10-fail', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'FAILED',
+      audit: { status: 'failed', target_z: 1.003, applied_count: 0,
+               failed_count: 1, reason: 'post_validation_failed:xyz',
+               outlier_derived_ids: [] }
+    }
+  }
+});
+var cn10List = mockElements['working-mode-list'];
+assert('CN10: FAILED Chinese failure summary visible ("校正失败。")',
+       cn10List && cn10List.children.some(function (c) {
+         return c.textContent.indexOf('校正失败') !== -1;
+       }));
+var cn10ApplyCount = 0;
+(function count(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['data-action'] === 'apply_planar_normalization') cn10ApplyCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) count(el.children[i]);
+})(mockElements['working-mode-actions']);
+assert('CN10: FAILED renders NO Apply action button',
+       cn10ApplyCount === 0);
+
+// CN11 — source snapshot / fingerprint / config digest are NOT
+// visible in the default primary Working Mode area and are
+// available under 技术详情. (Per dispatch §5.5: technical
+// identifiers are collapsed by default.)
+renderWithPayload({
+  selectionLabel: 'cn11-tech', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'cn11-snap-001',
+    source_fingerprint_digest: 'cn11-abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678',
+    execution_config_digest: 'cn11-cfg'
+  }
+});
+var cn11List = mockElements['working-mode-list'];
+var cn11AllTexts = (function () {
+  var out = [];
+  function collect(el) { if (el.textContent) out.push(el.textContent);
+    for (var i = 0; i < el.children.length; i++) collect(el.children[i]); }
+  collect(cn11List);
+  return out.join(' | ');
+})();
+assert('CN11: source_snapshot_id is NOT in default Working Mode list',
+       cn11AllTexts.indexOf('cn11-snap-001') === -1);
+assert('CN11: source_fingerprint_digest is NOT in default Working Mode list',
+       cn11AllTexts.indexOf('cn11-abcdef1234567890') === -1);
+assert('CN11: execution_config_digest is NOT in default Working Mode list',
+       cn11AllTexts.indexOf('cn11-cfg') === -1);
+var cn11TechList = mockElements['technical-details-list'];
+assert('CN11: source_snapshot_id IS available under 技术详情',
+       cn11TechList && cn11TechList.children.some(function (c) {
+         return c.textContent.indexOf('source_snapshot_id') !== -1 &&
+                c.textContent.indexOf('cn11-snap-001') !== -1;
+       }));
+assert('CN11: source_fingerprint_digest IS available under 技术详情',
+       cn11TechList && cn11TechList.children.some(function (c) {
+         return c.textContent.indexOf('source_fingerprint_digest') !== -1;
+       }));
+assert('CN11: execution_config_digest IS available under 技术详情',
+       cn11TechList && cn11TechList.children.some(function (c) {
+         return c.textContent.indexOf('execution_config_digest') !== -1 &&
+                c.textContent.indexOf('cn11-cfg') !== -1;
+       }));
+
+// CN12 — duplicate action IDs / rule IDs / survivor IDs are
+// hidden by default and available under 技术详情.
+renderWithPayload({
+  selectionLabel: 'cn12-audit', selectionType: 'Group',
+  summary: { edges: 2, vertices: 2, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    duplicate_repair: {
+      duplicate_pairs_before: 1, duplicate_pairs_after: 0,
+      actions_applied: 1, actions_skipped: 0, actions_failed: 0,
+      actions: [{
+        action_id: 'act-cn12-1',
+        status: 'applied',
+        rule_id: 'duplicate_edge.exact_remove',
+        survivor_derived_id: 'der-cn12-A',
+        removed_count: 1,
+        source_occurrence_count: 2,
+        confidence_basis: 'exact_endpoint_match_within_tolerance'
+      }]
+    }
+  }
+});
+var cn12List = mockElements['working-mode-list'];
+var cn12ListTexts = (function () {
+  var out = [];
+  function collect(el) { if (el.textContent) out.push(el.textContent);
+    for (var i = 0; i < el.children.length; i++) collect(el.children[i]); }
+  collect(cn12List);
+  return out.join(' | ');
+})();
+assert('CN12: per-action action_id ("act-cn12-1") is NOT in default Working Mode list',
+       cn12ListTexts.indexOf('act-cn12-1') === -1);
+assert('CN12: rule_id ("duplicate_edge.exact_remove") is NOT in default Working Mode list',
+       cn12ListTexts.indexOf('duplicate_edge.exact_remove') === -1);
+assert('CN12: survivor_derived_id ("der-cn12-A") is NOT in default Working Mode list',
+       cn12ListTexts.indexOf('der-cn12-A') === -1);
+var cn12TechList = mockElements['technical-details-list'];
+assert('CN12: action_id IS available under 技术详情',
+       cn12TechList && cn12TechList.children.some(function (c) {
+         return c.attrs && c.attrs['data-action-id'] === 'act-cn12-1';
+       }));
+assert('CN12: rule_id IS available under 技术详情',
+       cn12TechList && cn12TechList.children.some(function (c) {
+         return c.attrs && c.attrs['data-action-id'] === 'act-cn12-1' &&
+                c.children.some(function (cc) {
+                  return cc.textContent.indexOf('rule_id=duplicate_edge.exact_remove') !== -1;
+                });
+       }));
+assert('CN12: survivor_derived_id IS available under 技术详情',
+       cn12TechList && cn12TechList.children.some(function (c) {
+         return c.attrs && c.attrs['data-action-id'] === 'act-cn12-1' &&
+                c.children.some(function (cc) {
+                  return cc.textContent.indexOf('survivor_id=der-cn12-A') !== -1;
+                });
+       }));
+
+// CN13 — Issues by Layer / Layers / Face Inventory are Chinese
+// AND collapsed by default in index.html (no `open` attribute).
+assert('CN13: index.html <details id="layer-issues-section"> is closed by default',
+       cn1IndexHtml.indexOf('<details id="layer-issues-section">') !== -1 &&
+       !/\bid="layer-issues-section"[^>]*\bopen\b/.test(cn1IndexHtml));
+assert('CN13: index.html <details id="layers-section"> is closed by default',
+       cn1IndexHtml.indexOf('<details id="layers-section">') !== -1 &&
+       !/\bid="layers-section"[^>]*\bopen\b/.test(cn1IndexHtml));
+assert('CN13: index.html <details id="face-inventory-section"> is closed by default',
+       cn1IndexHtml.indexOf('<details id="face-inventory-section">') !== -1 &&
+       !/\bid="face-inventory-section"[^>]*\bopen\b/.test(cn1IndexHtml));
+assert('CN13: index.html <details id="technical-details-section"> is closed by default',
+       cn1IndexHtml.indexOf('<details id="technical-details-section">') !== -1 &&
+       !/\bid="technical-details-section"[^>]*\bopen\b/.test(cn1IndexHtml));
+// Section header text is Simplified Chinese.
+assert('CN13: index.html Layers section header is Simplified Chinese ("图层信息")',
+       cn1IndexHtml.indexOf('<summary id="layers-summary">图层信息</summary>') !== -1);
+assert('CN13: index.html Issues by Layer section header is Simplified Chinese ("按图层查看问题")',
+       cn1IndexHtml.indexOf('<summary id="layer-issues-summary">按图层查看问题</summary>') !== -1);
+assert('CN13: index.html Face Inventory section header is Simplified Chinese ("面信息")',
+       cn1IndexHtml.indexOf('<summary id="face-inventory-summary">面信息</summary>') !== -1);
+assert('CN13: index.html Technical Details section header is Simplified Chinese ("技术详情")',
+       cn1IndexHtml.indexOf('<summary id="technical-details-summary">技术详情</summary>') !== -1);
+
+// CN14 — unavailable actions are hidden rather than producing
+// button clutter. Verified for state='ready' (no PN payload):
+// only ONE primary CTA ("检查平面偏差") + the 更多操作 block.
+renderWithPayload({
+  selectionLabel: 'cn14-wm', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: { state: 'ready' }
+});
+var cn14Actions = mockElements['working-mode-actions'];
+var cn14DisabledCount = 0;
+(function countDisabled(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['disabled'] !== undefined) cn14DisabledCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) countDisabled(el.children[i]);
+})(cn14Actions);
+assert('CN14: state="ready" (no PN) renders ZERO disabled action buttons (unavailable actions are hidden)',
+       cn14DisabledCount === 0);
+
+// CN15 — existing callback dispatch still works: Prepare /
+// Discard / Rebuild / Compute / Apply all wire to the correct
+// window.sketchup.<callback>. Verified via V14-RUNTIME-BLOCK-001
+// (Prepare / Discard / Rebuild) + UI1 (Compute) + UI2 (Apply).
+// We re-run the focused Dispatch test here to prove the
+// Simplified Chinese buttons still dispatch correctly.
+resetV14HostActionCalls();
+renderWithPayload({
+  selectionLabel: 'cn15-state', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: { state: 'none' }
+});
+mockElements['working-mode-actions'].children[0].fireEvent('click');
+assert('CN15: clicking Simplified Chinese "准备处理" CTA fires prepare_workspace (callback preserved)',
+       mockWindow.sketchup.prepare_workspace_calls.length === 1);
+resetV14HostActionCalls();
+renderWithPayload({
+  selectionLabel: 'cn15-rt', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: { state: 'ready' }
+});
+var cn15WmActions = mockElements['working-mode-actions'];
+cn15WmActions.children[0].fireEvent('click');  // primary CTA: 检查平面偏差
+assert('CN15: clicking Simplified Chinese "检查平面偏差" CTA fires compute_planar_normalization (callback preserved)',
+       mockWindow.sketchup.compute_planar_normalization_calls.length === 1);
+resetV14HostActionCalls();
+renderWithPayload({
+  selectionLabel: 'cn15-rt2', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    planar_normalization: {
+      computed: true, state: 'READY_TO_NORMALIZE',
+      proposal: { state: 'READY_TO_NORMALIZE', target_z: 1.003,
+                  eligible_count: 4, movable_count: 3, outlier_count: 1,
+                  affected_derived_ids: ['d1'], max_movement: 0.007 }
+    }
+  }
+});
+mockElements['working-mode-actions'].children[0].fireEvent('click');
+assert('CN15: clicking Simplified Chinese "应用平面校正" CTA fires apply_planar_normalization (callback preserved)',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 1);
+resetV14HostActionCalls();
+// Discard + Rebuild from the collapsed 更多操作 block.
+var cn15WmActions2 = mockElements['working-mode-actions'];
+var cn15MoreInner = cn15WmActions2.children[1].children.filter(function (c) {
+  return c.classes.indexOf('more-actions-inner') !== -1;
+})[0];
+cn15MoreInner.children.filter(function (b) {
+  return b.attrs['data-action'] === 'discard_workspace';
+})[0].fireEvent('click');
+assert('CN15: clicking Simplified Chinese "放弃工作副本" fires discard_workspace (callback preserved)',
+       mockWindow.sketchup.discard_workspace_calls.length === 1);
+resetV14HostActionCalls();
+cn15MoreInner.children.filter(function (b) {
+  return b.attrs['data-action'] === 'rebuild_workspace';
+})[0].fireEvent('click');
+assert('CN15: clicking Simplified Chinese "重新生成" fires rebuild_workspace (callback preserved)',
+       mockWindow.sketchup.rebuild_workspace_calls.length === 1);
+
+// CN16 — missing / malformed payload degrades safely. Already
+// proven by UI7 above (missing + malformed planar_normalization).
+// We add one more: a fully-missing derivedWorkspace.
+renderWithPayload({
+  selectionLabel: 'cn16-missing', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups: [], layerGroups: [], layerIssueGroups: [], faceInventoryGroups: []
+  // derivedWorkspace intentionally missing
+});
+assert('CN16: missing derivedWorkspace degrades safely (summary is Chinese, no crash)',
+       mockElements['working-mode-summary'].textContent === '处理工作区\u2014 尚未准备工作副本');
+
+// CN17 — no [object Object] / undefined / NaN in visible
+// normal UI. Already proven by summary assertions above +
+// UI7. We add a sweep across all rendered text in a fresh
+// normal payload.
+renderWithPayload({
+  selectionLabel: 'cn17-normal', selectionType: 'Group',
+  summary: { edges: 5, vertices: 8, non_zero_z_vertices: 2, warnings: 1,
+             faces: 1, faces_with_holes: 0,
+             issues: { duplicate_edge_candidate: 0, short_edge: 1,
+                       open_endpoint: 0, gap_candidate: 0,
+                       significant_non_zero_z: 1, abnormal_large_coord: 0,
+                       deep_nesting: 1 } },
+  groups: [
+    { type: 'short_edge', count: 1, defaultOpen: true,
+      issues: [{ issue_id: 'short_edge|1|1', issue_type: 'short_edge',
+                 severity: 'low', locatable: true, message: 'short edge detected' }] },
+    { type: 'significant_non_zero_z', count: 1, defaultOpen: false,
+      issues: [{ issue_id: 'significant_non_zero_z|1|1', issue_type: 'significant_non_zero_z',
+                 severity: 'medium', locatable: true, message: 'non-zero z' }] }
+  ],
+  layerGroups: [
+    { name: 'DIM-XX', role: 'dimension', role_label: 'Dimension',
+      role_rule: 'name_dimension', visible: true, visibility_unknown: false,
+      visibility_label: 'Visible', edge_count: 4, issue_count: 1 }
+  ],
+  layerIssueGroups: [
+    { name: 'DIM-XX', count: 1, default_open: false,
+      issues: [{ issue_id: 'short_edge|1|1', issue_type: 'short_edge',
+                 severity: 'low', locatable: true, message: 'short edge',
+                 source: { layer_name: 'DIM-XX' } }] }
+  ],
+  faceInventoryGroups: [
+    { name: 'DIM-XX', face_count: 1, faces_with_holes_count: 0,
+      role: 'dimension', role_label: 'Dimension', role_rule: 'name_dimension',
+      visible: true, visibility_unknown: false, visibility_label: 'Visible' }
+  ],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'cn17-snap',
+    source_fingerprint_digest: 'cn17-abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678',
+    execution_config_digest: 'cn17-cfg',
+    duplicate_repair: {
+      duplicate_pairs_before: 1, duplicate_pairs_after: 0,
+      duplicate_classes_before: 1, duplicate_classes_after: 0,
+      derived_edge_count_before: 2, derived_edge_count_after: 1,
+      actions_applied: 1, actions_skipped: 0, actions_failed: 0,
+      actions: [{
+        action_id: 'act-cn17-1', status: 'applied', rule_id: 'r',
+        survivor_derived_id: 'd-A', removed_count: 1,
+        source_occurrence_count: 2
+      }]
+    },
+    planar_normalization: {
+      computed: true, state: 'APPLIED',
+      audit: { status: 'applied', target_z: 1.003, applied_count: 4,
+               failed_count: 0, max_movement: 0.007,
+               outlier_derived_ids: ['d4'] }
+    }
+  }
+});
+var cn17AllTexts = (function () {
+  var out = [];
+  function collect(el) { if (el.textContent) out.push(el.textContent);
+    for (var i = 0; i < el.children.length; i++) collect(el.children[i]); }
+  ['summary', 'groups', 'layers-list', 'layer-issues-list',
+   'face-inventory-list', 'working-mode-list', 'technical-details-list'
+  ].forEach(function (id) { collect(mockElements[id]); });
+  return out.join(' | ');
+})();
+assert('CN17: no "[object Object]" anywhere in visible normal UI',
+       cn17AllTexts.indexOf('[object Object]') === -1);
+assert('CN17: no "undefined" anywhere in visible normal UI',
+       cn17AllTexts.indexOf('undefined') === -1);
+assert('CN17: no "NaN" anywhere in visible normal UI',
+       cn17AllTexts.indexOf('NaN') === -1);
+
+// CN18 — technical details still retain the audit evidence
+// needed by AIPM / Pi. The full raw data contract is
+// preserved under 技术详情: source_snapshot_id, +
+// source_fingerprint_digest, + execution_config_digest, +
+// raw workspace state, + duplicate_repair summary (with +
+// per-action audit row carrying action_id, rule_id, +
+// survivor_id, source occurrence count, removed_count), +
+// raw normalization reason, + raw normalization audit +
+// fields (status, target_z, applied_count, max_movement, +
+// outlier_count, failure_reason).
+var cn18TechList = mockElements['technical-details-list'];
+var cn18TechTexts = (function () {
+  var out = [];
+  function collect(el) { if (el.textContent) out.push(el.textContent);
+    for (var i = 0; i < el.children.length; i++) collect(el.children[i]); }
+  collect(cn18TechList);
+  return out.join(' | ');
+})();
+assert('CN18: 技术详情 preserves source_snapshot_id ("cn17-snap")',
+       cn18TechTexts.indexOf('cn17-snap') !== -1);
+assert('CN18: 技术详情 preserves source_fingerprint_digest (full SHA-256 hex)',
+       cn18TechTexts.indexOf('cn17-abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678') !== -1);
+assert('CN18: 技术详情 preserves execution_config_digest ("cn17-cfg")',
+       cn18TechTexts.indexOf('cn17-cfg') !== -1);
+assert('CN18: 技术详情 preserves duplicate_repair audit summary (applied/skipped/failed + class/pair/edge deltas)',
+       cn18TechTexts.indexOf('duplicate_repair_summary') !== -1 &&
+       cn18TechTexts.indexOf('applied=1') !== -1 &&
+       cn18TechTexts.indexOf('classes=1->0') !== -1);
+assert('CN18: 技术详情 preserves per-action action_id ("act-cn17-1")',
+       cn18TechTexts.indexOf('act-cn17-1') !== -1);
+assert('CN18: 技术详情 preserves per-action rule_id ("r")',
+       cn18TechTexts.indexOf('rule_id=r') !== -1);
+assert('CN18: 技术详情 preserves per-action survivor_id ("d-A")',
+       cn18TechTexts.indexOf('survivor_id=d-A') !== -1);
+assert('CN18: 技术详情 preserves per-action source_occurrence_count (= 2)',
+       cn18TechTexts.indexOf('source_count=2') !== -1);
+assert('CN18: 技术详情 preserves per-action removed_count (= 1)',
+       cn18TechTexts.indexOf('removed_count=1') !== -1);
+assert('CN18: 技术详情 preserves raw planar_normalization_state ("APPLIED")',
+       cn18TechTexts.indexOf('planar_normalization_state') !== -1 &&
+       cn18TechTexts.indexOf('APPLIED') !== -1);
+assert('CN18: 技术详情 preserves planar_normalization_audit_status ("applied")',
+       cn18TechTexts.indexOf('planar_normalization_audit_status') !== -1 &&
+       cn18TechTexts.indexOf('applied') !== -1);
+assert('CN18: 技术详情 preserves planar_normalization_audit_target_z (= 1.003)',
+       cn18TechTexts.indexOf('planar_normalization_audit_target_z') !== -1 &&
+       cn18TechTexts.indexOf('1.003') !== -1);
+assert('CN18: 技术详情 preserves planar_normalization_audit_applied_count (= 4)',
+       cn18TechTexts.indexOf('planar_normalization_audit_applied_count') !== -1 &&
+       cn18TechTexts.indexOf('4') !== -1);
+assert('CN18: 技术详情 preserves planar_normalization_audit_max_movement (= 0.007)',
+       cn18TechTexts.indexOf('planar_normalization_audit_max_movement') !== -1 &&
+       cn18TechTexts.indexOf('0.007') !== -1);
+
+// Source guard: app.js does NOT use innerHTML / eval / new
+// Function / document.write anywhere.
+assert('CN source guard: app.js does NOT use eval()',
+       appJsSrcV16.search(/\beval\(/) === -1);
+assert('CN source guard: app.js does NOT use new Function(...)',
+       appJsSrcV16.search(/\bnew\s+Function\(/) === -1);
+assert('CN source guard: app.js does NOT use document.write(...)',
+       appJsSrcV16.search(/\bdocument\.write\(/) === -1);
+// innerHTML may appear in comments only; verify code body.
+var cnCodeOnly = appJsSrcV16.split('\n')
+  .filter(function (l) { return !l.trim().startsWith('//') && !l.trim().startsWith('*'); })
+  .join('\n');
+assert('CN source guard: app.js does NOT use innerHTML= in code (comments allowed)',
+       cnCodeOnly.search(/\.innerHTML\s*=/) === -1);
 
 // --- final verdict -----------------------------------------------------
 

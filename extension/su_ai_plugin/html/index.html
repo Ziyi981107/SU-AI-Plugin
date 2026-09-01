@@ -1,90 +1,85 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>CAD Analyzer Result</title>
+  <title>CAD 检查结果</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>CAD Analyzer Result</h1>
-    <div id="selection-info" class="muted">No selection</div>
+    <h1>CAD 检查结果</h1>
+    <div id="selection-info" class="muted">未选择对象</div>
   </header>
   <main>
+    <!--
+      V1.6 UI-CN-SIMPLIFICATION (per dispatch
+      V16-UI-CN-SIMPLIFICATION-2026-09-01): the default visible
+      structure is materially simpler than V1.5.
+        Default visible:
+          A. Header (CAD 检查结果 + selection line)
+          B. #summary (compact scalar + per-issue-type counters)
+          C. #groups (canonical issue groups; OPEN only on defaultOpen)
+          D. 处理工作区 (Working Mode card + ONE primary CTA + collapsed 更多操作)
+          E. 平面校正 (Planar Normalization card, condensed Chinese rows)
+        Collapsed by default:
+          - 检查详情 (was: scalar + per-issue-type details)
+          - 按图层查看问题
+          - 图层信息
+          - 面信息
+          - 技术详情 (preserves source snapshot id / fingerprint /
+            config digest / raw workspace state / per-action audit /
+            raw normalization audit / reason / failure_reason)
+      The default screen therefore shows only what a normal user
+      needs to (a) know whether their CAD has issues, (b) know the
+      current workspace state, (c) know the system's recommended next
+      step, and (d) click the right button.
+    -->
     <section id="summary"></section>
     <section id="groups"></section>
     <!--
-      V1.2 (per directive 026): the "Issues by Layer" section
-      sits AFTER the per-issue-type groups block and BEFORE the
-      V1.1 Layers section. It is a `<details>` block with an
-      explicit `<summary id="layer-issues-summary">` first child;
-      JS renders the summary text ("Issues by Layer — N layers
-      (M issues)") at render time and emits one `<details>`
-      bucket per layer INSIDE `#layer-issues-list`. The block is
-      rendered CLOSED by default (no `open` attribute on this
-      HTML; JS does not call details.open). Each inner bucket's
-      default-open state is determined by the bucket's
-      `default_open` flag (mirrors IssueGrouper policy: open iff
-      bucket has :high, else first non-empty bucket opens).
-    -->
-    <details id="layer-issues-section">
-      <summary id="layer-issues-summary">Issues by Layer</summary>
-      <div id="layer-issues-list"></div>
-    </details>
-    <!--
-      V1.1 (per plan §4.11): the Layers section sits BELOW the per-
-      issue-type groups block AND BELOW the V1.2 Issues-by-Layer
-      section (per ChatGPT §11.1). It is a `<details>` block with
-      an explicit `<summary id="layers-summary">` first child;
-      JS renders the summary text ("Layers — N total (M with
-      issues)") at render time and emits the layer rows INSIDE
-      `#layers-list`. The block is rendered CLOSED by default (no
-      `open` attribute on this HTML; JS does not call details.open).
-      Per plan §4.12 + R008, there is NO data-role="..." color
-      selector in style.css; layers get a single neutral style.
-    -->
-    <details id="layers-section">
-      <summary id="layers-summary">Layers</summary>
-      <div id="layers-list"></div>
-    </details>
-    <!--
-      V1.3 (per directive 027): the "Face Inventory" section sits
-      AFTER the V1.1 Layers section. It is a `<details>` block with
-      an explicit `<summary id="face-inventory-summary">` first
-      child; JS renders the summary text ("Face Inventory — N
-      total (H with holes)") at render time and emits one
-      `.face-inventory-row` per layer INSIDE `#face-inventory-list`.
-      The block is rendered CLOSED by default (no `open` attribute
-      on this HTML; JS does not call details.open). Aggregate rows
-      by source face layer, NOT one UI row per individual face
-      (per directive item 4). Rows are informational / non-
-      actionable in V1.3: no click handler, no Locate action,
-      default cursor, no toast. No new role color selectors.
-    -->
-    <details id="face-inventory-section">
-      <summary id="face-inventory-summary">Face Inventory</summary>
-      <div id="face-inventory-list"></div>
-    </details>
-    <!--
-      V1.4 (per directive 030, Stage 4): the "Working Mode" section
-      sits AFTER the V1.3 Face Inventory section. It is a `<details>`
-      block with an explicit `<summary id="working-mode-summary">`
-      first child. JS renders the working-mode state at render time:
-        - "No working copy" when payload.derivedWorkspace.state === 'none'
-        - Otherwise shows the current workspace state (building / ready
-          / discarded / failed), the captured source snapshot id, the
-          captured source fingerprint digest, the captured execution
-          config digest, and (when failed) the last_error.
-      Action buttons (Prepare / Discard / Rebuild) wire to
-      window.SUAIP callbacks exposed by DialogRunner. The actions
-      are NON-DESTRUCTIVE for source: per directive stage 4
-      gate, the source is NEVER modified by the working-mode UI.
-      No source recolor / re-layer / erase / hide.
+      V1.4 (per directive 030, Stage 4): the "处理工作区" section sits
+      AFTER the per-issue-type groups block. The action row carries
+      ONE primary action button (Prepare / Analyze Planarity / Apply
+      Safe Normalization) and a collapsed "更多操作" <details> block
+      with the secondary Discard / Rebuild controls.
     -->
     <details id="working-mode-section">
-      <summary id="working-mode-summary">Working Mode (V1.4)</summary>
+      <summary id="working-mode-summary">处理工作区</summary>
       <div id="working-mode-list"></div>
       <div id="working-mode-actions"></div>
+    </details>
+    <!--
+      V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): the
+      "技术详情" section preserves the full data contract
+      (source snapshot id, source fingerprint, execution
+      config digest, raw workspace state, per-action
+      action_id / rule_id / survivor_id / source occurrence
+      count, raw normalization reason / audit fields). It is
+      rendered CLOSED by default; normal users do not need to
+      open it.
+    -->
+    <details id="technical-details-section">
+      <summary id="technical-details-summary">技术详情</summary>
+      <div id="technical-details-list"></div>
+    </details>
+    <!--
+      V1.6 UI-CN-SIMPLIFICATION: per dispatch §3, the following
+      sections remain available but are COLLAPSED by default
+      and moved BELOW the primary Working Mode + Technical
+      Details blocks. Users only open them when they need
+      detailed per-layer / per-face inspection.
+    -->
+    <details id="layer-issues-section">
+      <summary id="layer-issues-summary">按图层查看问题</summary>
+      <div id="layer-issues-list"></div>
+    </details>
+    <details id="layers-section">
+      <summary id="layers-summary">图层信息</summary>
+      <div id="layers-list"></div>
+    </details>
+    <details id="face-inventory-section">
+      <summary id="face-inventory-summary">面信息</summary>
+      <div id="face-inventory-list"></div>
     </details>
   </main>
   <div id="toast" class="toast" hidden></div>

@@ -1,31 +1,58 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.5 CLOSURE (THIS UPDATE)
+## V1.6 UI-CN-SIMPLIFICATION DISPATCH (THIS UPDATE)
 
-Closure date: 2026-08-31
-Authority: Final Product Owner + AIPM (`Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`)
-Dispatch: `V15-CLOSURE-SYNC-2026-08-31` (CLOSURE-ONLY sync; no production / runtime / test / RBZ / V1.6 implementation changes).
+Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-2026-09-01
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
+prior V1.6 UI-INTEGRATION-CORRECTION packet is intact; this
+dispatch performed the bounded frontend productization pass:
+Simplified Chinese localization of all normal user-facing
+text + materially simpler default UI + ONE primary CTA
+hierarchy + collapsed `技术详情` block preserving the full
+data contract. The frozen V1.6 Stage Technical Blueprint +
+the V1.6 backend (Planar Normalization analyzer / proposer /
+executor / tolerance / adapter / working mode runner /
+dialog runner) are untouched.)
+
+Closure date for the prior V1.5 closure: 2026-08-31
+(unchanged).
 
 Status:
 
 - **V1.5: CLOSED**
 - **BLOCK-005: CLOSED**
-- **Owner SketchUp 2020 V1.5 verification: PASS** (Final Product Owner confirmation recorded by AIPM)
-- **BLOCK-005 technical direction (unchanged, frozen):** `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild`. No global ModelObserver / EntitiesObserver architecture added in V1.5. `persistent_id` is not the correctness Source of Truth. Old Ruby Entity handles must never be trusted after host-state divergence.
-- **V1.6: UI INTEGRATION CORRECTION COMPLETE / AWAITING AIPM SOURCE REVIEW** (per dispatch `V16-UI-INTEGRATION-CORRECTION-2026-09-01`, on assigned `dev/v1.6`). The prior V1.6 backend implementation is intact; this dispatch added the actual frontend rendering and action wiring for Planar Normalization + corrected the prior report's H5 evidence claim.
-- **V1.6: OWNER REAL-HOST VERIFICATION NOT YET RUN** (SketchUp 2020 Owner / Owner-AIPM step remains after AIPM source review).
-- **V1.6: NOT CLOSED** (closure is Owner / AIPM-side per dispatch §15 + §9; V1.6 frozen Blueprint §13 requires real-SU2020 Owner verification before closure).
+- **Owner SketchUp 2020 V1.5 verification: PASS** (Final
+  Product Owner confirmation recorded by AIPM)
+- **BLOCK-005 technical direction (unchanged, frozen):**
+  `validate-on-next-interaction → detect host mismatch → fail
+  closed / invalidate → host-authoritative discard +
+  prepare/rebuild`. No global ModelObserver / EntitiesObserver
+  architecture added in V1.5. `persistent_id` is not the
+  correctness Source of Truth. Old Ruby Entity handles must
+  never be trusted after host-state divergence.
+- **V1.6: UI CN SIMPLIFICATION COMPLETE / AWAITING AIPM SOURCE
+  REVIEW** (per dispatch `V16-UI-CN-SIMPLIFICATION-2026-09-01`,
+  on assigned `dev/v1.6`). The prior V1.6 UI-INTEGRATION-
+  CORRECTION packet is intact; this dispatch performed the
+  bounded frontend productization pass described in
+  `Review/CURRENT_PI_REPORT.md`.
+- **V1.6: OWNER REAL-HOST VERIFICATION NOT YET RUN** (SketchUp
+  2020 Owner / Owner-AIPM step remains after AIPM source
+  review).
+- **V1.6: NOT CLOSED** (closure is Owner / AIPM-side per
+  dispatch §15 + §9; V1.6 frozen Blueprint §13 requires
+  real-SU2020 Owner verification before closure).
 - **V1.7: NOT STARTED**
 - **V2 / MCP: OUT OF SCOPE**
 
 Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
 
-- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz` (overwritten by the V1.6 RBZ)
 - Size: **642,037 bytes**
 - Entries: **59**
 - SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
 
-V1.6 UI-INTEGRATION-CORRECTION RBZ candidate (this dispatch):
+V1.6 UI-INTEGRATION-CORRECTION RBZ (prior dispatch, superseded by this dispatch's RBZ):
 
 - Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 - Size: **744,607 bytes** (+11,103 vs V1.6 PI-impl RBZ, the delta is the
@@ -34,16 +61,34 @@ V1.6 UI-INTEGRATION-CORRECTION RBZ candidate (this dispatch):
 - Entries: **62** (unchanged from V1.6 PI-impl).
 - SHA-256: **`c9c1f4f0503957a1fe5073957df2d67996be6ec74cff0d95d5c046ab6bfa585d`**
 
+V1.6 UI-CN-SIMPLIFICATION RBZ candidate (this dispatch):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **762,012 bytes** (+17,405 vs V1.6 UI-INTEGRATION-
+  CORRECTION RBZ, the delta is the Simplified Chinese label
+  maps in app.js + the condensed Working Mode card + the
+  collapsed `更多操作` block + the new collapsed `技术详情`
+  block in index.html + the Simplified Chinese `dialog_title`
+  in dialog_runner.rb + the CN1-CN18 DOM test coverage + the
+  Ruby source-level CN guards).
+- Entries: **62** (unchanged).
+- SHA-256: **`BBDF9BC1277878AD1B8B83A5FA1C9B37A6F26EC75D979F8BE6CFC8BCBAB0F7D9`**
+
 Packaged `html/app.js` SHA-256:
-**`b0056640d283a40e0db71f54f1b5405554ebc4d08ed5e96772cd6bd2f5c820d0`**
-(byte-identical to the in-tree source -- the RBZ contains the updated
-frontend).
+**`40133806BA6626B331DAB874C1B8CF6A3645810A0223BB88E0E728D00A96AE11`**
+Packaged `html/index.html` SHA-256:
+**`6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`**
+Packaged `html/style.css` SHA-256:
+**`3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`**
+
+All three packaged dialog assets are byte-identical to the
+in-tree source (per the existing smoke-test contract).
 
 Next expected AIPM action: AIPM direct source review of the V1.6
-UI integration correction packet against the frozen Blueprint + the
-prior V1.6 review evidence, then (on AIPM PASS) the Owner SU2020
-real-host verification gate. Codex review is NOT a routine reviewer
-for V1.6 and was NOT invoked.
+UI CN simplification packet against the frozen Blueprint + the
+prior V1.6 review evidence, then (on AIPM PASS) the Owner
+SU2020 real-host verification gate. Codex review is NOT a
+routine reviewer for V1.6 and was NOT invoked.
 
 ## V1.6 UI-INTEGRATION-CORRECTION DISPATCH (THIS UPDATE)
 
@@ -167,6 +212,151 @@ to make the already-registered callbacks reachable from the
 shipped frontend, plus a one-line trivial snapshot-state
 derivation fix in the runner so the UI does not falsely render
 NOT_COMPUTED after a terminal Apply.
+
+V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN. V1.6 NOT CLOSED.
+
+## V1.6 UI-CN-SIMPLIFICATION DISPATCH (THIS UPDATE)
+
+Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-2026-09-01
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
+prior V1.6 UI-INTEGRATION-CORRECTION packet is intact; this
+dispatch performed the bounded frontend productization pass
+per dispatch §0: Simplified Chinese localization of all
+normal user-facing text + materially simpler default UI +
+ONE primary CTA hierarchy + collapsed `技术详情` block
+preserving the full data contract. The frozen V1.6 Stage
+Technical Blueprint + the V1.6 backend (Planar
+Normalization analyzer / proposer / executor / tolerance /
+adapter / working mode runner / dialog runner) are
+UNTOUCHED.)
+
+This dispatch changed:
+
+  - `extension/su_ai_plugin/html/app.js`:
+    - Added Simplified Chinese label maps
+      (`ISSUE_TYPE_LABELS_CN`, `LAYER_ROLE_LABELS_CN`,
+      `LAYER_VISIBILITY_LABELS_CN`, `SEVERITY_LABELS_CN`,
+      `WORKSPACE_STATE_LABELS_CN`, `PN_STATE_LABELS_CN`,
+      `FIELD_LABEL_CN`, `ACTION_LABEL_CN`,
+      `SECTION_LABEL_CN`).
+    - Added `issueTypeLabelCN()` / `layerRoleLabelCN()` /
+      `workspaceStateSentenceCN()` helpers.
+    - Added `renderPrimaryAction()` (ONE primary CTA per
+      current workspace + planar normalization state;
+      unavailable actions are HIDDEN, not rendered as
+      disabled).
+    - Added `renderMoreActions()` (collapsed `更多操作`
+      block carrying the secondary Discard / Rebuild
+      controls).
+    - Added `renderTechnicalDetails()` (collapsed `技术详情`
+      block preserving source_snapshot_id /
+      source_fingerprint_digest / execution_config_digest /
+      raw workspace state / per-action audit (status,
+      action_id, rule_id, survivor_id, removed_count,
+      source_count, basis) / raw normalization audit
+      (status, rule_id, rule_version, target_z,
+      max_movement, applied_count, failed_count, reason)).
+    - Added `renderDuplicateRepairUserRow()` (condensed
+      Simplified Chinese "重复线清理：已处理 X，跳过 Y，
+      失败 Z" row in the default Working Mode list).
+    - Rewrote `renderPlanarNormalization()` to render the
+      condensed Chinese card (`平面校正` / `目标 Z` /
+      `待移动顶点` / `异常点` / `已移动` / `最大校正量` /
+      `保留异常项` / `失败原因`).
+    - Rewrote `renderWorkingMode()` for the new layout:
+      concise Chinese status sentence + condensed
+      user-facing rows + ONE primary CTA + collapsed
+      `更多操作`.
+  - `extension/su_ai_plugin/html/index.html`:
+    - `<title>` `CAD Analyzer Result` → `CAD 检查结果`.
+    - `<h1>` `CAD Analyzer Result` → `CAD 检查结果`.
+    - Default `#selection-info` text `No selection` →
+      `未选择对象`.
+    - `<html lang="en">` → `<html lang="zh-CN">`.
+    - Restructured section order: Working Mode is now BEFORE
+      Layers / Issues by Layer / Face Inventory (the
+      secondary sections are below the primary Working Mode
+      + Technical Details blocks).
+    - Added the collapsed `<details id="technical-details-
+      section">` block with `<summary id="technical-details-
+      summary">技术详情</summary>`.
+    - Translated the static `<summary>` headers to
+      Simplified Chinese (`处理工作区`, `按图层查看问题`,
+      `图层信息`, `面信息`).
+  - `extension/su_ai_plugin/html/style.css`:
+    - Added Simplified-Chinese-friendly font stack
+      (PingFang SC, Microsoft YaHei).
+    - Added styles for the condensed Working Mode card,
+      primary CTA prominence (border weight + font-weight;
+      NO new color selectors), the collapsed `更多操作`
+      block, and the `技术详情` block (monospace, neutral
+      palette).
+  - `extension/su_ai_plugin/dialog_runner.rb`:
+    - `dialog_title: 'CAD Analyzer Result'` →
+      `'CAD 检查结果'`.
+
+Production files NOT modified by this dispatch:
+- `planar_normalization_analyzer.rb`,
+  `planar_normalization_proposer.rb`,
+  `planar_normalization_executor.rb`, `tolerance.rb`,
+  `analysis_config.rb`, `derived_workspace_adapter.rb`,
+  `su_derived_workspace_adapter.rb`, `working_mode_runner.rb`,
+  `main.rb`. The V1.6 frozen Blueprint + the V1.6 backend
+  are unchanged.
+
+Test files updated:
+  - `tests/test_html_render_dom.js`:
+    - Updated all English label assertions to Simplified
+      Chinese.
+    - Updated working-mode button structure expectations
+      (ONE primary CTA + collapsed `更多操作`; NO disabled
+      buttons).
+    - Updated V15 BLOCK-004 audit-row placement (now under
+      `技术详情`, NOT in the default Working Mode list).
+    - Updated UI1-UI8 Simplified Chinese V1.6 Planar
+      Normalization card + locked primary CTA behavior.
+    - Added the CN1-CN18 block per dispatch §10 (54
+      explicit assertions).
+    - Total: 240+ existing assertions + 54 new = 294/294
+      PASS / 0 FAIL.
+  - `tests/test_html_render.rb`:
+    - Updated `ISSUE_TYPE_LABELS` / `LAYER_ROLE_LABELS` /
+      `LAYER_VISIBILITY_LABELS` source-level assertions to
+      their `_CN` counterparts.
+    - Updated the working-mode-section position expectation
+      (Working Mode is now BEFORE the secondary collapsed
+      sections).
+    - Updated the `CAD Analyzer Result` title assertion to
+      `CAD 检查结果`.
+    - 55/55 html_render PASS (full source-level CN guard).
+
+Test evidence (this dispatch):
+
+- Full Ruby suite: **843 / 843 PASS** (was 843 before this
+  dispatch; no regressions; the CN guard assertions are
+  additive).
+- V16 substring: **26 / 26 PASS** (P1-P9, G1-G6, H1-H6,
+  T1-T3, I1-I3) — the V1.6 backend behavior is unchanged.
+- V15 substring: **149 / 149 PASS** (BLOCK-005 closed,
+  duplicate-repair semantics unchanged).
+- RBZ smoke substring: **9 / 9 PASS**.
+- Node DOM (`tests/test_html_render_dom.js`): **294/294
+  PASS** (54 new CN1-CN18 + 240 existing assertions).
+- `git diff --check`: clean.
+
+CODEX_TRIGGER: **NO** (per dispatch §8). No material repo-
+aware issue was uncovered; the V1.6 backend architecture is
+unchanged; the prior frozen PlanarNormalizationAnalyzer /
+Proposer / Executor / Tolerance / WorkingModeRunner /
+DialogRunner work is intact and re-verified by 26 V16 tests.
+The UI change is the smallest frontend productization seam
+needed to satisfy the dispatch §0 Owner requirements:
+Simplified Chinese localization + materially simpler default
+UI + ONE primary CTA hierarchy + collapsed `技术详情` block.
+The destructive Apply Safe Normalization action wiring is
+unchanged (the visible button label is Simplified Chinese;
+the internal `data-action="apply_planar_normalization"`
+callback name is preserved verbatim).
 
 V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN. V1.6 NOT CLOSED.
 

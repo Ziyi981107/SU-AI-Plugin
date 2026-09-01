@@ -84,7 +84,8 @@ test 'html_render: index.html references locked header elements' do
   assert File.exist?(HR_HTML_INDEX), "missing: #{HR_HTML_INDEX}"
   src = File.read(HR_HTML_INDEX)
   assert_match(/<header>/, src)
-  assert_match(/CAD Analyzer Result/, src)
+  # V1.6 UI-CN-SIMPLIFICATION: dialog title is Simplified Chinese.
+  assert_match(/CAD 检查结果/, src)
   assert_match(/<section id="summary">/, src)
   assert_match(/<section id="groups">/, src)
   assert_match(/<div id="toast"/, src)
@@ -210,20 +211,22 @@ test 'html_render: render outputs per-issue-type counters in locked order (BLOCK
   assert_equal 0, exit_code, "node test exited #{exit_code}; output:\n#{out}"
   assert_match(/^PASS\s*$/, out, "node test did not PASS:\n#{out}")
   # Cross-check the critical labels the BLOCK-006-R2 contract calls
-  # out by name.
-  assert_match(/ASSERT summary: Short Edges: 1 present PASS/, out)
-  assert_match(/ASSERT summary: Duplicate Candidates: 0 present PASS/, out)
+  # out by name. V1.6 UI-CN-SIMPLIFICATION: the labels are now
+  # Simplified Chinese (短线 / 重复线候选 / etc.).
+  assert_match(/ASSERT summary: 短线: 1 present PASS/, out)
+  assert_match(/ASSERT summary: 重复线候选: 0 present PASS/, out)
   assert_match(/ASSERT summary: no "\[object Object\]" in any rendered text PASS/, out)
   assert_match(/ASSERT order: per-issue rows in canonical order/, out)
   assert_match(/ASSERT summary: 7 data-issue-type attrs present/, out)
 end
 
-test 'html_render: app.js exports ISSUE_TYPE_LABELS for the locked render order (BLOCK-006-R2)' do
+test 'html_render: app.js exports ISSUE_TYPE_LABELS_CN for the locked render order (BLOCK-006-R2)' do
   src = File.read(HR_HTML_APPJS)
-  # The render function must iterate over a fixed ISSUE_TYPE_LABELS
+  # The render function must iterate over a fixed ISSUE_TYPE_LABELS_CN
   # array (the locked canonical order). The labels are exposed on
-  # ROOT.ISSUE_TYPE_LABELS so the test harness can introspect.
-  assert_match(/ROOT\.ISSUE_TYPE_LABELS\s*=\s*ISSUE_TYPE_LABELS/, src)
+  # ROOT.ISSUE_TYPE_LABELS_CN so the test harness can introspect.
+  # V1.6 UI-CN-SIMPLIFICATION: the labels are Simplified Chinese.
+  assert_match(/ROOT\.ISSUE_TYPE_LABELS_CN\s*=\s*ISSUE_TYPE_LABELS_CN/, src)
   # The array is the canonical order per IssueRegistry.
   expected_types = %w[
     duplicate_edge_candidate
@@ -236,7 +239,22 @@ test 'html_render: app.js exports ISSUE_TYPE_LABELS for the locked render order 
   ]
   expected_types.each do |t|
     assert_match(/'#{t}'/, src,
-                 "ISSUE_TYPE_LABELS must include '#{t}' in canonical order")
+                 "ISSUE_TYPE_LABELS_CN must include '#{t}' in canonical order")
+  end
+  # V1.6 UI-CN-SIMPLIFICATION: each canonical type has a
+  # Simplified Chinese label.
+  expected_cn_labels = {
+    'duplicate_edge_candidate'  => '重复线候选',
+    'short_edge'                => '短线',
+    'open_endpoint'             => '未闭合端点',
+    'gap_candidate'             => '间隙候选',
+    'significant_non_zero_z'    => '明显非零 Z',
+    'abnormal_large_coord'      => '异常大坐标',
+    'deep_nesting'              => '嵌套层级过深'
+  }
+  expected_cn_labels.each do |t, cn|
+    assert_match(/'#{cn}'/, src,
+                 "ISSUE_TYPE_LABELS_CN must include Simplified Chinese '#{cn}' for '#{t}'")
   end
 end
 
@@ -374,32 +392,38 @@ test 'html_render (L4): index.html layers-section is rendered closed by default 
                '<details id="layers-section"> must NOT carry the `open` attribute (closed by default per ChatGPT §11.5)')
 end
 
-test 'html_render (L4): app.js exports LAYER_ROLE_LABELS in canonical order (no OFFSCREEN, R007)' do
+test 'html_render (L4): app.js exports LAYER_ROLE_LABELS_CN in canonical order (no OFFSCREEN, R007)' do
   src = File.read(HR_HTML_APPJS_L4)
-  assert_match(/ROOT\.LAYER_ROLE_LABELS\s*=\s*LAYER_ROLE_LABELS/, src,
-               'app.js must expose ROOT.LAYER_ROLE_LABELS for harness introspection')
+  # V1.6 UI-CN-SIMPLIFICATION: the visible labels are Simplified
+  # Chinese (LAYER_ROLE_LABELS_CN). The English form is no longer
+  # the source of truth for visible presentation; the locked
+  # canonical role Symbols (dimension / annotation / guide /
+  # construction / unknown) are still encoded as the keys of
+  # the array pairs.
+  assert_match(/ROOT\.LAYER_ROLE_LABELS_CN\s*=\s*LAYER_ROLE_LABELS_CN/, src,
+               'app.js must expose ROOT.LAYER_ROLE_LABELS_CN for harness introspection')
   expected_roles = %w[dimension annotation guide construction unknown]
   expected_roles.each do |r|
     assert_match(/['"]#{r}['"]/, src,
-                 "LAYER_ROLE_LABELS must include '#{r}' (canonical role label, per R007)")
+                 "LAYER_ROLE_LABELS_CN must include '#{r}' (canonical role label, per R007)")
   end
   # No OFFSCREEN role (R007 removed the symbol).
   refute_match(/['"]offscreen['"]/, src,
-               "LAYER_ROLE_LABELS must NOT include 'offscreen' (R007 removed the OFFSCREEN role)")
+               "LAYER_ROLE_LABELS_CN must NOT include 'offscreen' (R007 removed the OFFSCREEN role)")
 end
 
-test 'html_render (L4): app.js exports LAYER_VISIBILITY_LABELS with visible/hidden/unknown keys' do
+test 'html_render (L4): app.js exports LAYER_VISIBILITY_LABELS_CN with visible/hidden/unknown keys' do
   src = File.read(HR_HTML_APPJS_L4)
-  assert_match(/ROOT\.LAYER_VISIBILITY_LABELS\s*=\s*LAYER_VISIBILITY_LABELS/, src,
-               'app.js must expose ROOT.LAYER_VISIBILITY_LABELS')
-  assert_match(/LAYER_VISIBILITY_LABELS\s*=\s*\{/, src,
-               'LAYER_VISIBILITY_LABELS is an object literal')
-  assert_match(/visible:\s*['"]Visible['"]/, src,
-               'LAYER_VISIBILITY_LABELS.visible is "Visible"')
-  assert_match(/hidden:\s*['"]Off-screen['"]/, src,
-               'LAYER_VISIBILITY_LABELS.hidden is "Off-screen"')
-  assert_match(/unknown:\s*['"]Visibility: unknown['"]/, src,
-               'LAYER_VISIBILITY_LABELS.unknown is "Visibility: unknown"')
+  assert_match(/ROOT\.LAYER_VISIBILITY_LABELS_CN\s*=\s*LAYER_VISIBILITY_LABELS_CN/, src,
+               'app.js must expose ROOT.LAYER_VISIBILITY_LABELS_CN')
+  assert_match(/LAYER_VISIBILITY_LABELS_CN\s*=\s*\{/, src,
+               'LAYER_VISIBILITY_LABELS_CN is an object literal')
+  assert_match(/visible:\s*['"]\u53ef\u89c1['"]/, src,
+               'LAYER_VISIBILITY_LABELS_CN.visible is "可见" (Simplified Chinese)')
+  assert_match(/hidden:\s*['"]\u9690\u85cf['"]/, src,
+               'LAYER_VISIBILITY_LABELS_CN.hidden is "隐藏" (Simplified Chinese)')
+  assert_match(/unknown:\s*['"]\u53ef\u89c1\u6027\u672a\u77e5['"]/, src,
+               'LAYER_VISIBILITY_LABELS_CN.unknown is "可见性未知" (Simplified Chinese)')
 end
 
 test 'html_render (L4): app.js exposes ROOT.renderLayers (callable surface)' do
@@ -724,14 +748,36 @@ test 'html_render (V1.4): working-mode-section is rendered closed by default (no
                '<details id="working-mode-section"> must NOT carry the `open` attribute (closed by default per directive 030 Stage 4)')
 end
 
-test 'html_render (V1.4): working-mode-section is positioned AFTER face-inventory-section' do
+test 'html_render (V1.4 + V1.6 UI-CN-SIMPLIFICATION): working-mode-section is positioned AFTER groups + BEFORE layer-issues/layers/face-inventory sections' do
   src = File.read(HR_HTML_INDEX_V14)
-  pos_fi  = src.index('id="face-inventory-section"')
-  pos_wm  = src.index('id="working-mode-section"')
-  refute_nil pos_fi, '#face-inventory-section element must exist'
-  refute_nil pos_wm, '#working-mode-section element must exist'
-  assert pos_fi < pos_wm,
-         '#working-mode-section must come AFTER #face-inventory-section (per directive 030 Stage 4)'
+  pos_groups  = src.index('id="groups"')
+  pos_wm      = src.index('id="working-mode-section"')
+  pos_layer_i = src.index('id="layer-issues-section"')
+  pos_layers  = src.index('id="layers-section"')
+  pos_fi      = src.index('id="face-inventory-section"')
+  pos_tech    = src.index('id="technical-details-section"')
+  refute_nil pos_groups, '#groups section must exist'
+  refute_nil pos_wm, '#working-mode-section must exist'
+  refute_nil pos_layer_i, '#layer-issues-section must exist'
+  refute_nil pos_layers, '#layers-section must exist'
+  refute_nil pos_fi, '#face-inventory-section must exist'
+  refute_nil pos_tech, '#technical-details-section must exist'
+  # V1.6 UI-CN-SIMPLIFICATION (per dispatch §3): the default
+  # visible structure is A. Header + B. #summary + C. #groups +
+  # D. 处理工作区 (working-mode-section) + E. 平面校正 (rendered
+  # inside #working-mode-list) + 技术详情 (collapsed by default).
+  # All other sections are collapsed by default and appear
+  # BELOW the primary Working Mode + Technical Details blocks.
+  assert pos_groups < pos_wm,
+         '#working-mode-section must come AFTER #groups'
+  assert pos_wm < pos_tech,
+         '#technical-details-section must come AFTER #working-mode-section (V1.6 UI-CN-SIMPLIFICATION §3 default layout)'
+  assert pos_tech < pos_layer_i,
+         '#layer-issues-section must come AFTER #technical-details-section'
+  assert pos_layer_i < pos_layers,
+         '#layers-section must come AFTER #layer-issues-section'
+  assert pos_layers < pos_fi,
+         '#face-inventory-section must come AFTER #layers-section'
 end
 
 test 'html_render (V1.4): app.js exposes renderWorkingMode on ROOT' do

@@ -1,9 +1,13 @@
 /*
- * extension/html/style.css — severity palette (R005).
- *   :low    = neutral
- *   :medium = orange
- *   :high   = red
- * No animation, no overlay, no source-model mutation.
+ * extension/html/style.css — V1.6 UI-CN-SIMPLIFICATION
+ *   severity palette (R005):
+ *     :low    = neutral
+ *     :medium = orange
+ *     :high   = red
+ *   neutral palette only -- no new role / state / severity color
+ *   selectors introduced in V1.6 (per dispatch §8 / R008).
+ *   The primary CTA + the `更多操作` collapsed <details> are
+ *   visually distinguished only by layout (no new colors).
  */
 
 :root {
@@ -19,7 +23,7 @@
 * { box-sizing: border-box; }
 
 body {
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   margin: 0;
   padding: 0;
   background: var(--bg);
@@ -295,8 +299,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   cursor: default;
-  font-size: 12px;
-  color: var(--text);
+  font-size: 13px;
+  color: var(--fg);
 }
 .working-mode-row > * + * {
   margin-left: 8px;
@@ -305,8 +309,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 500;
 }
 .working-mode-row .value {
-  color: var(--muted);
-  font-family: var(--mono);
+  color: var(--fg);
+  font-size: 13px;
   word-break: break-all;
 }
 .working-mode-row[data-state="failed"] .label {
@@ -319,17 +323,101 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 .working-mode-actions {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
 }
-.working-mode-actions button {
-  /* Inherit neutral button style from the page; no new color
-     selectors beyond what is already in style.css. */
+.working-mode-actions > button {
   font: inherit;
   cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
 }
-.working-mode-actions button[disabled] {
+.working-mode-actions > button[disabled] {
   cursor: default;
   opacity: 0.5;
+}
+
+/* ============================================================
+ * V1.6 UI-CN-SIMPLIFICATION: primary CTA + collapsed More Actions
+ * (per dispatch §4 + §4.5). The primary CTA is the FIRST child
+ * of #working-mode-actions and is rendered as a single,
+ * visually-prominent button. Secondary controls live inside a
+ * collapsed <details class="more-actions"> so the default
+ * screen only shows ONE clear next-action button.
+ * No new color selectors -- the primary CTA is distinguished
+ * by layout + border weight only.
+ * ============================================================ */
+.working-mode-actions > button[data-action="prepare_workspace"],
+.working-mode-actions > button[data-action="compute_planar_normalization"],
+.working-mode-actions > button[data-action="apply_planar_normalization"] {
+  font-weight: 600;
+  border-color: var(--fg);
+  background: #fdfdfd;
+}
+.working-mode-actions details.more-actions {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fafafa;
+}
+.working-mode-actions details.more-actions > summary {
+  cursor: pointer;
+  font-weight: 500;
+  padding: 6px 10px;
+}
+.working-mode-actions .more-actions-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+}
+.working-mode-actions .more-actions-inner > button {
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+.working-mode-actions .more-actions-inner > button[disabled] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ============================================================
+ * V1.6 UI-CN-SIMPLIFICATION: 技术详情 block (per dispatch §5.5).
+ * A small monospace block that preserves the full data contract
+ * (source snapshot id / fingerprint / config digest / raw
+ * workspace state / per-action audit / raw normalization audit).
+ * It is rendered CLOSED by default and is visually subordinate
+ * to the Working Mode card above it.
+ * ============================================================ */
+#technical-details-list {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+}
+.tech-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+}
+.tech-row > * + * {
+  margin-left: 8px;
+}
+.tech-row .label {
+  font-weight: 500;
+  color: var(--muted);
+}
+.tech-row .value {
+  color: var(--fg);
+  word-break: break-all;
+}
+.tech-row.action-audit-row {
+  padding-left: 24px;
 }

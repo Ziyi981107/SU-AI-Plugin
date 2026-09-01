@@ -19,6 +19,45 @@
  * canonical issue types is locked and matches
  * `SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES`.
  *
+ * V1.6 UI-CN-SIMPLIFICATION (per dispatch
+ * V16-UI-CN-SIMPLIFICATION-2026-09-01):
+ *   - All normal user-facing text is Simplified Chinese.
+ *   - Internal data identifiers (issue_id, snapshot_id, fingerprint,
+ *     config_digest, action_id, rule_id, survivor_id, source
+ *     occurrence counts, raw audit rows, internal state enum names)
+ *     are NO LONGER visible in the default primary Working Mode
+ *     area; they are preserved under a collapsed `技术详情`
+ *     section so the data contract is NOT deleted.
+ *   - The default UI shows one clear primary next-action whenever
+ *     possible (Prepare / Analyze Planarity / Apply Safe
+ *     Normalization). Unavailable actions are HIDDEN rather than
+ *     rendered as disabled buttons.
+ *   - Per-state condensed Working Mode rows; technical detail
+ *     block (`技术详情`) is collapsed by default and lists source
+ *     snapshot id, source fingerprint, execution config digest,
+ *     raw workspace state, duplicate repair technical audit rows,
+ *     per-action action_id/rule_id/survivor_id/source occurrence
+ *     count, raw normalization reason, raw normalization audit
+ *     fields.
+ *   - V1.6 Planar Normalization `Ready` UI shows a compact
+ *     primary card; the locked Blueprint §11 fields (Target Z /
+ *     Eligible / Movable / Outliers / Affected / Skipped /
+ *     Max movement) and the post-apply audit are rendered as
+ *     CONCISE Chinese rows under the card when applicable.
+ *   - Callback action names (prepare_workspace, discard_workspace,
+ *     rebuild_workspace, compute_planar_normalization,
+ *     apply_planar_normalization) are preserved verbatim. The
+ *     destructive Apply Safe Normalization action MUST NOT appear
+ *     enabled in any state other than READY_TO_NORMALIZE (per
+ *     dispatch §2.2 bullet 2 / §10 CN5).
+ *   - V1.5 Duplicate Repair summary row is condensed to the
+ *     user-facing line ("重复线清理：已处理 X，跳过 Y，失败 Z")
+ *     while the full audit (action_id, rule_id, survivor_id,
+ *     source occurrence count) is preserved in `技术详情`.
+ *   - The textContent-only contract for user-supplied strings is
+ *     preserved. No innerHTML / no eval / no new Function / no
+ *     document.write.
+ *
  * V1.1 (per plan §4.10):
  *   - renderLayers(payload.layerGroups) renders the dialog Layers
  *     section. Each layer row exposes both a `role` badge AND a
@@ -47,16 +86,21 @@
   // See addAction() below for the host-action dispatch path.
   var ROOT = window.SUAIP || (window.SUAIP = {});
 
-  // Locked issue-type labels (matches Stage 6 plan section 6.7).
-  // Order matters — the renderer emits them in this order.
-  var ISSUE_TYPE_LABELS = [
-    ['duplicate_edge_candidate',  'Duplicate Candidates'],
-    ['short_edge',                'Short Edges'],
-    ['open_endpoint',             'Open Endpoints'],
-    ['gap_candidate',             'Gap Candidates'],
-    ['significant_non_zero_z',    'Significant Non-zero Z'],
-    ['abnormal_large_coord',      'Abnormal Large Coordinate'],
-    ['deep_nesting',              'Deep Nesting']
+  // V1.6 UI-CN-SIMPLIFICATION: locked Simplified Chinese label
+  // map for normal user-facing presentation. Internal data
+  // identifiers (issue_id, snapshot_id, fingerprint, etc.) are
+  // intentionally NOT translated; they remain as raw server
+  // values inside `技术详情`. Order matters for ISSUE_TYPE_LABELS
+  // (matches SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES)
+  // but is otherwise a presentation concern only.
+  var ISSUE_TYPE_LABELS_CN = [
+    ['duplicate_edge_candidate',  '重复线候选'],
+    ['short_edge',                '短线'],
+    ['open_endpoint',             '未闭合端点'],
+    ['gap_candidate',             '间隙候选'],
+    ['significant_non_zero_z',    '明显非零 Z'],
+    ['abnormal_large_coord',      '异常大坐标'],
+    ['deep_nesting',              '嵌套层级过深']
   ];
 
   // V1.1 (per plan §4.10): locked layer-role labels. 5 canonical roles
@@ -65,12 +109,12 @@
   // issue-type order above (R012). The Ruby mapper already enforces
   // role bucket order when sorting layerGroups; JS preserves the
   // received order without re-sorting.
-  var LAYER_ROLE_LABELS = [
-    ['dimension',    'Dimension'],
-    ['annotation',   'Annotation'],
-    ['guide',        'Guide'],
-    ['construction', 'Construction'],
-    ['unknown',      'Unknown']
+  var LAYER_ROLE_LABELS_CN = [
+    ['dimension',    '尺寸标注'],
+    ['annotation',   '注释'],
+    ['guide',        '辅助线'],
+    ['construction', '构造线'],
+    ['unknown',      '未识别']
   ];
 
   // V1.1 (per plan §4.10): locked layer visibility labels. Mirrors
@@ -79,10 +123,98 @@
   // visibility_label on each row is pre-computed server-side
   // (LayerRole.visibility_label) and JS uses the per-row string
   // verbatim; this table is exposed for harness introspection only.
-  var LAYER_VISIBILITY_LABELS = {
-    visible: 'Visible',
-    hidden:  'Off-screen',
-    unknown: 'Visibility: unknown'
+  var LAYER_VISIBILITY_LABELS_CN = {
+    visible: '可见',
+    hidden:  '隐藏',
+    unknown: '可见性未知'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: severity Simplified Chinese labels.
+  // Server-side severity strings are the canonical Symbols
+  // ('high' / 'medium' / 'low'); JS maps them to concise Chinese
+  // presentation in the badge text only.
+  var SEVERITY_LABELS_CN = {
+    high:   '高',
+    medium: '中',
+    low:    '低'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: workspace state Simplified Chinese
+  // labels for the Working Mode summary line.
+  var WORKSPACE_STATE_LABELS_CN = {
+    none:      '未准备',
+    building:  '正在准备',
+    ready:     '已准备',
+    discarded: '已放弃',
+    failed:    '处理失败'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: planar normalization state Simplified
+  // Chinese labels (matches Blueprint §11).
+  var PN_STATE_LABELS_CN = {
+    NOT_COMPUTED:        '未检查',
+    READY_TO_NORMALIZE:  '可安全校正',
+    REVIEW_REQUIRED:     '需要人工确认',
+    NO_CANDIDATE:        '无需校正',
+    APPLIED:             '已校正',
+    FAILED:              '校正失败',
+    INVALID_TOLERANCE:   '配置无效',
+    INVALID_INPUT:       '数据无效'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: short user-facing row labels for the
+  // default-visible Working Mode card. Internal identifiers that
+  // still need to be visible in `技术详情` (Source Snapshot /
+  // Fingerprint / Config) keep their English keys for the DOM
+  // `data-field` attribute, but the visible text is Chinese.
+  var FIELD_LABEL_CN = {
+    sourceSnapshot:           '源快照',
+    sourceFingerprint:        '源指纹',
+    executionConfig:          '执行配置',
+    duplicateRepairs:         '重复线清理',
+    planarNormalization:      '平面校正',
+    targetZ:                  '目标 Z',
+    eligibleVertices:         '可处理顶点',
+    proposedMovable:          '待移动顶点',
+    outliers:                 '异常点',
+    affectedDerivedEdges:     '受影响线段',
+    skippedScope:             '已跳过',
+    maxProposedMovement:      '最大校正量',
+    reviewReason:             '原因',
+    appliedTargetZ:           '目标 Z',
+    movedApplied:             '已移动',
+    maxMovement:              '最大校正量',
+    outliersUnchanged:        '保留异常项',
+    failureReason:            '失败原因',
+    lastError:                '上次错误'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: action button Simplified Chinese
+  // labels. The internal data-action attribute (callback name) is
+  // unchanged; only the visible button text is translated.
+  var ACTION_LABEL_CN = {
+    prepare_workspace:             '准备处理',
+    discard_workspace:             '放弃工作副本',
+    rebuild_workspace:             '重新生成',
+    compute_planar_normalization:  '检查平面偏差',
+    apply_planar_normalization:    '应用平面校正'
+  };
+
+  // V1.6 UI-CN-SIMPLIFICATION: section header Simplified Chinese
+  // labels (rendered in the index.html <summary> static text AND
+  // populated by JS at render time).
+  var SECTION_LABEL_CN = {
+    main:                    'CAD 检查结果',
+    noSelection:             '未选择对象',
+    issues:                  '问题概览',
+    inspectionDetails:       '检查详情',
+    layerIssues:             '按图层查看问题',
+    layers:                  '图层信息',
+    faceInventory:           '面信息',
+    workingMode:             '处理工作区',
+    planarNormalization:     '平面校正',
+    technicalDetails:        '技术详情',
+    moreActions:             '更多操作'
   };
 
   function render(payload) {
@@ -100,13 +232,24 @@
     // 'Faces' and 'Faces With Holes' as additive counters derived
     // from payload.summary (which UIBridge populates from
     // preflight.face_count + preflight.faces_with_holes_count).
+    // V1.6 UI-CN-SIMPLIFICATION: scalar labels are Simplified
+    // Chinese in normal user-facing presentation.
     var scalarKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings',
                      'faces', 'faces_with_holes'];
+    var scalarLabelCN = {
+      edges:               '线段',
+      vertices:            '顶点',
+      non_zero_z_vertices: '非零 Z 顶点',
+      warnings:            '警告',
+      faces:               '面',
+      faces_with_holes:    '含洞面'
+    };
     scalarKeys.forEach(function (k) {
       var stat = document.createElement('div');
       stat.className = 'stat';
       stat.setAttribute('data-stat', k);
-      stat.textContent = humanizeKey(k) + ': ' + (payload.summary ? (payload.summary[k] || 0) : 0);
+      var label = scalarLabelCN[k] || humanizeKey(k);
+      stat.textContent = label + ': ' + (payload.summary ? (payload.summary[k] || 0) : 0);
       summary.appendChild(stat);
     });
 
@@ -116,7 +259,7 @@
     // default to 0 (per the locked count-zero-required-categories
     // contract).
     var issues = (payload.summary && payload.summary.issues) || {};
-    ISSUE_TYPE_LABELS.forEach(function (pair) {
+    ISSUE_TYPE_LABELS_CN.forEach(function (pair) {
       var type = pair[0];
       var label = pair[1];
       var stat = document.createElement('div');
@@ -133,7 +276,10 @@
       var det = document.createElement('details');
       det.open = !!g.defaultOpen;
       var sum = document.createElement('summary');
-      sum.textContent = humanizeType(g.type) + ' (' + g.count + ')';
+      // V1.6 UI-CN-SIMPLIFICATION: issue group summary label is
+      // Simplified Chinese for the canonical issue types we know.
+      // Unknown groups fall back to a humanized English label.
+      sum.textContent = issueTypeLabelCN(g.type) + ' (' + g.count + ')';
       det.appendChild(sum);
       (g.issues || []).forEach(function (issue) {
         det.appendChild(renderIssue(issue));
@@ -163,7 +309,7 @@
     // non-Array payload.faceInventoryGroups — defaults to "Face
     // Inventory — 0 total (0 with holes)" with zero rows. Rows are
     // aggregate-by-layer (NOT per-face), non-actionable, neutral
-    // styling; reuse the V1.1 role + visibility badge semantics.
+    // styling; reuse the V1.1 layer semantics.
     renderFaceInventory(payload.faceInventoryGroups);
 
     // V1.4 (per directive 030, Stage 4): render the "Working Mode"
@@ -176,7 +322,17 @@
     // side) and exposed by SketchUp's HtmlDialog at
     // window.sketchup.<callback>. window.SUAIP only carries
     // the page functions render/toast (NOT the host actions).
+    //
+    // V1.6 UI-CN-SIMPLIFICATION: the Working Mode card uses the
+    // SIMPLIFIED presentation — one clear primary next action,
+    // a concise user-facing status sentence, condensed V1.5 audit
+    // row (no internal IDs by default), and a condensed V1.6
+    // normalization card. Technical detail rows are emitted to a
+    // SEPARATE `技术详情` collapsed block (renderTechnicalDetails)
+    // so the data contract is preserved without polluting the
+    // default screen.
     renderWorkingMode(payload.derivedWorkspace);
+    renderTechnicalDetails(payload.derivedWorkspace);
   }
 
   function humanizeKey(k) {
@@ -184,6 +340,17 @@
     return k.split('_').map(function (w) {
       return w.charAt(0).toUpperCase() + w.slice(1);
     }).join(' ');
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION: map a canonical issue_type Symbol
+  // to its Simplified Chinese label. Returns the humanized English
+  // form for any unknown type (safe fallback).
+  function issueTypeLabelCN(t) {
+    if (!t) return '';
+    for (var i = 0; i < ISSUE_TYPE_LABELS_CN.length; i++) {
+      if (ISSUE_TYPE_LABELS_CN[i][0] === t) return ISSUE_TYPE_LABELS_CN[i][1];
+    }
+    return humanizeKey(t);
   }
 
   // Per Owner Gate 2 V1.1 NIT (1-2): edge / issue counters must
@@ -221,20 +388,24 @@
     var sev = (issue.severity || 'low').toLowerCase();
     var badge = document.createElement('span');
     badge.className = 'badge sev-' + sev;
-    badge.textContent = sev;
+    // V1.6 UI-CN-SIMPLIFICATION: severity badge text is the
+    // mapped Simplified Chinese label.
+    badge.textContent = SEVERITY_LABELS_CN[sev] || sev;
 
-    var meta = document.createElement('span');
-    meta.className = 'id';
-    meta.textContent = issue.issue_id || '';
-
+    // V1.6 UI-CN-SIMPLIFICATION (dispatch §7): issue ID is hidden
+    // from the primary row. We keep it as a data attribute on the
+    // row for harness introspection + Owner tooltip + the
+    // `技术详情` block, but the primary visible text does NOT
+    // include the raw issue_id.
     var msg = document.createElement('div');
     msg.className = 'msg';
     msg.textContent = issue.message || '';
 
+    // Per dispatch §7 the issue row carries the Chinese severity
+    // badge and one concise Chinese message. The Issue ID is
+    // preserved as a data attribute and exposed under `技术详情`.
     var top = document.createElement('div');
-    top.appendChild(meta);
     top.appendChild(badge);
-
     div.appendChild(top);
     div.appendChild(msg);
 
@@ -254,13 +425,6 @@
     return div;
   }
 
-  function humanizeType(t) {
-    if (!t) return '';
-    return t.split('_').map(function (w) {
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    }).join(' ');
-  }
-
   function toast(msg) {
     var el = document.getElementById('toast');
     if (!el) return;
@@ -275,6 +439,9 @@
   // BEFORE the user opens the details. The locked render contract
   // (textContent only, no innerHTML for user strings, no eval,
   // no new Function) is preserved.
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: per-row role + visibility badge
+  // labels are Simplified Chinese.
   function renderLayers(layerGroups) {
     var layersList = document.getElementById('layers-list');
     var layersSummary = document.getElementById('layers-summary');
@@ -293,8 +460,11 @@
       if (layersList) layersList.appendChild(renderLayerRow(g));
     });
     if (layersSummary) {
-      layersSummary.textContent = 'Layers \u2014 ' + total + ' total (' +
-                                  withIssues + ' with issues)';
+      // V1.6 UI-CN-SIMPLIFICATION: section header text is
+      // Simplified Chinese.
+      layersSummary.textContent = SECTION_LABEL_CN.layers +
+                                  '\u2014 ' + total + ' 个图层（' +
+                                  withIssues + ' 个存在问题）';
     }
   }
 
@@ -307,6 +477,9 @@
   // locate and non-locatable-inert contracts carry through unchanged.
   // Locked render contract preserved: no innerHTML, no eval, no new
   // Function, no document.write.
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: section header + bucket count noun
+  // are Simplified Chinese.
   function renderLayerIssues(layerIssueGroups) {
     var listEl = document.getElementById('layer-issues-list');
     var summaryEl = document.getElementById('layer-issues-summary');
@@ -321,16 +494,14 @@
       if (listEl) listEl.appendChild(renderLayerIssueBucket(b));
     });
     if (summaryEl) {
-      // Per CodeX review 028 V12-NIT-001 (deferred NIT, not blocking
-      // V1.2): use the central formatCount helper for the 'layer(s)'
-      // noun so the singular form '1 layer' reads correctly when
-      // the selection only contributes one layer. The V1.1 Layers
-      // section's 'Layers -- N total (M with issues)' wording is
-      // already word-independent (always 'total'); the V1.2
-      // wording uses 'layer(s)' which the formatCount helper
-      // pluralizes correctly.
-      summaryEl.textContent = 'Issues by Layer \u2014 ' + formatCount(totalBuckets, 'layer') +
-                              ' (' + totalIssues + ' issues)';
+      // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
+      // Chinese ("按图层查看问题— N 个图层（M 个问题）"). The
+      // noun "个图层" already encodes the counter so we do
+      // NOT pass it through formatCount (which would append
+      // a stray "s" for the English pluralization).
+      summaryEl.textContent = SECTION_LABEL_CN.layerIssues +
+                              '\u2014 ' + totalBuckets + ' 个图层' +
+                              '（' + totalIssues + ' 个问题）';
     }
   }
 
@@ -344,6 +515,9 @@
   // (R007), neutral styling, no role color selectors.
   // Locked render contract preserved: no innerHTML, no eval, no new
   // Function, no document.write.
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
+  // Chinese.
   function renderFaceInventory(faceInventoryGroups) {
     var listEl = document.getElementById('face-inventory-list');
     var summaryEl = document.getElementById('face-inventory-summary');
@@ -360,8 +534,11 @@
       if (listEl) listEl.appendChild(renderFaceInventoryRow(b));
     });
     if (summaryEl) {
-      summaryEl.textContent = 'Face Inventory \u2014 ' + totalFaces +
-                              ' total (' + totalHoles + ' with holes)';
+      // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
+      // Chinese.
+      summaryEl.textContent = SECTION_LABEL_CN.faceInventory +
+                              '\u2014 ' + totalFaces +
+                              ' 个面（' + totalHoles + ' 个含洞）';
     }
   }
 
@@ -390,10 +567,17 @@
     name.className = 'layer-name';
     name.textContent = (b && b.name) ? String(b.name) : '';
 
+    // V1.6 UI-CN-SIMPLIFICATION: role badge uses the Simplified
+    // Chinese label map; visibility badge uses the Simplified
+    // Chinese label map. The Ruby mapper still emits a
+    // pre-computed visibility_label per row; if the row is from
+    // a server-side payload that has already been translated we
+    // honor it, otherwise we map from the canonical role /
+    // visibility symbol.
     var roleBadge = document.createElement('span');
     roleBadge.className = 'role-badge';
     roleBadge.textContent = (b && b.role_label) ? String(b.role_label)
-                                                : humanizeKey(role);
+                                                : layerRoleLabelCN(role);
 
     var visBadge = document.createElement('span');
     visBadge.className = 'visibility-badge';
@@ -403,7 +587,7 @@
     var facesCell = document.createElement('span');
     facesCell.className = 'face-count';
     var fc = (b && typeof b.face_count === 'number') ? b.face_count : 0;
-    facesCell.textContent = formatCount(fc, 'face');
+    facesCell.textContent = formatCount(fc, '个面');
 
     var facesSep = document.createElement('span');
     facesSep.className = 'face-count-sep';
@@ -413,7 +597,7 @@
     var holesCell = document.createElement('span');
     holesCell.className = 'holes-count';
     var hc = (b && typeof b.faces_with_holes_count === 'number') ? b.faces_with_holes_count : 0;
-    holesCell.textContent = formatCount(hc, 'face with holes');
+    holesCell.textContent = formatCount(hc, '个含洞面');
 
     div.appendChild(name);
     div.appendChild(roleBadge);
@@ -425,10 +609,58 @@
     return div;
   }
 
-  // V1.4 (per directive 030, Stage 4): render the dialog's
-  // "Working Mode" section. The source is a snapshot of the
-  // WorkingModeRunner (pure-data layer in core/), key
-  // payload.derivedWorkspace.
+  // V1.6 UI-CN-SIMPLIFICATION: map a canonical layer-role Symbol
+  // to its Simplified Chinese label.
+  function layerRoleLabelCN(r) {
+    if (!r) return LAYER_ROLE_LABELS_CN[4][1]; // 'unknown'
+    for (var i = 0; i < LAYER_ROLE_LABELS_CN.length; i++) {
+      if (LAYER_ROLE_LABELS_CN[i][0] === r) return LAYER_ROLE_LABELS_CN[i][1];
+    }
+    return humanizeKey(r);
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION: short Chinese sentence describing
+  // the current workspace state for the default Working Mode
+  // summary line. The full technical state string is preserved in
+  // `技术详情`.
+  function workspaceStateSentenceCN(ws) {
+    var state = (typeof ws.state === 'string') ? ws.state : 'none';
+    var totalEntities = (typeof ws.entity_count === 'number') ? ws.entity_count : 0;
+    switch (state) {
+      case 'none':
+        return '尚未准备工作副本';
+      case 'building':
+        return '正在准备工作副本…';
+      case 'ready':
+        return '工作副本已准备，共 ' + totalEntities + ' 条记录';
+      case 'discarded':
+        return '工作副本已放弃';
+      case 'failed':
+        return '处理失败，需要重新生成';
+      default:
+        return state;
+    }
+  }
+
+  // V1.4 (per directive 030, Stage 4) + V1.6 UI-CN-SIMPLIFICATION:
+  // render the dialog's simplified "Working Mode" section. The
+  // default screen shows:
+  //   - one short Chinese status sentence;
+  //   - one condensed user-facing summary row for the V1.5
+  //     duplicate-repair audit (when present);
+  //   - one condensed user-facing summary row for the V1.6
+  //     planar-normalization card (when present);
+  //   - ONE primary action button (Prepare / Analyze Planarity /
+  //     Apply Safe Normalization) chosen by current workspace +
+  //     normalization state. Unavailable actions are HIDDEN rather
+  //     than rendered as disabled buttons.
+  // Secondary operational controls (Discard / Rebuild) are emitted
+  // to a separate collapsed "更多操作" block when applicable.
+  // Technical detail rows (source snapshot id / fingerprint /
+  // config digest / raw workspace state / per-action audit /
+  // raw normalization audit) are emitted to renderTechnicalDetails
+  // (under `技术详情`) so the data contract is preserved without
+  // polluting the default screen.
   //
   // Locked contract:
   //   - All user-facing text rendered via textContent (no
@@ -438,46 +670,13 @@
   //     is INFO ONLY -- it tells the user where the captured
   //     source snapshot came from and what workspace state
   //     is current.
-  //   - Action buttons (Prepare / Discard / Rebuild) wire to
-  //     window.SUAIP callbacks exposed by DialogRunner. The
-  //     buttons are inert when the action is not available
-  //     in the current state (disabled attribute).
+  //   - Action buttons wire to window.sketchup.<callback> (no
+  //     eval). The buttons are HIDDEN when not available in the
+  //     current state (NOT rendered as disabled).
   //   - No new role / state color selectors.
-  //
-  // States:
-  //   - 'none'     -> No working copy yet. Show "No working
-  //                   copy yet." + Prepare button enabled.
-  //   - 'building' -> Workspace is being built. Show
-  //                   "Building..." + no action buttons.
-  //   - 'ready'    -> Workspace exists. Show entity count +
-  //                   config digest + Discard + Rebuild
-  //                   buttons.
-  //   - 'discarded'-> Workspace was discarded. Show
-  //                   "Discarded" + Rebuild button enabled.
-  //   - 'failed'   -> A build / discard step raised. Show
-  //                   last_error + Rebuild button enabled.
-  //
-  // V1.6 (per directive V16-UI-INTEGRATION-CORRECTION-2026-09-01):
-  // when payload.derivedWorkspace.planar_normalization is an
-  // object, render a compact "Planar normalization" block
-  // from that sub-snapshot. Exposes the locked Blueprint §11
-  // rows (State / Target Z / Eligible / Movable / Outliers /
-  // Skipped / Max movement) plus a truthful post-apply
-  // audit (when present). Action wiring:
-  //   - state == 'NOT_COMPUTED' AND workspace.state == 'ready'
-  //     -> "Analyze Planarity" button (callback:
-  //     compute_planar_normalization).
-  //   - state == 'READY_TO_NORMALIZE'
-  //     -> "Apply Safe Normalization" button (callback:
-  //     apply_planar_normalization). This destructive
-  //     button MUST NOT appear enabled in any other state.
-  //   - All other states (REVIEW_REQUIRED / NO_CANDIDATE /
-  //     APPLIED / FAILED / invalid_tolerance / invalid_input)
-  //     -> NO action button (info only). Existing
-  //     Prepare / Discard / Rebuild behavior is unchanged.
-  // The Ruby snapshot is authoritative; the JS layer NEVER
-  // builds a parallel client-side source of truth. textContent
-  // only.
+  //   - The destructive Apply Safe Normalization action MUST
+  //     NOT appear enabled in any state other than
+  //     READY_TO_NORMALIZE (per dispatch §2.2 bullet 2).
   function renderWorkingMode(derivedWorkspace) {
     var listEl = document.getElementById('working-mode-list');
     var actionsEl = document.getElementById('working-mode-actions');
@@ -495,306 +694,242 @@
 
     // Summary text (rendered BEFORE user opens the details block,
     // mirroring the V1.1/V1.2/V1.3 sections' convention).
+    // V1.6 UI-CN-SIMPLIFICATION: the summary text is the concise
+    // Chinese sentence describing the current workspace state.
     if (summaryEl) {
-      var totalEntities = (typeof ws.entity_count === 'number') ? ws.entity_count : 0;
-      if (state === 'none') {
-        summaryEl.textContent = 'Working Mode — no working copy';
-      } else if (state === 'ready') {
-        summaryEl.textContent = 'Working Mode — ' + totalEntities +
-                                (totalEntities === 1 ? ' entity' : ' entities') +
-                                ' ready';
-      } else {
-        summaryEl.textContent = 'Working Mode — ' + state;
-      }
+      summaryEl.textContent = SECTION_LABEL_CN.workingMode +
+                              '\u2014 ' + workspaceStateSentenceCN(ws);
     }
 
-    // Per-state rows.
+    // Per-state user-facing rows.
     if (state === 'none') {
-      addRow(listEl, 'none', null, null, 'No working copy yet. Click Prepare to create one from the current selection snapshot.');
-      // V1.5 Phase 1: when a duplicate_repair summary has been
-      // recorded (even on a discarded workspace), surface it as
-      // a single 'Duplicate repairs' row so the user can see
-      // the audit trail after Discard.
-      // V1.5 BLOCK-004 (2026-08-25 recheck): the audit row
-      // exposes actions_applied/skipped/failed, duplicate
-      // classes before/after, duplicate pairs before/after,
-      // and derived edge counts before/after. Per-action
-      // audit rows are also rendered when present.
+      addRow(listEl, 'none', null, null, '尚未准备工作副本');
+      // V1.5 Phase 1 + V1.6 UI-CN-SIMPLIFICATION: when a
+      // duplicate_repair summary has been recorded (even on a
+      // discarded workspace), surface it as a single condensed
+      // Chinese row so the user can see the audit trail after
+      // Discard. The full per-action audit (action_id, rule_id,
+      // survivor_id, source occurrence count) is preserved in
+      // `技术详情`.
       if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        renderDuplicateRepairAudit(listEl, 'none', ws.duplicate_repair);
+        renderDuplicateRepairUserRow(listEl, 'none', ws.duplicate_repair);
       }
-      // Prepare button enabled.
-      addAction(actionsEl, 'Prepare', 'prepare_workspace', true);
     } else {
       // state in {building, ready, discarded, failed}.
-      if (ws.source_snapshot_id) {
-        addRow(listEl, state, 'Source Snapshot', ws.source_snapshot_id, null);
+      // V1.6 UI-CN-SIMPLIFICATION: failed state exposes a
+      // concise Chinese recovery sentence in the primary list.
+      // The full raw last_error string is preserved in
+      // `技术详情` for Owner / AIPM diagnosis.
+      if (state === 'failed') {
+        addRow(listEl, 'failed', null, null, '处理失败，请点击下方「重新生成」');
       }
-      if (ws.source_fingerprint_digest) {
-        addRow(listEl, state, 'Source Fingerprint',
-               ws.source_fingerprint_digest.substring(0, 12) + '\u2026',
-               ws.source_fingerprint_digest);
-      }
-      if (ws.execution_config_digest) {
-        addRow(listEl, state, 'Execution Config',
-               ws.execution_config_digest.substring(0, 12) + '\u2026',
-               ws.execution_config_digest);
-      }
-      // V1.5 BLOCK-004: per-state audit row with full counts.
+      // V1.5 BLOCK-004: condensed duplicate-repair row in the
+      // default Working Mode card. Full audit rows are in
+      // `技术详情`.
       if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        renderDuplicateRepairAudit(listEl, state, ws.duplicate_repair);
+        renderDuplicateRepairUserRow(listEl, state, ws.duplicate_repair);
       }
-      if (state === 'failed' && ws.last_error) {
-        addRow(listEl, 'failed', 'Last Error', ws.last_error, ws.last_error);
-      }
-      // V1.6 Planar Normalization / Z Policy (per directive
-      // V16-UI-INTEGRATION-CORRECTION-2026-09-01): when
-      // payload.derivedWorkspace.planar_normalization is
-      // present, render the locked Blueprint §11 rows and
-      // (when the state warrants it) the locked action
-      // button. All text via textContent (no innerHTML for
-      // user-supplied strings). Missing fields degrade
-      // safely (text rendering only; no exception path).
+      // V1.6 Planar Normalization condensed card (per
+      // dispatch §3 D + §10 CN4-CN10). The full Blueprint §11
+      // rows and (when applicable) the locked action button
+      // are rendered here; the raw audit rows are preserved in
+      // `技术详情`.
       if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
         renderPlanarNormalization(listEl, state, ws.planar_normalization);
       }
-      // Action buttons (locked enable / disable per state).
-      addAction(actionsEl, 'Prepare', 'prepare_workspace', state === 'none' || state === 'discarded' || state === 'failed');
-      addAction(actionsEl, 'Discard', 'discard_workspace', state === 'ready');
-      addAction(actionsEl, 'Rebuild', 'rebuild_workspace',  state === 'ready' || state === 'discarded' || state === 'failed');
-      // V1.6 Planar Normalization action button (per
-      // dispatch §2.2 + Blueprint §11). The destructive
-      // Apply Safe Normalization action is rendered only
-      // when the snapshot is explicitly READY_TO_NORMALIZE
-      // AND the workspace is ready. The Analyze Planarity
-      // preview action is rendered when the normalization
-      // state is NOT_COMPUTED AND the workspace is ready
-      // (so a fresh Prepare / Discard / Rebuild cycle
-      // surfaces the preview action again).
-      renderPlanarNormalizationAction(actionsEl, state, ws.planar_normalization);
     }
+
+    // V1.6 UI-CN-SIMPLIFICATION (per dispatch §4): ONE primary
+    // action button is shown when applicable. Unavailable
+    // actions are HIDDEN (NOT rendered as disabled). The
+    // primary action is chosen by current workspace + planar
+    // normalization state.
+    renderPrimaryAction(actionsEl, state, ws.planar_normalization);
+
+    // Secondary operational controls live in a collapsed
+    // `更多操作` block under the primary CTA (per dispatch
+    // §4.5). They are emitted to a separate sub-element so
+    // they do not clutter the primary action row.
+    renderMoreActions(actionsEl, state);
   }
 
-  // V1.6 Planar Normalization: render the compact "Planar
-  // normalization" block. Always renders a "Planar
-  // Normalization" State row. When the snapshot carries
-  // additional fields (target_z, eligible/movable/outlier
-  // counts, max_movement, etc.) AND/OR an audit row, those
-  // are rendered too. Defensive: missing / malformed
-  // payload degrades to the State row only.
-  function renderPlanarNormalization(listEl, workspaceState, pn) {
-    if (!pn || typeof pn !== 'object') return;
-    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
-    addRow(listEl, workspaceState, 'Planar Normalization',
-           'state ' + pnState, 'state ' + pnState);
-    // Defensive field accessor: returns fallback when the
-    // field is missing / NaN / undefined / not-a-number.
-    function n(val, fallback) {
-      if (typeof val === 'number' && isFinite(val)) return val;
-      if (typeof fallback === 'number') return fallback;
-      return null;
-    }
-    // Render Target Z / Eligible / Movable / Outliers /
-    // Skipped / Max movement ONLY when the snapshot
-    // carries a non-empty proposal sub-Hash (i.e. the
-    // Ruby side has actually computed it). The proposal
-    // is omitted by WorkingModeRunner when computed=false
-    // (NOT_COMPUTED).
-    var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
-    if (proposal) {
-      var targetZ = n(proposal.target_z, null);
-      if (targetZ !== null) {
-        // 4 decimals is enough for an inch-scale planarity
-        // check (Blueprint §4.1 default = 0.01 inch). We
-        // render the raw Float (NOT toFixed) so the Owner
-        // sees truthful values regardless of magnitude.
-        var targetStr = String(targetZ);
-        addRow(listEl, workspaceState, 'Target Z', targetStr, targetStr);
-      }
-      var eligible = n(proposal.eligible_count, null);
-      if (eligible !== null) {
-        var s1 = eligible + ' eligible vertices' + (eligible === 1 ? '' : 's');
-        addRow(listEl, workspaceState, 'Eligible Vertices', s1, s1);
-      }
-      var movable = n(proposal.movable_count, null);
-      if (movable !== null) {
-        var s2 = movable + ' movable ' + (movable === 1 ? 'vertex' : 'vertices');
-        addRow(listEl, workspaceState, 'Proposed Movable', s2, s2);
-      }
-      var outliers = n(proposal.outlier_count, null);
-      if (outliers !== null) {
-        var s3 = outliers + ' outlier ' + (outliers === 1 ? 'vertex' : 'vertices');
-        addRow(listEl, workspaceState, 'Outliers', s3, s3);
-      }
-      // Affected derived edges = unique derived_ids that
-      // participate in the proposal (an Integer count, not
-      // the Array itself -- the Array may be very large).
-      if (Array.isArray(proposal.affected_derived_ids)) {
-        var adCount = proposal.affected_derived_ids.length;
-        var s4 = adCount + ' affected derived edge' + (adCount === 1 ? '' : 's');
-        addRow(listEl, workspaceState, 'Affected Derived Edges', s4, s4);
-      }
-      var skipped = n(proposal.shared_vertex_scope_skipped, null);
-      if (skipped !== null && skipped > 0) {
-        var s5 = skipped + ' shared-vertex scope skipped';
-        addRow(listEl, workspaceState, 'Skipped / Ambiguous Scope', s5, s5);
-      }
-      var maxMv = n(proposal.max_movement, null);
-      if (maxMv !== null) {
-        var s6 = 'max proposed movement ' + String(maxMv);
-        addRow(listEl, workspaceState, 'Max Proposed Movement', s6, s6);
-      }
-      // Reason row (only when the analyzer / proposer
-      // populated a non-empty string).
-      if (typeof proposal.reason === 'string' && proposal.reason.length > 0 &&
-          pnState === 'REVIEW_REQUIRED') {
-        addRow(listEl, workspaceState, 'Review Reason', proposal.reason, proposal.reason);
-      }
-    }
-    // Audit row (only when the executor returned one). The
-    // audit is a Hash with status, applied_count, failed_count,
-    // max_movement, reason, before_z_summary, after_z_summary,
-    // target_z, rule_id, rule_version, etc. (see
-    // PlanarNormalizationExecutor._audit_row). We render
-    // a compact truthful summary: status, target_z (if
-    // present), moved/applied count, max_movement,
-    // outlier count, failure reason (if FAILED).
-    var audit = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
-    if (audit) {
-      var auditStatus = (typeof audit.status === 'string') ? audit.status : 'unknown';
-      var aTarget = n(audit.target_z, null);
-      var appliedCount = n(audit.applied_count, null);
-      var failedCount  = n(audit.failed_count, null);
-      var aMaxMv       = n(audit.max_movement, null);
-      var reasonStr    = (typeof audit.reason === 'string' && audit.reason.length > 0)
-                         ? audit.reason : '';
-      var outlierAuditIds = Array.isArray(audit.outlier_derived_ids)
-                            ? audit.outlier_derived_ids.length : null;
-      if (aTarget !== null) {
-        var ts = 'target Z ' + String(aTarget);
-        addRow(listEl, workspaceState, 'Applied Target Z', ts, ts);
-      }
-      if (appliedCount !== null) {
-        var as = appliedCount + ' ' + (appliedCount === 1 ? 'vertex' : 'vertices') + ' applied';
-        addRow(listEl, workspaceState, 'Moved / Applied', as, as);
-      }
-      if (aMaxMv !== null) {
-        var ms = 'max movement ' + String(aMaxMv);
-        addRow(listEl, workspaceState, 'Max Movement', ms, ms);
-      }
-      if (outlierAuditIds !== null && outlierAuditIds > 0) {
-        var os = outlierAuditIds + ' outlier edge' + (outlierAuditIds === 1 ? '' : 's') + ' unchanged';
-        addRow(listEl, workspaceState, 'Outliers Unchanged', os, os);
-      }
-      if (auditStatus === 'failed' && reasonStr.length > 0) {
-        addRow(listEl, workspaceState, 'Failure Reason', reasonStr, reasonStr);
-      }
-    }
-  }
-
-  // V1.6 Planar Normalization action button wiring (per
-  // dispatch §2.2 + Blueprint §11):
-  //   - state == 'NOT_COMPUTED' AND workspace == 'ready'
-  //     -> render ONE "Analyze Planarity" button wired to
-  //     compute_planar_normalization.
-  //   - state == 'READY_TO_NORMALIZE' AND workspace == 'ready'
-  //     -> render ONE "Apply Safe Normalization" button
-  //     wired to apply_planar_normalization. This is the
-  //     DESTRUCTIVE action; it MUST NOT appear enabled in
-  //     any other state (per dispatch §2.2 bullet 2).
-  //   - All other states (REVIEW_REQUIRED / NO_CANDIDATE /
-  //     APPLIED / FAILED / invalid_tolerance /
-  //     invalid_input / undefined pn / non-ready
-  //     workspace) -> NO action button.
-  // The button is appended AFTER the existing Prepare /
-  // Discard / Rebuild buttons so the action row layout is
-  // stable.
-  function renderPlanarNormalizationAction(actionsEl, workspaceState, pn) {
-    if (!pn || typeof pn !== 'object') return;
-    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
-    if (workspaceState !== 'ready') return;
-    if (pnState === 'NOT_COMPUTED') {
-      addAction(actionsEl, 'Analyze Planarity',
-                'compute_planar_normalization', true);
-    } else if (pnState === 'READY_TO_NORMALIZE') {
-      addAction(actionsEl, 'Apply Safe Normalization',
-                'apply_planar_normalization', true);
-    }
-    // All other states: no action button.
-  }
-
-  // Helper: append a labelled, factual row to the working-mode list.
-  // `state` is the data-state attribute ('none' / 'building' / 'ready'
-  // / 'discarded' / 'failed'). `label` is the small heading; `value`
-  // is the short text; `title` is the long text (used as a tooltip
-  // via the `title` attribute, so no user-text innerHTML).
-  function addRow(listEl, state, label, value, title) {
-    var row = document.createElement('div');
-    row.className = 'working-mode-row';
-    row.setAttribute('data-state', state);
-    if (label) {
-      var labelEl = document.createElement('span');
-      labelEl.className = 'label';
-      labelEl.textContent = label + ':';
-      row.appendChild(labelEl);
-    }
-    if (value) {
-      var valEl = document.createElement('span');
-      valEl.className = 'value';
-      valEl.textContent = value;
-      if (title && title !== value) {
-        valEl.setAttribute('title', title);
-      }
-      row.appendChild(valEl);
-    } else if (title) {
-      // No short value (state=='none' message); put the message
-      // in the row directly.
-      var msgEl = document.createElement('span');
-      msgEl.className = 'value';
-      msgEl.textContent = title;
-      row.appendChild(msgEl);
-    }
-    listEl.appendChild(row);
-  }
-
-  // V1.5 BLOCK-004 audit row renderer. Exposes every required
-  // technical audit field (applied/skipped/failed, classes
-  // before/after, pairs before/after, derived edge counts
-  // before/after) plus the per-action audit rows when the
-  // Ruby side populates them in `duplicate_repair.actions`.
-  function renderDuplicateRepairAudit(listEl, state, dr) {
+  // V1.6 UI-CN-SIMPLIFICATION: condensed Chinese user-facing
+  // duplicate-repair row. The full audit is preserved in
+  // `技术详情`. The summary line format is
+  // "重复线清理：已处理 X，跳过 Y，失败 Z" per dispatch §6.
+  function renderDuplicateRepairUserRow(listEl, state, dr) {
     var applied = (typeof dr.actions_applied === 'number') ? dr.actions_applied : 0;
     var skipped = (typeof dr.actions_skipped === 'number') ? dr.actions_skipped : 0;
     var failed  = (typeof dr.actions_failed === 'number')  ? dr.actions_failed  : 0;
-    // Summary label: applied/skipped/failed + classes + edges.
-    var label = 'Duplicate repairs: applied ' + applied +
-                ', skipped ' + skipped +
-                ', failed '  + failed;
+    var line = FIELD_LABEL_CN.duplicateRepairs + '：已处理 ' + applied +
+               '，跳过 ' + skipped + '，失败 ' + failed;
+    addRow(listEl, state, null, line, line);
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION: emit the ONE primary action
+  // button when applicable. Unavailable actions are HIDDEN.
+  // Destructive Apply Safe Normalization is rendered ONLY when
+  // workspaceState === 'ready' AND pnState === 'READY_TO_NORMALIZE'.
+  function renderPrimaryAction(actionsEl, workspaceState, pn) {
+    if (workspaceState === 'none') {
+      // No workspace yet -> Prepare.
+      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
+                'prepare_workspace', true);
+      return;
+    }
+    // Workspace exists.
+    if (workspaceState === 'ready') {
+      // Determine the planar normalization state.
+      var pnState = (pn && typeof pn === 'object' && typeof pn.state === 'string')
+                    ? pn.state : 'NOT_COMPUTED';
+      if (pnState === 'NOT_COMPUTED') {
+        addAction(actionsEl, ACTION_LABEL_CN.compute_planar_normalization,
+                  'compute_planar_normalization', true);
+        return;
+      }
+      if (pnState === 'READY_TO_NORMALIZE') {
+        addAction(actionsEl, ACTION_LABEL_CN.apply_planar_normalization,
+                  'apply_planar_normalization', true);
+        return;
+      }
+      // All other PN states (REVIEW_REQUIRED / NO_CANDIDATE /
+      // APPLIED / FAILED / invalid_*): no destructive Apply
+      // button. The user can rebuild / discard from the
+      // `更多操作` block.
+      return;
+    }
+    // Building / discarded / failed -> no primary destructive
+    // action. The user can Rebuild / Discard from `更多操作`.
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION: secondary operational controls.
+  // Per dispatch §4.5 these live in a collapsed `更多操作`
+  // block under the primary CTA. Unavailable controls are
+  // HIDDEN rather than rendered as disabled buttons. The
+  // collapsed block is itself HIDDEN when no secondary control
+  // is meaningful (e.g. state='none' before the first Prepare),
+  // so the default screen shows ONLY the primary CTA.
+  function renderMoreActions(actionsEl, workspaceState) {
+    var hasDiscard = (workspaceState === 'ready');
+    var hasRebuild = (workspaceState === 'ready' || workspaceState === 'discarded' ||
+                      workspaceState === 'failed');
+    if (!hasDiscard && !hasRebuild) return;
+    // We emit a small `<details>` with `<summary>更多操作</summary>`
+    // containing the available secondary buttons.
+    var det = document.createElement('details');
+    det.className = 'more-actions';
+    var sum = document.createElement('summary');
+    sum.textContent = SECTION_LABEL_CN.moreActions;
+    det.appendChild(sum);
+    var inner = document.createElement('div');
+    inner.className = 'more-actions-inner';
+    if (hasDiscard) {
+      addAction(inner, ACTION_LABEL_CN.discard_workspace,
+                'discard_workspace', true);
+    }
+    if (hasRebuild) {
+      addAction(inner, ACTION_LABEL_CN.rebuild_workspace,
+                'rebuild_workspace', true);
+    }
+    det.appendChild(inner);
+    actionsEl.appendChild(det);
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): render the
+  // collapsed `技术详情` block. This preserves the full data
+  // contract (source snapshot id / fingerprint / config digest /
+  // raw workspace state / per-action audit / raw normalization
+  // audit) so AIPM / Pi / Owner can still inspect the technical
+  // truth, while keeping the default screen materially simpler.
+  // The block is rendered CLOSED by default; users only see it
+  // when they explicitly open the section.
+  function renderTechnicalDetails(derivedWorkspace) {
+    var listEl = document.getElementById('technical-details-list');
+    if (!listEl) return;
+    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+    var ws = (derivedWorkspace && typeof derivedWorkspace === 'object')
+              ? derivedWorkspace : null;
+    if (!ws) return;
+
+    // Raw workspace state (always shown when ws is present).
+    if (typeof ws.state === 'string') {
+      addTechRow(listEl, 'workspace_state', ws.state);
+    }
+    if (ws.source_snapshot_id) {
+      addTechRow(listEl, 'source_snapshot_id', ws.source_snapshot_id);
+    }
+    if (ws.source_fingerprint_digest) {
+      addTechRow(listEl, 'source_fingerprint_digest', ws.source_fingerprint_digest);
+    }
+    if (ws.execution_config_digest) {
+      addTechRow(listEl, 'execution_config_digest', ws.execution_config_digest);
+    }
+    if (ws.workspace_id) {
+      addTechRow(listEl, 'workspace_id', ws.workspace_id);
+    }
+    if (ws.last_error) {
+      addTechRow(listEl, 'last_error', ws.last_error);
+    }
+
+    // Duplicate repair technical audit: applied/skipped/failed,
+    // duplicate classes before/after, duplicate pairs before/
+    // after, derived edge counts before/after, and per-action
+    // audit rows (action_id / rule_id / survivor_id / source
+    // occurrence count).
+    if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
+      renderDuplicateRepairTechnicalRows(listEl, ws.duplicate_repair);
+    }
+    // V1.6 Planar Normalization raw audit rows (per dispatch
+    // §5.5): raw normalization reason string, raw audit fields
+    // (status, target_z, applied_count, max_movement,
+    // outlier_count, failure_reason).
+    if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
+      renderPlanarNormalizationTechnicalRows(listEl, ws.planar_normalization);
+    }
+  }
+
+  function addTechRow(listEl, key, value) {
+    var row = document.createElement('div');
+    row.className = 'tech-row';
+    row.setAttribute('data-field', key);
+    var labelEl = document.createElement('span');
+    labelEl.className = 'label';
+    labelEl.textContent = key + ':';
+    var valEl = document.createElement('span');
+    valEl.className = 'value';
+    valEl.textContent = String(value);
+    row.appendChild(labelEl);
+    row.appendChild(valEl);
+    listEl.appendChild(row);
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): per-action
+  // audit rows (BLOCK-004 / CodeX 032 recheck 2026-08-25
+  // minimum). Every action row exposes status, removed count,
+  // survivor ID, and source-occurrence count as visible fields.
+  // textContent only (no innerHTML).
+  function renderDuplicateRepairTechnicalRows(listEl, dr) {
+    var applied = (typeof dr.actions_applied === 'number') ? dr.actions_applied : 0;
+    var skipped = (typeof dr.actions_skipped === 'number') ? dr.actions_skipped : 0;
+    var failed  = (typeof dr.actions_failed === 'number')  ? dr.actions_failed  : 0;
+    var bits = [];
+    bits.push('applied=' + applied);
+    bits.push('skipped=' + skipped);
+    bits.push('failed=' + failed);
     if (typeof dr.duplicate_classes_before === 'number' &&
         typeof dr.duplicate_classes_after === 'number') {
-      label += '; duplicate classes ' +
-               dr.duplicate_classes_before + ' \u2192 ' +
-               dr.duplicate_classes_after;
+      bits.push('classes=' + dr.duplicate_classes_before + '->' + dr.duplicate_classes_after);
     }
     if (typeof dr.duplicate_pairs_before === 'number' &&
         typeof dr.duplicate_pairs_after === 'number') {
-      label += '; duplicate pairs ' +
-               dr.duplicate_pairs_before + ' \u2192 ' +
-               dr.duplicate_pairs_after;
+      bits.push('pairs=' + dr.duplicate_pairs_before + '->' + dr.duplicate_pairs_after);
     }
     if (typeof dr.derived_edge_count_before === 'number' &&
         typeof dr.derived_edge_count_after === 'number') {
-      label += '; derived edges ' +
-               dr.derived_edge_count_before + ' \u2192 ' +
-               dr.derived_edge_count_after;
+      bits.push('derived_edges=' + dr.derived_edge_count_before + '->' + dr.derived_edge_count_after);
     }
-    addRow(listEl, state, 'Duplicate repairs', label, label);
-    // Per-action audit rows when present (BLOCK-004
-    // CodeX 032 recheck 2026-08-25 minimum): every action
-    // row must include status, removed count, survivor ID,
-    // and source-occurrence count as visible fields. The
-    // UI MUST render these from the summary, not from a
-    // hand-built label. textContent only (no innerHTML).
+    addTechRow(listEl, 'duplicate_repair_summary', bits.join('; '));
+
     if (Array.isArray(dr.actions) && dr.actions.length > 0) {
       dr.actions.forEach(function (act) {
         if (!act || typeof act !== 'object') return;
@@ -806,56 +941,244 @@
                           act.source_occurrence_count : 0;
         var ruleId = act.rule_id || '';
         var basis = act.confidence_basis || act.explanation || 'no detail';
-        // Use a small table-style row so each audit field is
-        // independently inspectable from the DOM (DOM tests
-        // can assert each cell by its data-action-id +
-        // data-field attribute). textContent everywhere.
         var row = document.createElement('div');
+        row.className = 'tech-row action-audit-row';
         row.setAttribute('data-action-id', actionId);
         row.setAttribute('data-action-status', status);
         if (survivorId) row.setAttribute('data-survivor-id', survivorId);
-        row.setAttribute('class', 'action-audit-row');
         var c1 = document.createElement('span');
         c1.setAttribute('data-field', 'status');
-        c1.textContent = status;
+        c1.textContent = 'status=' + status;
         row.appendChild(c1);
         var c2 = document.createElement('span');
         c2.setAttribute('data-field', 'action_id');
-        c2.textContent = actionId;
+        c2.textContent = 'action_id=' + actionId;
         row.appendChild(c2);
         var c3 = document.createElement('span');
         c3.setAttribute('data-field', 'survivor_id');
-        c3.textContent = survivorId;
+        c3.textContent = 'survivor_id=' + survivorId;
         row.appendChild(c3);
         var c4 = document.createElement('span');
         c4.setAttribute('data-field', 'removed_count');
-        c4.textContent = String(removedCount);
+        c4.textContent = 'removed_count=' + removedCount;
         row.appendChild(c4);
         var c5 = document.createElement('span');
         c5.setAttribute('data-field', 'source_count');
-        c5.textContent = String(sourceCount);
+        c5.textContent = 'source_count=' + sourceCount;
         row.appendChild(c5);
         var c6 = document.createElement('span');
         c6.setAttribute('data-field', 'rule_id');
-        c6.textContent = ruleId;
+        c6.textContent = 'rule_id=' + ruleId;
         row.appendChild(c6);
         var c7 = document.createElement('span');
         c7.setAttribute('data-field', 'basis');
-        c7.textContent = basis;
+        c7.textContent = 'basis=' + basis;
         row.appendChild(c7);
         listEl.appendChild(row);
-        // Also surface a compact human-readable summary for
-        // quick visual scan (kept for backward-compat with
-        // older Node DOM assertions).
-        var actLabel = 'action ' + actionId + ' (' + status +
-                      '): removed=' + removedCount +
-                      ', survivor=' + survivorId +
-                      ', sources=' + sourceCount +
-                      ', rule=' + ruleId +
-                      '; ' + basis;
-        addRow(listEl, state, 'Action audit', actLabel, actLabel);
       });
     }
+  }
+
+  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): raw
+  // normalization audit / reason / target_z / max_movement /
+  // outlier count are preserved under `技术详情` for AIPM/Pi/
+  // Owner diagnosis. The default Working Mode card only shows
+  // the condensed Chinese user-facing rows.
+  function renderPlanarNormalizationTechnicalRows(listEl, pn) {
+    if (!pn || typeof pn !== 'object') return;
+    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
+    addTechRow(listEl, 'planar_normalization_state', pnState);
+    var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
+    if (proposal) {
+      if (typeof proposal.reason === 'string' && proposal.reason.length > 0) {
+        addTechRow(listEl, 'planar_normalization_reason', proposal.reason);
+      }
+      if (typeof proposal.target_z === 'number') {
+        addTechRow(listEl, 'planar_normalization_target_z', proposal.target_z);
+      }
+      if (typeof proposal.tolerance_used === 'number') {
+        addTechRow(listEl, 'planar_normalization_tolerance_used', proposal.tolerance_used);
+      }
+    }
+    var audit = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
+    if (audit) {
+      if (typeof audit.status === 'string') {
+        addTechRow(listEl, 'planar_normalization_audit_status', audit.status);
+      }
+      if (typeof audit.rule_id === 'string') {
+        addTechRow(listEl, 'planar_normalization_audit_rule_id', audit.rule_id);
+      }
+      if (typeof audit.rule_version === 'string') {
+        addTechRow(listEl, 'planar_normalization_audit_rule_version', audit.rule_version);
+      }
+      if (typeof audit.target_z === 'number') {
+        addTechRow(listEl, 'planar_normalization_audit_target_z', audit.target_z);
+      }
+      if (typeof audit.max_movement === 'number') {
+        addTechRow(listEl, 'planar_normalization_audit_max_movement', audit.max_movement);
+      }
+      if (typeof audit.applied_count === 'number') {
+        addTechRow(listEl, 'planar_normalization_audit_applied_count', audit.applied_count);
+      }
+      if (typeof audit.failed_count === 'number') {
+        addTechRow(listEl, 'planar_normalization_audit_failed_count', audit.failed_count);
+      }
+      if (typeof audit.reason === 'string' && audit.reason.length > 0) {
+        addTechRow(listEl, 'planar_normalization_audit_reason', audit.reason);
+      }
+    }
+  }
+
+  // V1.6 Planar Normalization: render the compact Chinese
+  // "平面校正" card inside the default Working Mode list.
+  // Always renders a "平面校正" State row in Chinese. When the
+  // snapshot carries additional Blueprint §11 fields AND/OR an
+  // audit row, those are rendered as concise Chinese rows under
+  // the card. The destructive Apply action is rendered by
+  // renderPrimaryAction (NOT here). The raw audit fields are
+  // preserved under `技术详情` by renderTechnicalDetails.
+  //
+  // Per dispatch §3 D: NOT_COMPUTED shows "尚未检查平面偏差。",
+  // READY_TO_NORMALIZE shows target_z + movable count + outlier
+  // count + the primary CTA, REVIEW_REQUIRED shows a Chinese
+  // explanation with no destructive action, NO_CANDIDATE shows
+  // a Chinese no-action explanation, APPLIED shows moved count +
+  // max movement + outlier count, FAILED shows a Chinese
+  // failure reason + recovery action.
+  function renderPlanarNormalization(listEl, workspaceState, pn) {
+    if (!pn || typeof pn !== 'object') return;
+    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
+    var pnLabel = PN_STATE_LABELS_CN[pnState] || pnState;
+    // Card title row.
+    addRow(listEl, workspaceState, FIELD_LABEL_CN.planarNormalization,
+           pnLabel, pnLabel);
+
+    // NOT_COMPUTED -> short message, no further rows.
+    if (pnState === 'NOT_COMPUTED') {
+      addRow(listEl, workspaceState, null, null, '尚未检查平面偏差。');
+      return;
+    }
+    // REVIEW_REQUIRED -> reason row in Chinese.
+    if (pnState === 'REVIEW_REQUIRED') {
+      addRow(listEl, workspaceState, null, null,
+             '检测到多组高度，无法安全自动判断。');
+      var proposalRQ = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
+      if (proposalRQ && typeof proposalRQ.reason === 'string' && proposalRQ.reason.length > 0) {
+        addRow(listEl, workspaceState, FIELD_LABEL_CN.reviewReason,
+               proposalRQ.reason, proposalRQ.reason);
+      }
+      return;
+    }
+    // NO_CANDIDATE -> short message.
+    if (pnState === 'NO_CANDIDATE') {
+      addRow(listEl, workspaceState, null, null, '当前几何无需平面校正。');
+      return;
+    }
+    // READY_TO_NORMALIZE -> Blueprint §11 condensed rows.
+    if (pnState === 'READY_TO_NORMALIZE') {
+      addRow(listEl, workspaceState, null, null,
+             '检测到可安全校正的轻微 Z 偏差。');
+      var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
+      if (proposal) {
+        if (typeof proposal.target_z === 'number') {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.targetZ,
+                 String(proposal.target_z), String(proposal.target_z));
+        }
+        if (typeof proposal.movable_count === 'number') {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.proposedMovable,
+                 proposal.movable_count + ' 个',
+                 proposal.movable_count + ' 个');
+        }
+        if (typeof proposal.outlier_count === 'number') {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.outliers,
+                 proposal.outlier_count + ' 个',
+                 proposal.outlier_count + ' 个');
+        }
+      }
+      return;
+    }
+    // APPLIED -> moved + max movement + outlier unchanged.
+    if (pnState === 'APPLIED') {
+      addRow(listEl, workspaceState, null, null, '平面校正已完成。');
+      var auditA = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
+      if (auditA) {
+        if (typeof auditA.applied_count === 'number') {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.movedApplied,
+                 auditA.applied_count + ' 个',
+                 auditA.applied_count + ' 个');
+        }
+        if (typeof auditA.max_movement === 'number') {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.maxMovement,
+                 String(auditA.max_movement),
+                 String(auditA.max_movement));
+        }
+        if (Array.isArray(auditA.outlier_derived_ids) && auditA.outlier_derived_ids.length > 0) {
+          addRow(listEl, workspaceState, FIELD_LABEL_CN.outliersUnchanged,
+                 auditA.outlier_derived_ids.length + ' 个',
+                 auditA.outlier_derived_ids.length + ' 个');
+        }
+      }
+      return;
+    }
+    // FAILED -> Chinese failure reason + recovery.
+    if (pnState === 'FAILED') {
+      addRow(listEl, workspaceState, null, null, '平面校正失败。');
+      var auditF = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
+      if (auditF && typeof auditF.reason === 'string' && auditF.reason.length > 0) {
+        addRow(listEl, workspaceState, FIELD_LABEL_CN.failureReason,
+               auditF.reason, auditF.reason);
+      }
+      return;
+    }
+    // invalid_tolerance / invalid_input -> Chinese explanation.
+    if (pnState === 'INVALID_TOLERANCE' || pnState === 'INVALID_INPUT') {
+      addRow(listEl, workspaceState, null, null, '当前配置或数据无效，无法计算。');
+    }
+  }
+
+  // Helper: append a labelled, factual row to the working-mode list.
+  // `state` is the data-state attribute ('none' / 'building' / 'ready'
+  // / 'discarded' / 'failed'). `label` is the small heading; `value`
+  // is the short text; `title` is the long text (used as a tooltip
+  // via the `title` attribute, so no user-text innerHTML).
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: when `label` is null the row is a
+  // single-line message (no label-value separator), which is the
+  // dominant pattern in the simplified Working Mode card.
+  function addRow(listEl, state, label, value, title) {
+    var row = document.createElement('div');
+    row.className = 'working-mode-row';
+    row.setAttribute('data-state', state);
+    if (label) {
+      var labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = label + '：';
+      row.appendChild(labelEl);
+      if (value) {
+        var valEl = document.createElement('span');
+        valEl.className = 'value';
+        valEl.textContent = value;
+        if (title && title !== value) {
+          valEl.setAttribute('title', title);
+        }
+        row.appendChild(valEl);
+      }
+    } else if (value) {
+      var valEl2 = document.createElement('span');
+      valEl2.className = 'value';
+      valEl2.textContent = value;
+      if (title && title !== value) {
+        valEl2.setAttribute('title', title);
+      }
+      row.appendChild(valEl2);
+    } else if (title) {
+      // No short value; put the message in the row directly.
+      var msgEl = document.createElement('span');
+      msgEl.className = 'value';
+      msgEl.textContent = title;
+      row.appendChild(msgEl);
+    }
+    listEl.appendChild(row);
   }
 
   // Helper: append an action button. `callback` is a SketchUp
@@ -873,6 +1196,11 @@
   // (BRACKET LOOKUP, no eval). When the callback is absent
   // (test env / partial install), the click is a safe no-op
   // (the dialog stays usable).
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: button label is the Simplified
+  // Chinese presentation. The internal `data-action` attribute
+  // preserves the canonical English callback name so the Ruby
+  // dispatch + DOM tests still resolve correctly.
   function addAction(actionsEl, label, callback, enabled) {
     var btn = document.createElement('button');
     btn.textContent = label;
@@ -895,16 +1223,23 @@
   // body contains the existing renderIssue() rows for each issue
   // in the bucket. The bucket honors `default_open` (set by
   // LayerIssueGrouper).
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: bucket header uses the
+  // formatCount helper so "1 issue" reads correctly in any
+  // language; per dispatch §13 CN13 the wording is Simplified
+  // Chinese.
   function renderLayerIssueBucket(b) {
     var det = document.createElement('details');
     det.open = !!(b && b.default_open);
     var sum = document.createElement('summary');
     var layerName = (b && b.name) ? String(b.name) : '';
     var count = (b && typeof b.count === 'number') ? b.count : 0;
-    // Locked per directive 026 item 6: "Each bucket header must
-    // show the layer name and issue count with correct singular/
-    // plural wording."
-    sum.textContent = layerName + ' (' + formatCount(count, 'issue') + ')';
+    // V1.6 UI-CN-SIMPLIFICATION: bucket header reads
+    // "LayerName（N 个问题）"; we do NOT pass it through
+    // formatCount (the noun "个问题" already encodes the
+    // counter and the English-pluralization 's' suffix
+    // would corrupt the Simplified Chinese wording).
+    sum.textContent = layerName + '（' + count + ' 个问题）';
     det.appendChild(sum);
     var issues = (b && Array.isArray(b.issues)) ? b.issues : [];
     issues.forEach(function (issue) {
@@ -926,6 +1261,9 @@
   // "Visibility: unknown"); the two are independent (R007). The row
   // has cursor: default and NO click handler; it is intentionally
   // non-actionable (mirrors V1.0 L3 non-locatable warning pattern).
+  //
+  // V1.6 UI-CN-SIMPLIFICATION: role + visibility badges use the
+  // Simplified Chinese label maps.
   function renderLayerRow(g) {
     var div = document.createElement('div');
     div.className = 'layer-row';
@@ -946,21 +1284,29 @@
 
     var roleBadge = document.createElement('span');
     roleBadge.className = 'role-badge';
-    // g.role_label is the source-of-truth server-composed label
-    // (LayerRole::HUMAN[role]). We fall back to a humanized
-    // version of the role symbol only if role_label is missing.
-    roleBadge.textContent = (g && g.role_label) ? String(g.role_label)
-                                                : humanizeKey(role);
+    // V1.6 UI-CN-SIMPLIFICATION: the visible role label is
+    // always the JS Simplified Chinese translation (based on
+    // the canonical role Symbol). The Ruby mapper's pre-
+    // computed `role_label` is not used here because the
+    // mapper currently emits English labels; we want the
+    // visible presentation to ALWAYS be Simplified Chinese
+    // regardless of payload version.
+    roleBadge.textContent = layerRoleLabelCN(role);
 
     var visBadge = document.createElement('span');
     visBadge.className = 'visibility-badge';
-    visBadge.textContent = (g && g.visibility_label) ? String(g.visibility_label)
-                                                     : '';
+    // V1.6 UI-CN-SIMPLIFICATION: prefer the JS Simplified
+    // Chinese translation based on the canonical visibility
+    // Symbol; fall back to the raw server-provided label only
+    // when the visibility is `unknown` (where the server may
+    // carry extra diagnostic context).
+    var visKey = visibility_unknown ? 'unknown' : (visible ? 'visible' : 'hidden');
+    visBadge.textContent = LAYER_VISIBILITY_LABELS_CN[visKey] || '';
 
     var edgesCell = document.createElement('span');
     edgesCell.className = 'edge-count';
     var edgeCount = (g && g.edge_count != null) ? g.edge_count : 0;
-    edgesCell.textContent = formatCount(edgeCount, 'edge');
+    edgesCell.textContent = edgeCount + ' 条';
 
     // Visible separator between the edge and issue counts. The
     // separator is a real DOM node (not just whitespace) so the
@@ -977,7 +1323,7 @@
     var issuesCell = document.createElement('span');
     var issueCount = (g && g.issue_count != null) ? g.issue_count : 0;
     issuesCell.className = 'issue-count' + (issueCount > 0 ? ' has-issues' : '');
-    issuesCell.textContent = formatCount(issueCount, 'issue');
+    issuesCell.textContent = issueCount + ' 个问题';
 
     div.appendChild(name);
     div.appendChild(roleBadge);
@@ -992,9 +1338,15 @@
 
   ROOT.render = render;
   ROOT.toast   = toast;
-  ROOT.ISSUE_TYPE_LABELS       = ISSUE_TYPE_LABELS;
-  ROOT.LAYER_ROLE_LABELS       = LAYER_ROLE_LABELS;
-  ROOT.LAYER_VISIBILITY_LABELS = LAYER_VISIBILITY_LABELS;
+  ROOT.ISSUE_TYPE_LABELS_CN    = ISSUE_TYPE_LABELS_CN;
+  ROOT.LAYER_ROLE_LABELS_CN    = LAYER_ROLE_LABELS_CN;
+  ROOT.LAYER_VISIBILITY_LABELS_CN = LAYER_VISIBILITY_LABELS_CN;
+  ROOT.SEVERITY_LABELS_CN      = SEVERITY_LABELS_CN;
+  ROOT.WORKSPACE_STATE_LABELS_CN = WORKSPACE_STATE_LABELS_CN;
+  ROOT.PN_STATE_LABELS_CN      = PN_STATE_LABELS_CN;
+  ROOT.FIELD_LABEL_CN          = FIELD_LABEL_CN;
+  ROOT.ACTION_LABEL_CN         = ACTION_LABEL_CN;
+  ROOT.SECTION_LABEL_CN        = SECTION_LABEL_CN;
   ROOT.renderLayers            = renderLayers;
   ROOT.renderLayerRow          = renderLayerRow;
   ROOT.renderLayerIssues       = renderLayerIssues;
@@ -1002,13 +1354,13 @@
   ROOT.renderFaceInventory     = renderFaceInventory;
   ROOT.renderFaceInventoryRow  = renderFaceInventoryRow;
   ROOT.renderWorkingMode       = renderWorkingMode;
-  // V1.6 Planar Normalization / Z Policy: expose the two
-  // sub-renderers so the DOM tests (UI1-UI8 per
-  // V16-UI-INTEGRATION-CORRECTION-2026-09-01) can call them
-  // directly. These are pure functions of (listEl /
-  // actionsEl, state, payload) and have no other side effect.
+  ROOT.renderTechnicalDetails  = renderTechnicalDetails;
+  // V1.6 Planar Normalization / Z Policy: expose the
+  // sub-renderer so the DOM tests (CN1-CN18 per dispatch
+  // V16-UI-CN-SIMPLIFICATION-2026-09-01) can call it directly.
+  // These are pure functions of (listEl, state, payload) and
+  // have no other side effect.
   ROOT.renderPlanarNormalization       = renderPlanarNormalization;
-  ROOT.renderPlanarNormalizationAction = renderPlanarNormalizationAction;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {

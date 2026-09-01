@@ -66,7 +66,7 @@ module SUAnalysis
         return nil unless UI::HtmlDialog.respond_to?(:new)
         controller = DialogController.new(result, model: model)
         dialog = UI::HtmlDialog.new(
-          dialog_title:    'CAD Analyzer Result',
+          dialog_title:    'CAD 检查结果',
           preferences_key: 'SU-AI-Plugin.cad_analyzer.v1',
           width:           720,
           height:          600,
