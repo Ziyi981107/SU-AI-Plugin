@@ -1,19 +1,121 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.6 UI-CN-SIMPLIFICATION-FIX DISPATCH (THIS UPDATE)
+## V1.6 CLOSE-AUTODISCARD DISPATCH (THIS UPDATE)
 
-Updated: 2026-09-01 (V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01
+Updated: 2026-09-01 (V16-CLOSE-AUTODISCARD-2026-09-01
 dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
-prior V16-UI-CN-SIMPLIFICATION packet is intact; this
-dispatch performed ONE bounded frontend UX regression fix
-per Owner real-host finding: in workspace state `discarded`
-(and `failed`, by the "same class of mistake" review), the
-primary CTA is now `准备处理` (so the user can create a
-fresh SourceSnapshot + Derived Workspace from a NEW
-selection), with `重新生成` remaining as a secondary action
-under `更多操作` for replaying the previously captured
-workspace. The frozen V1.6 Stage Technical Blueprint + the
+prior V16-UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX
+packets are intact; this dispatch performed ONE bounded
+Owner UX fix BEFORE closure: when the user explicitly
+closes the SU-AI-Plugin dialog, the EXISTING discard-workspace
+path is automatically run if (and only if) a current
+transient Derived Workspace exists, so the next plugin-open
+session begins cleanly with the normal primary action
+`准备处理` (per the V16-UI-CN-SIMPLIFICATION-FIX action-state
+matrix). The frozen V1.6 Stage Technical Blueprint + the
 V1.6 backend are untouched.)
+
+Closure date for the prior V1.5 closure: 2026-08-31
+(unchanged).
+
+Status:
+
+- **V1.5: CLOSED**
+- **BLOCK-005: CLOSED**
+- **Owner SketchUp 2020 V1.5 verification: PASS** (Final
+  Product Owner confirmation recorded by AIPM)
+- **BLOCK-005 technical direction (unchanged, frozen):**
+  `validate-on-next-interaction → detect host mismatch → fail
+  closed / invalidate → host-authoritative discard +
+  prepare/rebuild`. No global ModelObserver / EntitiesObserver
+  architecture added in V1.5. `persistent_id` is not the
+  correctness Source of Truth. Old Ruby Entity handles must
+  never be trusted after host-state divergence.
+- **V1.6: UI CN SIMPLIFICATION + UI CN SIMPLIFICATION FIX +
+  CLOSE-AUTODISCARD COMPLETE / AWAITING AIPM SOURCE REVIEW**
+  (per dispatch `V16-CLOSE-AUTODISCARD-2026-09-01`, on
+  assigned `dev/v1.6`). The prior V16-UI-CN-SIMPLIFICATION +
+  V16-UI-CN-SIMPLIFICATION-FIX packets are intact; this
+  dispatch added the bounded close-time auto-discard per
+  `Review/CURRENT_PI_REPORT.md`.
+- **V1.6: OWNER REAL-HOST VERIFICATION A-E: PASSED** (per
+  Owner / Owner-AIPM step before the close-autodiscard
+  finding; recorded by AIPM in the prior closure path).
+- **V1.6: NOT CLOSED** (closure is Owner / AIPM-side per
+  dispatch §15 + §9; V1.6 frozen Blueprint §13 requires
+  real-SU2020 Owner verification of the close-autodiscard
+  fix before closure).
+- **V1.7: NOT STARTED**
+- **V2 / MCP: OUT OF SCOPE**
+
+Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz` (overwritten by the V1.6 RBZ)
+- Size: **642,037 bytes**
+- Entries: **59**
+- SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
+
+V1.6 UI-INTEGRATION-CORRECTION RBZ (prior dispatch, superseded by later dispatches' RBZ):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **744,607 bytes** (+11,103 vs V1.6 PI-impl RBZ, the delta is the
+  rendered Planar Normalization block + audit rendering + the
+  action button wiring + the H5 regression test).
+- Entries: **62** (unchanged from V1.6 PI-impl).
+- SHA-256: **`c9c1f4f0503957a1fe5073957df2d67996be6ec74cff0d95d5c046ab6bfa585d`**
+
+V1.6 UI-CN-SIMPLIFICATION RBZ (prior dispatch, superseded by this dispatch's RBZ):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **762,012 bytes** (+17,405 vs V1.6 UI-INTEGRATION-
+  CORRECTION RBZ, the delta is the Simplified Chinese label
+  maps in app.js + the condensed Working Mode card + the
+  collapsed `更多操作` block + the new collapsed `技术详情`
+  block in index.html + the Simplified Chinese `dialog_title`
+  in dialog_runner.rb + the CN1-CN18 DOM test coverage + the
+  Ruby source-level CN guards).
+- Entries: **62** (unchanged).
+- SHA-256: **`BBDF9BC1277878AD1B8B83A5FA1C9B37A6F26EC75D979F8BE6CFC8BCBAB0F7D9`**
+
+V1.6 UI-CN-SIMPLIFICATION-FIX RBZ (prior dispatch, superseded by this dispatch's RBZ):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **764,857 bytes** (+2,845 vs V1.6 UI-CN-SIMPLIFICATION
+  RBZ, the delta is the `discarded` + `failed` state primary
+  CTA fix in app.js + the V16-FIX DOM regression tests).
+- Entries: **62** (unchanged).
+- SHA-256: **`A8326FE595FD4F3E99F63AD43BA7B540422650264FE449F8A2E94F662CA3074F`**
+
+V1.6 CLOSE-AUTODISCARD RBZ candidate (this dispatch):
+
+- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- Size: **768,150 bytes** (+3,293 vs V1.6 UI-CN-SIMPLIFICATION-
+  FIX RBZ, the delta is the close-time auto-discard path in
+  dialog_runner.rb + 7 new V16-CLOSE-AUTODISCARD Ruby
+  regression tests).
+- Entries: **62** (unchanged).
+- SHA-256: **`7154C6C96759E847CA99A99E9B8B62F88BF230E0741CDFED884586425960BAE7`**
+
+Packaged `html/app.js` SHA-256:
+**`7CF8A33BF5AE4FE74FDB0E0DA85BAFAB8A2CF4D02B5B72A6B86F6D43A55C30A0`**
+(unchanged from prior V16-UI-CN-SIMPLIFICATION-FIX — the
+close-time auto-discard is a Ruby-side change in
+`dialog_runner.rb`, not a JS change)
+Packaged `html/index.html` SHA-256:
+**`6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`**
+(unchanged from prior V16-UI-CN-SIMPLIFICATION)
+Packaged `html/style.css` SHA-256:
+**`3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`**
+(unchanged from prior V16-UI-CN-SIMPLIFICATION)
+
+All three packaged dialog assets are byte-identical to the
+in-tree source (per the existing smoke-test contract).
+
+Next expected AIPM action: AIPM direct source review of the
+V1.6 close-autodiscard packet against the frozen Blueprint
++ the prior V1.6 review evidence, then (on AIPM PASS) the
+final Owner SU2020 real-host verification gate. Codex review
+is NOT a routine reviewer for V1.6 and was NOT invoked.
 
 Closure date for the prior V1.5 closure: 2026-08-31
 (unchanged).
@@ -487,6 +589,129 @@ semantics, no Source-of-Truth, no Undo/reconciliation, no
 transaction, no provenance).
 
 V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN.
+V1.6 NOT CLOSED.
+
+## V1.6 CLOSE-AUTODISCARD DISPATCH (THIS UPDATE)
+
+Updated: 2026-09-01 (V16-CLOSE-AUTODISCARD-2026-09-01
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
+prior V16-UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX
+packets are intact; this dispatch performed ONE bounded
+Owner UX fix BEFORE closure.)
+
+Owner real-host finding (per dispatch §1):
+
+> Closing the SU-AI-Plugin dialog currently leaves the
+> transient Derived Workspace alive. When the plugin is
+> opened again, the user must manually Discard the previous
+> workspace before preparing a new selection. This creates
+> unnecessary workflow friction.
+
+Concretely this dispatch changed:
+
+  - `extension/su_ai_plugin/dialog_runner.rb`:
+    - `on_close()` now runs the EXISTING
+      `WorkingModeRunner.discard` path BEFORE releasing the
+      controller / Loader cache / module-level controller
+      handle, IF and only IF the current workspace state is
+      in `{building, ready, failed}`. For `none` and
+      `discarded` the close is a no-op.
+    - The close-time cleanup is wrapped in a
+      `begin / rescue StandardError` block that uses the
+      existing `_safe_log` to log the error and SWALLOWS the
+      exception, so a transient close-time error can NEVER
+      block SketchUp shutdown / model close / the
+      HtmlDialog close callback (per dispatch §4 fail-safe
+      requirement).
+    - The existing discard contract is reused verbatim. NO
+      second cleanup implementation is introduced.
+    - The destructive `apply_planar_normalization` callback
+      name is preserved verbatim. Source-of-Truth / Undo /
+      transaction / provenance / observer architecture are
+      all UNCHANGED.
+
+Close-time behavior matrix (per dispatch §1-§4):
+
+| State at close   | on_close action                                                                 |
+|------------------|----------------------------------------------------------------------------------|
+| `none`           | no-op (no current workspace)                                                     |
+| `discarded`      | no-op (already discarded)                                                        |
+| `building`       | `WorkingModeRunner.discard` (cleanup transient)                                  |
+| `ready`          | `WorkingModeRunner.discard` (the primary case — clear derived + V1.5 dup + V1.6 PN) |
+| `failed`         | `WorkingModeRunner.discard` (cleanup partial state)                             |
+
+All five cases must NOT raise. Source CAD is NEVER touched
+by the close path; only the derived workspace + the V1.5
+duplicate_repair summary + the V1.6 planar_normalization
+proposal/audit (carried by `WorkingModeRunner`) are cleared,
+which is the existing discard contract.
+
+Production files NOT modified by this dispatch (frozen
+Blueprint + V1.6 backend + the Simplified Chinese UI surface
+are all untouched):
+- All V1.6 backend files (planar_normalization_*.rb,
+  tolerance.rb, analysis_config.rb,
+  derived_workspace_adapter.rb,
+  su_derived_workspace_adapter.rb, working_mode_runner.rb,
+  main.rb).
+- `extension/su_ai_plugin/html/app.js` (the Simplified
+  Chinese UI surface; the close-time auto-discard is a
+  Ruby-side change in `dialog_runner.rb`).
+- `extension/su_ai_plugin/html/index.html`
+- `extension/su_ai_plugin/html/style.css`
+
+Test files modified by this dispatch (1):
+  - `tests/test_dialog_runner.rb`: added a new
+    `dr_realistic_result` helper (AnalysisResult with one
+    source edge so the production prepare() path reaches
+    state='ready' instead of 'failed' for the empty-source
+    path) and 7 new V16-CLOSE-AUTODISCARD assertions:
+    - V16-CLOSE-AUTODISCARD: close with ready workspace
+      auto-discards (the primary case).
+    - V16-CLOSE-AUTODISCARD: close with no workspace is a
+      safe no-op.
+    - V16-CLOSE-AUTODISCARD: close with already-discarded
+      workspace is a no-op.
+    - V16-CLOSE-AUTODISCARD: close preserves source
+      fingerprint / source geometry (Source CAD invariant).
+    - V16-CLOSE-AUTODISCARD: close auto-discard clears V1.6
+      planar_normalization proposal / audit (existing
+      discard contract requirement).
+    - V16-CLOSE-AUTODISCARD: reopen after close exposes a
+      clean `准备处理` path (state='discarded' after close).
+    - V16-CLOSE-AUTODISCARD: close callback is fail-safe on
+      transient close-time error (monkey-patch discard to
+      raise; on_close MUST still release Loader cache +
+      current_controller handle).
+
+Test evidence (this dispatch):
+
+- Full Ruby suite: **850 / 850 PASS** / 0 fail / 0 error
+  (was 843 before this dispatch; +7 = the new
+  V16-CLOSE-AUTODISCARD assertions).
+- V16 substring: **26 / 26 PASS** (V1.6 backend behavior
+  unchanged).
+- V15 substring: **149 / 149 PASS** (BLOCK-005 closed,
+  duplicate-repair semantics unchanged).
+- dialog_runner substring: **29 / 29 PASS** (was 22 before
+  this dispatch; +7 = the new V16-CLOSE-AUTODISCARD
+  assertions).
+- Node DOM (`tests/test_html_render_dom.js`): **307/307
+  PASS** (the JS surface is unchanged; 240 existing + 54
+  new CN1-CN18 + 13 V16-FIX = 307 all green).
+- RBZ smoke substring: **9 / 9 PASS**.
+- `git diff --check`: clean.
+
+CODEX_TRIGGER: **NO** (per dispatch §9). No new architecture;
+no Source-of-Truth / Undo / transaction / provenance /
+observer change. The fix reuses the EXISTING discard contract
+verbatim. The destructive `apply_planar_normalization`
+callback name is preserved verbatim. The closed-dialog
+auto-discard is fail-safe by construction (rescue StandardError
+at the boundary + `_safe_log` for diagnostic logging).
+
+V1.6 OWNER REAL-HOST VERIFICATION OF THE CLOSE-AUTODISCARD
+NOT YET RUN.
 V1.6 NOT CLOSED.
 
 ## V1.6 PI-IMPLEMENTATION DISPATCH

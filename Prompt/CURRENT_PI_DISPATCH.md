@@ -1,9 +1,9 @@
 # CURRENT PI DISPATCH
 
-DISPATCH_ID: V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01
+DISPATCH_ID: V16-CLOSE-AUTODISCARD-2026-09-01
 STATUS: ACTIVE
 PROJECT: SU-AI-Plugin
-STAGE: V1.6 — Planar Normalization / Z Policy
+STAGE: V1.6 — Planar Normalization / Z Policy (close UX fix)
 TARGET_BRANCH: dev/v1.6
 
 Dispatcher / Product + Technical Authority: AIPM
@@ -14,12 +14,84 @@ FROZEN V1.6 BLUEPRINT:
 Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md
 
 PRIOR ACCEPTED DISPATCHES (history):
+- V16-UI-CN-SIMPLIFICATION-FIX-2026-09-01 (主 UX 修正; COMPLETE)
 - V16-UI-CN-SIMPLIFICATION-2026-09-01 (主 UX pass; COMPLETE)
 - V16-UI-INTEGRATION-CORRECTION-2026-09-01 (PRIOR ACCEPTED FUNCTIONAL UI INTEGRATION)
 
 ---
 
-# 0. SCOPE — BOUNDED UX REGRESSION FIX
+# 0. SCOPE — BOUNDED CLOSE-CLEANUP UX FIX (V16-CLOSE-AUTODISCARD)
+
+Owner real-host verification A-E of the V16-UI-CN-SIMPLIFICATION
++ V16-UI-CN-SIMPLIFICATION-FIX RBZ has PASSED.
+
+NEW Owner UX finding (per dispatch §1):
+
+> Closing the SU-AI-Plugin dialog currently leaves the
+> transient Derived Workspace alive. When the plugin is
+> opened again, the user must manually Discard the previous
+> workspace before preparing a new selection. This creates
+> unnecessary workflow friction.
+
+Required behavior (per dispatch §1-§5):
+
+1. When the user explicitly closes the SU-AI-Plugin dialog:
+   - if a current transient Derived Workspace exists,
+     automatically run the EXISTING discard-workspace path;
+   - remove Derived geometry/state;
+   - preserve Source CAD completely;
+   - clear V1.6 planar-normalization transient proposal/audit
+     state as the existing discard contract already requires.
+
+2. Reuse the current discard semantics. Do NOT create a second
+   cleanup implementation.
+
+3. Closing the dialog should therefore make the next
+   plugin-open session begin cleanly, with the normal primary
+   action: `准备处理`.
+
+4. The close cleanup must be fail-safe:
+   - must not block SketchUp shutdown/model close;
+   - must not raise an unhandled exception from the HtmlDialog
+     close callback;
+   - if there is no current workspace, closing is a no-op.
+
+5. Do NOT change:
+   - Source-of-Truth
+   - Prepare / Discard / Rebuild semantics
+   - normalization algorithms
+   - Undo/reconciliation architecture
+   - Observer architecture
+   - V1.7 scope
+
+6. Add focused regression evidence for:
+   - ready workspace -> dialog close -> discarded/clean state;
+   - no workspace -> dialog close -> safe no-op;
+   - source fingerprint/source geometry unchanged;
+   - reopening the dialog exposes a clean `准备处理` path.
+
+7. Run focused tests + full Ruby + DOM if affected + RBZ smoke
+   + git diff --check.
+
+8. Rebuild RBZ.
+
+9. Report new RBZ SHA-256.
+
+Do NOT invoke Codex. Do NOT start V1.7. Do NOT push if
+GitHub remains unreachable. STOP after the bounded fix.
+
+This is a small continuation inside the already-ACTIVE
+V1.6 dispatch window. The change is purely in the dialog
+close path (no architecture, no Source-of-Truth, no
+Undo, no observers, no V1.7).
+
+After this fix the next Gate remains: Owner / AIPM SketchUp
+2020 V1.6 real-host verification. Do NOT run Owner
+verification on behalf of Owner.
+
+---
+
+# 0. SCOPE — BOUNDED UX REGRESSION FIX (V16-UI-CN-SIMPLIFICATION-FIX, history)
 
 Owner real-host testing of the V16-UI-CN-SIMPLIFICATION RBZ
 found ONE concrete workflow blocker:
