@@ -792,7 +792,67 @@ module SUAnalysis
 
       # Idempotent close handler. Releases the controller and the
       # Loader-side live-dialog cache.
+      #
+      # V16-CLOSE-AUTODISCARD (Owner UX fix, 2026-09-01):
+      # before releasing the dialog we run the EXISTING
+      # discard-workspace path if (and only if) a current
+      # transient Derived Workspace exists. The discard
+      # contract is reused verbatim (WorkingModeRunner.discard)
+      # — no second cleanup implementation is introduced.
+      # The behavior matrix on dialog close is:
+      #   state == 'none'      -> no-op (no current workspace)
+      #   state == 'discarded' -> no-op (already discarded)
+      #   state == 'building'  -> discard (cleanup transient)
+      #   state == 'ready'     -> discard (the primary case)
+      #   state == 'failed'    -> discard (cleanup partial state)
+      # This makes the next plugin-open session begin cleanly
+      # with the normal primary action `准备处理` (per the
+      # V16-UI-CN-SIMPLIFICATION-FIX action-state matrix).
+      #
+      # The discard is FAIL-SAFE:
+      #   - the existing WorkingModeRunner.discard path already
+      #     has a `_discard_if_present` rescue that preserves
+      #     the prior handle_registry on exception;
+      #   - we additionally wrap the call in begin/rescue
+      #     StandardError so a truly unexpected exception from
+      #     the close path can NEVER block SketchUp shutdown,
+      #     model close, or the HtmlDialog close callback;
+      #   - if there is no current workspace, the call is a
+      #     no-op (the @current_workspace nil guard inside
+      #     `_discard_if_present` returns immediately).
+      # Source CAD is NEVER touched by this path; only the
+      # derived workspace + the V1.5 duplicate_repair summary
+      # + the V1.6 planar_normalization proposal/audit (all
+      # carried by WorkingModeRunner) are cleared, which is
+      # the existing discard contract.
       def on_close(_dialog, controller)
+        begin
+          # Snapshot the current state BEFORE we release the
+          # controller. We only need the state name; the
+          # runner remains the single source of truth.
+          current_state = SUAnalysis::Core::WorkingModeRunner.snapshot['state']
+          if %w[building ready failed].include?(current_state)
+            # Reuse the EXISTING discard-workspace path verbatim.
+            # This clears:
+            #   - the current Derived Workspace (via
+            #     _discard_if_present -> workspace.discard)
+            #   - the V1.5 duplicate_repair summary
+            #   - the V1.6 planar_normalization proposal + audit
+            # Source CAD is untouched. _discard_if_present has
+            # its own rescue that preserves the prior handle
+            # registry on exception; we wrap here as a second
+            # line of defense so a truly unexpected exception
+            # can never bubble out of the close callback.
+            SUAnalysis::Core::WorkingModeRunner.discard
+          end
+        rescue StandardError => close_err
+          # Per dispatch §4: the close cleanup must be fail-safe.
+          # We log via _safe_log and swallow the exception so
+          # SketchUp shutdown / model close / HtmlDialog close
+          # is NEVER blocked by a transient close-time error.
+          _safe_log("[SU-AI-Plugin] close-time auto-discard error: " \
+                    "#{close_err.class}: #{close_err.message}")
+        end
         controller.release!
         Loader.release_dialog!
         # V1.5 Phase 1 (BLOCK-004 recheck #2): clear the
