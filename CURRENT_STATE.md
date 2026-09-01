@@ -1,6 +1,46 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.6 CLOSE-AUTODISCARD DISPATCH (THIS UPDATE)
+## V1.7 GAP-TOPOLOGY IMPLEMENTATION (THIS UPDATE)
+
+Updated: 2026-09-01 (V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
+Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch underway):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md` and the prior
+  CURRENT_PI_REPORT closure record).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE
+  (`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`).
+- **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
+  primary review. Pi does NOT invoke Codex.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+Starting V1.7 baseline:
+
+- Branch: `dev/v1.7` (created from exact local closed V1.6
+  HEAD `d7e9c59`).
+- V1.7 docs commit: `0bac757` (track V1.6 closure record +
+  V1.7 Blueprint as durable authority documents).
+- V1.6 RBZ baseline: size 768,150 bytes; entries 62; SHA-256
+  `7154C6C96759E847CA99A99E9B8B62F88BF230E0741CDFED884586425960BAE7`.
+
+Full V1.7 implementation summary will be appended to this
+dispatch block when the dispatch completes.
+
+(For complete V1.6 closure facts and the prior dispatch
+blocks, see the historical sections below this dispatch.)
+
+---
+
+## V1.6 CLOSE-AUTODISCARD DISPATCH (HISTORICAL)
 
 Updated: 2026-09-01 (V16-CLOSE-AUTODISCARD-2026-09-01
 dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The
