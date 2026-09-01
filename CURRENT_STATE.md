@@ -35,6 +35,33 @@ Starting V1.7 baseline:
 Full V1.7 implementation summary will be appended to this
 dispatch block when the dispatch completes.
 
+V1.7 IMPLEMENTATION COMPLETE — 2026-09-01.
+
+- Starting HEAD: `0bac757`.
+- Final HEAD on `dev/v1.7`: `4e05023` (8 stable local commits:
+  docs anchor → 5 implementation → tests → dispatch + report).
+- V1.7 RBZ candidate: size 890,087 bytes; entries 67; SHA-256
+  `b0064262f4cc9b52d02db75a86aeda9d75b03f7bba14eed55d2ce0a6c999f3f5`.
+- Full Ruby suite: **886 / 886 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 36 new V1.7 Ruby tests).
+- Node DOM assertions: **PASS** (existing V1.6 CN1..CN18 +
+  V17-UI1..V17-UI4 topology-repair Chinese card assertions).
+- per dispatch §13: STOPPED awaiting AIPM direct source review;
+  Codex xHigh integration review NOT invoked; V1.8 NOT
+  STARTED; final Owner SU2020 real-host verification gate
+  NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+Next expected AIPM action: AIPM direct source review of this
+implementation packet against the frozen Blueprint + the prior
+V1.4–V1.6 review evidence, then (on AIPM PASS) the mandatory
+Codex xHigh integration review, then the final Owner SU2020
+real-host verification gate Scenarios A-G.
+Codex review is NOT a routine reviewer for V1.7 and was NOT
+self-invoked by Pi.
+
 (For complete V1.6 closure facts and the prior dispatch
 blocks, see the historical sections below this dispatch.)
 
