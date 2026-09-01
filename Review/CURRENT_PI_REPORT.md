@@ -376,11 +376,23 @@ landed (R5 / R6 production defects):
   file (Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md).
 - **Local checkpoints on dev/v1.7 (this dispatch)**: 2 commits
   (1 production + 1 doc-stamp).
-- **NOT PUSHED per dispatch §8 + the bounded network policy**.
-- **`origin/dev/v1.7` HEAD (unchanged by this dispatch)**:
-  remote unreachable from this host (same as every prior
-  V1.x dispatch). Local stable commits remain the
-  authoritative submission artifact.
+- **NOT PUSHED per dispatch §8 + the bounded network policy**
+  AT THE TIME OF TEST RUN. After all required tests were
+  green and the final stable local dev/v1.7 checkpoint
+  existed, the Owner/AIPM post-dispatch instruction was
+  applied: ONE normal fast-forward push of the assigned
+  branch was attempted. Result: PUSH SUCCEEDED.
+  - Remote `dev/v1.7` HEAD:
+    `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
+    (matches local `git rev-parse HEAD` byte-for-byte).
+  - Branch created as a new remote branch (GitHub reported
+    `[new branch] dev/v1.7 -> dev/v1.7`).
+  - No force-push, no rebase, no rewrite of shared history,
+    no `main` push/merge, no tag/release.
+- **`origin/dev/v1.7` HEAD**: `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
+  (new remote branch created by the single normal push
+  attempted post-dispatch per the Owner/AIPM instruction;
+  matches local HEAD byte-for-byte).
 - **`git diff --check`**: clean.
 
 ## M. Local commits created (per dispatch §9)
@@ -488,7 +500,23 @@ SU2020 confirmation)
 - Final experience-freeze decision (this is an `Owner Gate`,
   not a Pi or AIPM decision).
 
-## P. Mandatory review state (per dispatch §N)
+## P. Push outcome (per Owner/AIPM post-dispatch instruction)
+
+A single normal fast-forward push of the assigned `dev/v1.7`
+branch was attempted after all required tests were green and
+the final stable local `dev/v1.7` checkpoint existed. Result:
+**PUSH SUCCEEDED**.
+
+- Remote `dev/v1.7` HEAD:
+  `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
+  (matches local `git rev-parse HEAD` byte-for-byte; verified
+  via `git ls-remote origin dev/v1.7`).
+- Branch created as a new remote branch (GitHub reported
+  `[new branch] dev/v1.7 -> dev/v1.7`).
+- No force-push, no rebase, no rewrite of shared history, no
+  `main` push/merge, no tag/release.
+
+## Q. Mandatory review state (per dispatch §N)
 
 ```
 CODEX_GATE: STILL PENDING — DO NOT INVOKE
@@ -506,10 +534,8 @@ Justification:
   mandatory review strategy).
 - Pi did NOT invoke Codex at any point in this dispatch.
 
-## Q. Owner gate (per dispatch §O)
-
 ```
-OWNER GATE: NOT YET RUN
+OWNER_GATE: NOT YET RUN
 ```
 
 The Owner shall run the Blueprint §19 scenarios A through G on

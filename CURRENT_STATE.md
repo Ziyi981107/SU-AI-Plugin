@@ -106,6 +106,21 @@ real-host verification gate Scenarios A–G.
 CODEX_GATE: STILL PENDING — DO NOT INVOKE.
 OWNER GATE: NOT YET RUN.
 
+### Push outcome (post-dispatch)
+
+After all required tests were green and the final stable local
+`dev/v1.7` checkpoint existed, the Owner/AIPM post-dispatch
+instruction was applied: ONE normal fast-forward push of the
+assigned branch was attempted. Result: **PUSH SUCCEEDED**.
+
+- Remote `dev/v1.7` HEAD:
+  `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
+  (matches local `git rev-parse HEAD` byte-for-byte).
+- Branch created as a new remote branch (GitHub reported
+  `[new branch] dev/v1.7 -> dev/v1.7`).
+- No force-push, no rebase, no rewrite of shared history, no
+  `main` push/merge, no tag/release.
+
 ## V1.7 AIPM-PRIMARY-REVIEW-CORRECTION (HISTORICAL)
 
 Updated: 2026-09-01 (V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01

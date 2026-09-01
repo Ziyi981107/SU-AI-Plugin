@@ -1,386 +1,286 @@
 # CURRENT PI DISPATCH
 
-DISPATCH_ID: V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
+DISPATCH_ID: V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
 STATUS: ACTIVE
 PROJECT: SU-AI-Plugin
 STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
 TARGET_BRANCH: dev/v1.7
 
-Dispatcher / Product + Technical Authority: AIPM
+Dispatcher / Technical Authority: AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 
 FROZEN BLUEPRINT:
 Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
 
-PRIOR IMPLEMENTATION REPORT:
+PRIOR REPORT:
 Review/CURRENT_PI_REPORT.md
 Dispatch:
-V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
+V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
 
 ---
 
 # 0. PURPOSE
 
-AIPM report-level primary review found concrete evidence gaps / contract
-ambiguities in the V1.7 implementation packet.
+AIPM reviewed the correction report before consuming the source patch.
 
-This is NOT a redesign.
+The packet is materially improved, but three Blueprint requirements are still
+not proven by the evidence described in the report.
 
+This is a FINAL bounded evidence/integration correction.
+
+Do NOT redesign V1.7.
+Do NOT invoke Codex.
+Do NOT run Owner verification.
 Do NOT start V1.8.
-Do NOT invoke Codex yet.
-Do NOT run Owner real-host verification yet.
-
-Correct the bounded findings below, regenerate trustworthy evidence, and produce
-an AIPM-readable source-review patch bundle so AIPM can complete the required
-primary source review before the mandatory Codex xHigh gate.
 
 ---
 
-# 1. FINDING V17-R1 — CROSSING / BRANCH SAFETY IS NOT ACTUALLY PROVEN
+# 1. FINDING V17-R5 — X1/X2 TESTS MUST EXECUTE PRODUCTION CROSSING LOGIC
 
-The frozen Blueprint requires explicit:
+The current report says V17-X1 / V17-X2 construct a
+`crossing_checker` proc "mirroring" `WorkingModeRunner._crossing_checker_proc`.
 
-X1 — proposed bridge intersects unrelated edge interior
-     → REVIEW_REQUIRED.
+A mirrored test implementation is not acceptable evidence for the production
+gate: the test and production code may diverge while both appear green.
 
-X2 — third canonical node lies on bridge
-     → REVIEW_REQUIRED.
+Required:
 
-X3 — two proposed bridges cross
-     → conflicting proposals not executable.
+1. X1 and X2 must execute the ACTUAL production crossing/third-node logic.
+2. Preferred evidence:
+   - invoke the normal `WorkingModeRunner.compute_gap_repair` path with the
+     real `_crossing_checker_proc`, OR
+   - call the actual production method/proc through the smallest existing
+     supported seam.
+3. Do not duplicate/reimplement the crossing algorithm inside the test.
+4. Prove:
+   - X1 -> REVIEW_REQUIRED / `bridge_crossing`;
+   - X2 -> REVIEW_REQUIRED / `third_node_on_bridge`;
+   - no executable unsafe proposal;
+   - no destructive host operation.
 
-X4 — almost-closed triangle
-     → READY_TO_REPAIR.
-
-The prior Pi report claims:
-
-`§10.3 crossing / branch / pair conflict`
-→ `WorkingModeRunner._crossing_checker_proc`
-→ `(covered by G1)`
-
-This is insufficient.
-
-G1 is only a simple valid pair and cannot prove crossing / third-node /
-simultaneous-bridge conflict safety.
-
-## Required correction
-
-1. Inspect the ACTUAL `_crossing_checker_proc` implementation.
-2. Verify that it checks ALL frozen conditions:
-   - unrelated canonical-edge interior intersection;
-   - unrelated canonical node on proposed bridge interior;
-   - implicit T-junction / split requirement;
-   - crossing between simultaneously proposed bridges.
-3. Add explicit regression tests named/mapped to X1, X2, X3, X4.
-4. Each unsafe case must prove:
-   - no executable READY proposal for the unsafe bridge;
-   - stable review reason where applicable:
-     `bridge_crossing`,
-     `third_node_on_bridge`,
-     `bridge_conflict`;
-   - zero destructive bridge creation.
-5. X4 must use an almost-closed triangle-style topology and prove ONE safe
-   endpoint_bridge proposal exists.
-
-Do NOT treat "nearest" or "mutual unique" as a substitute for crossing safety.
+The old mirror-proc tests may remain as low-level predicate tests, but they
+cannot be the only production evidence.
 
 ---
 
-# 2. FINDING V17-R2 — CANONICAL POST-REPAIR ADJACENCY IS UNDER-PROVEN
+# 2. FINDING V17-R6 — X4 MUST BE A REAL ALMOST-CLOSED TRIANGLE
 
-The frozen Blueprint requires:
+The current report explicitly says V17-X4 uses a simple 2-line topology rather
+than the Blueprint-required almost-closed triangle.
 
-T3 — repaired endpoints gain exactly the expected adjacency.
+That does NOT satisfy X4.
 
-T4 — an almost-closed triangle becomes canonical connected / cycle-capable
-     topology input for V1.8 after the bridge.
+Required:
 
-The prior report lists canonical graph tests:
+Construct an actual almost-closed triangular boundary, e.g.:
 
-T1, T2, T5-T7
+A -------- B
+ \        /
+  \      /
+   C --- D
 
-and does not provide explicit T3 / T4 evidence.
+with:
+- three existing canonical/source-derived edges forming an almost triangle;
+- C and D are the two open endpoints;
+- distance(C,D) within gap_search and > coordinate_epsilon;
+- C and D are mutual-unique safe candidates;
+- no crossing / third-node / layer / Z / curve / face disqualifier.
 
-## Required correction
+Prove:
+- exactly one READY_TO_REPAIR endpoint_bridge;
+- the bridge is C-D;
+- the input is actually a 3-edge almost-closed triangle.
 
-Add explicit tests:
+Important:
 
-### T3
+The report says the 2-line substitute was chosen to avoid a
+"clique-merge interaction with co-incident endpoint keys".
 
-Before repair:
-- endpoint node A degree = 1;
-- endpoint node B degree = 1.
+If a correct 3-edge almost-triangle cannot pass because canonical identity or
+open-endpoint filtering incorrectly collapses/loses the topology, this is a
+REAL implementation bug, not a reason to weaken the test.
 
-After applying one endpoint_bridge + rebuilding CanonicalGeometryGraph:
-- canonical gap bridge exists;
-- node A degree increases exactly as expected;
-- node B degree increases exactly as expected;
-- no unrelated node degree changes.
-
-### T4
-
-Construct an almost-closed triangle / equivalent 3-edge chain with one short
-unique missing closing segment.
-
-Before:
-- topology has two open endpoint nodes.
-
-After endpoint_bridge:
-- canonical graph contains the generated canonical edge;
-- the two formerly open nodes are connected through the expected adjacency;
-- topology is cycle-capable for V1.8;
-- V1.7 MUST NOT create a V1.8 Loop/Region object.
-
-This is topology evidence only, not a face-generation requirement.
+In that case:
+- fix the implementation within the frozen V1.7 contract;
+- do not change the Blueprint;
+- report the root cause.
 
 ---
 
-# 3. FINDING V17-R3 — CANONICAL `origin_kind` CONTRACT MUST BE MADE EXACT
+# 3. FINDING V17-R7 — H3 MULTI-BRIDGE BATCH MUST BE TESTED DIRECTLY
 
-The Blueprint deliberately distinguishes:
+Blueprint H3 requires:
 
-Derived/workspace record origin kind:
-`generated_gap_bridge`
+multiple independent safe bridges
+→ ONE native SketchUp operation
+→ exact generated bridge count.
 
-from CanonicalEdge origin kind:
-`gap_bridge`
+The current report maps H3 to:
+- H2 single bridge, plus
+- H5 endpoint-disjoint/preflight behavior.
 
-Blueprint §15.1 explicitly requires:
+That is not direct H3 evidence.
 
-CanonicalEdge:
-`origin_kind = gap_bridge`
+Required explicit H3 test:
 
-The prior report maps §15.1 to:
+Input:
+- two independent safe endpoint_bridge proposals;
+- four distinct endpoints;
+- no crossing/conflict;
+- both executable.
 
-`GapBridgeExecutor.apply sets origin_kind='generated_gap_bridge'`
+Apply one batch.
 
-This is ambiguous and may leak the workspace implementation enum into the
-canonical downstream contract.
-
-## Required correction
-
-Verify the actual canonical graph output.
-
-Required final contract:
-
-- raw/generated DerivedEntityRecord MAY remain:
-  `origin_kind = generated_gap_bridge`
-
-- CanonicalGeometryGraph CanonicalEdge MUST expose:
-  `origin_kind = gap_bridge`
-
-Add an explicit test proving this mapping.
-
-Do NOT change the frozen source/derived provenance meaning.
-
-V1.8 must be able to consume canonical `gap_bridge` without learning the
-workspace implementation enum.
-
----
-
-# 4. FINDING V17-R4 — TEST MATRIX / REPORT CLAIMS MUST BE TRUTHFUL
-
-The dispatch required at minimum:
-
-- N1-N6
-- G1-G10
-- X1-X4
-- H1-H8
-- T1-T7
-- L1-L4
-- P1-P3
-
-The prior report labels:
-- H1-H7;
-- T1, T2, T5-T7;
-- no X1-X4.
-
-Do not claim "all Blueprint §§ covered" until the explicit missing evidence is
-present.
-
-After correction, report the matrix honestly.
-
-If some H-number was only a numbering mismatch but the underlying requirement
-is already tested, map it explicitly by Blueprint requirement rather than
-renaming evidence deceptively.
-
-In particular prove both:
-
+Prove:
+- exactly ONE begin_operation;
+- exactly ONE commit_operation;
+- zero abort;
+- exactly TWO generated bridge entities;
+- both expected proposal IDs/provenance recorded;
 - source fingerprint unchanged;
-- existing source-derived endpoint coordinates unchanged.
+- existing source-derived coordinates unchanged;
+- post canonical graph contains both gap_bridge canonical edges.
+
+Name/map this test explicitly to Blueprint H3.
 
 ---
 
-# 5. AIPM SOURCE-REVIEW BUNDLE — REQUIRED
+# 4. FINDING V17-R8 — T4 MUST PROVE A CYCLE, NOT ONLY CONNECTIVITY
 
-AIPM cannot currently inspect local `dev/v1.7` through the remote repository
-because the branch is not available remotely from the current environment.
+The current T4 report says BFS proves all three nodes are mutually reachable.
 
-Generate a durable review artifact from the actual local branch.
+Connectivity alone does NOT prove cycle-capability; a tree is connected.
 
-Create:
+Required T4 evidence using the actual almost-closed triangle from X4 or an
+equivalent canonical fixture:
+
+Before bridge:
+- connected/open triangle-chain component;
+- exactly two open endpoint nodes;
+- no cycle.
+
+After bridge:
+- bridge exists as canonical `gap_bridge`;
+- component is connected;
+- component has an actual cycle.
+
+For the simple triangle fixture prove one of the following equivalent exact
+invariants:
+
+- 3 canonical nodes + 3 canonical edges + every node degree == 2; OR
+- deterministic cycle traversal returns to start after consuming the expected
+  3 canonical edges exactly once.
+
+Also prove:
+- no LoopRecord / RegionRecord is created in V1.7.
+
+Do NOT count BFS connectivity alone as T4 PASS.
+
+---
+
+# 5. REGENERATE SOURCE-REVIEW BUNDLE
+
+After R5-R8 are complete, regenerate:
 
 `Review/V17_AIPM_SOURCE_REVIEW.patch`
 
-using the exact closed V1.6 base:
+from exact closed V1.6 base:
 
 `d7e9c59`
 
-to the final corrected V1.7 HEAD.
+to the final substantive corrected V1.7 implementation/test HEAD.
 
-The patch must include all V1.7 production/test changes.
-
-Equivalent command conceptually:
-
-git diff d7e9c59..HEAD --   extension/su_ai_plugin   tests   scripts/build_rbz.rb   > Review/V17_AIPM_SOURCE_REVIEW.patch
-
-Additionally create:
+Update:
 
 `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`
 
-containing:
+with:
+- actual production X1/X2 test seam;
+- real triangle X4;
+- direct H3;
+- exact T4 cycle invariant;
+- corrected line anchors.
 
-- corrected final HEAD;
-- full list of changed V1.7 source/test files;
-- symbol index for:
-  - DerivedTopologySnapshotBuilder
-  - CanonicalTopologyBuilder
-  - CanonicalGeometryGraph
-  - GapPairProposer
-  - GapBridgeExecutor
-  - WorkingModeRunner compute/apply gap methods
-  - `_crossing_checker_proc`
-  - SU derived workspace repair-group methods
-  - topology UI renderer / CTA logic;
-- line ranges or grep anchors;
-- exact tests covering N/G/X/H/T/L/P matrix.
-
-Do NOT paraphrase code into this file.
-The patch remains the source evidence.
+Record patch SHA-256.
 
 ---
 
-# 6. NO PRODUCT REDESIGN
+# 6. REGRESSION
 
-Do NOT change:
+Run at minimum:
 
-- `endpoint_bridge` as the only executable V1.7 repair type;
-- `gap_search` authority;
-- `coordinate_epsilon` canonical identity semantics;
-- source immutability;
-- workspace-owned repair geometry;
-- mutual-unique pairing;
-- Curve/Face/layer/Z conservative rules;
-- Undo architecture;
-- Observer architecture;
-- Simplified Chinese UX;
-- V1.8 boundary.
-
-If an actual source bug makes one of the above impossible:
-STOP and report the exact blocker.
-
----
-
-# 7. REQUIRED REGRESSION
-
-Run:
-
-1. explicit X1-X4 tests;
-2. explicit T3-T4 tests;
-3. canonical origin-kind mapping test;
-4. full focused V1.7 suite;
-5. full Ruby suite;
-6. Node DOM suite;
-7. V1.6 close-autodiscard regression;
-8. V1.5 host-state/BLOCK-005 regression;
-9. legacy compatibility;
-10. RBZ smoke/load;
-11. git diff --check.
+- X1 actual production-path test
+- X2 actual production-path test
+- X3 / X3-PAIRWISE
+- X4 real almost-closed triangle
+- direct H3 two-independent-bridges batch
+- T3
+- T4 exact cycle proof
+- OK-MAP-1 / OK-MAP-2
+- full V1.7
+- full Ruby
+- Node DOM
+- V1.6 close auto-discard
+- V1.5 BLOCK-005
+- LEGACY-COMPAT
+- RBZ smoke
+- git diff --check
 
 Rebuild RBZ if production code changes.
 
-If only tests/report change and production code is proven correct, do not rebuild
-just to create a new hash unnecessarily unless current packaging policy requires
-a final stable candidate after the report checkpoint.
-
 ---
 
-# 8. REPORT
+# 7. REPORT
 
 Overwrite:
 
 Review/CURRENT_PI_REPORT.md
 
 DISPATCH_ID:
-V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
+V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
 
 Report:
 
-A. exact finding disposition R1-R4
-B. exact production code changed, if any
-C. X1-X4 evidence
-D. T3-T4 evidence
-E. canonical `origin_kind` mapping evidence
-F. corrected complete test matrix
-G. source-review patch path + SHA-256
-H. critical source index path
-I. full regression counts
-J. RBZ identity if rebuilt
-K. Git facts
-L. remaining confirmed defects / assumptions / unknowns
-M. `CODEX_GATE: STILL PENDING — DO NOT INVOKE`
-N. `OWNER GATE: NOT YET RUN`
+A. R5-R8 disposition
+B. production code changed, if any
+C. X1/X2 actual-production-path evidence
+D. X4 real-triangle evidence
+E. H3 real multi-bridge batch evidence
+F. T4 exact cycle evidence
+G. corrected complete matrix
+H. source-review patch path / size / SHA-256
+I. critical source index
+J. regression counts
+K. RBZ identity
+L. exact substantive implementation HEAD + final doc-stamp HEAD
+M. remaining defect / assumption / unknown
+N. `CODEX_GATE: STILL PENDING — DO NOT INVOKE`
+O. `OWNER GATE: NOT YET RUN`
 
-Do not claim AIPM PASS.
-Do not claim Codex PASS.
-Do not claim Owner PASS.
+Do NOT claim AIPM PASS.
 
 ---
 
-# 9. GIT
+# 8. GIT / STOP
 
-Create one meaningful correction checkpoint, or two only if production and tests
-are cleanly separable.
+Create one bounded checkpoint if needed.
 
-Suggested:
-
-`fix(v1.7): complete topology safety contracts`
-
-and/or
-
-`test(v1.7): prove crossing and post-repair adjacency`
-
-Do not:
+Do NOT:
 - force-push;
-- rebase shared history;
+- rebase;
 - merge main;
 - tag/release;
-- start V1.8.
+- start V1.8;
+- invoke Codex.
 
-Remote network failure remains non-blocking.
-
----
-
-# 10. STOP
-
-After:
-
-- R1-R4 corrected;
-- source-review patch generated;
-- current report updated;
-- full regressions green;
-- stable local corrected HEAD exists;
+After R5-R8 + review bundle + green regressions:
 
 STOP.
 
 Return control to AIPM.
 
 Next Gate:
-
-AIPM direct source review of `V17_AIPM_SOURCE_REVIEW.patch`.
-
-Only after AIPM primary PASS:
-mandatory Codex xHigh integration review.
+AIPM direct source review of the regenerated patch.
 
 END
