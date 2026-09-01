@@ -197,7 +197,10 @@
     discard_workspace:             '放弃工作副本',
     rebuild_workspace:             '重新生成',
     compute_planar_normalization:  '检查平面偏差',
-    apply_planar_normalization:    '应用平面校正'
+    apply_planar_normalization:    '应用平面校正',
+    // V1.7 Endpoint / Gap Repair + Canonical Topology.
+    compute_gap_repair:            '检查间隙',
+    apply_gap_repair:              '修复间隙'
   };
 
   // V1.6 UI-CN-SIMPLIFICATION: section header Simplified Chinese
@@ -214,7 +217,32 @@
     workingMode:             '处理工作区',
     planarNormalization:     '平面校正',
     technicalDetails:        '技术详情',
-    moreActions:             '更多操作'
+    moreActions:             '更多操作',
+    topologyRepair:          '拓扑修复'
+  };
+
+  // V1.7 Endpoint / Gap Repair + Canonical Topology:
+  // Simplified Chinese state labels (Blueprint §17).
+  var TOPO_STATE_LABELS_CN = {
+    NOT_COMPUTED:        '未检查',
+    READY_TO_REPAIR:     '发现可修复间隙',
+    REVIEW_REQUIRED:     '需要人工确认',
+    NO_CANDIDATE:        '无需修复',
+    APPLIED:             '已修复',
+    FAILED:              '修复失败'
+  };
+
+  // V1.7: short user-facing row labels for the new
+  // "拓扑修复" card. Internal identifiers remain in
+  // `技术详情`.
+  var FIELD_LABEL_CN_TOPO = {
+    openEndpoints:        '开放端点',
+    safeProposals:        '可安全修复',
+    reviewRequired:       '需人工确认',
+    maxGap:               '最大间隙',
+    appliedCount:         '已修复间隙',
+    remainingOpen:        '剩余开放端点',
+    computed:             '已检查'
   };
 
   function render(payload) {
@@ -737,14 +765,23 @@
       if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
         renderPlanarNormalization(listEl, state, ws.planar_normalization);
       }
+      // V1.7 Endpoint / Gap Repair + Canonical Topology:
+      // condensed card (per dispatch §5 normal flow). The
+      // full Blueprint §17 rows and (when applicable) the
+      // locked primary CTA are rendered here. The raw
+      // proposal/audit rows + canonical graph digest are
+      // preserved in `技术详情`.
+      if (ws.topology_repair && typeof ws.topology_repair === 'object') {
+        renderTopologyRepair(listEl, state, ws.topology_repair);
+      }
     }
 
     // V1.6 UI-CN-SIMPLIFICATION (per dispatch §4): ONE primary
     // action button is shown when applicable. Unavailable
     // actions are HIDDEN (NOT rendered as disabled). The
     // primary action is chosen by current workspace + planar
-    // normalization state.
-    renderPrimaryAction(actionsEl, state, ws.planar_normalization);
+    // normalization + topology-repair state.
+    renderPrimaryAction(actionsEl, state, ws.planar_normalization, ws.topology_repair);
 
     // Secondary operational controls live in a collapsed
     // `更多操作` block under the primary CTA (per dispatch
@@ -794,7 +831,14 @@
   // SourceSnapshot + Derived Workspace from the CURRENT
   // selection. Rebuild replays the previously captured workspace,
   // which is not the same thing.
-  function renderPrimaryAction(actionsEl, workspaceState, pn) {
+  //
+  // V1.7 topology-repair priority: if a READY_TO_REPAIR
+  // proposal exists, `修复间隙` wins; otherwise if the
+  // topology-repair is NOT_COMPUTED, `检查间隙` is shown
+  // (priority alongside the V1.6 normalization CTA when both
+  // are NOT_COMPUTED; topology-repair is the more visible one
+  // because it produces visible derived geometry).
+  function renderPrimaryAction(actionsEl, workspaceState, pn, topo) {
     if (workspaceState === 'none') {
       // No workspace yet -> Prepare.
       addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
@@ -824,9 +868,31 @@
     }
     // Workspace exists (ready).
     if (workspaceState === 'ready') {
-      // Determine the planar normalization state.
       var pnState = (pn && typeof pn === 'object' && typeof pn.state === 'string')
                     ? pn.state : 'NOT_COMPUTED';
+      var topoActive = (topo && typeof topo === 'object' && typeof topo.state === 'string');
+      var topoState  = topoActive ? topo.state : null;
+      // V1.7 priority: a READY_TO_REPAIR topology proposal is
+      // the most visible product of the gateway. Show it as
+      // the primary CTA before any other action.
+      if (topoState === 'READY_TO_REPAIR') {
+        addAction(actionsEl, ACTION_LABEL_CN.apply_gap_repair,
+                  'apply_gap_repair', true);
+        return;
+      }
+      // V1.7 priority: when topology_repair is explicitly
+      // present AND not yet computed, the gateway CTA is
+      // `检查间隙`. (When topology_repair is absent entirely,
+      // V1.7 is not yet active and we fall through to V1.6 PN
+      // so existing V1.6 UI tests continue to PASS.)
+      if (topoState === 'NOT_COMPUTED') {
+        addAction(actionsEl, ACTION_LABEL_CN.compute_gap_repair,
+                  'compute_gap_repair', true);
+        return;
+      }
+      // V1.6 PN / V1.7 fallback. PN state retains its previous
+      // semantics for all non-READY_TO_REPAIR topology
+      // states.
       if (pnState === 'NOT_COMPUTED') {
         addAction(actionsEl, ACTION_LABEL_CN.compute_planar_normalization,
                   'compute_planar_normalization', true);
@@ -837,7 +903,7 @@
                   'apply_planar_normalization', true);
         return;
       }
-      // All other PN states (REVIEW_REQUIRED / NO_CANDIDATE /
+      // All other states (REVIEW_REQUIRED / NO_CANDIDATE /
       // APPLIED / FAILED / invalid_*): no destructive Apply
       // button. The user can rebuild / discard from the
       // `更多操作` block.
@@ -940,6 +1006,12 @@ function renderMoreActions(actionsEl, workspaceState) {
     // outlier_count, failure_reason).
     if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
       renderPlanarNormalizationTechnicalRows(listEl, ws.planar_normalization);
+    }
+    // V1.7 Endpoint / Gap Repair + Canonical Topology:
+    // raw proposal / audit / canonical-graph rows (per
+    // dispatch §5).
+    if (ws.topology_repair && typeof ws.topology_repair === 'object') {
+      renderTopologyRepairTechnicalRows(listEl, ws.topology_repair);
     }
   }
 
@@ -1234,6 +1306,159 @@ function renderMoreActions(actionsEl, workspaceState) {
       row.appendChild(msgEl);
     }
     listEl.appendChild(row);
+  }
+
+  // ============================================================
+  // V1.7 Endpoint / Gap Repair + Canonical Topology
+  // ============================================================
+  //
+  // renderTopologyRepair: condensed Simplified-Chinese user-
+  // facing card for the new `拓扑修复` section. Per Blueprint
+  // §17 the visible rows are:
+  //   - 开放端点 / 可安全修复 / 需人工确认 (before apply)
+  //   - 已修复间隙 / 剩余开放端点 / 需人工确认 (after apply)
+  // Internal identifiers (proposal IDs, endpoint keys,
+  // canonical node IDs, tolerance values) live under
+  // `技术详情` (renderTopologyRepairTechnicalRows).
+  function renderTopologyRepair(listEl, workspaceState, topo) {
+    if (!topo || typeof topo !== 'object') return;
+    var state = (typeof topo.state === 'string') ? topo.state : 'NOT_COMPUTED';
+    var label = TOPO_STATE_LABELS_CN[state] || state;
+    // Card title row (visible name).
+    addRow(listEl, workspaceState, SECTION_LABEL_CN.topologyRepair,
+           label, label);
+    var metrics = (topo.proposal && topo.proposal.metrics &&
+                   typeof topo.proposal.metrics === 'object')
+                  ? topo.proposal.metrics : {};
+    var openCount = (typeof metrics.open_endpoint_count === 'number')
+                    ? metrics.open_endpoint_count : 0;
+    var readyCount = (typeof metrics.ready_proposal_count === 'number')
+                     ? metrics.ready_proposal_count : 0;
+    var reviewCount = (typeof metrics.review_proposal_count === 'number')
+                      ? metrics.review_proposal_count : 0;
+    if (state === 'NOT_COMPUTED') {
+      addRow(listEl, workspaceState, null, null, '尚未检查可修复间隙。');
+      return;
+    }
+    if (state === 'READY_TO_REPAIR') {
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.safeProposals, '' + readyCount, '' + readyCount);
+      if (reviewCount > 0) {
+        addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
+               '' + reviewCount, '' + reviewCount);
+      }
+      return;
+    }
+    if (state === 'REVIEW_REQUIRED') {
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
+             '' + reviewCount, '' + reviewCount);
+      addRow(listEl, workspaceState, null, null,
+             '存在多义连接，建议逐项查看后人工处理。');
+      return;
+    }
+    if (state === 'NO_CANDIDATE') {
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
+      addRow(listEl, workspaceState, null, null, '在当前容差下未发现可安全修复的间隙。');
+      return;
+    }
+    if (state === 'APPLIED') {
+      var audit = (topo.audit && typeof topo.audit === 'object') ? topo.audit : {};
+      var applied = (typeof audit.applied_count === 'number')
+                    ? audit.applied_count
+                    : (Array.isArray(audit.applied_proposals) ? audit.applied_proposals.length : 0);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.appliedCount,
+             '' + applied, '' + applied);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.remainingOpen,
+             '' + openCount, '' + openCount);
+      if (reviewCount > 0) {
+        addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
+               '' + reviewCount, '' + reviewCount);
+      }
+      return;
+    }
+    if (state === 'FAILED') {
+      var audit2 = (topo.audit && typeof topo.audit === 'object') ? topo.audit : {};
+      var reason = audit2.reason || audit2.last_error || '未知错误';
+      addRow(listEl, workspaceState, null, null,
+             '修复失败：' + String(reason));
+      return;
+    }
+  }
+
+  // renderTopologyRepairTechnicalRows: full audit evidence
+  // for `技术详情`. Proposal count, audit fields,
+  // canonical-graph digest, unresolved issue codes.
+  function renderTopologyRepairTechnicalRows(listEl, topo) {
+    if (!topo || typeof topo !== 'object') return;
+    var state = (typeof topo.state === 'string') ? topo.state : 'NOT_COMPUTED';
+    addTechRow(listEl, 'topology_repair_state', state);
+    var proposal = (topo.proposal && typeof topo.proposal === 'object') ?
+                    topo.proposal : null;
+    if (proposal) {
+      if (typeof proposal.reason === 'string' && proposal.reason.length > 0) {
+        addTechRow(listEl, 'topology_repair_reason', proposal.reason);
+      }
+      if (typeof proposal.open_endpoint_count === 'number') {
+        addTechRow(listEl, 'topology_repair_open_endpoint_count',
+                   proposal.open_endpoint_count);
+      }
+      if (proposal.metrics && typeof proposal.metrics === 'object') {
+        Object.keys(proposal.metrics).sort().forEach(function (k) {
+          addTechRow(listEl, 'topology_repair_metric_' + k, proposal.metrics[k]);
+        });
+      }
+      if (proposal.tolerance && typeof proposal.tolerance === 'object') {
+        Object.keys(proposal.tolerance).sort().forEach(function (k) {
+          addTechRow(listEl, 'topology_repair_tolerance_' + k,
+                     proposal.tolerance[k]);
+        });
+      }
+    }
+    var audit = (topo.audit && typeof topo.audit === 'object') ? topo.audit : null;
+    if (audit) {
+      Object.keys(audit).sort().forEach(function (k) {
+        var v = audit[k];
+        if (Array.isArray(v)) {
+          v.forEach(function (item, idx) {
+            if (item && typeof item === 'object') {
+              Object.keys(item).sort().forEach(function (kk) {
+                addTechRow(listEl, 'topology_repair_audit_' + k + '_' + idx + '_' + kk,
+                           item[kk]);
+              });
+            } else {
+              addTechRow(listEl, 'topology_repair_audit_' + k + '_' + idx, item);
+            }
+          });
+        } else if (v && typeof v === 'object') {
+          Object.keys(v).sort().forEach(function (kk) {
+            addTechRow(listEl, 'topology_repair_audit_' + k + '_' + kk, v[kk]);
+          });
+        } else {
+          addTechRow(listEl, 'topology_repair_audit_' + k, v);
+        }
+      });
+    }
+    var cg = (topo.canonical_graph && typeof topo.canonical_graph === 'object') ?
+              topo.canonical_graph : null;
+    if (cg) {
+      if (typeof cg.digest === 'string') {
+        addTechRow(listEl, 'canonical_graph_digest', cg.digest);
+      }
+      if (typeof cg.schema_version === 'string') {
+        addTechRow(listEl, 'canonical_graph_schema_version', cg.schema_version);
+      }
+      if (cg.metrics && typeof cg.metrics === 'object') {
+        Object.keys(cg.metrics).sort().forEach(function (k) {
+          addTechRow(listEl, 'canonical_graph_metric_' + k, cg.metrics[k]);
+        });
+      }
+      if (Array.isArray(cg.unresolved_issues)) {
+        cg.unresolved_issues.forEach(function (u, idx) {
+          addTechRow(listEl, 'canonical_graph_unresolved_' + idx, u);
+        });
+      }
+    }
   }
 
   // Helper: append an action button. `callback` is a SketchUp

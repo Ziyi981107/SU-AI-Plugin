@@ -3195,6 +3195,166 @@ var cnCodeOnly = appJsSrcV16.split('\n')
 assert('CN source guard: app.js does NOT use innerHTML= in code (comments allowed)',
        cnCodeOnly.search(/\.innerHTML\s*=/) === -1);
 
+// ============================================================
+// V17 UI assertions (Simplified Chinese topology repair).
+// ============================================================
+
+// V17-UI1: NOT_COMPUTED + ready workspace renders a 拓扑修复 row
+// + "检查间隙" primary CTA (priority over V1.6 PN).
+renderWithPayload({
+  selectionLabel: 'wm-v17-u1', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v17-u1-snap',
+    source_fingerprint_digest: 'eeee1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v17cfg',
+    workspace_id: 'ws-v17-u1',
+    topology_repair: {
+      computed: false,
+      state:    'NOT_COMPUTED'
+    }
+  }
+});
+var v17u1List    = mockElements['working-mode-list'];
+var v17u1Actions = mockElements['working-mode-actions'];
+assert('V17-UI1: NOT_COMPUTED + ready workspace renders a "拓扑修复" State row with Simplified Chinese "未检查" label',
+       v17u1List && v17u1List.children.some(function (c) {
+         return c.textContent.indexOf('拓扑修复') !== -1 &&
+                c.textContent.indexOf('未检查') !== -1;
+       }));
+assert('V17-UI1: NOT_COMPUTED + ready workspace renders a "检查间隙" primary action button (priority over PN CTA)',
+       v17u1Actions && v17u1Actions.children.some(function (b) {
+         return b.textContent === '检查间隙' &&
+                b.attrs['data-action'] === 'compute_gap_repair' &&
+                !b.hasAttribute('disabled');
+       }));
+assert('V17-UI1: NOT_COMPUTED + ready workspace does NOT render "修复间隙" button (no proposal yet)',
+       v17u1Actions && !v17u1Actions.children.some(function (b) {
+         return b.textContent === '修复间隙';
+       }));
+
+// V17-UI2: READY_TO_REPAIR shows "可安全修复：N" + "修复间隙" CTA.
+renderWithPayload({
+  selectionLabel: 'wm-v17-u2', selectionType: 'Group',
+  summary: { edges: 4, vertices: 6, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v17-u2-snap',
+    source_fingerprint_digest: 'ffff1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v17cfg',
+    workspace_id: 'ws-v17-u2',
+    topology_repair: {
+      computed: true,
+      state:    'READY_TO_REPAIR',
+      metrics: {
+        open_endpoint_count: 4,
+        ready_proposal_count: 1,
+        review_proposal_count: 0
+      },
+      proposal: { state: 'READY_TO_REPAIR' }
+    }
+  }
+});
+var v17u2List    = mockElements['working-mode-list'];
+var v17u2Actions = mockElements['working-mode-actions'];
+assert('V17-UI2: READY_TO_REPAIR renders "拓扑修复" State row with Simplified Chinese "发现可修复间隙" label',
+       v17u2List && v17u2List.children.some(function (c) {
+         return c.textContent.indexOf('拓扑修复') !== -1 &&
+                c.textContent.indexOf('发现可修复间隙') !== -1;
+       }));
+assert('V17-UI2: READY_TO_REPAIR renders the "修复间隙" primary CTA (enabled, data-action="apply_gap_repair")',
+       v17u2Actions && v17u2Actions.children.some(function (b) {
+         return b.textContent === '修复间隙' &&
+                b.attrs['data-action'] === 'apply_gap_repair' &&
+                !b.hasAttribute('disabled');
+       }));
+assert('V17-UI2: READY_TO_REPAIR does NOT render "检查间隙" button (already computed)',
+       v17u2Actions && !v17u2Actions.children.some(function (b) {
+         return b.textContent === '检查间隙';
+       }));
+
+// V17-UI3: REVIEW_REQUIRED shows "需要人工确认" + NO destructive CTA.
+renderWithPayload({
+  selectionLabel: 'wm-v17-u3', selectionType: 'Group',
+  summary: { edges: 6, vertices: 10, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v17-u3-snap',
+    source_fingerprint_digest: 'eeee2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v17cfg',
+    workspace_id: 'ws-v17-u3',
+    topology_repair: {
+      computed: true,
+      state:    'REVIEW_REQUIRED',
+      metrics: {
+        open_endpoint_count: 6,
+        ready_proposal_count: 0,
+        review_proposal_count: 3
+      },
+      proposal: { state: 'REVIEW_REQUIRED' }
+    }
+  }
+});
+var v17u3Actions = mockElements['working-mode-actions'];
+assert('V17-UI3: REVIEW_REQUIRED does NOT render "修复间隙" button (ambiguous; no destructive CTA)',
+       v17u3Actions && !v17u3Actions.children.some(function (b) {
+         return b.textContent === '修复间隙';
+       }));
+assert('V17-UI3: REVIEW_REQUIRED does NOT render "检查间隙" button (already computed)',
+       v17u3Actions && !v17u3Actions.children.some(function (b) {
+         return b.textContent === '检查间隙';
+       }));
+
+// V17-UI4: APPLIED shows audit counts and Chinese label.
+renderWithPayload({
+  selectionLabel: 'wm-v17-u4', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v17-u4-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v17cfg',
+    workspace_id: 'ws-v17-u4',
+    topology_repair: {
+      computed: true,
+      state:    'APPLIED',
+      metrics: { open_endpoint_count: 2, ready_proposal_count: 1, review_proposal_count: 0 },
+      proposal: { state: 'APPLIED' },
+      audit: {
+        status: 'applied',
+        applied_count: 1,
+        failed_count: 0,
+        applied_proposals: ['gp-abc'],
+        reason: 'ok'
+      }
+    }
+  }
+});
+var v17u4List = mockElements['working-mode-list'];
+assert('V17-UI4: APPLIED renders 拓扑修复 State row with Simplified Chinese "已修复" label',
+       v17u4List && v17u4List.children.some(function (c) {
+         return c.textContent.indexOf('拓扑修复') !== -1 &&
+                c.textContent.indexOf('已修复') !== -1;
+       }));
+assert('V17-UI4: APPLIED renders "已修复间隙" count row (=1)',
+       v17u4List && v17u4List.children.some(function (c) {
+         return c.textContent.indexOf('已修复间隙') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
+       }));
+
 // --- final verdict -----------------------------------------------------
 
 var failed = results.filter(function (r) { return !r.pass; });
