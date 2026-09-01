@@ -320,8 +320,9 @@ rebuild; production code was changed for R1/R2/R3):
 - **Starting HEAD (pre-this-dispatch)**: `792e99f6d6a140b4a250f316dc1e9d7beb8f6e4b`
   (the V17-GAP-TOPOLOGY implementation complete-state doc-stamp commit).
 - **Closed V1.6 base SHA**: `d7e9c59` (V1.6 CLOSE-AUTODISCARD).
-- **Final HEAD (post-this-dispatch)**: see §L (committed at
-  end of this dispatch).
+- **Final HEAD (post-this-dispatch)**: see §L; the
+  implementation commit SHA is `4b8425f3acd2105c09bf89594532e6848b66299e`
+  (the doc-stamp commit is one commit after).
 - **Working tree (this dispatch, pre-commit)**: 2 modified
   production files (canonical_geometry_graph.rb, gap_pair_proposer.rb),
   1 new test file (test_v17_branch_crossing.rb), 1 modified test
@@ -345,15 +346,16 @@ This dispatch created two local commits on the assigned
    R3 fixes in `canonical_geometry_graph.rb` + `gap_pair_proposer.rb`;
    new test file `test_v17_branch_crossing.rb`; extended
    `test_v17_canonical_graph.rb` with T3 + T4).
+   Implementation SHA: `4b8425f3acd2105c09bf89594532e6848b66299e`.
 2. `docs(v1.7): V17-AIPM-PRIMARY-REVIEW-CORRECTION dispatch
    state sync` (CURRENT_STATE update + this report + review
    artifacts `Review/V17_AIPM_SOURCE_REVIEW.patch` +
    `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`).
+   Doc-stamp SHA: see `git rev-parse HEAD` after this commit lands.
 
-The exact SHAs are recorded in the doc-stamp commit's
-commit-message body; the post-stamp `git rev-parse HEAD` is the
-final V1.7 HEAD for this dispatch. (Same pattern as the prior
-V1.5 + V1.6 + V1.7 dispatches.)
+The doc-stamp commit's message body references the implementation
+SHA `4b8425f3acd2105c09bf89594532e6848b66299e` for `git log -1`
+readers. (Same pattern as the prior V1.5 + V1.6 + V1.7 dispatches.)
 
 ## M. Remaining confirmed defects / assumptions / unknowns (per dispatch §M)
 
