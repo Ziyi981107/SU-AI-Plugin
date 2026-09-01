@@ -165,6 +165,14 @@ module SUAnalysis
         # Reset per-build V1.6 state.
         @planar_normalization_proposal  = nil
         @planar_normalization_audit     = nil
+        # V1.7 Endpoint / Gap Repair + Canonical Topology:
+        # reset per-build V1.7 state. The tolerance is
+        # captured from the same snapshot.
+        @topology_repair_tolerance         = @planar_normalization_tolerance
+        @topology_repair_proposal          = nil
+        @topology_repair_audit             = nil
+        @topology_repair_canonical_graph   = nil
+        @topology_v17_loaded               = false
 
         # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): the prepare
         # path is the SINGLE operation owner for the build.
@@ -300,6 +308,11 @@ module SUAnalysis
         @duplicate_repair_summary = nil
         @planar_normalization_proposal = nil
         @planar_normalization_audit    = nil
+        # V1.7 Endpoint / Gap Repair + Canonical Topology:
+        # clear per-build V1.7 state too.
+        @topology_repair_proposal          = nil
+        @topology_repair_audit             = nil
+        @topology_repair_canonical_graph   = nil
         # NOTE: do NOT clear @current_workspace here. The
         # discarded workspace carries the :discarded state
         # that the UI needs to render. The next prepare()
@@ -378,6 +391,10 @@ module SUAnalysis
           # UI's Working Mode row remains stable across
           # renderings.
           _attach_planar_normalization_to_snapshot(snap)
+          # V1.7 Endpoint / Gap Repair + Canonical Topology
+          # sub-snapshot (state + ready_proposals + audit +
+          # canonical graph digest).
+          _attach_topology_repair_to_snapshot(snap)
           snap
         else
           ws = @current_workspace
@@ -412,6 +429,8 @@ module SUAnalysis
           end
           # V1.6 Planar Normalization / Z Policy.
           _attach_planar_normalization_to_snapshot(snap)
+          # V1.7 Endpoint / Gap Repair + Canonical Topology.
+          _attach_topology_repair_to_snapshot(snap)
           snap
         end
       end
@@ -866,6 +885,404 @@ module SUAnalysis
         @duplicate_repair_summary
       end
 
+      # ===========================================================
+      # V1.7 Endpoint / Gap Repair + Canonical Topology
+      # ===========================================================
+      #
+      # Operating on the CURRENT workspace. Two-step user flow
+      # matches the V1.6 pattern:
+      #   1. compute_gap_repair  -> snapshot['topology_repair']
+      #      (a frozen GapPairProposer Hash with state +
+      #       ready_proposals + review_proposals; NO host
+      #       mutation);
+      #   2. apply_gap_repair    -> snapshot (post-mutation;
+      #       audit = :applied/:failed; workspace stays :ready
+      #       on success, transitions to :failed on executor
+      #       failure).
+      #
+      # All actions operate on the runner-owned workspace;
+      # source remains untouched. The source fingerprint is
+      # preserved by construction (SourceSnapshot is
+      # immutable). The dedicated repair group is workspace-
+      # owned (Blueprint §12.1) and is cleaned up by Discard /
+      # Rebuild / close-time auto-discard.
+
+      # Test hook: ensure V1.7 modules are loaded by the runner
+      # require path. Tests may require additional files
+      # explicitly when they need them; this is a defensive
+      # require for the runner's own requires.
+      GAP_REPAIR_RULE_ID = 'endpoint_bridge.v1'.freeze
+
+      def require_v17_dependencies
+        require_relative 'endpoint_record'
+        require_relative 'canonical_topology_builder'
+        require_relative 'canonical_geometry_graph'
+        require_relative 'gap_pair_proposer'
+        require_relative 'gap_bridge_executor'
+        nil
+      end
+
+      # Step 1: compute (no host mutation) the conservative
+      # endpoint gap proposal on the CURRENT workspace.
+      # Idempotent: repeated calls on the same workspace +
+      # tolerance return the same proposal Hash. Clears the
+      # audit so the UI shows the READY_TO_REPAIR / REVIEW /
+      # NO_CANDIDATE state before the user applies.
+      def compute_gap_repair
+        require_v17_dependencies if @topology_v17_loaded != true
+        @topology_v17_loaded = true
+        if @current_workspace.nil? || @current_source.nil? || @current_adapter.nil?
+          @topology_repair_proposal = nil
+          return snapshot
+        end
+        if @current_workspace.state != :ready
+          @topology_repair_proposal = nil
+          return snapshot
+        end
+        tol = @topology_repair_tolerance || _tolerance_from_snapshot(@current_source)
+        @topology_repair_tolerance = tol
+        proposal = GapPairProposer.propose(
+          topology_snapshot: _canonical_topology_snapshot(workspace: @current_workspace,
+                                                          tolerance: tol),
+          derived_edges:     _derived_topology_edges(workspace: @current_workspace,
+                                                    tolerance: tol),
+          tolerance:         tol,
+          crossing_checker:  _crossing_checker_proc(tolerance: tol)
+        )
+        @topology_repair_proposal = stringify_topology_repair_proposal(proposal).freeze
+        @topology_repair_audit    = nil
+        snapshot
+      end
+
+      # Step 2: apply the previously-computed proposal's READY
+      # ones to the live workspace. One user-triggered action.
+      # Idempotent at the apply level: a second call when
+      # already-APPLIED returns the existing audit. On failure
+      # the workspace transitions to :failed.
+      def apply_gap_repair
+        require_v17_dependencies if @topology_v17_loaded != true
+        @topology_v17_loaded = true
+        if @current_workspace.nil? || @current_source.nil? || @current_adapter.nil?
+          return snapshot
+        end
+        if @current_workspace.state != :ready
+          return snapshot
+        end
+        tol = @topology_repair_tolerance || _tolerance_from_snapshot(@current_source)
+        # Recompute the live proposal (the cached snapshot
+        # version is JSON-safe and may have been published).
+        proposal = GapPairProposer.propose(
+          topology_snapshot: _canonical_topology_snapshot(workspace: @current_workspace,
+                                                          tolerance: tol),
+          derived_edges:     _derived_topology_edges(workspace: @current_workspace,
+                                                    tolerance: tol),
+          tolerance:         tol,
+          crossing_checker:  _crossing_checker_proc(tolerance: tol)
+        )
+        ready = Array(proposal['ready_proposals']).select { |p|
+          p.is_a?(Hash) && p['state'] == GapPairProposer::STATE_READY_TO_REPAIR &&
+            p['executable'] == true
+        }
+        if ready.empty?
+          @topology_repair_audit = {
+            'status' => :skipped,
+            'reason' => 'no_ready_proposals'
+          }.freeze
+          return snapshot
+        end
+        # Pre-check: workspace.host_consistency.
+        unless validate_host_state_consistency!
+          @topology_repair_audit = {
+            'status' => :failed,
+            'reason' => 'host_state_changed'
+          }.freeze
+          return snapshot
+        end
+        result = GapBridgeExecutor.apply(
+          workspace: @current_workspace,
+          adapter:   @current_adapter,
+          proposals: ready,
+          tolerance: tol
+        )
+        if result['status'] == :applied
+          @current_workspace = result['post_workspace']
+          @topology_repair_audit = stringify_topology_repair_audit(result['audit'])
+          @topology_repair_proposal = nil
+          @topology_repair_canonical_graph =
+            rebuild_canonical_geometry_graph(workspace: @current_workspace, tolerance: tol)
+          snapshot
+        else
+          # :failed: workspace may already have transitioned.
+          @current_workspace = result['post_workspace'] if result['post_workspace']
+          @topology_repair_audit = stringify_topology_repair_audit(result['audit'])
+          @topology_repair_proposal = nil
+          snapshot
+        end
+      end
+
+      # Test-only: clear all V1.7 runner state.
+      def clear_topology_repair
+        @topology_repair_proposal          = nil
+        @topology_repair_audit             = nil
+        @topology_repair_tolerance         = nil
+        @topology_repair_canonical_graph   = nil
+      end
+
+      # Read-only accessor for tests.
+      def topology_repair_proposal
+        @topology_repair_proposal
+      end
+
+      def topology_repair_audit
+        @topology_repair_audit
+      end
+
+      def topology_repair_canonical_graph
+        @topology_repair_canonical_graph
+      end
+
+      # ---- V1.7 internals ----
+
+      # Build a DerivedTopologySnapshot (EndpointRecord +
+      # DerivedEdgeRecord list) for the CURRENT workspace.
+      # Pure read; no host mutation. Resolves host vertex
+      # handles (if available) for the snapshot builder.
+      def _derived_topology_edges(workspace:, tolerance:)
+        require_v17_dependencies if @topology_v17_loaded != true
+        @topology_v17_loaded = true
+        return [] if workspace.nil? || workspace.state != :ready
+        result = DerivedTopologySnapshotBuilder.build(
+          workspace:          workspace,
+          adapter:            @current_adapter,
+          vertex_keys_by_edge: _host_vertex_map(workspace)
+        )
+        Array(result['edges'])
+      end
+
+      # Build the canonical topology snapshot Hash for the
+      # CURRENT workspace. Wraps CanonicalTopologyBuilder.
+      def _canonical_topology_snapshot(workspace:, tolerance:)
+        require_v17_dependencies if @topology_v17_loaded != true
+        @topology_v17_loaded = true
+        return CanonicalTopologyBuilder._empty_result if workspace.nil?
+        tol = tolerance.respond_to?(:coordinate_epsilon) ?
+                tolerance.coordinate_epsilon.to_f : 1.0e-6
+        topo = DerivedTopologySnapshotBuilder.build(
+          workspace:           workspace,
+          adapter:             @current_adapter,
+          vertex_keys_by_edge: _host_vertex_map(workspace)
+        )
+        endpoints = Array(topo['endpoints'])
+        result = CanonicalTopologyBuilder.build(
+          endpoints:          endpoints,
+          coordinate_epsilon: tol
+        )
+        result[:endpoints] = endpoints
+        result
+      end
+
+      # Host vertex map: { endpoint_key => host_vertex_handle }
+      # best-effort, nil when adapter unavailable.
+      def _host_vertex_map(workspace)
+        return {} if workspace.nil? || @current_adapter.nil?
+        adapter = @current_adapter
+        out = {}
+        workspace.entities.each do |rec|
+          next unless rec.respond_to?(:kind) && rec.kind == :edge
+          did = rec.respond_to?(:derived_id) ? rec.derived_id.to_s : ''
+          next if did.empty?
+          handle = workspace.handle_for(did) if workspace.respond_to?(:handle_for)
+          next if handle.nil?
+          next unless adapter.respond_to?(:edge_endpoints)
+          eps = adapter.edge_endpoints(handle)
+          next unless eps.is_a?(Array) && eps.length == 2
+          out["#{did}.start"] = eps[0]
+          out["#{did}.end"]   = eps[1]
+        end
+        out
+      end
+
+      # Crossing checker: a Proc suitable for
+      # GapPairProposer.propose(... crossing_checker:).
+      # For V1.7 base we use a simple exact-match segment
+      # intersection against the current derived edges
+      # (Blueprint §10.3 minimal implementation). A real SU
+      # crossing check would consult the world-coord
+      # endpoints; the in-test implementation mirrors that.
+      def _crossing_checker_proc(tolerance:)
+        proc do |proposal, derived_edges, endpoint_lookup, _topology_snapshot|
+          eps = Array(proposal ? proposal['coordinate_epsilon'] : nil).first ||
+                 (tolerance.respond_to?(:coordinate_epsilon) ? tolerance.coordinate_epsilon.to_f : 1.0e-6)
+          bridge_a = Array(proposal['expected_bridge_endpoints'])
+          return { 'safe' => false, 'reasons' => ['invalid_bridge_endpoints'] } unless bridge_a.length == 2
+          pa1, pa2 = bridge_a[0], bridge_a[1]
+          reasons = []
+          ek_a = proposal['endpoint_a_key']
+          ek_b = proposal['endpoint_b_key']
+          ea_a = endpoint_lookup[ek_a]
+          ea_b = endpoint_lookup[ek_b]
+          if ea_a && ea_b && ea_a['derived_edge_id'] == ea_b['derived_edge_id']
+            # Same incident edge on BOTH sides is allowed
+            # only if the endpoints are DIFFERENT (no
+            # self-loop); both endpoints come from the same
+            # edge but at different roles (start vs end).
+            # No third-party check.
+          end
+          # Walk every other derived edge that is not
+          # incident to either endpoint; check whether the
+          # bridge segment intersects that edge's interior
+          # OR shares a non-trivial node.
+          Array(derived_edges).each do |e|
+            next if e.endpoint_a_key == ek_a || e.endpoint_b_key == ek_a
+            next if e.endpoint_a_key == ek_b || e.endpoint_b_key == ek_b
+            # Compare world endpoints.
+            ew_a = e.world_endpoints[0]
+            ew_b = e.world_endpoints[1]
+            # Bridge and edge share an endpoint?
+            if (_dist(pa1, ew_a) < eps && _dist(pa2, ew_b) < eps) ||
+               (_dist(pa1, ew_b) < eps && _dist(pa2, ew_a) < eps)
+              # Share both endpoints; that's literally the
+              # same segment (already excluded by endpoint
+              # key). Skip.
+              next
+            end
+            if (_shared_endpoint?(pa1, ew_a, eps) ||
+                _shared_endpoint?(pa1, ew_b, eps) ||
+                _shared_endpoint?(pa2, ew_a, eps) ||
+                _shared_endpoint?(pa2, ew_b, eps))
+              # The bridge touches this edge's endpoint;
+              # no interior crossing.
+              next
+            end
+            if _segments_intersect_interior?(pa1, pa2, ew_a, ew_b, eps)
+              reasons << 'bridge_crossing'
+              break
+            end
+            if _third_node_on_segment?(pa1, pa2, ew_a, ew_b, endpoints_worlds: _other_endpoint_worlds(e, ek_a, ek_b, endpoint_lookup), eps: eps)
+              reasons << 'third_node_on_bridge'
+              break
+            end
+          end
+          { 'safe' => reasons.empty?, 'reasons' => reasons }
+        end
+      end
+
+      def _dist(a, b)
+        return Float::INFINITY unless a.is_a?(Array) && b.is_a?(Array)
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dz = a[2] - b[2]
+        Math.sqrt(dx * dx + dy * dy + dz * dz)
+      end
+
+      def _shared_endpoint?(a, b, eps)
+        return false unless a.is_a?(Array) && b.is_a?(Array)
+        _dist(a, b) <= eps
+      end
+
+      def _segments_intersect_interior?(p1, p2, q1, q2, eps)
+        return false unless p1.is_a?(Array) && p2.is_a?(Array) && q1.is_a?(Array) && q2.is_a?(Array)
+        return false if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
+                        _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
+        d1 = _segment_orientation(p1, p2, q1)
+        d2 = _segment_orientation(p1, p2, q2)
+        d3 = _segment_orientation(q1, q2, p1)
+        d4 = _segment_orientation(q1, q2, p2)
+        return false if d1.abs < eps || d2.abs < eps || d3.abs < eps || d4.abs < eps
+        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+      end
+
+      def _segment_orientation(p, q, r)
+        # 2D orientation projected onto the XY plane (the V1.7
+        # base Z-compat test already excludes non-coplanar
+        # bridges).
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+      end
+
+      def _third_node_on_segment?(p1, p2, _ew_a, _ew_b, endpoints_worlds:, eps:)
+        return false unless endpoints_worlds.is_a?(Array)
+        endpoints_worlds.each do |w|
+          next unless w.is_a?(Array)
+          d1 = _segment_orientation(p1, p2, w)
+          return true if d1.abs <= eps
+        end
+        false
+      end
+
+      def _other_endpoint_worlds(derived_edge, ek_a, ek_b, endpoint_lookup)
+        ws = []
+        [derived_edge.endpoint_a_key, derived_edge.endpoint_b_key].each do |ek|
+          next if ek == ek_a || ek == ek_b
+          ep = endpoint_lookup[ek]
+          ws << ep['world_coordinate'] if ep.is_a?(Hash) && ep['world_coordinate'].is_a?(Array)
+        end
+        ws
+      end
+
+      # Build / rebuild the canonical geometry graph for the
+      # CURRENT workspace state. Pure read; no host mutation.
+      def rebuild_canonical_geometry_graph(workspace:, tolerance:)
+        require_v17_dependencies if @topology_v17_loaded != true
+        @topology_v17_loaded = true
+        return nil if workspace.nil?
+        topo = _canonical_topology_snapshot(workspace: workspace, tolerance: tolerance)
+        derived_edges = _derived_topology_edges(workspace: workspace, tolerance: tolerance)
+        # Attach workspace metrics to topology snapshot for
+        # the graph builder (node degrees etc.).
+        CanonicalGeometryGraph.build_from_workspace(
+          workspace:         workspace,
+          topology_snapshot: topo.merge(
+            :canonical_edges   => derived_edges,
+            :open_endpoints    => _open_endpoint_keys(workspace, derived_edges, topo)
+          )
+        )
+      end
+
+      def _open_endpoint_keys(workspace, derived_edges, topology_snapshot)
+        # Adjacency in canonical-node space.
+        cluster_lookup = topology_snapshot[:canonical_node_clusters] || {}
+        canonical_node_by_endpoint = {}
+        cluster_lookup.each { |cid, keys| Array(keys).each { |k| canonical_node_by_endpoint[k.to_s] = cid.to_s } }
+        adj = Hash.new { |h, k| h[k] = [] }
+        derived_edges.each do |e|
+          ak = canonical_node_by_endpoint[e.endpoint_a_key.to_s] || e.endpoint_a_key.to_s
+          bk = canonical_node_by_endpoint[e.endpoint_b_key.to_s] || e.endpoint_b_key.to_s
+          adj[ak] << bk unless adj[ak].include?(bk)
+          adj[bk] << ak unless adj[bk].include?(ak)
+        end
+        degree = Hash.new(0)
+        adj.each { |k, vs| vs.each { |v| degree[k] += 1 } }
+        endpoint_open = []
+        derived_edges.each do |e|
+          if degree[canonical_node_by_endpoint[e.endpoint_a_key.to_s] || e.endpoint_a_key.to_s].to_i == 1
+            endpoint_open << e.endpoint_a_key.to_s
+          end
+          if degree[canonical_node_by_endpoint[e.endpoint_b_key.to_s] || e.endpoint_b_key.to_s].to_i == 1
+            endpoint_open << e.endpoint_b_key.to_s
+          end
+        end
+        endpoint_open.uniq.sort
+      end
+
+      # JSON-safe conversion for the topology_repair proposal.
+      def stringify_topology_repair_proposal(proposal)
+        return nil unless proposal.is_a?(Hash)
+        out = {}
+        proposal.each do |k, v|
+          ks = k.to_s
+          out[ks] = stringify_duplicate_repair_value(v)
+        end
+        # Flatten nested :ready_proposals entries the JS can
+        # directly inspect.
+        out.freeze
+      end
+
+      def stringify_topology_repair_audit(audit)
+        return nil unless audit.is_a?(Hash)
+        stringify_duplicate_repair_summary(audit)
+      end
+
       # ---- internals ----
 
       # V1.4 CodeX BLOCK rework (2026-08-22) BLOCK-R4-1:
@@ -1153,6 +1570,17 @@ module SUAnalysis
           # handle_registry stays in scope for the user's
           # # explicit recovery attempt.
         end
+        # V1.7 Gap Repair: dispose every workspace-owned
+        # repair group (Blueprint §12) so the next
+        # discard/close/start cleanly starts with zero
+        # generated gap bridge edges.
+        begin
+          if @current_adapter.respond_to?(:dispose_repair_group_bridges)
+            @current_adapter.dispose_repair_group_bridges
+          end
+        rescue StandardError
+          # Cleanup is fail-safe; never propagate.
+        end
         # V1.5 Phase 1: clear the duplicate-repair summary on
         # discard (the prior workspace's repair summary no longer
         # applies).
@@ -1313,6 +1741,59 @@ module SUAnalysis
       end
 
       # ===========================================================
+      # V1.7 Endpoint / Gap Repair + Canonical Topology
+      # ===========================================================
+
+      # Attach the topology_repair sub-snapshot to the given
+      # snap Hash. JSON-safe (string keys + primitive values).
+      #
+      # State matrix (per Blueprint §11):
+      #   NOT_COMPUTED       -> before the first compute call.
+      #   READY_TO_REPAIR    -> at least one safe proposal.
+      #   REVIEW_REQUIRED    -> proposals exist but no safe one.
+      #   NO_CANDIDATE       -> no open endpoints with candidates.
+      #   APPLIED            -> the last apply call succeeded.
+      #   FAILED             -> the last apply call failed.
+      def _attach_topology_repair_to_snapshot(snap)
+        sub = {}
+        if @topology_repair_proposal.is_a?(Hash)
+          sub['proposal'] = stringify_duplicate_repair_summary(@topology_repair_proposal)
+        end
+        if @topology_repair_audit.is_a?(Hash)
+          sub['audit'] = stringify_duplicate_repair_summary(@topology_repair_audit)
+        end
+        if sub.empty?
+          sub['computed'] = false
+          sub['state']    = 'NOT_COMPUTED'
+        else
+          sub['computed'] = true
+          if sub['proposal'].is_a?(Hash) && sub['proposal']['state']
+            sub['state'] = sub['proposal']['state'].to_s
+          elsif sub['audit'].is_a?(Hash)
+            audit_status = sub['audit']['status'].to_s
+            sub['state'] = audit_status == 'applied' ? 'APPLIED' : (
+              audit_status == 'skipped' ? (sub['proposal']['state'] || 'NO_CANDIDATE').to_s : 'FAILED'
+            )
+          else
+            sub['state'] = 'NOT_COMPUTED'
+          end
+        end
+        # Canonical graph digest (when available).
+        if @topology_repair_canonical_graph.is_a?(Hash) ||
+           @topology_repair_canonical_graph.respond_to?(:to_h)
+          cg = @topology_repair_canonical_graph
+          graph_h = cg.is_a?(Hash) ? cg : cg.to_h
+          sub['canonical_graph'] = {
+            'digest'              => graph_h['digest'],
+            'schema_version'      => graph_h['schema_version'],
+            'metrics'             => graph_h['metrics'],
+            'unresolved_issues'   => graph_h['unresolved_topology_issues']
+          }.compact.freeze
+        end
+        snap['topology_repair'] = sub.freeze
+      end
+
+      # ===========================================================
       # Round-5 BLOCK-005 §7: host-state reconciliation.
       # ===========================================================
       #
@@ -1452,6 +1933,12 @@ module SUAnalysis
         @planar_normalization_proposal  = nil
         @planar_normalization_audit     = nil
         @planar_normalization_tolerance = nil
+        # V1.7 Endpoint / Gap Repair + Canonical Topology.
+        @topology_repair_proposal         = nil
+        @topology_repair_audit            = nil
+        @topology_repair_tolerance        = nil
+        @topology_repair_canonical_graph  = nil
+        @topology_v17_loaded              = false
       end
 
       # V1.5 Phase 1 (internal): convert the duplicate-repair

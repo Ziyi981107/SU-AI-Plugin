@@ -114,6 +114,20 @@ module SUAnalysis
         dialog.add_action_callback('apply_planar_normalization') do |_ctx|
           on_apply_planar_normalization(dialog, controller)
         end
+        # V1.7 Endpoint / Gap Repair + Canonical Topology:
+        # callbacks for the "拓扑修复" row in Working Mode.
+        # Two-step user flow:
+        #   - compute_gap_repair  -> preview
+        #   - apply_gap_repair    -> explicit apply
+        # Each handler delegates to WorkingModeRunner and
+        # re-pushes the payload so the UI updates after each
+        # action. Source CAD is NEVER touched.
+        dialog.add_action_callback('compute_gap_repair') do |_ctx|
+          on_compute_gap_repair(dialog, controller)
+        end
+        dialog.add_action_callback('apply_gap_repair') do |_ctx|
+          on_apply_gap_repair(dialog, controller)
+        end
         # set_on_closed releases the Loader-side cache so the window
         # can be GC'd after the user closes it.
         dialog.set_on_closed do
@@ -256,6 +270,31 @@ module SUAnalysis
       def on_apply_planar_normalization(dialog, controller)
         _safe_invoke(dialog, controller, 'apply_planar_normalization') do
           SUAnalysis::Core::WorkingModeRunner.apply_planar_normalization
+        end
+      end
+
+      # V1.7 Endpoint / Gap Repair + Canonical Topology:
+      # handler for `compute_gap_repair`. Computes (without
+      # mutating) the conservative gap-bridge proposals on the
+      # CURRENT workspace. Per Blueprint §11 the state can
+      # be NO_CANDIDATE / READY_TO_REPAIR / REVIEW_REQUIRED /
+      # APPLIED / FAILED. Source CAD is NEVER touched.
+      def on_compute_gap_repair(dialog, controller)
+        _safe_invoke(dialog, controller, 'compute_gap_repair') do
+          SUAnalysis::Core::WorkingModeRunner.compute_gap_repair
+        end
+      end
+
+      # V1.7 Endpoint / Gap Repair + Canonical Topology:
+      # handler for `apply_gap_repair`. This is the SOLE
+      # user-triggered action that creates V1.7 gap-bridge
+      # derived geometry. The bridge edges live in a
+      # dedicated workspace-owned repair group (Blueprint
+      # §12.1); source-derived endpoints are NEVER moved;
+      # source CAD is NEVER touched.
+      def on_apply_gap_repair(dialog, controller)
+        _safe_invoke(dialog, controller, 'apply_gap_repair') do
+          SUAnalysis::Core::WorkingModeRunner.apply_gap_repair
         end
       end
 
