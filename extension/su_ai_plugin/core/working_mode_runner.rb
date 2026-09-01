@@ -1232,6 +1232,20 @@ module SUAnalysis
       # Attach the planar_normalization sub-snapshot Hash to
       # the given snap Hash. JSON-safe (string keys + primitive
       # values only).
+      #
+      # V16-UI-INTEGRATION-CORRECTION-2026-09-01 trivial
+      # integration seam: after apply_planar_normalization the
+      # cached proposal is cleared (so the UI does not pretend
+      # the batch is still pending) and only the audit row
+      # remains. Without the derivation below, the snapshot
+      # would carry `audit: {status: 'applied'|'failed', ...}`
+      # but no `state`, and the UI would fall back to
+      # NOT_COMPUTED -- which is wrong (the actual terminal
+      # state is APPLIED or FAILED). The audit's `status`
+      # field is the source of truth here; we map
+      # `applied -> 'APPLIED'` and `failed -> 'FAILED'` so
+      # the UI renders truthfully. Pure data shape change,
+      # no normalization semantics touched.
       def _attach_planar_normalization_to_snapshot(snap)
         sub = {}
         if @planar_normalization_proposal.is_a?(Hash)
@@ -1250,6 +1264,11 @@ module SUAnalysis
           sub['computed'] = true
           if sub['proposal'].is_a?(Hash)
             sub['state'] = sub['proposal']['state'].to_s
+          elsif sub['audit'].is_a?(Hash)
+            audit_status = sub['audit']['status'].to_s
+            sub['state'] = audit_status == 'applied' ? 'APPLIED' : 'FAILED'
+          else
+            sub['state'] = 'NOT_COMPUTED'
           end
         end
         snap['planar_normalization'] = sub.freeze

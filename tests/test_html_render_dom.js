@@ -156,7 +156,23 @@ var mockWindow = global.mockWindow = {
     rebuild_workspace_calls: [],
     prepare_workspace: function () { global.mockWindow.sketchup.prepare_workspace_calls.push('prepare'); },
     discard_workspace: function () { global.mockWindow.sketchup.discard_workspace_calls.push('discard'); },
-    rebuild_workspace: function () { global.mockWindow.sketchup.rebuild_workspace_calls.push('rebuild'); }
+    rebuild_workspace: function () { global.mockWindow.sketchup.rebuild_workspace_calls.push('rebuild'); },
+    // V1.6 Planar Normalization / Z Policy (per dispatch
+    // V16-UI-INTEGRATION-CORRECTION-2026-09-01): the host
+    // callbacks for the destructive preview / apply actions
+    // live on window.sketchup.<callback> (registered by
+    // DialogRunner.add_action_callback at boot). The mock
+    // records every invocation so the UI1-UI8 DOM tests can
+    // assert the click-handler dispatch path actually calls
+    // the correct sketchup.<callback> (NOT window.SUAIP.*).
+    compute_planar_normalization_calls: [],
+    apply_planar_normalization_calls: [],
+    compute_planar_normalization: function () {
+      global.mockWindow.sketchup.compute_planar_normalization_calls.push('compute');
+    },
+    apply_planar_normalization: function () {
+      global.mockWindow.sketchup.apply_planar_normalization_calls.push('apply');
+    }
   }
 };
 // Reset helper so each test can clear the call records
@@ -165,6 +181,9 @@ function resetV14HostActionCalls() {
   mockWindow.sketchup.prepare_workspace_calls.length = 0;
   mockWindow.sketchup.discard_workspace_calls.length = 0;
   mockWindow.sketchup.rebuild_workspace_calls.length = 0;
+  // V1.6 Planar Normalization host-action call records.
+  mockWindow.sketchup.compute_planar_normalization_calls.length = 0;
+  mockWindow.sketchup.apply_planar_normalization_calls.length = 0;
 }
 
 var context = {
@@ -1658,6 +1677,599 @@ assert('V15 BLOCK-004: per-action audit row uses textContent only (no innerHTML)
        v15Block004Row && v15Block004Row.children.every(function (c) {
          return c.textContent.indexOf('[object Object]') === -1;
        }));
+
+// =====================================================================
+// V1.6 Planar Normalization / Z Policy (per dispatch
+// V16-UI-INTEGRATION-CORRECTION-2026-09-01) — UI1..UI8: prove the
+// actual shipped UI renders Planar Normalization state + the
+// locked preview/apply action(s), and that all non-executable
+// states fail closed. The DOM test loads the SHIPPED app.js
+// (the test does NOT test a parallel helper that production
+// does not call).
+//
+// UI1: NOT_COMPUTED  -> state row + "Analyze Planarity" button
+// UI2: READY_TO_NORMALIZE -> target/counts + "Apply Safe
+//      Normalization" enabled, click invokes exactly
+//      window.sketchup.apply_planar_normalization.
+// UI3: REVIEW_REQUIRED -> state/reason visible; Apply button
+//      absent or disabled; NO destructive callback invoked.
+// UI4: NO_CANDIDATE   -> truthful state visible; Apply
+//      unavailable.
+// UI5: APPLIED        -> truthful post-apply summary visible;
+//      no stale READY_TO_NORMALIZE action remains.
+// UI6: FAILED         -> failure state/reason visible; Apply
+//      unavailable.
+// UI7: missing/malformed planar_normalization -> old Working
+//      Mode still renders; no crash; no [object Object] /
+//      undefined / NaN.
+// UI8: existing V1.4/V1.5 controls (Prepare/Discard/Rebuild +
+//      duplicate repair row) remain UNCHANGED.
+// =====================================================================
+
+// UI1: NOT_COMPUTED + workspace ready.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u1', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u1-snap',
+    source_fingerprint_digest: 'aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u1',
+    planar_normalization: {
+      computed: false,
+      state:    'NOT_COMPUTED'
+    }
+  }
+});
+var ui1List    = mockElements['working-mode-list'];
+var ui1Actions = mockElements['working-mode-actions'];
+
+assert('UI1: NOT_COMPUTED + ready workspace renders a "Planar Normalization" State row',
+       ui1List && ui1List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state NOT_COMPUTED') !== -1;
+       }));
+assert('UI1: NOT_COMPUTED + ready workspace renders an "Analyze Planarity" action button',
+       ui1Actions && ui1Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity' &&
+                b.attrs['data-action'] === 'compute_planar_normalization' &&
+                !b.hasAttribute('disabled');
+       }));
+assert('UI1: NOT_COMPUTED + ready workspace does NOT render an "Apply Safe Normalization" button',
+       ui1Actions && !ui1Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization';
+       }));
+// Reset host-action calls then click "Analyze Planarity".
+resetV14HostActionCalls();
+var ui1AnalyzeBtn = ui1Actions && ui1Actions.children.filter(function (b) {
+  return b.attrs && b.attrs['data-action'] === 'compute_planar_normalization';
+})[0];
+ui1AnalyzeBtn.fireEvent('click');
+assert('UI1: clicking "Analyze Planarity" calls window.sketchup.compute_planar_normalization EXACTLY ONCE',
+       mockWindow.sketchup.compute_planar_normalization_calls.length === 1);
+assert('UI1: clicking "Analyze Planarity" does NOT call apply_planar_normalization',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 0);
+assert('UI1: clicking "Analyze Planarity" does NOT call any V1.4/V1.5 host action',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 0 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+
+// UI2: READY_TO_NORMALIZE.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u2', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u2-snap',
+    source_fingerprint_digest: 'cccc1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u2',
+    planar_normalization: {
+      computed: true,
+      state:    'READY_TO_NORMALIZE',
+      proposal: {
+        state:           'READY_TO_NORMALIZE',
+        target_z:        1.003,
+        eligible_count:  4,
+        already_planar:  0,
+        movable_count:   3,
+        outlier_count:   1,
+        affected_derived_ids: ['der-edge-1', 'der-edge-2', 'der-edge-3'],
+        outlier_derived_ids:  ['der-edge-4'],
+        shared_vertex_scope_skipped: 0,
+        max_movement:    0.007,
+        tolerance_used:  0.01
+      }
+    }
+  }
+});
+var ui2List    = mockElements['working-mode-list'];
+var ui2Actions = mockElements['working-mode-actions'];
+
+assert('UI2: READY_TO_NORMALIZE renders a "Planar Normalization" State row',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state READY_TO_NORMALIZE') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders a "Target Z" row with the proposal target_z',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Target Z') !== -1 &&
+                c.textContent.indexOf('1.003') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Eligible Vertices" count',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Eligible Vertices') !== -1 &&
+                c.textContent.indexOf('4 eligible vertices') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Proposed Movable" count (plural)',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Proposed Movable') !== -1 &&
+                c.textContent.indexOf('3 movable vertices') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Outliers" count',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Outliers') !== -1 &&
+                c.textContent.indexOf('1 outlier vertex') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Affected Derived Edges" count',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Affected Derived Edges') !== -1 &&
+                c.textContent.indexOf('3 affected derived edges') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Max Proposed Movement" row',
+       ui2List && ui2List.children.some(function (c) {
+         return c.textContent.indexOf('Max Proposed Movement') !== -1 &&
+                c.textContent.indexOf('0.007') !== -1;
+       }));
+assert('UI2: READY_TO_NORMALIZE renders "Apply Safe Normalization" action button (enabled)',
+       ui2Actions && ui2Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization' &&
+                b.attrs['data-action'] === 'apply_planar_normalization' &&
+                !b.hasAttribute('disabled');
+       }));
+assert('UI2: READY_TO_NORMALIZE does NOT render "Analyze Planarity" button',
+       ui2Actions && !ui2Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity';
+       }));
+// Click the apply button and verify dispatch.
+resetV14HostActionCalls();
+var ui2ApplyBtn = ui2Actions && ui2Actions.children.filter(function (b) {
+  return b.attrs && b.attrs['data-action'] === 'apply_planar_normalization';
+})[0];
+ui2ApplyBtn.fireEvent('click');
+assert('UI2: clicking "Apply Safe Normalization" calls window.sketchup.apply_planar_normalization EXACTLY ONCE',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 1);
+assert('UI2: clicking "Apply Safe Normalization" does NOT call compute_planar_normalization',
+       mockWindow.sketchup.compute_planar_normalization_calls.length === 0);
+assert('UI2: clicking "Apply Safe Normalization" does NOT call any V1.4/V1.5 host action',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 0 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+assert('UI2: clicking "Apply Safe Normalization" does NOT invoke Locate',
+       locateCalls.length === locateCountBefore);
+
+// UI3: REVIEW_REQUIRED.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u3', selectionType: 'Group',
+  summary: { edges: 6, vertices: 12, non_zero_z_vertices: 12, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u3-snap',
+    source_fingerprint_digest: 'dddd1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u3',
+    planar_normalization: {
+      computed: true,
+      state:    'REVIEW_REQUIRED',
+      proposal: {
+        state:           'REVIEW_REQUIRED',
+        reason:          'tied_dominant_windows',
+        eligible_count:  6,
+        movable_count:   0,
+        outlier_count:   0,
+        affected_derived_ids: [],
+        max_movement:    0.0,
+        tolerance_used:  0.01
+      }
+    }
+  }
+});
+var ui3List    = mockElements['working-mode-list'];
+var ui3Actions = mockElements['working-mode-actions'];
+
+assert('UI3: REVIEW_REQUIRED renders a State row',
+       ui3List && ui3List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state REVIEW_REQUIRED') !== -1;
+       }));
+assert('UI3: REVIEW_REQUIRED renders a "Review Reason" row with the analyzer reason',
+       ui3List && ui3List.children.some(function (c) {
+         return c.textContent.indexOf('Review Reason') !== -1 &&
+                c.textContent.indexOf('tied_dominant_windows') !== -1;
+       }));
+assert('UI3: REVIEW_REQUIRED does NOT render "Apply Safe Normalization" (destructive button absent)',
+       ui3Actions && !ui3Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization';
+       }));
+assert('UI3: REVIEW_REQUIRED does NOT render "Analyze Planarity" (already computed)',
+       ui3Actions && !ui3Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity';
+       }));
+// NO destructive callback can be invoked -- verify by clicking
+// every existing action button and confirming the V1.6
+// destructive callback was NOT called.
+resetV14HostActionCalls();
+var ui3ActionsBefore = ui3Actions.children.slice();
+ui3ActionsBefore.forEach(function (b) { b.fireEvent('click'); });
+assert('UI3: clicking any UI3 action does NOT invoke apply_planar_normalization',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 0);
+
+// UI4: NO_CANDIDATE.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u4', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u4-snap',
+    source_fingerprint_digest: 'eeee1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u4',
+    planar_normalization: {
+      computed: true,
+      state:    'NO_CANDIDATE',
+      proposal: {
+        state:          'NO_CANDIDATE',
+        reason:         'already_planar',
+        eligible_count: 4,
+        already_planar: 4,
+        movable_count:  0,
+        outlier_count:  0,
+        affected_derived_ids: [],
+        max_movement:   0.0,
+        tolerance_used: 0.01
+      }
+    }
+  }
+});
+var ui4List    = mockElements['working-mode-list'];
+var ui4Actions = mockElements['working-mode-actions'];
+
+assert('UI4: NO_CANDIDATE renders a State row',
+       ui4List && ui4List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state NO_CANDIDATE') !== -1;
+       }));
+assert('UI4: NO_CANDIDATE does NOT render "Apply Safe Normalization"',
+       ui4Actions && !ui4Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization';
+       }));
+assert('UI4: NO_CANDIDATE does NOT render "Analyze Planarity" (already computed)',
+       ui4Actions && !ui4Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity';
+       }));
+
+// UI5: APPLIED.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u5', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u5-snap',
+    source_fingerprint_digest: 'ffff1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u5',
+    planar_normalization: {
+      computed: true,
+      state:    'APPLIED',
+      audit: {
+        status:          'applied',
+        rule_id:         'planar_z_snap.v1',
+        rule_version:    '1',
+        target_z:        1.003,
+        affected_derived_ids: ['der-edge-1', 'der-edge-2', 'der-edge-3'],
+        outlier_derived_ids:  ['der-edge-4'],
+        before_z_summary: { count: 4, min: 0.996, max: 1.008, mean: 1.00275 },
+        after_z_summary:  { count: 4, min: 1.003, max: 1.003, mean: 1.003 },
+        max_movement:     0.007,
+        applied_count:    4,
+        failed_count:     0
+      }
+    }
+  }
+});
+var ui5List    = mockElements['working-mode-list'];
+var ui5Actions = mockElements['working-mode-actions'];
+
+assert('UI5: APPLIED renders a State row showing state "APPLIED"',
+       ui5List && ui5List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state APPLIED') !== -1;
+       }));
+assert('UI5: APPLIED renders an "Applied Target Z" row with the audit target_z',
+       ui5List && ui5List.children.some(function (c) {
+         return c.textContent.indexOf('Applied Target Z') !== -1 &&
+                c.textContent.indexOf('1.003') !== -1;
+       }));
+assert('UI5: APPLIED renders "Moved / Applied" count (plural)',
+       ui5List && ui5List.children.some(function (c) {
+         return c.textContent.indexOf('Moved / Applied') !== -1 &&
+                c.textContent.indexOf('4 vertices applied') !== -1;
+       }));
+assert('UI5: APPLIED renders "Max Movement" row',
+       ui5List && ui5List.children.some(function (c) {
+         return c.textContent.indexOf('Max Movement') !== -1 &&
+                c.textContent.indexOf('0.007') !== -1;
+       }));
+assert('UI5: APPLIED renders "Outliers Unchanged" row',
+       ui5List && ui5List.children.some(function (c) {
+         return c.textContent.indexOf('Outliers Unchanged') !== -1 &&
+                c.textContent.indexOf('1 outlier edge unchanged') !== -1;
+       }));
+assert('UI5: APPLIED does NOT leave a stale "Apply Safe Normalization" button (no stale READY_TO_NORMALIZE action)',
+       ui5Actions && !ui5Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization';
+       }));
+assert('UI5: APPLIED does NOT render "Analyze Planarity" (already in terminal APPLIED state)',
+       ui5Actions && !ui5Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity';
+       }));
+// Verify no destructive callback can be invoked from APPLIED.
+resetV14HostActionCalls();
+var ui5ActionsBefore = ui5Actions.children.slice();
+ui5ActionsBefore.forEach(function (b) { b.fireEvent('click'); });
+assert('UI5: clicking any UI5 action does NOT invoke apply_planar_normalization',
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 0);
+
+// UI6: FAILED.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u6', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'failed',
+    source_snapshot_id: 'wm-v16-u6-snap',
+    source_fingerprint_digest: 'aaaa2222bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u6',
+    last_error: 'host failure during build',
+    planar_normalization: {
+      computed: true,
+      state:    'FAILED',
+      audit: {
+        status:          'failed',
+        rule_id:         'planar_z_snap.v1',
+        rule_version:    '1',
+        target_z:        1.003,
+        affected_derived_ids: ['der-edge-1', 'der-edge-2', 'der-edge-3'],
+        outlier_derived_ids:  ['der-edge-4'],
+        max_movement:     0.0,
+        applied_count:    0,
+        failed_count:     1,
+        reason:           'post_validation_failed:vertex_0_dx_0.5_exceeds_eps'
+      }
+    }
+  }
+});
+var ui6List    = mockElements['working-mode-list'];
+var ui6Actions = mockElements['working-mode-actions'];
+
+assert('UI6: FAILED renders a State row showing state "FAILED"',
+       ui6List && ui6List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state FAILED') !== -1;
+       }));
+assert('UI6: FAILED renders a "Failure Reason" row with the audit reason',
+       ui6List && ui6List.children.some(function (c) {
+         return c.textContent.indexOf('Failure Reason') !== -1 &&
+                c.textContent.indexOf('post_validation_failed') !== -1;
+       }));
+assert('UI6: FAILED does NOT render "Apply Safe Normalization"',
+       ui6Actions && !ui6Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization';
+       }));
+assert('UI6: FAILED does NOT render "Analyze Planarity"',
+       ui6Actions && !ui6Actions.children.some(function (b) {
+         return b.textContent === 'Analyze Planarity';
+       }));
+// Last Error row from the V1.5 failure contract still present.
+assert('UI6: FAILED still renders the V1.5 "Last Error" row (backwards compat)',
+       ui6List && ui6List.children.some(function (c) {
+         return c.textContent.indexOf('Last Error') !== -1 &&
+                c.textContent.indexOf('host failure during build') !== -1;
+       }));
+
+// UI7: missing / malformed planar_normalization.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u7', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u7-snap',
+    source_fingerprint_digest: 'cccc2222bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u7'
+    // planar_normalization is intentionally missing
+  }
+});
+var ui7List = mockElements['working-mode-list'];
+var ui7Actions = mockElements['working-mode-actions'];
+assert('UI7: missing planar_normalization -> no "Planar Normalization" row rendered (graceful degrade)',
+       ui7List && !ui7List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1;
+       }));
+assert('UI7: missing planar_normalization -> no "Apply Safe Normalization" or "Analyze Planarity" button',
+       ui7Actions && !ui7Actions.children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization' ||
+                b.textContent === 'Analyze Planarity';
+       }));
+assert('UI7: missing planar_normalization -> old Working Mode still renders (no crash)',
+       ui7List && ui7List.children.length > 0);
+assert('UI7: missing planar_normalization -> no [object Object] / undefined / NaN',
+       (function () {
+         var texts = [];
+         function collect(el) {
+           if (el.textContent) texts.push(el.textContent);
+           for (var i = 0; i < el.children.length; i++) collect(el.children[i]);
+         }
+         collect(ui7List);
+         var all = texts.join(' | ');
+         if (all.indexOf('[object Object]') !== -1) return false;
+         if (all.indexOf('undefined') !== -1) return false;
+         if (all.indexOf('NaN') !== -1) return false;
+         return true;
+       })());
+
+// UI7 (extended): a malformed planar_normalization (e.g.
+// a String) degrades safely -- no crash, no [object Object],
+// no destructive button rendered.
+renderWithPayload({
+  selectionLabel: 'wm-v16-u7-malformed', selectionType: 'Group',
+  summary: { edges: 0, vertices: 0, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u7-mal-snap',
+    workspace_id: 'ws-v16-u7-mal',
+    planar_normalization: 'malformed-not-an-object'
+  }
+});
+var ui7malList = mockElements['working-mode-list'];
+assert('UI7: malformed planar_normalization (String) -> graceful degrade, no crash',
+       ui7malList && ui7malList.children.length > 0);
+assert('UI7: malformed planar_normalization (String) -> no Apply/Compute button',
+       !mockElements['working-mode-actions'].children.some(function (b) {
+         return b.textContent === 'Apply Safe Normalization' ||
+                b.textContent === 'Analyze Planarity';
+       }));
+
+// UI8: V1.4/V1.5 controls remain UNCHANGED when V1.6 state is
+// present (Prepare / Discard / Rebuild + Duplicate repair row
+// still behave per their original contract).
+renderWithPayload({
+  selectionLabel: 'wm-v16-u8', selectionType: 'Group',
+  summary: { edges: 4, vertices: 8, non_zero_z_vertices: 4, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v16-u8-snap',
+    source_fingerprint_digest: 'bbbb2222bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222',
+    execution_config_digest: 'v16cfg',
+    workspace_id: 'ws-v16-u8',
+    duplicate_repair: {
+      duplicate_pairs_before: 2,
+      duplicate_pairs_after: 0,
+      actions_applied: 2,
+      actions_skipped: 0,
+      actions_failed: 0,
+      last_action_status: 'applied',
+      duplicate_classes_before: 2,
+      duplicate_classes_after: 0,
+      derived_edge_count_before: 4,
+      derived_edge_count_after: 2
+    },
+    planar_normalization: {
+      computed: true,
+      state:    'READY_TO_NORMALIZE',
+      proposal: {
+        state:           'READY_TO_NORMALIZE',
+        target_z:        1.003,
+        eligible_count:  4,
+        movable_count:   3,
+        outlier_count:   1,
+        affected_derived_ids: ['der-edge-1', 'der-edge-2', 'der-edge-3'],
+        max_movement:    0.007,
+        tolerance_used:  0.01
+      }
+    }
+  }
+});
+var ui8List    = mockElements['working-mode-list'];
+var ui8Actions = mockElements['working-mode-actions'];
+
+assert('UI8: V1.5 Duplicate repairs row is still rendered (V1.6 wiring did not break V1.5 audit)',
+       ui8List && ui8List.children.some(function (c) {
+         return c.textContent.indexOf('Duplicate repairs') !== -1 &&
+                c.textContent.indexOf('applied 2') !== -1;
+       }));
+assert('UI8: V1.6 Planar Normalization row is also rendered (parallel presence)',
+       ui8List && ui8List.children.some(function (c) {
+         return c.textContent.indexOf('Planar Normalization') !== -1 &&
+                c.textContent.indexOf('state READY_TO_NORMALIZE') !== -1;
+       }));
+var ui8BtnActions = ui8Actions.children.map(function (b) {
+  return b.attrs['data-action'];
+});
+assert('UI8: Prepare / Discard / Rebuild buttons are still present (V1.4 contract unchanged)',
+       ui8BtnActions.indexOf('prepare_workspace') !== -1 &&
+       ui8BtnActions.indexOf('discard_workspace') !== -1 &&
+       ui8BtnActions.indexOf('rebuild_workspace') !== -1);
+assert('UI8: Apply Safe Normalization button is present (V1.6 contract)',
+       ui8BtnActions.indexOf('apply_planar_normalization') !== -1);
+// Click each button and verify the right host callback fires
+// (UI8 source guard: V1.6 wiring did not break V1.4/V1.5
+// dispatch). In state="ready" the Prepare button is disabled
+// (per V1.4 contract: re-prepare requires Discard first), so
+// it does NOT fire its callback. The 3 enabled buttons
+// (Discard / Rebuild / Apply) each fire exactly once.
+resetV14HostActionCalls();
+ui8Actions.children.forEach(function (b) {
+  if (b.attrs['data-action'] === 'prepare_workspace') b.fireEvent('click');
+  if (b.attrs['data-action'] === 'discard_workspace') b.fireEvent('click');
+  if (b.attrs['data-action'] === 'rebuild_workspace') b.fireEvent('click');
+  if (b.attrs['data-action'] === 'apply_planar_normalization') b.fireEvent('click');
+});
+assert('UI8: clicking all buttons fires Discard / Rebuild / Apply exactly once each (Prepare is disabled in state=ready per V1.4 contract)',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0 &&
+       mockWindow.sketchup.discard_workspace_calls.length === 1 &&
+       mockWindow.sketchup.rebuild_workspace_calls.length === 1 &&
+       mockWindow.sketchup.apply_planar_normalization_calls.length === 1);
+assert('UI8: Prepare button is disabled in state="ready" (V1.4 contract unchanged)',
+       (function () {
+         var prepareBtn = ui8Actions.children.filter(function (b) {
+           return b.attrs['data-action'] === 'prepare_workspace';
+         })[0];
+         return prepareBtn && prepareBtn.hasAttribute('disabled');
+       })());
+
+// Source guard: renderPlanarNormalization / renderPlanarNormalizationAction
+// MUST use textContent only and MUST NOT use innerHTML for
+// user-supplied strings.
+var appJsSrcV16 = fs.readFileSync(appJsPath, 'utf-8');
+assert('UI source guard: app.js mentions compute_planar_normalization host dispatch',
+       appJsSrcV16.indexOf("'compute_planar_normalization'") >= 0 ||
+       appJsSrcV16.indexOf('"compute_planar_normalization"') >= 0);
+assert('UI source guard: app.js mentions apply_planar_normalization host dispatch',
+       appJsSrcV16.indexOf("'apply_planar_normalization'") >= 0 ||
+       appJsSrcV16.indexOf('"apply_planar_normalization"') >= 0);
+assert('UI source guard: renderPlanarNormalization function defined',
+       appJsSrcV16.indexOf('function renderPlanarNormalization') >= 0);
+assert('UI source guard: renderPlanarNormalizationAction function defined',
+       appJsSrcV16.indexOf('function renderPlanarNormalizationAction') >= 0);
 
 // --- final verdict -----------------------------------------------------
 

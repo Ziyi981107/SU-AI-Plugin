@@ -456,6 +456,28 @@
   //                   "Discarded" + Rebuild button enabled.
   //   - 'failed'   -> A build / discard step raised. Show
   //                   last_error + Rebuild button enabled.
+  //
+  // V1.6 (per directive V16-UI-INTEGRATION-CORRECTION-2026-09-01):
+  // when payload.derivedWorkspace.planar_normalization is an
+  // object, render a compact "Planar normalization" block
+  // from that sub-snapshot. Exposes the locked Blueprint §11
+  // rows (State / Target Z / Eligible / Movable / Outliers /
+  // Skipped / Max movement) plus a truthful post-apply
+  // audit (when present). Action wiring:
+  //   - state == 'NOT_COMPUTED' AND workspace.state == 'ready'
+  //     -> "Analyze Planarity" button (callback:
+  //     compute_planar_normalization).
+  //   - state == 'READY_TO_NORMALIZE'
+  //     -> "Apply Safe Normalization" button (callback:
+  //     apply_planar_normalization). This destructive
+  //     button MUST NOT appear enabled in any other state.
+  //   - All other states (REVIEW_REQUIRED / NO_CANDIDATE /
+  //     APPLIED / FAILED / invalid_tolerance / invalid_input)
+  //     -> NO action button (info only). Existing
+  //     Prepare / Discard / Rebuild behavior is unchanged.
+  // The Ruby snapshot is authoritative; the JS layer NEVER
+  // builds a parallel client-side source of truth. textContent
+  // only.
   function renderWorkingMode(derivedWorkspace) {
     var listEl = document.getElementById('working-mode-list');
     var actionsEl = document.getElementById('working-mode-actions');
@@ -525,11 +547,180 @@
       if (state === 'failed' && ws.last_error) {
         addRow(listEl, 'failed', 'Last Error', ws.last_error, ws.last_error);
       }
+      // V1.6 Planar Normalization / Z Policy (per directive
+      // V16-UI-INTEGRATION-CORRECTION-2026-09-01): when
+      // payload.derivedWorkspace.planar_normalization is
+      // present, render the locked Blueprint §11 rows and
+      // (when the state warrants it) the locked action
+      // button. All text via textContent (no innerHTML for
+      // user-supplied strings). Missing fields degrade
+      // safely (text rendering only; no exception path).
+      if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
+        renderPlanarNormalization(listEl, state, ws.planar_normalization);
+      }
       // Action buttons (locked enable / disable per state).
       addAction(actionsEl, 'Prepare', 'prepare_workspace', state === 'none' || state === 'discarded' || state === 'failed');
       addAction(actionsEl, 'Discard', 'discard_workspace', state === 'ready');
       addAction(actionsEl, 'Rebuild', 'rebuild_workspace',  state === 'ready' || state === 'discarded' || state === 'failed');
+      // V1.6 Planar Normalization action button (per
+      // dispatch §2.2 + Blueprint §11). The destructive
+      // Apply Safe Normalization action is rendered only
+      // when the snapshot is explicitly READY_TO_NORMALIZE
+      // AND the workspace is ready. The Analyze Planarity
+      // preview action is rendered when the normalization
+      // state is NOT_COMPUTED AND the workspace is ready
+      // (so a fresh Prepare / Discard / Rebuild cycle
+      // surfaces the preview action again).
+      renderPlanarNormalizationAction(actionsEl, state, ws.planar_normalization);
     }
+  }
+
+  // V1.6 Planar Normalization: render the compact "Planar
+  // normalization" block. Always renders a "Planar
+  // Normalization" State row. When the snapshot carries
+  // additional fields (target_z, eligible/movable/outlier
+  // counts, max_movement, etc.) AND/OR an audit row, those
+  // are rendered too. Defensive: missing / malformed
+  // payload degrades to the State row only.
+  function renderPlanarNormalization(listEl, workspaceState, pn) {
+    if (!pn || typeof pn !== 'object') return;
+    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
+    addRow(listEl, workspaceState, 'Planar Normalization',
+           'state ' + pnState, 'state ' + pnState);
+    // Defensive field accessor: returns fallback when the
+    // field is missing / NaN / undefined / not-a-number.
+    function n(val, fallback) {
+      if (typeof val === 'number' && isFinite(val)) return val;
+      if (typeof fallback === 'number') return fallback;
+      return null;
+    }
+    // Render Target Z / Eligible / Movable / Outliers /
+    // Skipped / Max movement ONLY when the snapshot
+    // carries a non-empty proposal sub-Hash (i.e. the
+    // Ruby side has actually computed it). The proposal
+    // is omitted by WorkingModeRunner when computed=false
+    // (NOT_COMPUTED).
+    var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
+    if (proposal) {
+      var targetZ = n(proposal.target_z, null);
+      if (targetZ !== null) {
+        // 4 decimals is enough for an inch-scale planarity
+        // check (Blueprint §4.1 default = 0.01 inch). We
+        // render the raw Float (NOT toFixed) so the Owner
+        // sees truthful values regardless of magnitude.
+        var targetStr = String(targetZ);
+        addRow(listEl, workspaceState, 'Target Z', targetStr, targetStr);
+      }
+      var eligible = n(proposal.eligible_count, null);
+      if (eligible !== null) {
+        var s1 = eligible + ' eligible vertices' + (eligible === 1 ? '' : 's');
+        addRow(listEl, workspaceState, 'Eligible Vertices', s1, s1);
+      }
+      var movable = n(proposal.movable_count, null);
+      if (movable !== null) {
+        var s2 = movable + ' movable ' + (movable === 1 ? 'vertex' : 'vertices');
+        addRow(listEl, workspaceState, 'Proposed Movable', s2, s2);
+      }
+      var outliers = n(proposal.outlier_count, null);
+      if (outliers !== null) {
+        var s3 = outliers + ' outlier ' + (outliers === 1 ? 'vertex' : 'vertices');
+        addRow(listEl, workspaceState, 'Outliers', s3, s3);
+      }
+      // Affected derived edges = unique derived_ids that
+      // participate in the proposal (an Integer count, not
+      // the Array itself -- the Array may be very large).
+      if (Array.isArray(proposal.affected_derived_ids)) {
+        var adCount = proposal.affected_derived_ids.length;
+        var s4 = adCount + ' affected derived edge' + (adCount === 1 ? '' : 's');
+        addRow(listEl, workspaceState, 'Affected Derived Edges', s4, s4);
+      }
+      var skipped = n(proposal.shared_vertex_scope_skipped, null);
+      if (skipped !== null && skipped > 0) {
+        var s5 = skipped + ' shared-vertex scope skipped';
+        addRow(listEl, workspaceState, 'Skipped / Ambiguous Scope', s5, s5);
+      }
+      var maxMv = n(proposal.max_movement, null);
+      if (maxMv !== null) {
+        var s6 = 'max proposed movement ' + String(maxMv);
+        addRow(listEl, workspaceState, 'Max Proposed Movement', s6, s6);
+      }
+      // Reason row (only when the analyzer / proposer
+      // populated a non-empty string).
+      if (typeof proposal.reason === 'string' && proposal.reason.length > 0 &&
+          pnState === 'REVIEW_REQUIRED') {
+        addRow(listEl, workspaceState, 'Review Reason', proposal.reason, proposal.reason);
+      }
+    }
+    // Audit row (only when the executor returned one). The
+    // audit is a Hash with status, applied_count, failed_count,
+    // max_movement, reason, before_z_summary, after_z_summary,
+    // target_z, rule_id, rule_version, etc. (see
+    // PlanarNormalizationExecutor._audit_row). We render
+    // a compact truthful summary: status, target_z (if
+    // present), moved/applied count, max_movement,
+    // outlier count, failure reason (if FAILED).
+    var audit = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
+    if (audit) {
+      var auditStatus = (typeof audit.status === 'string') ? audit.status : 'unknown';
+      var aTarget = n(audit.target_z, null);
+      var appliedCount = n(audit.applied_count, null);
+      var failedCount  = n(audit.failed_count, null);
+      var aMaxMv       = n(audit.max_movement, null);
+      var reasonStr    = (typeof audit.reason === 'string' && audit.reason.length > 0)
+                         ? audit.reason : '';
+      var outlierAuditIds = Array.isArray(audit.outlier_derived_ids)
+                            ? audit.outlier_derived_ids.length : null;
+      if (aTarget !== null) {
+        var ts = 'target Z ' + String(aTarget);
+        addRow(listEl, workspaceState, 'Applied Target Z', ts, ts);
+      }
+      if (appliedCount !== null) {
+        var as = appliedCount + ' ' + (appliedCount === 1 ? 'vertex' : 'vertices') + ' applied';
+        addRow(listEl, workspaceState, 'Moved / Applied', as, as);
+      }
+      if (aMaxMv !== null) {
+        var ms = 'max movement ' + String(aMaxMv);
+        addRow(listEl, workspaceState, 'Max Movement', ms, ms);
+      }
+      if (outlierAuditIds !== null && outlierAuditIds > 0) {
+        var os = outlierAuditIds + ' outlier edge' + (outlierAuditIds === 1 ? '' : 's') + ' unchanged';
+        addRow(listEl, workspaceState, 'Outliers Unchanged', os, os);
+      }
+      if (auditStatus === 'failed' && reasonStr.length > 0) {
+        addRow(listEl, workspaceState, 'Failure Reason', reasonStr, reasonStr);
+      }
+    }
+  }
+
+  // V1.6 Planar Normalization action button wiring (per
+  // dispatch §2.2 + Blueprint §11):
+  //   - state == 'NOT_COMPUTED' AND workspace == 'ready'
+  //     -> render ONE "Analyze Planarity" button wired to
+  //     compute_planar_normalization.
+  //   - state == 'READY_TO_NORMALIZE' AND workspace == 'ready'
+  //     -> render ONE "Apply Safe Normalization" button
+  //     wired to apply_planar_normalization. This is the
+  //     DESTRUCTIVE action; it MUST NOT appear enabled in
+  //     any other state (per dispatch §2.2 bullet 2).
+  //   - All other states (REVIEW_REQUIRED / NO_CANDIDATE /
+  //     APPLIED / FAILED / invalid_tolerance /
+  //     invalid_input / undefined pn / non-ready
+  //     workspace) -> NO action button.
+  // The button is appended AFTER the existing Prepare /
+  // Discard / Rebuild buttons so the action row layout is
+  // stable.
+  function renderPlanarNormalizationAction(actionsEl, workspaceState, pn) {
+    if (!pn || typeof pn !== 'object') return;
+    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
+    if (workspaceState !== 'ready') return;
+    if (pnState === 'NOT_COMPUTED') {
+      addAction(actionsEl, 'Analyze Planarity',
+                'compute_planar_normalization', true);
+    } else if (pnState === 'READY_TO_NORMALIZE') {
+      addAction(actionsEl, 'Apply Safe Normalization',
+                'apply_planar_normalization', true);
+    }
+    // All other states: no action button.
   }
 
   // Helper: append a labelled, factual row to the working-mode list.
@@ -811,6 +1002,13 @@
   ROOT.renderFaceInventory     = renderFaceInventory;
   ROOT.renderFaceInventoryRow  = renderFaceInventoryRow;
   ROOT.renderWorkingMode       = renderWorkingMode;
+  // V1.6 Planar Normalization / Z Policy: expose the two
+  // sub-renderers so the DOM tests (UI1-UI8 per
+  // V16-UI-INTEGRATION-CORRECTION-2026-09-01) can call them
+  // directly. These are pure functions of (listEl /
+  // actionsEl, state, payload) and have no other side effect.
+  ROOT.renderPlanarNormalization       = renderPlanarNormalization;
+  ROOT.renderPlanarNormalizationAction = renderPlanarNormalizationAction;
 
   document.addEventListener('DOMContentLoaded', function () {
     if (window.sketchup && window.sketchup.ready) {

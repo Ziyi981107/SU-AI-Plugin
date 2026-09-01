@@ -592,6 +592,95 @@ test 'V16-H6: Discard/Rebuild -> source unchanged' do
   assert_equal src_fp, source.fingerprint.digest
 end
 
+# V16-H5: native Undo after applied normalization. Per dispatch
+# V16-UI-INTEGRATION-CORRECTION-2026-09-01 §6: if the existing
+# FakeAdapter / WorkingModeRunner test seams can express H5
+# with one small regression, add it. The FakeAdapter already
+# exposes `simulate_host_state_change!` (per Round-5 BLOCK-005
+# §7) and the runner's `validate_host_state_consistency!` is
+# the approved seam. This test exercises:
+#   apply normalization
+#   -> simulate host-state invalidation via simulate_host_state_change!
+#      (modelling a native SU Undo / external host change)
+#   -> next normal interaction (validate_host_state_consistency!)
+#      detects the divergence and transitions the workspace to
+#      :failed with stable reason
+#   -> no stale destructive operation is exposed (apply callback
+#      refuses because workspaceState !== 'ready')
+#   -> source CAD remains immutable
+# Per Blueprint §12 H5 wording, the existing
+# validate-on-next-interaction path remains safe -- a stale
+# destructive Apply cannot fire because the workspace is no
+# longer :ready and the snapshot reflects the failed state.
+# We invoke validate_host_state_consistency! directly via
+# Module#send (same approach as V15-B005-3) -- this is the
+# canonical "next normal interaction" validation seam.
+test 'V16-H5: native Undo after applied normalization -> existing host-consistency path safe' do
+  adapter = FakeDerivedWorkspaceAdapter.new
+  edges = [
+    make_edge_record(1, [0.0, 0.0, 1.0], [5.0, 0.0, 1.001]),
+    make_edge_record(2, [5.0, 0.0, 1.001], [10.0, 0.0, 1.0])
+  ]
+  source = make_simple_snapshot(edges)
+  src_fp = source.fingerprint.digest
+
+  WorkingModeRunner.reset_for_tests
+  WorkingModeRunner.prepare(source: source, adapter: adapter, model: nil)
+  WorkingModeRunner.compute_planar_normalization
+  apply_result = WorkingModeRunner.apply_planar_normalization
+  assert_equal 'ready', apply_result['state'], 'apply should succeed'
+
+  # Simulate native Undo (or external host change) AFTER the
+  # applied normalization. The next host-state consistency
+  # check must detect the divergence via the approved
+  # FakeAdapter seam (no new Observer architecture).
+  adapter.simulate_host_state_change!
+
+  # The "next normal interaction" is the user's next click.
+  # validate_host_state_consistency! is the canonical
+  # next-destruction validation seam (Round-5 BLOCK-005 §7).
+  # It MUST detect the host-state change and transition the
+  # workspace to :failed WITHOUT silently claiming READY.
+  ok = WorkingModeRunner.send(:validate_host_state_consistency!)
+  refute ok, 'validate_host_state_consistency! MUST return false after host-state change'
+
+  cur_ws = WorkingModeRunner.send(:current_workspace_for_test)
+  assert cur_ws.state == :failed,
+         "workspace MUST transition to :failed, got #{cur_ws.state}"
+  assert cur_ws.last_error.to_s.include?('host_state_changed'),
+         "last_error must surface host_state_changed reason: #{cur_ws.last_error}"
+
+  # The destructive Apply Safe Normalization callback MUST NOT
+  # be available on the new :failed state. Per the JS UI
+  # contract (dispatch UI6 + app.js renderPlanarNormalizationAction
+  # gate), the apply button is only rendered when
+  # workspaceState === 'ready' AND pn.state === 'READY_TO_NORMALIZE'.
+  # Since the workspace is :failed, the snapshot's
+  # state field is 'failed' (NOT 'ready'), so the JS contract
+  # guarantees no destructive button is rendered. We verify
+  # the snapshot reflects the failed state.
+  snap = WorkingModeRunner.snapshot
+  assert_equal 'failed', snap['state'],
+               'snapshot must reflect :failed state after host-state change'
+
+  # The planar_normalization sub-snapshot must NOT carry a
+  # stale READY_TO_NORMALIZE state (no stale destructive
+  # action surface).
+  pn = snap['planar_normalization']
+  assert pn.is_a?(Hash), 'planar_normalization must be present in snapshot'
+  refute_equal 'READY_TO_NORMALIZE', pn['state'],
+               'no stale READY_TO_NORMALIZE state after host-state change'
+
+  # Source CAD MUST still be immutable (the simulated Undo is
+  # an external host change; the SourceSnapshot is captured
+  # and deep-frozen, so the source is NOT affected).
+  assert_equal src_fp, source.fingerprint.digest,
+               'source fingerprint must remain unchanged after simulated Undo'
+
+  # Cleanup.
+  adapter.clear_host_state_change!
+end
+
 # ============================================================================
 # TOLERANCE / CONFIG (T1-T3)
 # ============================================================================
