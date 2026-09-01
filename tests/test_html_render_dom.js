@@ -1365,10 +1365,74 @@ renderWithPayload({
   }
 });
 var wmDiscardedSummary = mockElements['working-mode-summary'];
+var wmDiscardedActions = mockElements['working-mode-actions'];
 // V1.6 UI-CN-SIMPLIFICATION: discarded state summary text is
 // Simplified Chinese ("处理工作区— 工作副本已放弃").
 assert('V14: discarded state summary shows "处理工作区— 工作副本已放弃"',
        wmDiscardedSummary && wmDiscardedSummary.textContent.indexOf('工作副本已放弃') !== -1);
+// V16-UI-CN-SIMPLIFICATION-FIX (Owner real-host finding):
+// after Discard the user may select a NEW CAD/source selection
+// and must be able to create a fresh SourceSnapshot +
+// Derived Workspace. Rebuild replays the previously captured
+// workspace, which is not a substitute. The primary CTA in
+// state='discarded' MUST therefore be 准备处理 (not Rebuild,
+// not Discard).
+assert('V16-FIX: discarded state primary CTA is Simplified Chinese "准备处理" (Owner real-host fix)',
+       wmDiscardedActions && wmDiscardedActions.children.length >= 1 &&
+       wmDiscardedActions.children[0].textContent === '准备处理' &&
+       wmDiscardedActions.children[0].attrs['data-action'] === 'prepare_workspace' &&
+       !wmDiscardedActions.children[0].hasAttribute('disabled'));
+// Rebuild remains a SECONDARY action under the collapsed
+// 更多操作 block (per dispatch §5; the previously captured
+// source can still be replayed).
+var wmDiscardedMoreBlock = wmDiscardedActions.children[1];
+var wmDiscardedMoreInner = wmDiscardedMoreBlock && wmDiscardedMoreBlock.children.filter(function (c) {
+  return c.classes.indexOf('more-actions-inner') !== -1;
+})[0];
+assert('V16-FIX: discarded state 更多操作 block contains "重新生成" as secondary action',
+       wmDiscardedMoreInner && wmDiscardedMoreInner.children.some(function (b) {
+         return b.textContent === '重新生成' &&
+                b.attrs['data-action'] === 'rebuild_workspace' &&
+                !b.hasAttribute('disabled');
+       }));
+// Discard is NOT rendered in state='discarded' (already discarded).
+assert('V16-FIX: discarded state does NOT render "放弃工作副本" (already discarded)',
+       (!wmDiscardedMoreInner || !wmDiscardedMoreInner.children.some(function (b) {
+         return b.textContent === '放弃工作副本';
+       })) && (!wmDiscardedActions.children.some(function (b) {
+         return b.textContent === '放弃工作副本';
+       })));
+// NO disabled buttons anywhere in the discarded state
+// (unavailable actions are HIDDEN, not disabled).
+var wmDiscardedDisabledCount = 0;
+(function countDisabled(el) {
+  if (!el) return;
+  if (el.attrs && el.attrs['disabled'] !== undefined) wmDiscardedDisabledCount++;
+  if (el.children) for (var i = 0; i < el.children.length; i++) countDisabled(el.children[i]);
+})(wmDiscardedActions);
+assert('V16-FIX: discarded state renders ZERO disabled buttons (unavailable actions are HIDDEN, not disabled)',
+       wmDiscardedDisabledCount === 0);
+// Click the 准备处理 CTA and verify it dispatches EXACTLY to
+// window.sketchup.prepare_workspace (NOT rebuild_workspace,
+// NOT discard_workspace).
+resetV14HostActionCalls();
+wmDiscardedActions.children[0].fireEvent('click');
+assert('V16-FIX: clicking "准备处理" in discarded state calls prepare_workspace EXACTLY ONCE',
+       mockWindow.sketchup.prepare_workspace_calls.length === 1);
+assert('V16-FIX: clicking "准备处理" in discarded state does NOT call rebuild_workspace',
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
+assert('V16-FIX: clicking "准备处理" in discarded state does NOT call discard_workspace',
+       mockWindow.sketchup.discard_workspace_calls.length === 0);
+// Click the secondary 重新生成 button and verify it dispatches
+// to rebuild_workspace (NOT prepare_workspace).
+resetV14HostActionCalls();
+if (wmDiscardedMoreInner) {
+  wmDiscardedMoreInner.children.forEach(function (b) { b.fireEvent('click'); });
+}
+assert('V16-FIX: clicking "重新生成" (secondary) in discarded state calls rebuild_workspace EXACTLY ONCE',
+       mockWindow.sketchup.rebuild_workspace_calls.length === 1);
+assert('V16-FIX: clicking "重新生成" (secondary) in discarded state does NOT call prepare_workspace',
+       mockWindow.sketchup.prepare_workspace_calls.length === 0);
 
 // Render with derivedWorkspace='failed' (build failure state).
 renderWithPayload({
@@ -1400,6 +1464,33 @@ assert('V14: failed state has a row describing "处理失败，请点击下方�
          });
          return found.length >= 1;
        })());
+// V16-UI-CN-SIMPLIFICATION-FIX (Owner real-host "same class of
+// mistake" review): the user may select a NEW source after a
+// failed build. Prepare is the primary CTA in state='failed';
+// Rebuild is the secondary action under 更多操作.
+var wmFailedActions = mockElements['working-mode-actions'];
+assert('V16-FIX: failed state primary CTA is Simplified Chinese "准备处理" (Owner real-host fix)',
+       wmFailedActions && wmFailedActions.children.length >= 1 &&
+       wmFailedActions.children[0].textContent === '准备处理' &&
+       wmFailedActions.children[0].attrs['data-action'] === 'prepare_workspace' &&
+       !wmFailedActions.children[0].hasAttribute('disabled'));
+var wmFailedMoreBlock = wmFailedActions.children[1];
+var wmFailedMoreInner = wmFailedMoreBlock && wmFailedMoreBlock.children.filter(function (c) {
+  return c.classes.indexOf('more-actions-inner') !== -1;
+})[0];
+assert('V16-FIX: failed state 更多操作 block contains "重新生成" as secondary action',
+       wmFailedMoreInner && wmFailedMoreInner.children.some(function (b) {
+         return b.textContent === '重新生成' &&
+                b.attrs['data-action'] === 'rebuild_workspace' &&
+                !b.hasAttribute('disabled');
+       }));
+// Click the 准备处理 CTA and verify dispatch.
+resetV14HostActionCalls();
+wmFailedActions.children[0].fireEvent('click');
+assert('V16-FIX: clicking "准备处理" in failed state calls prepare_workspace EXACTLY ONCE',
+       mockWindow.sketchup.prepare_workspace_calls.length === 1);
+assert('V16-FIX: clicking "准备处理" in failed state does NOT call rebuild_workspace',
+       mockWindow.sketchup.rebuild_workspace_calls.length === 0);
 
 // Defensive: missing derivedWorkspace => treated as 'none' state.
 renderWithPayload({

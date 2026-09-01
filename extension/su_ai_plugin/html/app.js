@@ -766,10 +766,34 @@
     addRow(listEl, state, null, line, line);
   }
 
-  // V1.6 UI-CN-SIMPLIFICATION: emit the ONE primary action
-  // button when applicable. Unavailable actions are HIDDEN.
-  // Destructive Apply Safe Normalization is rendered ONLY when
-  // workspaceState === 'ready' AND pnState === 'READY_TO_NORMALIZE'.
+  // V1.6 UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX:
+  // emit the ONE primary action button when applicable.
+  // Unavailable actions are HIDDEN. Destructive Apply Safe
+  // Normalization is rendered ONLY when workspaceState ===
+  // 'ready' AND pnState === 'READY_TO_NORMALIZE'.
+  //
+  // Action-state matrix (per dispatch V16-UI-CN-SIMPLIFICATION-FIX
+  // §5):
+  //   - 'none'                         -> 准备处理
+  //   - 'discarded'                    -> 准备处理 (primary)
+  //   - 'failed'                       -> 准备处理 (primary; same
+  //                                        class of mistake: the
+  //                                        user may select a NEW
+  //                                        source after a failed
+  //                                        build)
+  //   - 'ready' + NOT_COMPUTED         -> 检查平面偏差
+  //   - 'ready' + READY_TO_NORMALIZE   -> 应用平面校正
+  //   - 'ready' + (REVIEW_REQUIRED / NO_CANDIDATE / APPLIED /
+  //                FAILED / INVALID_*) -> no destructive Apply
+  //                                       CTA
+  //   - 'building'                     -> no buttons (in-progress)
+  //
+  // `准备处理` is the primary CTA in BOTH 'none' and 'discarded'
+  // (and 'failed') because in all three the user may select a
+  // NEW CAD source and must be able to create a fresh
+  // SourceSnapshot + Derived Workspace from the CURRENT
+  // selection. Rebuild replays the previously captured workspace,
+  // which is not the same thing.
   function renderPrimaryAction(actionsEl, workspaceState, pn) {
     if (workspaceState === 'none') {
       // No workspace yet -> Prepare.
@@ -777,7 +801,28 @@
                 'prepare_workspace', true);
       return;
     }
-    // Workspace exists.
+    if (workspaceState === 'discarded') {
+      // Per V16-UI-CN-SIMPLIFICATION-FIX Owner real-host finding:
+      // after Discard the user may select a NEW source and must
+      // be able to create a fresh SourceSnapshot. Rebuild replays
+      // the previously captured workspace, which is not a
+      // substitute. Prepare is the primary CTA; Rebuild is
+      // available as a secondary control under `更多操作` when
+      // a previously captured source still exists.
+      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
+                'prepare_workspace', true);
+      return;
+    }
+    if (workspaceState === 'failed') {
+      // Per V16-UI-CN-SIMPLIFICATION-FIX "same class of mistake"
+      // review: the user may select a NEW source after a failed
+      // build. Prepare is the primary CTA; Rebuild replays the
+      // captured workspace as a secondary control.
+      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
+                'prepare_workspace', true);
+      return;
+    }
+    // Workspace exists (ready).
     if (workspaceState === 'ready') {
       // Determine the planar normalization state.
       var pnState = (pn && typeof pn === 'object' && typeof pn.state === 'string')
@@ -798,18 +843,28 @@
       // `更多操作` block.
       return;
     }
-    // Building / discarded / failed -> no primary destructive
-    // action. The user can Rebuild / Discard from `更多操作`.
+    // 'building' (in-progress) -> no buttons.
   }
 
-  // V1.6 UI-CN-SIMPLIFICATION: secondary operational controls.
-  // Per dispatch §4.5 these live in a collapsed `更多操作`
-  // block under the primary CTA. Unavailable controls are
-  // HIDDEN rather than rendered as disabled buttons. The
-  // collapsed block is itself HIDDEN when no secondary control
-  // is meaningful (e.g. state='none' before the first Prepare),
-  // so the default screen shows ONLY the primary CTA.
-  function renderMoreActions(actionsEl, workspaceState) {
+  // V1.6 UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX:
+// secondary operational controls. Per dispatch §4.5 these live
+// in a collapsed `更多操作` block under the primary CTA.
+// Unavailable controls are HIDDEN rather than rendered as
+// disabled buttons. The collapsed block is itself HIDDEN when
+// no secondary control is meaningful (e.g. state='none' before
+// the first Prepare, OR state='building' in-progress), so the
+// default screen shows ONLY the primary CTA.
+//
+// Per V16-UI-CN-SIMPLIFICATION-FIX §5 the action-state matrix:
+//   - 'none'         -> primary=准备处理, secondary=(none, no block)
+//   - 'discarded'    -> primary=准备处理, secondary=重新生成
+//                        (only; the previously captured source
+//                         can still be replayed)
+//   - 'failed'       -> primary=准备处理, secondary=重新生成
+//   - 'ready'        -> primary per PN state, secondary=放弃工作副本
+//                        + 重新生成
+//   - 'building'     -> no buttons at all (in-progress)
+function renderMoreActions(actionsEl, workspaceState) {
     var hasDiscard = (workspaceState === 'ready');
     var hasRebuild = (workspaceState === 'ready' || workspaceState === 'discarded' ||
                       workspaceState === 'failed');
