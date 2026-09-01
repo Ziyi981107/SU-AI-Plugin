@@ -33,9 +33,9 @@ V1.7 CORRECTED PACKET — 2026-09-01.
 
 - Starting HEAD: `792e99f6d6a140b4a250f316dc1e9d7beb8f6e4b` (the
   V17-GAP-TOPOLOGY implementation complete-state doc-stamp).
-- Final HEAD on `dev/v1.7`: `7920dd0b5ff4845e728a8467cb6dd4852a98cf7d`
-  (4 stable local commits: 1 production + 1 doc-stamp + 1
-  patch refresh + 1 SHA update).
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` (5 stable
+  local commits: 1 production + 1 doc-stamp + 1 patch refresh +
+  1 SHA update + 1 final HEAD record).
 - V1.7 RBZ candidate: size **903,234 bytes**; entries **67**;
   SHA-256 **`1d34cdd0b6ec924f5f8c23a7fc94615a2b1743aa36d380c184f70de45e2cecc1`**.
 - Full Ruby suite: **895 / 895 PASS** / 0 fail / 0 error
