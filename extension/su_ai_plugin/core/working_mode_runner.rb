@@ -1073,10 +1073,18 @@ module SUAnalysis
           vertex_keys_by_edge: _host_vertex_map(workspace)
         )
         endpoints = Array(topo['endpoints'])
+        # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R5 fix:
+        # CanonicalTopologyBuilder.build returns a FROZEN Hash,
+        # so the previous in-place `result[:endpoints] =` raised
+        # FrozenError and made the whole production
+        # compute_gap_repair / apply_gap_repair path unusable.
+        # `dup` yields an unfrozen shallow copy (the frozen
+        # canonical sub-structures stay frozen, which is the
+        # intended immutability contract).
         result = CanonicalTopologyBuilder.build(
           endpoints:          endpoints,
           coordinate_epsilon: tol
-        )
+        ).dup
         result[:endpoints] = endpoints
         result
       end
@@ -1241,7 +1249,15 @@ module SUAnalysis
 
       def _open_endpoint_keys(workspace, derived_edges, topology_snapshot)
         # Adjacency in canonical-node space.
-        cluster_lookup = topology_snapshot[:canonical_node_clusters] || {}
+        # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R5 fix:
+        # CanonicalTopologyBuilder.build publishes STRING keys;
+        # the previous symbol-only read silently resolved to {}
+        # on the production runner path, which destroyed
+        # canonical-node identity (Blueprint §7) and reported
+        # every coincident corner endpoint as "open"
+        # (Blueprint §8). Read symbol OR string defensively.
+        cluster_lookup = topology_snapshot[:canonical_node_clusters] ||
+                          topology_snapshot['canonical_node_clusters'] || {}
         canonical_node_by_endpoint = {}
         cluster_lookup.each { |cid, keys| Array(keys).each { |k| canonical_node_by_endpoint[k.to_s] = cid.to_s } }
         adj = Hash.new { |h, k| h[k] = [] }

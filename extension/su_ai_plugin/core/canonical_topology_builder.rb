@@ -289,8 +289,28 @@ module SUAnalysis
       end
 
       def _build_canonical_node_record(cluster_id:, endpoint:, position:, eps:, resolved:)
+        # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R6/R8 fix
+        # (Blueprint §7.2 / §7.3):
+        #
+        # A SAFE CLIQUE is ONE canonical node. Every endpoint
+        # member of a resolved clique must therefore share the
+        # SAME deterministic `canonical_node_id`. The previous
+        # `"#{cluster_id}.n#{position}"` form minted a DIFFERENT
+        # id per clique member, so an exactly-coincident corner
+        # (two derived edges meeting at one point) produced two
+        # distinct canonical nodes. Downstream that split the
+        # CanonicalGeometryGraph of a real almost-closed
+        # triangle into disjoint degree-1 fragments: the
+        # rebuilt graph could never be connected and could
+        # never contain a cycle, which is exactly what
+        # Blueprint §15.2 adjacency + §18.5 T3/T4 require.
+        #
+        # A NON-TRANSITIVE cluster must NOT collapse identity
+        # (§7.2), so its members keep distinct per-member ids.
+        canonical_node_id = resolved ? cluster_id.to_s :
+                              "#{cluster_id}.n#{position}"
         {
-          'canonical_node_id' => "#{cluster_id}.n#{position}",
+          'canonical_node_id' => canonical_node_id,
           'endpoint_key'      => endpoint.endpoint_key.to_s,
           'derived_edge_id'   => endpoint.derived_edge_id.to_s,
           'role'              => endpoint.role.to_s,

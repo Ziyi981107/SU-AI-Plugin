@@ -22,6 +22,27 @@
 #     'generated_gap_bridge' is forbidden from leaking
 #     through the canonical graph.
 #
+#   R5 / R6 (AIPM evidence-integration-final correction
+#   V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01):
+#   the X1 / X2 tests in THIS file build a `crossing_checker`
+#   proc that MIRRORS WorkingModeRunner._crossing_checker_proc.
+#   AIPM finding R5 ruled that a mirrored implementation is NOT
+#   acceptable production evidence, because test and production
+#   can diverge while both stay green.
+#
+#   Therefore the tests in this file are now explicitly scoped as
+#   LOW-LEVEL PREDICATE / MIRROR tests only. The AUTHORITATIVE
+#   Blueprint §18.3 X1 / X2 / X4 evidence lives in
+#
+#       tests/test_v17_production_gap_path.rb
+#
+#   which drives the REAL WorkingModeRunner.compute_gap_repair /
+#   apply_gap_repair path with the REAL
+#   _crossing_checker_proc. The V17-X4 fixture in this file is a
+#   2-line substitute and does NOT satisfy Blueprint §18.3 X4;
+#   the real 3-edge almost-closed triangle is V17-X4 in the
+#   production-path file.
+#
 # The crossing tests build geometries that exercise the
 # crossing checker (Blueprint §10.3) end-to-end via the
 # GapPairProposer pipeline. The origin_kind mapping test
@@ -100,7 +121,7 @@ end
 
 # ---- X1: proposed bridge intersects unrelated edge interior -> REVIEW_REQUIRED ----
 
-test 'V17-X1: proposed bridge that crosses an unrelated edge interior is REVIEW_REQUIRED' do
+test 'V17-X1-MIRROR-PREDICATE: [low-level, NOT production evidence] a mirrored crossing checker demotes a crossing bridge to REVIEW_REQUIRED/bridge_crossing (authoritative X1 = tests/test_v17_production_gap_path.rb)' do
   # Topology: two parallel lines with a short gap.
   #   - e1: (0,0,0) -> (5,0,0); open at e1.end (5,0,0).
   #   - e2: (5.1, 0, 0) -> (10, 0, 0); open at e2.start (5.1, 0, 0).
@@ -183,7 +204,7 @@ end
 
 # ---- X2: third canonical node lies on bridge -> REVIEW_REQUIRED ----
 
-test 'V17-X2: third canonical node lying on a proposed bridge -> REVIEW_REQUIRED' do
+test 'V17-X2-MIRROR-PREDICATE: [low-level, NOT production evidence] a mirrored third-node checker demotes a bridge to REVIEW_REQUIRED/third_node_on_bridge (authoritative X2 = tests/test_v17_production_gap_path.rb)' do
   # Topology:
   #   e1: (0,0,0) -> (5,0,0);   open at e1.end (5,0,0)
   #   e2: (5.1, 0, 0) -> (10, 0, 0);  open at e2.start (5.1, 0, 0)
@@ -447,16 +468,22 @@ test 'V17-X3-PAIRWISE: GapPairProposer pairwise ready_proposal crossing check em
   # in this file (each rejects non-coplanar crossings).
 end
 
-# ---- X4: triangle missing one short closing segment -> READY_TO_REPAIR ----
+# ---- X4 (LOW-LEVEL 2-LINE SUBSTITUTE — NOT Blueprint X4) ----
+#
+# Blueprint §18.3 X4 requires a REAL almost-closed triangle. This
+# test is only a low-level mutual-unique pairing check on a 2-line
+# topology and was explicitly rejected as X4 evidence by AIPM
+# finding R6. The authoritative X4 is `V17-X4` in
+# tests/test_v17_production_gap_path.rb.
 
-test 'V17-X4: two parallel lines with one short unique closing gap -> READY_TO_REPAIR (triangle-style)' do
-  # Two parallel lines forming an almost-closed rectangle
-  # with one short unique missing closing segment.
+test 'V17-X4-LOWLEVEL-2LINE: [low-level, NOT Blueprint X4 evidence] two collinear lines with one short unique closing gap -> READY_TO_REPAIR (real triangle X4 = tests/test_v17_production_gap_path.rb)' do
+  # Low-level pairing check only (NOT Blueprint X4): two collinear
+  # segments with one short unique missing closing segment.
   #   e1: (0,0,0) -> (5,0,0);  open at e1.end (5,0,0)
   #   e2: (5.05, 0, 0) -> (10, 0, 0);  open at e2.start (5.05, 0, 0)
-  #   e3: NOT USED in topology; we model the gap as a
-  #       horizontal bridge closing the rectangle.
   # The open pair is e1.end <-> e2.start with distance 0.05.
+  # The REAL almost-closed triangle X4 fixture lives in
+  # tests/test_v17_production_gap_path.rb (V17-X4).
   tol = Tolerance.new(
     duplicate: 1.0e-4, short_edge: 0.5,
     gap_search: 0.1, coordinate_epsilon: 1.0e-6
@@ -487,9 +514,9 @@ test 'V17-X4: two parallel lines with one short unique closing gap -> READY_TO_R
     topology_snapshot: topo, derived_edges: derived_edges, tolerance: tol
   )
   assert_equal GapPairProposer::STATE_READY_TO_REPAIR, result['state'],
-               "X4: two parallel lines with one unique short closing gap must be READY_TO_REPAIR; got #{result['state']}"
+               "X4-LOWLEVEL: two collinear lines with one unique short closing gap must be READY_TO_REPAIR; got #{result['state']}"
   assert_equal 1, result['ready_proposals'].length,
-               "X4: must produce exactly one ready proposal"
+               "X4-LOWLEVEL: must produce exactly one ready proposal"
   p = result['ready_proposals'].first
   assert_equal true, p['executable']
   # The two endpoints must be the unique short pair.

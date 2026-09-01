@@ -262,8 +262,24 @@ module SUAnalysis
           unless _is_finite_point?(s) && _is_finite_point?(e)
             next
           end
-          layer_name = (gs['layer'] || rec.respond_to?(:layer) ? rec.layer : nil) ||
-                        (rec.respond_to?(:layer) ? rec.layer : nil)
+          # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R5 fix:
+          # the previous expression was
+          #   (gs['layer'] || rec.respond_to?(:layer) ? rec.layer : nil) || ...
+          # which Ruby parses as
+          #   ((gs['layer'] || rec.respond_to?(:layer)) ? rec.layer : nil) || ...
+          # so ANY derived edge carrying a layer in its
+          # geometry_summary evaluated `rec.layer` -- a method
+          # DerivedEntityRecord does NOT define. The whole
+          # production WorkingModeRunner.compute_gap_repair /
+          # apply_gap_repair path therefore raised NoMethodError
+          # for every layered CAD selection (the V1.7 Owner
+          # demo path). Intent (unchanged): prefer the
+          # geometry_summary layer, fall back to a record-level
+          # `layer` reader only when the record exposes one.
+          layer_name = gs['layer']
+          if layer_name.nil? && rec.respond_to?(:layer)
+            layer_name = rec.layer
+          end
           layer_name = layer_name.to_s unless layer_name.nil?
           # Resolve safety evidence via the adapter when one is
           # available. A missing adapter leaves the fields nil/0

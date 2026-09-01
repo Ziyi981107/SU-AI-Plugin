@@ -109,7 +109,8 @@ module SUAnalysis
       #   }
       def propose(topology_snapshot:, derived_edges:, tolerance:, crossing_checker: nil)
         gap_search  = tolerance.respond_to?(:gap_search) ? tolerance.gap_search.to_f : 0.1
-        coord_eps   = topology_snapshot[:coordinate_epsilon] || tolerance.coordinate_epsilon.to_f
+        coord_eps   = _ts_read(topology_snapshot, :coordinate_epsilon) ||
+                       tolerance.coordinate_epsilon.to_f
 
         # ---- Open endpoint candidates ----
         # Open endpoint = canonical degree-1 endpoint computed
@@ -117,8 +118,8 @@ module SUAnalysis
         # openness from the derived_edges + canonical_nodes
         # adjacency (consistent with Blueprint §8).
         adj_map   = _build_canonical_adjacency(derived_edges)
-        cluster_lookup = topology_snapshot[:canonical_node_clusters] || {}
-        non_trans_clusters = topology_snapshot[:non_transitive_clusters] || []
+        cluster_lookup = _ts_read(topology_snapshot, :canonical_node_clusters) || {}
+        non_trans_clusters = _ts_read(topology_snapshot, :non_transitive_clusters) || []
         non_trans_keys = non_trans_clusters.flat_map { |c| Array(c[:endpoint_keys] || c['endpoint_keys']).map(&:to_s) }.to_set rescue nil
         non_trans_keys ||= Set.new(non_trans_clusters.flat_map { |c| Array(c['endpoint_keys']).map(&:to_s) })
 
@@ -132,10 +133,12 @@ module SUAnalysis
         # Resolve EndpointRecord by endpoint_key when
         # available (drives curve / face context annotations).
         endpoint_records_by_key = {}
-        if topology_snapshot[:endpoint_records].is_a?(Hash)
-          topology_snapshot[:endpoint_records].each { |k, v| endpoint_records_by_key[k.to_s] = v }
-        elsif topology_snapshot[:endpoints].is_a?(Array)
-          topology_snapshot[:endpoints].each do |ep|
+        _ts_endpoint_records = _ts_read(topology_snapshot, :endpoint_records)
+        _ts_endpoints        = _ts_read(topology_snapshot, :endpoints)
+        if _ts_endpoint_records.is_a?(Hash)
+          _ts_endpoint_records.each { |k, v| endpoint_records_by_key[k.to_s] = v }
+        elsif _ts_endpoints.is_a?(Array)
+          _ts_endpoints.each do |ep|
             next unless ep.respond_to?(:endpoint_key)
             endpoint_records_by_key[ep.endpoint_key.to_s] = ep
           end
@@ -515,6 +518,25 @@ module SUAnalysis
       end
 
       # ---- helpers ----
+
+      # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R5 fix:
+      # CanonicalTopologyBuilder.build publishes STRING-keyed
+      # results, while the historical in-test callers passed
+      # SYMBOL-keyed Hashes. The previous symbol-only reads
+      # silently resolved to nil on the ACTUAL production
+      # WorkingModeRunner.compute_gap_repair path, so
+      # `canonical_node_clusters` was empty there: coincident
+      # corner endpoints were never merged into one canonical
+      # node (Blueprint §7) and were mis-reported as open
+      # endpoints (Blueprint §8). Read symbol first, then
+      # string. Same defensive pattern already used by
+      # CanonicalGeometryGraph.build_from_workspace.
+      def _ts_read(topology_snapshot, key)
+        return nil unless topology_snapshot.respond_to?(:[])
+        v = topology_snapshot[key]
+        return v unless v.nil?
+        topology_snapshot[key.to_s]
+      end
 
       def _bucket_key(coord, cell_size)
         x = (coord[0].to_f / cell_size).floor
