@@ -256,9 +256,9 @@ The underlying requirements are all covered (PASS).
 - **Patch path**: `Review/V17_AIPM_SOURCE_REVIEW.patch`
 - **Patch generation command**:
   `git diff d7e9c59..HEAD -- extension/su_ai_plugin tests scripts/build_rbz.rb > Review/V17_AIPM_SOURCE_REVIEW.patch`
-- **Patch size**: 214,055 bytes
+- **Patch size**: 268,910 bytes
 - **Patch SHA-256**:
-  `9b417b88dfae4562575f83e788c2252fbbcf5611e41d0b6ece4846f9764434c0`
+  `87d84724b572b9ef9d2c96fd61d63cdd72bfa74af44e2155a16e3a6497654d59`
 
 ## H. Critical source index (per dispatch §H)
 

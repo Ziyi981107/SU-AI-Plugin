@@ -15,7 +15,7 @@ Starting HEAD: `0bac757` (V1.6 closure anchor + V1.7 Blueprint as durable
 authority documents)
 Final HEAD: see CURRENT_PI_REPORT §K
 Patch: `Review/V17_AIPM_SOURCE_REVIEW.patch`
-Patch SHA-256: `9b417b88dfae4562575f83e788c2252fbbcf5611e41d0b6ece4846f9764434c0`
+Patch SHA-256: `87d84724b572b9ef9d2c96fd61d63cdd72bfa74af44e2155a16e3a6497654d59`
 
 ---
 
