@@ -1,6 +1,76 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 GAP-TOPOLOGY IMPLEMENTATION (THIS UPDATE)
+## V1.7 AIPM-PRIMARY-REVIEW-CORRECTION (THIS UPDATE)
+
+Updated: 2026-09-01 (V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
+Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
+- **V1.7 AIPM primary review**: pending direct source review
+  of this packet.
+- **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
+  primary review. Pi does NOT invoke Codex.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected the four bounded primary-review findings
+(R1 X1-X4 explicit tests + X3 pairwise check; R2 T3/T4 + bridge
+endpoint canonical_node_id resolution; R3 workspace enum ->
+canonical enum translation + geometry_summary-based reads; R4
+test matrix reported honestly).
+
+V1.7 CORRECTED PACKET — 2026-09-01.
+
+- Starting HEAD: `792e99f6d6a140b4a250f316dc1e9d7beb8f6e4b` (the
+  V17-GAP-TOPOLOGY implementation complete-state doc-stamp).
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` after the
+  2 local commits of this dispatch land.
+- V1.7 RBZ candidate: size **903,234 bytes**; entries **67**;
+  SHA-256 **`1d34cdd0b6ec924f5f8c23a7fc94615a2b1743aa36d380c184f70de45e2cecc1`**.
+- Full Ruby suite: **895 / 895 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 52 V1.7 Ruby tests, +9 from
+  V17-AIPM-PRIMARY-REVIEW-CORRECTION dispatch).
+- Node DOM assertions: **PASS** (CN1..CN18 + V17-UI1..UI4 +
+  V16-FIX, no JS-side change in this dispatch).
+- V16-CLOSE-AUTODISCARD: 7/7 PASS (no regression).
+- V15 host-state / BLOCK-005: 149/149 PASS (no regression).
+- LEGACY-COMPAT: 4/4 PASS (no regression).
+- RBZ smoke: 9/9 PASS (post-rebuild).
+- `git diff --check`: clean.
+- per dispatch §10: STOPPED awaiting AIPM direct source review;
+  Codex xHigh integration review NOT invoked; V1.8 NOT
+  STARTED; final Owner SU2020 real-host verification gate
+  NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+New review artifacts produced by this dispatch:
+
+- `Review/V17_AIPM_SOURCE_REVIEW.patch` (214,055 bytes;
+  SHA-256 `9b417b88dfae4562575f83e788c2252fbbcf5611e41d0b6ece4846f9764434c0`).
+- `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`.
+
+Next expected AIPM action: AIPM direct source review of this
+corrected V1.7 packet against the frozen Blueprint + the prior
+V1.4–V1.6 review evidence, then (on AIPM PASS) the mandatory
+Codex xHigh integration review, then the final Owner SU2020
+real-host verification gate Scenarios A–G.
+
+CODEX_GATE: STILL PENDING — DO NOT INVOKE.
+OWNER GATE: NOT YET RUN.
+
+## V1.7 GAP-TOPOLOGY IMPLEMENTATION (HISTORICAL)
 
 Updated: 2026-09-01 (V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
 dispatch EXECUTION on assigned `dev/v1.7` per dispatch

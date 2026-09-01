@@ -148,19 +148,32 @@ module SUAnalysis
                            else
                              ''
                            end
-        nodes       = Array(topology_snapshot[:canonical_nodes])
-        clusters    = topology_snapshot[:canonical_node_clusters] || {}
-        non_trans   = topology_snapshot[:non_transitive_clusters] || []
-        unresolved  = Array(topology_snapshot[:unresolved_topology_issues])
-        eps         = topology_snapshot[:coordinate_epsilon].to_f
-        edges       = _build_canonical_edges(workspace, clusters, eps)
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3 fix:
+        # CanonicalTopologyBuilder.build returns STRING-keyed
+        # Hashes (canonical_nodes, canonical_node_clusters,
+        # etc.). Read both string + symbol keys defensively so
+        # the graph builder works with either input shape
+        # (legacy callers passed symbol-keyed Hashes).
+        nodes       = Array(topology_snapshot[:canonical_nodes] ||
+                             topology_snapshot['canonical_nodes'])
+        clusters    = topology_snapshot[:canonical_node_clusters] ||
+                       topology_snapshot['canonical_node_clusters'] || {}
+        non_trans   = topology_snapshot[:non_transitive_clusters] ||
+                      topology_snapshot['non_transitive_clusters'] || []
+        unresolved  = Array(topology_snapshot[:unresolved_topology_issues] ||
+                             topology_snapshot['unresolved_topology_issues'])
+        eps         = (topology_snapshot[:coordinate_epsilon] ||
+                       topology_snapshot['coordinate_epsilon'] || 1.0e-6).to_f
+        edges       = _build_canonical_edges(workspace, clusters, nodes, eps)
         adjacency   = _build_adjacency(edges)
-        open_list   = Array(topology_snapshot[:open_endpoints])
+        open_list   = Array(topology_snapshot[:open_endpoints] ||
+                             topology_snapshot['open_endpoints'])
         if open_degree_count.is_a?(Hash)
           open_list = open_degree_count.keys.select { |k| open_degree_count[k].to_i == 1 }
                                        .map(&:to_s).sort
         end
-        metric = topology_snapshot[:metrics] || {}
+        metric = topology_snapshot[:metrics] ||
+                  topology_snapshot['metrics'] || {}
         new(
           source_snapshot_id:        source_snapshot_id,
           execution_config_digest:   exec_digest,
@@ -178,16 +191,76 @@ module SUAnalysis
 
       # ---- internal builders ----
 
-      def self._build_canonical_edges(workspace, clusters, eps)
+      def self._build_canonical_edges(workspace, clusters, canonical_nodes, eps)
         # Per Blueprint §15.1: each source-derived edge maps
         # to one CanonicalEdge (origin_kind = source_derived /
         # duplicate_repair_survivor). gap_bridge edges added by
         # the executor are appended separately at apply time.
+        #
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3:
+        # the workspace's DerivedEntityRecord carries the
+        # workspace-implementation enum value
+        # 'generated_gap_bridge' in `origin_kind`. The
+        # canonical graph must NOT leak the workspace enum;
+        # CanonicalEdge.origin_kind is the canonical contract
+        # enum. We translate at this boundary:
+        #   'source_derived'              -> 'source_derived'
+        #   'duplicate_repair_survivor'   -> 'duplicate_repair_survivor'
+        #   'generated_gap_bridge'        -> 'gap_bridge'   (R3 fix)
+        # V1.8 downstream must consume 'gap_bridge' without
+        # ever learning the workspace enum.
+        #
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+        # secondary fix: for bridge edges (gap_bridge origin),
+        # the bridge's endpoint keys (der-gap-X.start /
+        # der-gap-X.end) are NOT in cluster_id_for (the
+        # cluster map is keyed by the topology snapshot's
+        # endpoint_keys, not by the bridge's derived_edge_id).
+        # We resolve bridge-endpoint canonical_node_ids via
+        # world-coordinate proximity against the topology
+        # snapshot's canonical_nodes (within `eps`). This
+        # connects the bridge into the existing canonical
+        # graph instead of inventing fresh singleton nodes.
         out = []
         return out unless workspace.respond_to?(:entities)
         cluster_id_for = {}
-        clusters.each do |cid, keys|
-          Array(keys).each { |k| cluster_id_for[k.to_s] = cid.to_s }
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+        # secondary fix: map endpoint_key -> canonical_node_id
+        # (NOT cluster id) so source_derived edges + bridge
+        # edges resolve to the SAME identifier format. The
+        # cluster_id (without .nN suffix) is a group
+        # identifier; the canonical_node_id (with .nN suffix)
+        # is the unique node identifier. For singleton
+        # clusters, the canonical_node_id == cluster_id +
+        # '.n0'.
+        Array(canonical_nodes).each do |n|
+          next unless n.is_a?(Hash)
+          ek = n['endpoint_key']
+          cnid = n['canonical_node_id']
+          next unless ek && cnid
+          cluster_id_for[ek.to_s] = cnid.to_s
+        end
+        # Build a coordinate-indexed lookup of canonical
+        # nodes for bridge-endpoint resolution.
+        canonical_nodes_by_world = {}
+        # Defensive: the bucket eps must be a positive finite
+        # number; fall back to 1e-6 if not.
+        buck_eps = eps.to_f
+        buck_eps = 1.0e-6 unless buck_eps.finite? && buck_eps > 0
+        Array(canonical_nodes).each do |n|
+          next unless n.is_a?(Hash)
+          cid = n['canonical_node_id']
+          w   = n['world_coordinate']
+          next unless cid && w.is_a?(Array) && w.length == 3
+          # Bucket by integer cell of coord_epsilon so the
+          # bridge-endpoint lookup stays O(1) expected.
+          cell = [
+            (w[0] / buck_eps).floor,
+            (w[1] / buck_eps).floor,
+            (w[2] / buck_eps).floor
+          ]
+          canonical_nodes_by_world[cell] ||= []
+          canonical_nodes_by_world[cell] << [cid, w]
         end
         workspace.entities.each do |rec|
           next unless rec.respond_to?(:kind) && rec.kind == :edge
@@ -199,14 +272,76 @@ module SUAnalysis
           next unless s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
           ak = "#{did}.start"
           bk = "#{did}.end"
-          aid = cluster_id_for[ak] || "#{ak}.singleton"
-          bid = cluster_id_for[bk] || "#{bk}.singleton"
-          origin_kind = if rec.respond_to?(:respond_to?) && rec.respond_to?(:origin_kind)
-                          rec.origin_kind.to_s
-                        else
-                          ORIGIN_SOURCE_DERIVED
-                        end
-          repair_action_id = rec.respond_to?(:repair_action_id) ? rec.repair_action_id.to_s : nil
+          aid = cluster_id_for[ak]
+          bid = cluster_id_for[bk]
+          # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+          # secondary fix: source_derived edges use the
+          # convention "#{did}.start" / "#{did}.end" for
+          # their endpoint keys; the topology snapshot may
+          # carry the canonical endpoint_keys with different
+          # names (e.g. 'der-edge-1.end'). When the
+          # convention-derived key isn't in cluster_id_for,
+          # resolve by world-coordinate proximity against
+          # the topology snapshot's canonical_nodes (same
+          # logic as bridge-endpoint resolution above). This
+          # connects source_derived edges into the same
+          # canonical graph as the bridge edge so cycle /
+          # BFS assertions work end-to-end.
+          aid ||= _resolve_bridge_node(
+            cluster_id_for, canonical_nodes_by_world,
+            ak, s, eps
+          )
+          bid ||= _resolve_bridge_node(
+            cluster_id_for, canonical_nodes_by_world,
+            bk, e, eps
+          )
+          aid ||= "#{ak}.singleton"
+          bid ||= "#{bk}.singleton"
+          # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+          # secondary fix: DerivedEntityRecord carries
+          # origin_kind inside geometry_summary (it does NOT
+          # expose a `rec.origin_kind` accessor). Read from
+          # geometry_summary so the canonical translation
+          # actually sees the workspace enum.
+          workspace_origin = if gs.is_a?(Hash) && gs['origin_kind']
+                               gs['origin_kind'].to_s
+                             else
+                               ORIGIN_SOURCE_DERIVED
+                             end
+          origin_kind = _canonicalize_origin_kind(workspace_origin)
+          # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+          # secondary fix (companion to the origin_kind fix):
+          # repair_action_id is also carried inside
+          # geometry_summary (no DerivedEntityRecord accessor);
+          # read it from there so the canonical graph carries
+          # the bridge provenance correctly.
+          repair_action_id = if gs.is_a?(Hash) && gs['repair_action_id']
+                               gs['repair_action_id'].to_s
+                             elsif rec.respond_to?(:repair_action_id)
+                               rec.repair_action_id.to_s
+                             else
+                               nil
+                             end
+          # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+          # bridge-endpoint resolution: if this edge is a
+          # gap_bridge and its endpoint keys weren't found
+          # in cluster_id_for, look them up by world
+          # coordinate proximity against the topology snapshot's
+          # canonical_nodes (so the bridge connects into the
+          # existing canonical graph, not into fresh singleton
+          # nodes).
+          if origin_kind == ORIGIN_GENERATED_GAP_BRIDGE
+            resolved_a = _resolve_bridge_node(
+              cluster_id_for, canonical_nodes_by_world,
+              ak, s, eps
+            )
+            resolved_b = _resolve_bridge_node(
+              cluster_id_for, canonical_nodes_by_world,
+              bk, e, eps
+            )
+            aid = resolved_a if resolved_a
+            bid = resolved_b if resolved_b
+          end
           out << {
             'canonical_edge_id'  => "ce-#{did}",
             'node_a_id'          => aid,
@@ -222,6 +357,69 @@ module SUAnalysis
           }
         end
         out
+      end
+
+      # Translate a workspace-implementation `origin_kind` to
+      # the canonical contract enum (Blueprint §15.1).
+      # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3:
+      # canonical downstream (V1.8, etc.) MUST consume only
+      # the canonical enum; the workspace enum
+      # 'generated_gap_bridge' must not leak through
+      # CanonicalGeometryGraph. Unknown workspace values are
+      # preserved verbatim so the downstream layer can still
+      # surface the truth without silently aliasing an
+      # unknown value.
+      def self._canonicalize_origin_kind(workspace_origin)
+        case workspace_origin.to_s
+        when ORIGIN_SOURCE_DERIVED            then ORIGIN_SOURCE_DERIVED
+        when ORIGIN_DUPLICATE_REPAIR_SURVIVOR then ORIGIN_DUPLICATE_REPAIR_SURVIVOR
+        when 'generated_gap_bridge'           then ORIGIN_GENERATED_GAP_BRIDGE
+        else
+          workspace_origin.to_s
+        end
+      end
+
+      # Resolve a bridge-edge endpoint to its canonical node id.
+      # Returns the existing cluster_id_for entry if found;
+      # otherwise scans canonical_nodes_by_world for a node
+      # within `eps` of the bridge endpoint's world
+      # coordinate. Returns nil if no match (the bridge then
+      # keeps its singleton node fallback).
+      def self._resolve_bridge_node(cluster_id_for, canonical_nodes_by_world,
+                                   endpoint_key, world_coord, eps)
+        existing = cluster_id_for[endpoint_key]
+        return existing if existing
+        return nil unless world_coord.is_a?(Array) && world_coord.length == 3
+        # Defensive: eps must be a positive finite number.
+        lookup_eps = eps.to_f
+        lookup_eps = 1.0e-6 unless lookup_eps.finite? && lookup_eps > 0
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R3
+        # bridge-endpoint resolution: do a linear scan through
+        # ALL canonical_nodes_by_world entries (typical
+        # canonical-node counts are small — the bucket-grid
+        # ±1 range fails for sparse / long-thin topologies).
+        # For each candidate, accept iff within `lookup_eps`
+        # (canonical-equivalence rule).
+        best = nil
+        best_d = nil
+        canonical_nodes_by_world.each do |_cell, candidates|
+          candidates.each do |cid, w|
+            d = _coord_distance(world_coord, w)
+            if (best_d.nil? || d < best_d) && d <= lookup_eps
+              best_d = d
+              best = cid
+            end
+          end
+        end
+        return best if best
+        nil
+      end
+
+      def self._coord_distance(a, b)
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dz = a[2] - b[2]
+        Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
       end
 
       def self._build_adjacency(edges)

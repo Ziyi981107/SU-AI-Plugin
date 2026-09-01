@@ -174,6 +174,229 @@ test 'V17-T2: applied bridge carries repair_action_id + incident source occurren
   assert_equal %w[occ-1 occ-2], bridge.source_occurrence_ids
 end
 
+# ---- T3: repaired endpoints gain expected adjacency ----
+
+test 'V17-T3: applying one endpoint_bridge increases the repaired endpoints adjacency by exactly 1 each' do
+  # Build a 3-edge chain with two distinct open endpoints
+  # A and B at degree 1. Apply a bridge A<->B and rebuild
+  # the CanonicalGeometryGraph; prove:
+  #   - The bridge becomes a canonical edge.
+  #   - The two repaired nodes (A, B) each gain +1 adjacency.
+  #   - No unrelated node degree changes.
+  adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+  ws = v17_build_triangle_workspace(adapter)
+  # Pre-apply adjacency: build the topology snapshot. We
+  # include all 3 triangle vertices so the canonical graph
+  # has all 3 triangle nodes (the bridge-endpoint resolution
+  # requires the endpoints' canonical_node_ids to be present
+  # in the topology snapshot's canonical_nodes).
+  tol = Tolerance.default
+  endpoints_for_topo = [
+    EndpointRecord.new(endpoint_key: 'der-edge-0.start', derived_edge_id: 'der-edge-0',
+                       role: 'start', world_coordinate: [0.0, 0.0, 0.0], layer_name: 'L0'),
+    EndpointRecord.new(endpoint_key: 'der-edge-1.end', derived_edge_id: 'der-edge-1',
+                       role: 'end', world_coordinate: [10.0, 0.0, 0.0], layer_name: 'L0'),
+    EndpointRecord.new(endpoint_key: 'der-edge-2.end', derived_edge_id: 'der-edge-2',
+                       role: 'end', world_coordinate: [10.05, 0.0, 0.0], layer_name: 'L0')
+  ]
+  builder = CanonicalTopologyBuilder.build(
+    endpoints: endpoints_for_topo, coordinate_epsilon: tol.coordinate_epsilon
+  )
+  topology_snapshot = builder.merge(
+    endpoints: endpoints_for_topo,
+    open_endpoints: ['der-edge-1.end', 'der-edge-2.end']
+  )
+  # Compute pre-apply adjacency in canonical-node space.
+  pre_graph = CanonicalGeometryGraph.build_from_workspace(
+    workspace: ws, topology_snapshot: topology_snapshot
+  )
+  refute_nil pre_graph
+  # Identify canonical node IDs at the repaired endpoints.
+  # Look these up from the topology_snapshot's canonical_nodes
+  # (NOT from pre_graph, whose edges use singleton node IDs
+  # for derived edges).
+  pre_a_node = nil
+  pre_b_node = nil
+  topology_snapshot['canonical_nodes'].each do |n|
+    next unless n.is_a?(Hash)
+    if n['endpoint_key'] == 'der-edge-1.end'
+      pre_a_node = n['canonical_node_id']
+    elsif n['endpoint_key'] == 'der-edge-2.end'
+      pre_b_node = n['canonical_node_id']
+    end
+  end
+  # The two endpoint node IDs are different.
+  refute_nil pre_a_node, "T3: pre_a_node must be discovered from topology_snapshot"
+  refute_nil pre_b_node, "T3: pre_b_node must be discovered from topology_snapshot"
+  refute_equal pre_a_node, pre_b_node
+  pre_a_deg = Array(pre_graph.adjacency[pre_a_node]).length
+  pre_b_deg = Array(pre_graph.adjacency[pre_b_node]).length
+  # Apply one bridge A<->B.
+  proposals = [{
+    'proposal_id' => 'p-t3-bridge',
+    'state'       => GapPairProposer::STATE_READY_TO_REPAIR,
+    'executable'  => true,
+    'endpoint_a_key' => 'der-edge-1.end',
+    'endpoint_b_key' => 'der-edge-2.end',
+    'canonical_node_a_id' => pre_a_node, 'canonical_node_b_id' => pre_b_node,
+    'distance'   => 0.05,
+    'gap_search' => 0.1, 'coordinate_epsilon' => 1.0e-6,
+    'layer_a'    => 'L0', 'layer_b' => 'L0',
+    'incident_derived_edge_ids' => %w[der-edge-1 der-edge-2],
+    'incident_source_occurrence_ids' => %w[occ-1 occ-2],
+    'expected_bridge_endpoints' => [[10.0, 0.0, 0.0], [10.05, 0.0, 0.0]],
+    'expected_bridge_length' => 0.05,
+    'rule_id' => 'endpoint_bridge.v1', 'rule_version' => '1'
+  }]
+  apply_result = GapBridgeExecutor.apply(
+    workspace: ws, adapter: adapter, proposals: proposals, tolerance: tol
+  )
+  assert_equal :applied, apply_result['status']
+  post_ws = apply_result['post_workspace']
+  # Rebuild post-apply canonical graph.
+  post_graph = CanonicalGeometryGraph.build_from_workspace(
+    workspace: post_ws, topology_snapshot: topology_snapshot
+  )
+  refute_nil post_graph
+  # The bridge becomes a canonical edge with origin_kind='gap_bridge'.
+  bridge_edge = post_graph.edges.find { |e|
+    e['origin_kind'] == 'gap_bridge' && e['repair_action_id'] == 'p-t3-bridge'
+  }
+  refute_nil bridge_edge, "T3: post-apply graph MUST contain a gap_bridge edge"
+  # The bridge endpoint nodes must be pre_a_node + pre_b_node.
+  bridge_pair = [bridge_edge['node_a_id'], bridge_edge['node_b_id']].sort
+  expected_pair = [pre_a_node, pre_b_node].sort
+  assert_equal expected_pair, bridge_pair,
+               "T3: bridge edge endpoints must be the original repaired endpoints; got #{bridge_pair.inspect} expected #{expected_pair.inspect}"
+  # Degree of A and B each increased by exactly 1.
+  post_a_deg = Array(post_graph.adjacency[pre_a_node]).length
+  post_b_deg = Array(post_graph.adjacency[pre_b_node]).length
+  assert_equal pre_a_deg + 1, post_a_deg,
+               "T3: A's canonical degree must increase by exactly 1 (was #{pre_a_deg}, now #{post_a_deg})"
+  assert_equal pre_b_deg + 1, post_b_deg,
+               "T3: B's canonical degree must increase by exactly 1 (was #{pre_b_deg}, now #{post_b_deg})"
+  # No unrelated node degree changed: total edge count and
+  # other node degrees must match the pre-apply state except
+  # for A and B.
+  pre_total_edges = pre_graph.edges.length
+  post_total_edges = post_graph.edges.length
+  assert_equal pre_total_edges + 1, post_total_edges,
+               "T3: post-apply must add exactly one new canonical edge"
+  # For every other node in pre_graph, the degree must be preserved.
+  pre_graph.nodes.each do |n|
+    cid = n['canonical_node_id']
+    next if cid == pre_a_node || cid == pre_b_node
+    pre_d = Array(pre_graph.adjacency[cid]).length
+    post_d = Array(post_graph.adjacency[cid]).length
+    assert_equal pre_d, post_d,
+                 "T3: unrelated node #{cid} degree must be unchanged (was #{pre_d}, now #{post_d})"
+  end
+end
+
+# ---- T4: almost-closed triangle becomes cycle-capable for V1.8 ----
+
+test 'V17-T4: after endpoint_bridge, the canonical graph contains a cycle-capable connection for V1.8 (V1.7 does not build the loop object)' do
+  # Triangle-with-gap workspace + apply one bridge.
+  # After apply, the canonical graph contains the bridge edge,
+  # and the two formerly-open nodes are connected through that
+  # bridge. V1.7 does NOT build a Loop/Region object —
+  # V1.8 will consume the canonical graph to do that.
+  adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+  ws = v17_build_triangle_workspace(adapter)
+  tol = Tolerance.default
+  endpoints_for_topo = [
+    EndpointRecord.new(endpoint_key: 'der-edge-0.start', derived_edge_id: 'der-edge-0',
+                       role: 'start', world_coordinate: [0.0, 0.0, 0.0], layer_name: 'L0'),
+    EndpointRecord.new(endpoint_key: 'der-edge-1.end', derived_edge_id: 'der-edge-1',
+                       role: 'end', world_coordinate: [10.0, 0.0, 0.0], layer_name: 'L0'),
+    EndpointRecord.new(endpoint_key: 'der-edge-2.end', derived_edge_id: 'der-edge-2',
+                       role: 'end', world_coordinate: [10.05, 0.0, 0.0], layer_name: 'L0')
+  ]
+  builder = CanonicalTopologyBuilder.build(
+    endpoints: endpoints_for_topo, coordinate_epsilon: tol.coordinate_epsilon
+  )
+  topology_snapshot = builder.merge(
+    endpoints: endpoints_for_topo,
+    open_endpoints: ['der-edge-1.end', 'der-edge-2.end']
+  )
+  # Build the bridge proposal.
+  proposals = [{
+    'proposal_id' => 'p-t4-bridge',
+    'state'       => GapPairProposer::STATE_READY_TO_REPAIR,
+    'executable'  => true,
+    'endpoint_a_key' => 'der-edge-1.end',
+    'endpoint_b_key' => 'der-edge-2.end',
+    'canonical_node_a_id' => 'cn-t4-a', 'canonical_node_b_id' => 'cn-t4-b',
+    'distance'   => 0.05,
+    'gap_search' => 0.1, 'coordinate_epsilon' => 1.0e-6,
+    'layer_a'    => 'L0', 'layer_b' => 'L0',
+    'incident_derived_edge_ids' => %w[der-edge-1 der-edge-2],
+    'incident_source_occurrence_ids' => %w[occ-1 occ-2],
+    'expected_bridge_endpoints' => [[10.0, 0.0, 0.0], [10.05, 0.0, 0.0]],
+    'expected_bridge_length' => 0.05,
+    'rule_id' => 'endpoint_bridge.v1', 'rule_version' => '1'
+  }]
+  apply_result = GapBridgeExecutor.apply(
+    workspace: ws, adapter: adapter, proposals: proposals, tolerance: tol
+  )
+  assert_equal :applied, apply_result['status']
+  post_graph = CanonicalGeometryGraph.build_from_workspace(
+    workspace: apply_result['post_workspace'],
+    topology_snapshot: topology_snapshot
+  )
+  refute_nil post_graph
+  # T4 assertion 1: the bridge edge exists in the canonical
+  # graph with origin_kind='gap_bridge'.
+  bridge_edge = post_graph.edges.find { |e|
+    e['origin_kind'] == 'gap_bridge' && e['repair_action_id'] == 'p-t4-bridge'
+  }
+  refute_nil bridge_edge, "T4: post-apply canonical graph MUST contain the gap_bridge edge"
+  # T4 assertion 2: the two formerly-open nodes are
+  # connected through the bridge adjacency.
+  a_node = bridge_edge['node_a_id']
+  b_node = bridge_edge['node_b_id']
+  a_neighbors = Array(post_graph.adjacency[a_node])
+  b_neighbors = Array(post_graph.adjacency[b_node])
+  assert_includes a_neighbors, b_node,
+                  "T4: formerly-open node A's adjacency must include B after the bridge"
+  assert_includes b_neighbors, a_node,
+                  "T4: formerly-open node B's adjacency must include A after the bridge"
+  # T4 assertion 3: the graph is "cycle-capable" — for V1.8
+  # to construct a closed loop from this input, the triangle
+  # nodes must form a path that closes via the new bridge. We
+  # don't construct the loop object here (Blueprint §15.3
+  # V1.8 boundary); we only verify the topology supports it.
+  # The simplest invariant: from any of the 3 triangle
+  # T4 assertion 4: V1.7 does NOT build a V1.8 Loop/Region.
+  # The graph's metrics must NOT include loop or region
+  # counters (V1.7 is edges + nodes + adjacency only).
+  metrics = post_graph.metrics || {}
+  refute metrics.key?('loops') || metrics.key?('regions') ||
+         metrics.key?('loop_count') || metrics.key?('region_count'),
+         "T4: V1.7 canonical graph MUST NOT carry V1.8 loop/region metrics"
+  # T4 assertion 5: all 3 triangle vertices + the bridge
+  # endpoint canonical nodes form a connected sub-graph.
+  # We verify the topology_snapshot's 3 canonical_nodes
+  # are connected through the bridge's adjacency (each
+  # is reachable from each other).
+  triangle_canonical_nodes = topology_snapshot['canonical_nodes'].map { |n|
+    n['canonical_node_id']
+  }
+  refute_empty triangle_canonical_nodes, "T4: triangle canonical nodes must exist"
+  visited = Set.new
+  queue = [triangle_canonical_nodes.first]
+  until queue.empty?
+    cur = queue.shift
+    next if visited.include?(cur)
+    visited.add(cur)
+    Array(post_graph.adjacency[cur]).each { |n| queue << n }
+  end
+  triangle_canonical_nodes.each do |cid|
+    assert visited.include?(cid),
+           "T4: triangle canonical node #{cid} must be reachable from #{triangle_canonical_nodes.first} (cycle-capable for V1.8). visited=#{visited.to_a.inspect}"
+  end
+end
+
 # ---- T5: review-required gaps do not produce canonical edges ----
 
 test 'V17-T5: review-required gaps produce ZERO applied bridges' do

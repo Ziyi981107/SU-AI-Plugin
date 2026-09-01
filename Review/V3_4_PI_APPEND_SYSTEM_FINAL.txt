@@ -1,0 +1,45 @@
+==================================================
+FILE: .pi/APPEND_SYSTEM.md
+==================================================
+
+# PI PERSISTENT BOOTSTRAP RULE — SU-AI-Plugin
+
+Add this block to Pi's persistent project/global instruction layer.
+
+---
+
+## PROJECT BOOTSTRAP — HARD RULE
+
+For project:
+
+`D:\Projects\SU-AI-Plugin`
+
+Before reading `Prompt/`, `Review/`, `CURRENT_STATE.md`, source code, or choosing
+any implementation task, ALWAYS read:
+
+`D:\Projects\SU-AI-Plugin\PI_START_HERE.md`
+
+Then follow the exact context stack and current AIPM authority declared there.
+
+NEVER choose an active task by:
+
+- newest modification time;
+- newest filename;
+- scanning `Prompt/` for `STATUS: ACTIVE`;
+- old Codex Guidance;
+- old Codex Review;
+- archived Reviewer Contract;
+- previous session/chat memory.
+
+If `PI_START_HERE.md` or `Prompt/CURRENT_PI_DISPATCH.md` is missing or
+unreadable, or the current dispatch references a missing durable Blueprint /
+Guidance:
+
+STOP and report the problem.
+
+Do not guess the active task.
+
+Do not automatically continue to another Prompt after completing the current
+dispatch.
+
+After the current task is complete, STOP and return control to AIPM.

@@ -1,0 +1,142 @@
+commit 89f62457887d5d5d2b04f8d01f8d1ed27464c37e
+Author:     Coding Agent (Mavis) <agent@su-ai-plugin.local>
+AuthorDate: Fri Aug 28 16:01:21 2026 +0800
+Commit:     Coding Agent (Mavis) <agent@su-ai-plugin.local>
+CommitDate: Fri Aug 28 16:01:21 2026 +0800
+
+    chore(governance): close AIPM V3.4 review findings
+---
+ AGENTS.md                  | 14 ++++++--------
+ PI_START_HERE.md           |  3 ++-
+ PROJECT_MASTER_PLAN_V1X.md | 31 +++++++++++++++++++++++++++----
+ 3 files changed, 35 insertions(+), 13 deletions(-)
+
+diff --git a/AGENTS.md b/AGENTS.md
+index 0817829..69d5d54 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -515,17 +515,15 @@ Do not bypass AIPM.
+ 
+ Normal daily direction:
+ 
+-- `Prompt/` = AIPM -> Pi.
+-- `Review/` = Pi -> AIPM.
+-
+-Normal current files:
+-
+ - `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current
+-  implementation dispatch.
++  AIPM -> Pi task authority.
+ - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation
+-  return.
++  return from Pi -> AIPM.
+ - `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM
+-  source-review record.
++  source-review verdict/evidence record.
++
++The `Review/` directory may contain Pi implementation-return evidence and
++technical-review evidence. It is not Pi task authority.
+ 
+ Pi treats `Prompt/` as read-only and does not write it as the normal task
+ return channel. Pi does not use `Review/` to discover work. AIPM does not
+diff --git a/PI_START_HERE.md b/PI_START_HERE.md
+index 566c2e7..63417f9 100644
+--- a/PI_START_HERE.md
++++ b/PI_START_HERE.md
+@@ -2,7 +2,8 @@
+ 
+ Project: `D:\Projects\SU-AI-Plugin`
+ Status: **PERMANENT BOOTSTRAP ENTRY**
+-Owner: **ChatGPT / AIPM**
++Final Product Owner: **Owner**
++Bootstrap / Technical Authority: **ChatGPT / AIPM**
+ 
+ ---
+ 
+diff --git a/PROJECT_MASTER_PLAN_V1X.md b/PROJECT_MASTER_PLAN_V1X.md
+index 15192f9..f343fcd 100644
+--- a/PROJECT_MASTER_PLAN_V1X.md
++++ b/PROJECT_MASTER_PLAN_V1X.md
+@@ -802,7 +802,8 @@ Unit tests never replace required real-host evidence.
+ 
+ # 13. Review Strategy
+ 
+-AIPM is the default first-line reviewer.
++AIPM is the default Primary Source Reviewer. AIPM may not claim Source Review
++PASS without directly inspecting the real code/diff and relevant evidence.
+ 
+ Normal path:
+ 
+@@ -812,7 +813,8 @@ Pi Review packet
+ → Continue / Fix / Update Blueprint / Owner Gate / Codex escalation
+ ```
+ 
+-Codex is conditional.
++Codex is conditional and review-only by default. Codex findings return to AIPM
++for final technical adjudication.
+ 
+ ### Mandatory Codex gates
+ - V1.4 — closed unless invalidated by new evidence.
+@@ -836,6 +838,18 @@ BLOCK rechecks are narrow.
+ 
+ Codex does not create the next development gate by itself.
+ 
++Keep the governance states distinct:
++
++- `Pi Complete` = complete, self-tested Dispatch submitted to the assigned
++  `dev/vX.Y`;
++- `AIPM PASS` = AIPM directly reviewed the real code/diff and relevant
++  evidence;
++- `Gate PASS` = the applicable technical Gate, including Codex review and AIPM
++  adjudication when the scope is mandatory/high-risk.
++
++`Pi Complete` does not equal `AIPM PASS`, and `AIPM PASS` does not by itself
++equal `Gate PASS` when mandatory/high-risk review remains required.
++
+ ---
+ 
+ # 14. Role Boundaries
+@@ -861,9 +875,11 @@ Owns:
+ - transaction/recovery design;
+ - compatibility/performance strategy;
+ - test matrix;
+-- primary review;
++- Primary Source Review based on direct real-code/diff inspection;
+ - dispatch;
+-- Codex escalation decision.
++- Codex escalation decision;
++- final technical adjudication;
++- approval to merge `main` after Gate PASS.
+ 
+ ## Pi
+ Owns:
+@@ -873,8 +889,11 @@ Owns:
+ - build/package;
+ - diagnostics;
+ - stable checkpoints;
++- complete Dispatch submission to the assigned `dev/vX.Y`;
+ - low-level reversible choices inside frozen Blueprint.
+ 
++Pi must never push or merge `main`, force-push, or create a release/tag.
++
+ Pi may choose:
+ - private helper names;
+ - local variable names;
+@@ -904,6 +923,8 @@ Owns:
+ - final technical release review.
+ 
+ Codex does not own product or technical architecture.
++Codex is review-only by default. Its findings return to AIPM for final
++technical adjudication.
+ 
+ ---
+ 
+@@ -917,6 +938,8 @@ Codex does not own product or technical architecture.
+ - Stage Blueprints define current construction details;
+ - old Gate evidence does not prove a changed artifact;
+ - do not silently rewrite history.
++- `main` is the technical stable line;
++- formal release/tag is a Final Product Owner decision.
+ 
+ ---
+ 

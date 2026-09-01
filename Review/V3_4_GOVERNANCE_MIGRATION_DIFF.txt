@@ -1,0 +1,1457 @@
+commit 4320c34205dd3c16dfbf4d0701e96ad1e312de86
+Author:     Coding Agent (Mavis) <agent@su-ai-plugin.local>
+AuthorDate: Fri Aug 28 15:33:26 2026 +0800
+Commit:     Coding Agent (Mavis) <agent@su-ai-plugin.local>
+CommitDate: Fri Aug 28 15:33:26 2026 +0800
+
+    chore(governance): migrate project to AIPM V3.4 workflow
+---
+ AGENTS.md                                          |  83 ++-
+ CURRENT_STATE.md                                   |  30 +-
+ PI_START_HERE.md                                   |  28 +-
+ PROJECT_HANDOFF.md                                 |  66 ++-
+ ...UIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md | 639 +++++++++++++++++++++
+ Prompt/CURRENT_PI_DISPATCH.md                      | 121 ++--
+ .../CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md  | 168 ++++++
+ Review/CURRENT_AIPM_REVIEW.md                      |  39 ++
+ 8 files changed, 1061 insertions(+), 113 deletions(-)
+
+diff --git a/AGENTS.md b/AGENTS.md
+index c8d0c63..0817829 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -10,7 +10,7 @@
+ >
+ > Final Product Owner: **Owner**
+ >
+-> Product + Technical Lead / Primary Reviewer / Dispatcher: **ChatGPT / AIPM**
++> Product + Technical Lead / Primary Source Reviewer / Dispatcher / Final Technical Adjudicator: **ChatGPT / AIPM**
+ >
+ > Implementation Agent: **Pi**
+ >
+@@ -80,6 +80,10 @@ Owns:
+ - primary review;
+ - next-step dispatch;
+ - Codex escalation.
++- direct real-source review;
++- final adjudication of Codex findings;
++- technical Gate decisions;
++- approval to merge `main` after Gate PASS.
+ 
+ ## Pi
+ 
+@@ -90,8 +94,10 @@ Owns:
+ - build/package;
+ - diagnostics;
+ - stable checkpoints;
++- final stable submission commit;
+ - `CURRENT_STATE.md` updates;
+ - `Review/CURRENT_PI_REPORT.md` updates;
++- complete-dispatch submission to the assigned `dev/vX.Y` branch;
+ - durable Review artifacts when AIPM determines long-term evidence is justified;
+ - low-level reversible implementation choices inside frozen design.
+ 
+@@ -110,6 +116,15 @@ Codex does NOT own:
+ - daily dispatch;
+ - Pi supervision.
+ 
++Codex is review-only by default:
++- no source/test/governance modification;
++- no commit;
++- no push;
++- no merge.
++
++Codex findings are technical evidence. AIPM records the final
++Accepted / Downgraded / Rejected adjudication.
++
+ ---
+ 
+ # 2. Shared Canonical Context
+@@ -130,6 +145,8 @@ Normal current communication files:
+ 6. `Prompt/CURRENT_PI_DISPATCH.md` - sole normal formal AIPM -> Pi dispatch.
+ 7. `Review/CURRENT_PI_REPORT.md` - sole normal Pi -> AIPM implementation
+    return.
++8. `Review/CURRENT_AIPM_REVIEW.md` - sole normal current AIPM source-review
++   record.
+ 
+ Durable AIPM Blueprint / Guidance artifacts are read only when explicitly
+ referenced by the current dispatch or otherwise required by canonical project
+@@ -175,9 +192,10 @@ If `PI_START_HERE.md` or `CURRENT_PI_DISPATCH.md` is missing, malformed, or
+ contradictory, or if the dispatch says `STATUS: NO ACTIVE DISPATCH`, Pi must
+ STOP and report the problem to AIPM. Do not guess.
+ 
+-After the current dispatch is complete, update
+-`Review/CURRENT_PI_REPORT.md`, STOP, and return control to AIPM. Do not
+-auto-select the next task.
++After the current dispatch is complete, Pi must update `CURRENT_STATE.md` and
++`Review/CURRENT_PI_REPORT.md`, create the final stable commit, push only the
++assigned `dev/vX.Y` branch as the complete-task submission, then STOP and
++return control to AIPM. Do not auto-select the next task.
+ 
+ ---
+ 
+@@ -252,6 +270,15 @@ Codex should:
+ - perform narrow BLOCK rechecks;
+ - perform final release technical review when required.
+ 
++Permanent mandatory/high-risk triggers include:
++- state/data ownership;
++- transaction/recovery/Undo;
++- cross-module core architecture;
++- SketchUp/host compatibility;
++- destructive action;
++- package/install/runtime/release-critical behavior;
++- Stage/Version final high-risk technical Gate.
++
+ Codex should NOT:
+ 
+ - own product scope or UX;
+@@ -497,6 +524,8 @@ Normal current files:
+   implementation dispatch.
+ - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation
+   return.
++- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM
++  source-review record.
+ 
+ Pi treats `Prompt/` as read-only and does not write it as the normal task
+ return channel. Pi does not use `Review/` to discover work. AIPM does not
+@@ -548,21 +577,55 @@ Do not commit after every trivial edit. Do not present a known broken state as
+ a stable checkpoint. If an explicitly necessary diagnostic/broken checkpoint
+ is created, label it truthfully.
+ 
+-Local commit and remote push are different authorities.
++Local commit and formal version-branch submission are different steps.
+ 
+-Pi must not push by default. Push requires explicit Owner/AIPM authorization.
++Pi may create multiple local commits. Pi formally pushes only when all are
++true:
+ 
+-Pi must never independently:
++- the entire current Dispatch is complete;
++- required tests/build/package evidence is complete;
++- `CURRENT_STATE.md` is updated;
++- `Review/CURRENT_PI_REPORT.md` is updated;
++- a final stable commit exists;
++- Pi is ready to STOP and submit for AIPM source review.
+ 
++Pi pushes only the `TARGET_BRANCH: dev/vX.Y` assigned by the current dispatch.
++This complete-task push does not require a separate per-push Owner/AIPM
++permission.
++
++Pi must never:
++
++- push or merge `main`;
+ - force-push;
+ - rewrite shared remote history;
+ - rebase published/shared history;
+ - destructively reset away another agent's work;
+ - squash/rewrite checkpoints merely to make history look cleaner.
+ 
+-Recommended practice is to commit meaningful validated checkpoints and request
+-authorized push at end-of-day, important Stage/Gate close, release/tag, or when
+-important local work needs remote backup.
++Pi must not create a formal review submission for an incomplete dispatch.
++
++---
++
++# 14A. Source Review / Gate / Release Semantics
++
++AIPM may not claim Source Review PASS unless AIPM directly inspected the real
++code/diff, affected upstream/downstream seams, and relevant tests. A Pi report
++is evidence; it is not AIPM approval.
++
++Keep these states distinct:
++
++- **Pi Complete**: implementation finished, self-tested, stable commit created,
++  and submitted to the assigned `dev/vX.Y`.
++- **AIPM PASS**: AIPM directly reviewed the real source/diff and relevant
++  evidence against the frozen design.
++- **Gate PASS**: ordinary low-risk AIPM Gate, or for mandatory/high-risk scope,
++  AIPM PASS plus Codex repo-aware review plus AIPM adjudication.
++
++After Gate PASS, AIPM may approve merge to `main`.
++
++`main` is the technical stable line. Formal release/tag/external delivery is a
++separate Final Product Owner decision. Stable `main` does not mean formally
++released.
+ 
+ ---
+ 
+diff --git a/CURRENT_STATE.md b/CURRENT_STATE.md
+index 9af4cf0..6687e88 100644
+--- a/CURRENT_STATE.md
++++ b/CURRENT_STATE.md
+@@ -1,6 +1,6 @@
+ # SU-AI-Plugin — CURRENT STATE
+ 
+-Updated: 2026-08-27
++Updated: 2026-08-28
+ Project: `D:\Projects\SU-AI-Plugin`
+ 
+ Current stage: **V1.5 — High-confidence Auto Repair / Round-5 BLOCK fix (continuation)**
+@@ -13,14 +13,24 @@ Canonical durable context:
+ - `PROJECT_MASTER_PLAN_V1X.md`
+ 
+ Current project rule:
+-- AIPM owns product + technical design, primary review, and dispatch.
++- Governance migration: **AIPM V3.4 ACTIVE**.
++- Canonical version branch: `dev/v1.5`.
++- AIPM owns product + technical design, direct source review, dispatch, Codex
++  adjudication, and the technical Gate.
+ - Pi implements the frozen design.
+-- Codex is used only for legitimate mandatory / high-risk repo risk.
++- Pi submits a complete Dispatch only to its assigned `dev/vX.Y`, then STOPs.
++- Codex is review-only by default and is used only for legitimate mandatory /
++  high-risk repo risk.
+ - The fixed current workflow is:
+-  `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`.
++  `Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM source review -> Review/CURRENT_AIPM_REVIEW.md -> optional Codex -> AIPM adjudication`.
+ - `PI_START_HERE.md` is the permanent Pi bootstrap entry.
+ - `Prompt/CURRENT_PI_DISPATCH.md` is the sole normal formal current task file.
+ - `Review/CURRENT_PI_REPORT.md` is the sole normal current implementation return.
++- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM source-review
++  record.
++- Pi Complete, AIPM PASS, and Gate PASS are distinct states.
++- After Gate PASS AIPM may approve merge to `main`; formal release/tag still
++  requires Final Product Owner approval.
+ - Historical Prompt/Review artifacts remain durable evidence only and cannot become current through filename, numbering, mtime, or stale ACTIVE status.
+ - Git is the normal fine-grained implementation history; separately named durable artifacts remain allowed for important design/Gate/release evidence.
+ - This V1.5 Round-5 case has reached the end of Pi's execution window. Pi is STOPPED. AIPM review + the next Codex narrow xHigh recheck are the next gates per `PROJECT_MASTER_PLAN_V1X.md` §13.
+@@ -65,7 +75,7 @@ V1.6 must not begin until:
+ 
+ ## 2. CURRENT GIT / BUILD STATE
+ 
+-Current branch: `v1.5-stage-round3-fix`
++Current branch: `dev/v1.5`
+ 
+ Governance migration base HEAD (pre-Round-4 carrier of this `CURRENT_STATE.md`):
+ `43854c879a1c1fcb57bcd2bea7743c02e73d0c05`
+@@ -185,10 +195,10 @@ Relevant Round-5 Pi packet:
+ Relevant frozen design references:
+ 
+ - `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
+-- `Prompt/CURRENT_PI_DISPATCH.md` (ACTIVE)
++- `Prompt/CURRENT_PI_DISPATCH.md` (executed dispatch; now closed in Git history)
+ 
+ These are the durable executed-contract artefacts for the completed Round-5
+-fix. They are not a current Pi dispatch and do NOT override the current
++fix. They are not a current Pi dispatch and do NOT override the neutral
+ `Prompt/CURRENT_PI_DISPATCH.md` or existing project governance in
+ `AGENTS.md`, `PROJECT_HANDOFF.md`, and `PROJECT_MASTER_PLAN_V1X.md`.
+ 
+@@ -591,7 +601,7 @@ Conditional high-risk repo-aware review:
+ **Codex**
+ 
+ Default:
+-`Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM`
++`Prompt/CURRENT_PI_DISPATCH.md -> Pi -> Review/CURRENT_PI_REPORT.md -> AIPM source review -> Review/CURRENT_AIPM_REVIEW.md`
+ 
+ There is currently no active Pi implementation dispatch.
+ 
+@@ -601,7 +611,7 @@ advanced through Round-3 (Codex BLOCK verdict) -> AIPM Round-4
+ Guidance + PI_TASK dispatch -> Pi Round-4 implementation
+ (history) -> AIPM review -> AIPM Owner-checklist publication ->
+ Codex Round-4 narrow recheck -> Round-4 BLOCK verdict ->
+-AIPM Round-5 Guidance + CURRENT_PI_DISPATCH dispatch ->
++AIPM Round-5 Guidance + completed CURRENT_PI_DISPATCH dispatch ->
+ Pi Round-5 implementation (this update) -> awaiting AIPM review
+ -> AIPM Owner-checklist republication -> Codex narrow recheck ->
+ closure / next fix.
+@@ -622,4 +632,4 @@ production code unchanged (RBZ hash identical to Round-5 HEAD);
+ full V15 99/99 PASS, full Ruby 763/763 PASS, RBZ smoke 9/9 PASS,
+ Node DOM PASS, `git diff --check` clean, `git status --short`
+ empty after final stable commit; Pi is stopped; V1.6 must wait for
+-AIPM/Owner closure and a new AIPM V1.6 Technical Blueprint.**
+\ No newline at end of file
++AIPM/Owner closure and a new AIPM V1.6 Technical Blueprint.**
+diff --git a/PI_START_HERE.md b/PI_START_HERE.md
+index 71dd990..566c2e7 100644
+--- a/PI_START_HERE.md
++++ b/PI_START_HERE.md
+@@ -21,6 +21,10 @@ The sole normal current implementation return channel is:
+ 
+ `Review/CURRENT_PI_REPORT.md` is implementation evidence, not task authority.
+ 
++The sole normal current AIPM source-review record is:
++
++`Review/CURRENT_AIPM_REVIEW.md`
++
+ ---
+ 
+ ## 1. Mandatory bootstrap order
+@@ -38,6 +42,10 @@ Before choosing or starting implementation work, Pi must read:
+ Pi may execute only the current dispatch, and only after the project's normal
+ user authorization / Proceed flow.
+ 
++The target branch is authoritative only when declared by the ACTIVE dispatch
++as `TARGET_BRANCH: dev/vX.Y`. Pi must not invent or substitute a Round-specific
++branch.
++
+ A short direct chat instruction may continue a small local step only inside an
+ already ACTIVE dispatch and frozen contract. It cannot create a task, replace
+ the current dispatch, or alter architecture/product authority.
+@@ -110,12 +118,17 @@ affected work and report the design gap to AIPM.
+ 
+ ## 5. Completion rule
+ 
+-For an ACTIVE dispatch, Pi must update
+-`Review/CURRENT_PI_REPORT.md` with the required implementation/test/evidence
+-and final STOP state.
++For an ACTIVE dispatch, Pi completes the entire frozen task and required
++tests/build/package evidence, updates `CURRENT_STATE.md` and
++`Review/CURRENT_PI_REPORT.md`, creates the final stable commit, pushes only the
++assigned `dev/vX.Y` as the formal complete-task submission, then STOPs and
++returns control to AIPM.
++
++Pi may create local checkpoint commits before completion, but must not submit
++an incomplete dispatch for formal review.
+ 
+-After completing the current dispatch, Pi must STOP and return control to AIPM.
+-Pi must not select another task, start another Stage, request Codex review
++Pi must never push or merge `main`, force-push, rewrite shared history, create
++a release/tag, select another task, start another Stage, request/run Codex
+ directly, or infer a next action from historical files.
+ 
+ ---
+@@ -123,5 +136,6 @@ directly, or infer a next action from historical files.
+ ## 6. One-line Pi rule
+ 
+ **Read the permanent bootstrap stack, execute only an authorized ACTIVE
+-`CURRENT_PI_DISPATCH` inside the frozen AIPM contract, report through
+-`CURRENT_PI_REPORT`, then STOP and return control to AIPM.**
++`CURRENT_PI_DISPATCH` on its assigned `dev/vX.Y` inside the frozen AIPM
++contract, complete and submit it through `CURRENT_PI_REPORT`, then STOP and
++return control to AIPM.**
+diff --git a/PROJECT_HANDOFF.md b/PROJECT_HANDOFF.md
+index f0c069b..fcf96ff 100644
+--- a/PROJECT_HANDOFF.md
++++ b/PROJECT_HANDOFF.md
+@@ -1,4 +1,4 @@
+-# SU-AI-Plugin — PROJECT HANDOFF V3.1
++# SU-AI-Plugin — PROJECT HANDOFF V3.4
+ 
+ > Project: `D:\Projects\SU-AI-Plugin`
+ >
+@@ -6,7 +6,7 @@
+ >
+ > Final Product Owner: **Owner**
+ >
+-> Product + Technical Lead / Primary Reviewer / Dispatcher: **ChatGPT / AIPM**
++> Product + Technical Lead / Primary Source Reviewer / Dispatcher / Final Technical Adjudicator: **ChatGPT / AIPM**
+ >
+ > Implementation Agent: **Pi**
+ >
+@@ -38,6 +38,7 @@ Those belong in:
+ - `CURRENT_STATE.md`;
+ - `Prompt/CURRENT_PI_DISPATCH.md`;
+ - `Review/CURRENT_PI_REPORT.md`;
++- `Review/CURRENT_AIPM_REVIEW.md`;
+ - durable Stage Technical Blueprint / Guidance / Gate evidence when justified;
+ - Git.
+ 
+@@ -383,13 +384,22 @@ Owns:
+ - primary Review;
+ - next-step Dispatch;
+ - whether Codex is required.
++- direct real-source review;
++- Codex finding adjudication;
++- technical Gate decisions;
++- approval to merge `main` after Gate PASS.
+ 
+ Default review flow:
+ 
+ ```text
+-Review/CURRENT_PI_REPORT.md or justified durable Pi Review artifact
+-→ AIPM Primary Review
+-→ Continue / Fix / Update Blueprint / Owner Gate / Codex escalation
++Prompt/CURRENT_PI_DISPATCH.md
++→ Pi complete implementation + tests + stable commit
++→ assigned dev/vX.Y
++→ Review/CURRENT_PI_REPORT.md
++→ AIPM direct source review
++→ Review/CURRENT_AIPM_REVIEW.md
++→ optional Codex review when triggered
++→ AIPM adjudication and next action
+ ```
+ 
+ ---
+@@ -404,8 +414,10 @@ Owns:
+ - build/package;
+ - diagnostics;
+ - stable Git checkpoints;
++- final stable submission commit;
+ - CURRENT_STATE updates;
+ - `Review/CURRENT_PI_REPORT.md`;
++- complete-dispatch submission to the assigned `dev/vX.Y`;
+ - durable Review artifacts when long-term evidence is justified;
+ - low-level reversible implementation choices inside a frozen Blueprint.
+ 
+@@ -463,6 +475,9 @@ Codex does not own:
+ - Pi supervision.
+ 
+ A Codex BLOCK that requires design change routes back through AIPM.
++Codex is review-only by default: no code changes, commit, push, or merge.
++Codex findings are evidence; AIPM records the final
++Accepted / Downgraded / Rejected adjudication.
+ 
+ ---
+ 
+@@ -475,6 +490,8 @@ Permanent workflow:
+   AIPM -> Pi implementation dispatch.
+ - `Review/CURRENT_PI_REPORT.md` is the sole normal current Pi -> AIPM
+   implementation return.
++- `Review/CURRENT_AIPM_REVIEW.md` is the sole normal current AIPM source-review
++  record.
+ 
+ Pi treats `Prompt/` as read-only and does not write it as the normal return
+ channel. Pi does not use `Review/` to discover tasks. AIPM does not treat
+@@ -552,16 +569,16 @@ Do not commit after every trivial edit or present a known broken state as
+ stable. An explicitly necessary diagnostic/broken checkpoint must be labelled
+ truthfully.
+ 
+-Local commit and remote push are different authorities. Pi must not push by
+-default; push requires explicit Owner/AIPM authorization.
++Pi may create multiple local commits. Pi formally pushes only after the entire
++current Dispatch, required evidence, `CURRENT_STATE.md`,
++`Review/CURRENT_PI_REPORT.md`, and the final stable commit are complete, and Pi
++is ready to STOP. The formal submission goes only to the assigned
++`dev/vX.Y`; it does not require separate per-push Owner/AIPM permission.
+ 
+-Pi must never independently force-push, rewrite shared remote history, rebase
+-published/shared history, destructively reset away another agent's work, or
+-squash/rewrite checkpoints merely to make history look cleaner.
+-
+-Recommended practice is to commit meaningful validated checkpoints and request
+-authorized push at end-of-day, important Stage/Gate close, release/tag, or when
+-important local work needs remote backup.
++Pi must never push/merge `main`, force-push, rewrite shared remote history,
++rebase published/shared history, create a release/tag, destructively reset away
++another agent's work, or squash/rewrite checkpoints merely to make history
++look cleaner.
+ 
+ Keep:
+ 
+@@ -582,7 +599,26 @@ On Windows:
+ 
+ ---
+ 
+-# 16. Release Rule
++# 16. Source Review, Gate, Main, and Release Rule
++
++AIPM may not claim Source Review PASS from a Pi report alone. AIPM must
++directly inspect the real diff, affected upstream/downstream source, and
++relevant tests.
++
++Keep three states distinct:
++
++- **Pi Complete** - finished, self-tested, stable commit, submitted to
++  `dev/vX.Y`.
++- **AIPM PASS** - AIPM directly reviewed real source/diff and relevant
++  evidence.
++- **Gate PASS** - ordinary low-risk AIPM Gate, or for mandatory/high-risk
++  scope, AIPM PASS + Codex repo-aware review + AIPM adjudication.
++
++After Gate PASS, AIPM may approve merge into `main`.
++
++`main` is the technical stable line. Formal release/tag/external delivery
++remains a separate Final Product Owner decision. Stable `main` is not itself a
++formal release.
+ 
+ Formal release requires, as applicable:
+ 
+diff --git a/Prompt/AIPM_TECHNICAL_GUIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md b/Prompt/AIPM_TECHNICAL_GUIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md
+new file mode 100644
+index 0000000..445a26b
+--- /dev/null
++++ b/Prompt/AIPM_TECHNICAL_GUIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md
+@@ -0,0 +1,639 @@
++# AIPM TECHNICAL GUIDANCE — SU-AI-Plugin V3.4 Governance Migration
++
++Date: 2026-08-28
++Author: ChatGPT / AIPM
++Project: `D:\Projects\SU-AI-Plugin`
++Type: Governance / workflow migration
++Product/runtime scope: NONE
++Authority: Final Product Owner + AIPM Playbook V3.4
++
++---
++
++## 0. Decision
++
++Migrate the SU-AI-Plugin repository from the existing V3.2-era project governance to the V3.4 operating model.
++
++This is a **governance-only** migration.
++
++It must not change:
++- product behavior;
++- SketchUp runtime behavior;
++- V1.5 duplicate-repair implementation;
++- tests for product behavior;
++- RBZ contents for product functionality;
++- V1.6 product/technical scope;
++- previously closed V1.0–V1.4 technical conclusions.
++
++The migration changes how work is:
++- dispatched;
++- handed back;
++- pushed to GitHub;
++- source-reviewed by AIPM;
++- escalated to Codex;
++- merged to `main`;
++- approved for formal release.
++
++---
++
++## 1. One-time Codex execution authorization
++
++Permanent V3.4 rule:
++- Codex is normally a review-only high-risk expert reviewer.
++
++For **this migration only**, the Final Product Owner explicitly authorizes Codex to:
++- inspect the real local repository;
++- modify governance / workflow / agent instruction files;
++- create the new V3.4 current-review file;
++- create or switch to the local canonical version development branch if safe;
++- create one local governance commit after validation.
++
++This one-time authorization does **not** change the permanent Codex default.
++
++Codex is still forbidden in this task to:
++- modify production source;
++- modify product tests;
++- modify runtime behavior;
++- modify package implementation;
++- modify CAD / geometry logic;
++- start V1.6;
++- perform Owner verification;
++- release/tag;
++- merge `main`;
++- force-push or rewrite history;
++- push unless separately authorized after this migration.
++
++---
++
++## 2. Target steady-state role model
++
++### Final Product Owner
++Owns:
++- product scope;
++- visible UX;
++- automation authority;
++- meaningful risk/time/cost tradeoffs;
++- real-host acceptance;
++- formal release/tag.
++
++Does not need to approve ordinary technical commits or ordinary `main` merges after Gate PASS.
++
++### AIPM / ChatGPT
++Role:
++`Product + Technical Lead + Primary Source Reviewer + Dispatcher + Final Technical Adjudicator`
++
++Owns:
++- product definition;
++- architecture;
++- Source of Truth;
++- state/data ownership;
++- schemas;
++- algorithm semantics;
++- transaction/recovery;
++- Stage Blueprint / Guidance;
++- acceptance/release gates;
++- Pi dispatch;
++- real source review after Pi submits code;
++- Codex escalation;
++- Codex finding adjudication;
++- technical Gate;
++- approval to merge `main` after Gate PASS.
++
++Hard evidence rule:
++> AIPM may not claim Source Review PASS unless AIPM has directly inspected the real code/diff.
++
++### Pi
++Role:
++`Implementation Agent`
++
++Owns:
++- implement;
++- test;
++- debug;
++- build/package;
++- local checkpoints;
++- final stable commit;
++- update `CURRENT_STATE.md`;
++- update `Review/CURRENT_PI_REPORT.md`;
++- after the complete dispatch is finished, push the stable submission to the assigned `dev/vX.Y`;
++- STOP.
++
++Pi must not independently redesign:
++- Source of Truth;
++- state/data ownership;
++- core schema;
++- architecture;
++- module responsibility;
++- algorithm semantics;
++- transaction/recovery;
++- identity/provenance;
++- Stage boundaries;
++- product UX;
++- release gates.
++
++### Codex
++Permanent role:
++`Conditional High-Risk Repo-aware Reviewer`
++
++Default:
++- review-only;
++- no code changes;
++- no commit;
++- no push;
++- no merge.
++
++Mandatory/high-risk triggers include:
++- state/data ownership;
++- transaction/recovery/Undo;
++- cross-module core architecture;
++- SketchUp/host compatibility;
++- destructive actions;
++- package/install/runtime/release-critical behavior;
++- Stage/Version final high-risk technical Gate.
++
++Codex verdict is advisory evidence.
++AIPM owns final technical adjudication.
++
++---
++
++## 3. Target communication files
++
++Permanent current files:
++
++```text
++Prompt/CURRENT_PI_DISPATCH.md
++Review/CURRENT_PI_REPORT.md
++Review/CURRENT_AIPM_REVIEW.md
++```
++
++### `Prompt/CURRENT_PI_DISPATCH.md`
++Sole current AIPM → Pi formal task authority.
++
++Must include, when ACTIVE:
++- `DISPATCH_ID`;
++- project/version/stage;
++- assigned `TARGET_BRANCH: dev/vX.Y`;
++- frozen Blueprint/Guidance references;
++- scope/out-of-scope;
++- required tests/evidence;
++- STOP rules;
++- Git submission rule.
++
++Task discovery must never use:
++- mtime;
++- newest filename;
++- filename numbering;
++- historical `STATUS: ACTIVE`;
++- historical Prompt;
++- historical Review;
++- previous chat/session memory.
++
++When no task exists:
++`STATUS: NO ACTIVE DISPATCH`
++
++### `Review/CURRENT_PI_REPORT.md`
++Sole current Pi → AIPM implementation return channel.
++
++Pi report is evidence, not task authority.
++
++Expected completion fields:
++- matching `DISPATCH_ID`;
++- branch/base/HEAD;
++- changed files;
++- implementation summary;
++- tests;
++- build/package evidence if required;
++- unresolved issues;
++- stable commit;
++- pushed remote branch/commit;
++- final STOP.
++
++### `Review/CURRENT_AIPM_REVIEW.md`
++New permanent AIPM source-review record.
++
++At minimum:
++- status;
++- reviewed branch;
++- reviewed commit;
++- review scope;
++- evidence basis;
++- PASS / FIX REQUIRED / BLOCK / NOT YET REVIEWED;
++- findings summary;
++- Codex trigger;
++- Codex adjudication when applicable;
++- next permitted action;
++- Owner action required or not.
++
++Use `CURRENT + major-node archive`:
++- ordinary reviews overwrite CURRENT;
++- durable versioned review artifacts only for material BLOCK, Codex Gate, Stage PASS, Version Gate, Release, major risk acceptance.
++
++---
++
++## 4. Target Git / branch model
++
++Permanent version branch model:
++
++```text
++main
++├── dev/v1.5
++├── dev/v1.6
++└── ...
++```
++
++Rules:
++- one development branch per product version;
++- no new branch for every Round;
++- `main` = technical stable line;
++- formal release/tag = product release line.
++
++### Pi submission
++Pi may make multiple local commits.
++
++Pi performs the formal push only when:
++1. the entire current Dispatch is complete;
++2. required tests/build/package are complete;
++3. `CURRENT_STATE.md` is updated;
++4. `CURRENT_PI_REPORT.md` is updated;
++5. final stable commit exists;
++6. Pi is ready to STOP and submit for AIPM review.
++
++Pi pushes only to the assigned `dev/vX.Y`.
++
++Pi must never:
++- push/merge `main`;
++- force-push;
++- rewrite published/shared remote history;
++- create release/tag;
++- treat an incomplete dispatch as a formal review submission.
++
++### Current repository migration
++The current V1.5 legacy working branch may have a historical name.
++
++Migration rule:
++- inspect real Git state first;
++- if safe, create/switch local `dev/v1.5` at the current stable V1.5 HEAD;
++- preserve the old branch as historical; do not delete it;
++- do not rewrite history;
++- do not push in this migration unless separately authorized.
++
++If an existing local or remote `dev/v1.5` points somewhere materially different:
++STOP and report the conflict instead of guessing.
++
++---
++
++## 5. PASS / Gate semantics
++
++Freeze three distinct states:
++
++### Pi Complete
++Pi finished, self-tested, created stable commit, and submitted to `dev/vX.Y`.
++
++This is not approval.
++
++### AIPM PASS
++AIPM directly inspected:
++- real diff;
++- directly affected upstream/downstream code;
++- relevant tests;
++
++and judged the implementation consistent with the frozen design.
++
++### Gate PASS
++For ordinary low-risk work:
++- AIPM PASS may form the technical Gate.
++
++For mandatory/high-risk work:
++- AIPM PASS;
++- Codex repo-aware review;
++- AIPM adjudication of Codex findings;
++
++must all complete before Gate PASS.
++
++Do not conflate these states.
++
++---
++
++## 6. `main` and release authority
++
++`main`:
++- technical stable line;
++- after Gate PASS, AIPM may approve merge into `main`.
++
++Formal release/tag:
++- requires Final Product Owner approval;
++- `main` stable does not equal formally released.
++
++---
++
++## 7. Files Codex must inspect
++
++At minimum inspect actual current contents of:
++
++```text
++AGENTS.md
++PI_START_HERE.md
++PROJECT_HANDOFF.md
++PROJECT_MASTER_PLAN_V1X.md
++CURRENT_STATE.md
++Prompt/CURRENT_PI_DISPATCH.md
++Review/CURRENT_PI_REPORT.md
++.pi/APPEND_SYSTEM.md            (if present)
++```
++
++Also inspect:
++- other root-level instruction/governance files;
++- `.pi/` instruction files;
++- current/non-historical Prompt/Review workflow documents;
++- `.github/` or hooks/config only if they hard-code branch names or workflow authority.
++
++Search the repository for live/current governance conflicts including concepts such as:
++- `Pi must NOT push`;
++- `Push requires explicit Owner/AIPM authorization`;
++- `DO NOT PUSH` in current active Pi instructions;
++- old current branch naming as permanent policy;
++- Codex-first/default Codex review;
++- Pi task discovery via newest/latest/mtime/ACTIVE history;
++- Review files used as task authority;
++- AIPM review based only on Pi report while labelled as source review;
++- lack of `CURRENT_AIPM_REVIEW`;
++- Owner required for ordinary technical `main` merge;
++- any rule that conflicts with V3.4.
++
++Do not treat historical artifacts as current governance merely because they contain old wording.
++
++---
++
++## 8. Per-file migration contract
++
++### `AGENTS.md`
++Must become the strongest project-local operational governance.
++
++Preserve all valid SU-AI-Plugin:
++- architecture;
++- runtime;
++- compatibility;
++- testing;
++- geometry;
++- source immutability;
++- safety;
++- product contracts.
++
++Update only workflow/role/Git/Review rules needed for V3.4.
++
++Must include:
++- role model;
++- fixed current files;
++- Pi submission to `dev/vX.Y`;
++- Pi `main`/force-push/release prohibitions;
++- AIPM source-review requirement;
++- three PASS states;
++- Codex review-only default;
++- Codex high-risk triggers;
++- AIPM final adjudication;
++- `main` vs release authority.
++
++### `PI_START_HERE.md`
++Keep permanent and compact.
++
++Read order should remain roughly:
++1. `AGENTS.md`
++2. `PROJECT_HANDOFF.md`
++3. `PROJECT_MASTER_PLAN_V1X.md`
++4. `CURRENT_STATE.md`
++5. `Prompt/CURRENT_PI_DISPATCH.md`
++6. explicitly referenced Blueprint/Guidance
++7. execute only current dispatch
++
++Add/confirm:
++- current task discovery only from CURRENT_PI_DISPATCH;
++- assigned target branch must match dispatch;
++- completion submission is stable commit + push assigned `dev/vX.Y` + report + STOP;
++- never push/merge main;
++- no Codex;
++- no next Stage without AIPM dispatch.
++
++### `PROJECT_HANDOFF.md`
++Keep durable; do not turn into dynamic tracker.
++
++Update only obsolete governance paragraphs.
++
++Must explain:
++- AIPM → CURRENT_PI_DISPATCH → Pi → CURRENT_PI_REPORT → AIPM;
++- Pi submits complete work to `dev/vX.Y`;
++- AIPM performs real source review;
++- CURRENT_AIPM_REVIEW records current AIPM verdict;
++- Codex is conditional second-layer reviewer;
++- Gate PASS / main / release distinction.
++
++### `PROJECT_MASTER_PLAN_V1X.md`
++Do not modify product/technical roadmap merely for governance wording.
++
++Only edit if it contains live operational rules directly conflicting with V3.4.
++
++If unchanged, report why.
++
++### `CURRENT_STATE.md`
++Preserve truthful product progress.
++
++Add a concise governance note:
++- project now uses V3.4 workflow;
++- current canonical version branch is `dev/v1.5` after safe branch migration;
++- AIPM source review is now required after Pi submission;
++- Codex remains conditional;
++- `main` vs release distinction.
++
++Do not invent:
++- V1.5 PASS;
++- Codex PASS;
++- Owner verification;
++- V1.6 start.
++
++### `Prompt/CURRENT_PI_DISPATCH.md`
++Inspect actual current status.
++
++If the latest Pi report proves the prior dispatch is COMPLETE/STOPPED and no new Pi task exists:
++- convert it to a neutral `STATUS: NO ACTIVE DISPATCH` current template;
++- preserve prior task history in Git/history, not in CURRENT task authority.
++
++The inactive template must encode new V3.4 Git submission semantics for the next ACTIVE dispatch.
++
++If the prior Pi task is not proven closed:
++- do not neutralize it;
++- report the inconsistency.
++
++### `Review/CURRENT_PI_REPORT.md`
++Do not rewrite Pi's completed implementation evidence simply to change governance wording.
++
++Leave the latest truthful Pi report intact unless a purely clerical path/reference correction is essential and clearly non-semantic.
++
++### `Review/CURRENT_AIPM_REVIEW.md`
++Create if absent.
++
++Initial state after migration:
++- `STATUS: PENDING AIPM SOURCE REVIEW`;
++- current V1.5 branch/commit if safely known;
++- `VERDICT: NOT YET REVIEWED`;
++- evidence note that Pi completion/report is not AIPM source approval;
++- next action: push/remote availability if needed, then AIPM reviews real diff.
++
++### `.pi/APPEND_SYSTEM.md`
++Keep minimal.
++
++If it already only points Pi to `PI_START_HERE.md`, leave it alone.
++
++Do not duplicate AGENTS / HANDOFF.
++
++### Other current governance files
++Modify only when:
++- they are actually current operational authority;
++- they conflict with V3.4.
++
++Do not mass-edit historical evidence.
++
++---
++
++## 9. Historical artifact rule
++
++Do not:
++- delete historical Prompt/Review;
++- mass rename them;
++- rewrite old verdicts;
++- “correct” old instructions to look modern.
++
++Historical files may truthfully contain old governance.
++
++Only current/canonical authority must be migrated.
++
++---
++
++## 10. Safety / validation matrix
++
++Before edits:
++- record branch;
++- record HEAD;
++- record `git status --short`;
++- record remotes;
++- record local/remote branches;
++- record `git log -10 --oneline --decorate`.
++
++STOP if:
++- unexpected uncommitted production/source/test changes exist;
++- current HEAD is not a stable completed V1.5 checkpoint;
++- `dev/v1.5` exists and conflicts materially;
++- current Pi task status is ambiguous;
++- governance migration would require modifying production code.
++
++After edits verify:
++
++### Scope
++No unintended changes under product/runtime code or tests.
++
++### Governance consistency
++Current canonical files agree on:
++- roles;
++- CURRENT dispatch/report/review files;
++- dev branch model;
++- push rule;
++- source-review rule;
++- Codex default;
++- PASS levels;
++- main/release authority.
++
++### Stale-rule scan
++No live/current canonical file should still say:
++- Pi cannot push the completed assignment to the assigned dev branch;
++- every push needs per-task Owner approval;
++- Codex is default first-line reviewer;
++- AIPM may claim source PASS from Pi report only;
++- Review history can select the current task.
++
++### Git hygiene
++Run:
++- `git diff --check`;
++- inspect `git diff --stat`;
++- inspect full governance diff;
++- ensure historical artifacts were not mass-modified.
++
++---
++
++## 11. Commit / push contract for this migration
++
++After validation, Codex may create exactly one local governance commit:
++
++```text
++chore(governance): migrate project to AIPM V3.4 workflow
++```
++
++The commit may include:
++- governance rule files;
++- current workflow files;
++- `CURRENT_AIPM_REVIEW.md`;
++- migration report;
++- branch/governance state update.
++
++Do not include production/runtime/test changes.
++
++Do not push in this task unless the Owner later gives separate explicit authorization.
++
++---
++
++## 12. Required Codex migration report
++
++Create durable report:
++
++```text
++Review/CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md
++```
++
++Report:
++- preflight branch/HEAD/status/remotes;
++- branch migration decision;
++- exact files changed;
++- exact files inspected but intentionally unchanged;
++- each stale rule found and how resolved;
++- `CURRENT_PI_DISPATCH` decision;
++- `CURRENT_PI_REPORT` preservation decision;
++- `CURRENT_AIPM_REVIEW` creation;
++- validation commands/results;
++- final local commit SHA;
++- final branch;
++- final `git status --short`;
++- anything still unresolved;
++- explicit `PUSH: NOT PERFORMED`;
++- explicit `PRODUCT/RUNTIME CODE: NOT MODIFIED`;
++- STOP.
++
++---
++
++## 13. End state
++
++The desired end state is:
++
++```text
++Owner
++  ↓ product/risk/release
++
++AIPM
++  ↓ frozen design
++Prompt/CURRENT_PI_DISPATCH.md
++  ↓
++Pi
++  ↓ complete implementation + tests + stable commit
++dev/vX.Y
++  ↓
++Review/CURRENT_PI_REPORT.md
++  ↓
++AIPM real source review
++  ↓
++Review/CURRENT_AIPM_REVIEW.md
++  ├─ ordinary → AIPM Gate
++  └─ high-risk → Codex review-only → AIPM adjudication
++  ↓
++Gate PASS
++  ↓
++AIPM may approve main merge
++  ↓
++Owner approves Formal Release
++```
++
++No product feature work is part of this migration.
+diff --git a/Prompt/CURRENT_PI_DISPATCH.md b/Prompt/CURRENT_PI_DISPATCH.md
+index 835821b..9b9b8f4 100644
+--- a/Prompt/CURRENT_PI_DISPATCH.md
++++ b/Prompt/CURRENT_PI_DISPATCH.md
+@@ -1,77 +1,56 @@
+ # CURRENT PI DISPATCH
+ 
+-DISPATCH_ID: SUAI-V15-R5-BLOCK-FIX-20260827-01
++STATUS: NO ACTIVE DISPATCH
++DISPATCH_ID: NONE
+ Project: SU-AI-Plugin
+ Dispatcher: ChatGPT / AIPM
+-Status: ACTIVE
+-Stage: V1.5 — Round-5 existing BLOCK corrective implementation
++Current version line: V1.5
+ V1.6: NOT STARTED
+ 
+-## Read first
+-1. `AGENTS.md`
+-2. `PROJECT_HANDOFF.md`
+-3. `PROJECT_MASTER_PLAN_V1X.md`
+-4. `CURRENT_STATE.md`
+-5. `Prompt/CURRENT_PI_DISPATCH.md`
+-6. `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_ROUND5_BLOCK_FIX_2026-08-27.md`
+-7. `Review/CODEX_V1_5_ROUND4_NARROW_BLOCK_RECHECK_RESULT_2026-08-27.md`
+-
+-Historical Prompt/Review text cannot override this dispatch identity. Durable project contracts and the referenced Round-5 Guidance remain technical authority.
+-
+-## Mission
+-Implement the frozen Round-5 guidance for the still-open existing:
+-- BLOCK-001
+-- BLOCK-002A
+-- BLOCK-002B
+-- BLOCK-003
+-- BLOCK-004
+-- BLOCK-005 evidence prerequisites
+-
+-Implementation/test/debug only. Do not redesign.
+-
+-Critical requirements:
+-- complete live-handle proof immediately before host begin;
+-- missing/invalid/any alias => atomic no-begin failure;
+-- tolerance 0 => dedicated exact endpoint-pair hash path;
+-- no default tolerance fallback;
+-- genuine non-transitive production regression;
+-- complete expected post-state hard validation;
+-- real precommit host-shape observation;
+-- mismatch => abort once, commit=0, exact logical pre-state;
+-- no false READY;
+-- production-safe host-change/Undo reconciliation; no test hooks in Owner prerequisites;
+-- source CAD immutable.
+-
+-## Evidence
+-Run focused Round-5 tests, full V1.5, full Ruby, Node DOM, RBZ smoke/package, rebuild RBZ, git diff --check.
+-
+-Overwrite `Review/CURRENT_PI_REPORT.md` with:
+-`DISPATCH_ID: SUAI-V15-R5-BLOCK-FIX-20260827-01`
+-
+-Report base/head/branch, changed files, Codex-finding -> implementation -> test map, focused/full results, transaction counts, reconciliation evidence, RBZ facts/hash, limitations, final local commit SHA, final worktree status.
+-
+-Update `CURRENT_STATE.md`.
+-
+-## Git
+-Local checkpoints allowed.
+-DO NOT PUSH.
+-No destructive reset/rebase/force-push.
+-
+-## Hard boundaries
+-Do NOT:
+-- edit `Prompt/AIPM_OWNER_VERIFICATION_V1_5_DUPLICATE_REPAIR_2026-08-27.txt`;
+-- run/request Codex;
+-- start/design V1.6;
+-- reopen unrelated V1.0–V1.4;
+-- invent a new merge/topology policy;
+-- add broad host-observer architecture unless existing seams make the frozen reconciliation impossible.
+-
+-If a high-cost architecture gap is discovered, STOP affected work, record exact evidence in CURRENT_PI_REPORT, request AIPM decision.
+-
+-## STOP
+-After implementation + required evidence + state/report update + final stable local commit:
+-STOP.
+-Return control to AIPM.
+-Do not push.
+-Do not run Codex.
+-Do not start V1.6.
++## Current instruction
++
++There is no executable Pi task.
++
++Pi must STOP and return control to AIPM. Do not infer work from historical
++Prompt/Review files, filename order, modification time, stale ACTIVE text, Git
++history, or prior chat/session memory.
++
++The completed V1.5 Round-5 dispatch and its evidence remain preserved in Git
++history and `Review/CURRENT_PI_REPORT.md`. Pi completion is implementation
++evidence, not AIPM source-review approval.
++
++## Permanent ACTIVE-dispatch template
++
++Before future Pi work begins, AIPM must replace this neutral content with one
++internally consistent ACTIVE dispatch containing at least:
++
++- `STATUS: ACTIVE`;
++- unique `DISPATCH_ID`;
++- project/version/stage;
++- `TARGET_BRANCH: dev/vX.Y`;
++- frozen Blueprint/Guidance references;
++- scope and out-of-scope boundaries;
++- required tests/build/package evidence;
++- state/report requirements;
++- STOP/escalation conditions;
++- complete-task Git submission rule.
++
++For a future ACTIVE dispatch, Pi:
++
++1. reads `AGENTS.md`, `PROJECT_HANDOFF.md`,
++   `PROJECT_MASTER_PLAN_V1X.md`, `CURRENT_STATE.md`, this file, and only
++   explicitly referenced durable Blueprint/Guidance;
++2. executes the entire frozen dispatch on its assigned `dev/vX.Y`;
++3. completes required tests/build/package evidence;
++4. updates `CURRENT_STATE.md` and `Review/CURRENT_PI_REPORT.md`;
++5. creates the final stable commit;
++6. pushes only the assigned `dev/vX.Y` as the formal complete-task
++   submission;
++7. STOPs and returns control to AIPM source review.
++
++Pi may create local checkpoint commits, but must not formally submit an
++incomplete dispatch.
++
++Pi must never push/merge `main`, force-push, rewrite shared history, create a
++release/tag, run/request Codex, start an undispatched Stage, or invent
++architecture beyond the frozen AIPM contract.
+diff --git a/Review/CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md b/Review/CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md
+new file mode 100644
+index 0000000..519118b
+--- /dev/null
++++ b/Review/CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md
+@@ -0,0 +1,168 @@
++# CODEX V3.4 GOVERNANCE MIGRATION REPORT
++
++Date: 2026-08-28
++Project: `D:\Projects\SU-AI-Plugin`
++Authority: Final Product Owner one-time write exception + AIPM V3.4 Guidance
++Scope: governance/workflow only
++
++## 1. Preflight
++
++- Initial branch: `v1.5-stage-round3-fix`
++- Initial HEAD: `d3b3d791d9972c3fcb48e2da26ea4b06e41df1a9`
++- Initial `git status --short`: one allowed untracked AIPM guidance file:
++  `Prompt/AIPM_TECHNICAL_GUIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md`
++- Remotes: none configured (`git remote -v` empty)
++- Remote branches: none
++- Local `dev/v1.5` before migration: absent
++- Legacy branch: preserved; not deleted or rewritten
++- Recent history: stable V1.5 Round-5 implementation/test completion followed
++  by documentation/SHA-stamp commits through `d3b3d79`
++
++The matching `Review/CURRENT_PI_REPORT.md` records dispatch
++`SUAI-V15-R5-BLOCK-FIX-20260827-01` as COMPLETE / STOPPED. `CURRENT_STATE.md`
++also states that Pi is stopped and no implementation task is active. The
++post-report commits through the initial HEAD change only `CURRENT_STATE.md` and
++`Review/CURRENT_PI_REPORT.md` acceptance-state stamps. No stop condition was
++triggered.
++
++## 2. Branch migration
++
++- Created and switched local `dev/v1.5` at
++  `d3b3d791d9972c3fcb48e2da26ea4b06e41df1a9`.
++- Preserved `v1.5-stage-round3-fix` at the same stable checkpoint.
++- Did not create another Round-specific branch.
++- Did not delete, rebase, reset, or rewrite any historical branch.
++- Did not push.
++
++## 3. Files changed or added
++
++- `AGENTS.md` - migrated roles, canonical channels, complete-task
++  `dev/vX.Y` submission, direct AIPM source review, three PASS states,
++  conditional review-only Codex, AIPM adjudication, and main/release authority.
++- `PI_START_HERE.md` - retained the permanent bootstrap order and added assigned
++  version branch, complete-dispatch submission, main/Codex/release prohibitions,
++  and STOP behavior.
++- `PROJECT_HANDOFF.md` - advanced durable workflow governance from V3.1 to
++  V3.4 without changing product/technical architecture.
++- `CURRENT_STATE.md` - preserved V1.5 truth and added concise V3.4 governance
++  status plus canonical branch `dev/v1.5`. No PASS, Owner verification, V1.6
++  start, or release claim was invented.
++- `Prompt/CURRENT_PI_DISPATCH.md` - converted the proven-complete prior
++  dispatch to `STATUS: NO ACTIVE DISPATCH` and added the permanent future
++  ACTIVE-dispatch template.
++- `Review/CURRENT_AIPM_REVIEW.md` - created as PENDING AIPM SOURCE REVIEW /
++  NOT YET REVIEWED for the V1.5 candidate.
++- `Review/CODEX_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md` - this report.
++- `Prompt/AIPM_TECHNICAL_GUIDANCE_V3_4_GOVERNANCE_MIGRATION_2026-08-28.md` -
++  pre-existing allowed untracked AIPM authority; added to the governance commit
++  unchanged.
++
++## 4. Inspected and intentionally unchanged
++
++- `PROJECT_MASTER_PLAN_V1X.md` - product/technical roadmap and existing
++  conditional review strategy remain valid; it contains no live Pi push rule
++  conflicting with V3.4, so it was not rewritten for governance wording.
++- `Review/CURRENT_PI_REPORT.md` - preserved exactly as the latest truthful Pi
++  evidence; not modernized or treated as AIPM approval.
++- `.pi/APPEND_SYSTEM.md` - already small and limited to directing Pi to
++  `PI_START_HERE.md`; no duplication added.
++- Historical `Prompt/` and `Review/` artifacts - retained as evidence; no mass
++  edit, rename, or deletion.
++- Root archived workflow/reviewer files - historical by name and not current
++  operational authority; unchanged.
++- `.github/` - absent.
++- Active non-sample Git hooks - none.
++- Production/runtime source, tests, build scripts, and `dist/` package -
++  intentionally untouched.
++
++## 5. Stale/conflicting live rules resolved
++
++1. `AGENTS.md` and `PROJECT_HANDOFF.md` said Pi must not push by default and
++   every push required separate Owner/AIPM authorization. Replaced with one
++   formal complete-dispatch push to the assigned `dev/vX.Y` after all evidence,
++   state/report updates, and a stable commit.
++2. `Prompt/CURRENT_PI_DISPATCH.md` still said ACTIVE and DO NOT PUSH after the
++   matching Pi report proved COMPLETE / STOPPED. Neutralized to NO ACTIVE
++   DISPATCH and encoded future V3.4 submission semantics.
++3. `CURRENT_STATE.md` named the legacy Round branch as current. Updated to
++   `dev/v1.5` while preserving the legacy ref.
++4. Live governance lacked `Review/CURRENT_AIPM_REVIEW.md`. Created the sole
++   current AIPM source-review record.
++5. Live governance did not fully distinguish Pi Complete, AIPM PASS, and Gate
++   PASS or require real-source inspection before AIPM PASS. Added the evidence
++   rule and distinct states.
++6. Live governance did not fully state Codex review-only default, mandatory
++   high-risk triggers, and AIPM Accepted / Downgraded / Rejected adjudication.
++   Added those rules.
++7. Live governance did not fully distinguish technical stable `main` from
++   Owner-approved formal release/tag. Added the boundary.
++
++Historical files containing older rules were not treated as live conflicts.
++
++## 6. Current-channel decisions
++
++### CURRENT_PI_DISPATCH
++
++Decision: `STATUS: NO ACTIVE DISPATCH`.
++
++Basis: the matching current Pi report is COMPLETE / STOPPED and
++`CURRENT_STATE.md` states no Pi work is in progress. The old dispatch remains
++recoverable from Git history and is not duplicated as current authority.
++
++### CURRENT_PI_REPORT
++
++Decision: preserve unchanged.
++
++The report is Pi-authored implementation evidence. Rewording it for V3.4 would
++blur evidence provenance and could imply approval that has not occurred.
++
++### CURRENT_AIPM_REVIEW
++
++Decision: create with `STATUS: PENDING AIPM SOURCE REVIEW` and
++`VERDICT: NOT YET REVIEWED`. Candidate evidence points to the stable V1.5
++checkpoint on `dev/v1.5`. No AIPM PASS, Codex PASS, Gate PASS, Owner
++verification, or release approval is claimed.
++
++## 7. Validation
++
++- `git diff --check`: PASS.
++- Changed-path scope: governance/workflow/state/report files only.
++- Production/runtime/test behavior changes: none.
++- `Review/CURRENT_PI_REPORT.md` diff: empty.
++- `PROJECT_MASTER_PLAN_V1X.md` diff: empty.
++- `.pi/APPEND_SYSTEM.md` diff: empty.
++- Live stale-rule scan: no remaining positive rule that forbids the completed
++  assigned-dev-branch submission or requires separate per-push Owner approval.
++- Canonical consistency scan: roles, three CURRENT channels, `dev/vX.Y`,
++  complete-task push, real AIPM source review, three PASS states, Codex
++  review-only/conditional role, AIPM adjudication, and main/release authority
++  are present and consistent.
++- Historical evidence mass-edit: none.
++- Product/runtime/test/package paths changed: none.
++
++## 8. Finalization
++
++- Final branch: `dev/v1.5`
++- Final local commit subject:
++  `chore(governance): migrate project to AIPM V3.4 workflow`
++- Final local commit SHA: authoritative value is recorded in the final
++  execution handoff from `git rev-parse HEAD`. A commit cannot contain its own
++  final content hash without changing that hash.
++- Expected final `git status --short` after commit: empty.
++- PUSH: NOT PERFORMED.
++- PRODUCT/RUNTIME CODE: NOT MODIFIED.
++- PRODUCT TESTS: NOT MODIFIED.
++- V1.6: NOT STARTED.
++- OWNER VERIFICATION: NOT PERFORMED.
++- MAIN MERGE: NOT PERFORMED.
++- RELEASE/TAG: NOT PERFORMED.
++
++## 9. Unresolved items
++
++- No Git remote is configured in this repository, so no version-branch remote
++  submission is currently available.
++- AIPM direct source review remains pending.
++- The existing V1.5 high-risk/Codex BLOCK recheck and Owner acceptance sequence
++  remain pending under AIPM dispatch; this migration does not adjudicate them.
++
++STOP. Return control to AIPM / Owner after the single local governance commit.
+diff --git a/Review/CURRENT_AIPM_REVIEW.md b/Review/CURRENT_AIPM_REVIEW.md
+new file mode 100644
+index 0000000..bfb6a6d
+--- /dev/null
++++ b/Review/CURRENT_AIPM_REVIEW.md
+@@ -0,0 +1,39 @@
++# CURRENT AIPM SOURCE REVIEW
++
++STATUS: PENDING AIPM SOURCE REVIEW
++VERDICT: NOT YET REVIEWED
++Project: SU-AI-Plugin
++Version: V1.5
++Reviewed branch: `dev/v1.5`
++Candidate commit: `d3b3d791d9972c3fcb48e2da26ea4b06e41df1a9`
++Pi report: `Review/CURRENT_PI_REPORT.md`
++
++## Evidence status
++
++The matching Pi report records the completed/stopped V1.5 Round-5 submission
++and its implementation/test/package evidence. Pi completion and a Pi-authored
++report are evidence only; they are not AIPM source approval.
++
++AIPM has not yet recorded a direct review of the real code/diff, affected
++upstream/downstream seams, and relevant tests for this candidate.
++
++## Codex status
++
++Codex review is not recorded as complete for this candidate. For this
++high-risk V1.5 BLOCK recheck scope, any Codex verdict remains evidence for AIPM
++adjudication and does not independently create Gate PASS.
++
++## Next permitted action
++
++1. Make the assigned version-branch source/diff available to AIPM through the
++   configured remote workflow when authorized and available.
++2. AIPM directly inspects the real source/diff and relevant evidence.
++3. AIPM records PASS / FIX REQUIRED / BLOCK here.
++4. If the mandatory/high-risk trigger remains applicable, AIPM dispatches the
++   narrow Codex repo-aware review and records Accepted / Downgraded / Rejected
++   adjudication here.
++5. Only after the required evidence and adjudication may AIPM record Gate PASS
++   or authorize merge to `main`.
++
++OWNER ACTION REQUIRED: NO action at this pending source-review step.
++FORMAL RELEASE: NOT AUTHORIZED.

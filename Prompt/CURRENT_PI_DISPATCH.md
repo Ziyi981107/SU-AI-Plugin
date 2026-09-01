@@ -1,481 +1,386 @@
 # CURRENT PI DISPATCH
 
-DISPATCH_ID: V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
+DISPATCH_ID: V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
 STATUS: ACTIVE
 PROJECT: SU-AI-Plugin
-TARGET_STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
+STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
 TARGET_BRANCH: dev/v1.7
 
 Dispatcher / Product + Technical Authority: AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 
-V1.6 CLOSURE:
-Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md
-
-FROZEN V1.7 BLUEPRINT:
+FROZEN BLUEPRINT:
 Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
 
-# 0. MISSION
+PRIOR IMPLEMENTATION REPORT:
+Review/CURRENT_PI_REPORT.md
+Dispatch:
+V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
 
-The Owner has completed V1.6 real SketchUp 2020 verification.
+---
 
-V1.6 is CLOSED.
+# 0. PURPOSE
 
-This dispatch activates V1.7.
+AIPM report-level primary review found concrete evidence gaps / contract
+ambiguities in the V1.7 implementation packet.
 
-Implement the frozen V1.7 Blueprint as ONE coherent product packet:
-
-canonical topology
-→ conservative endpoint gap proposal
-→ Simplified Chinese preview
-→ explicit derived-only `修复间隙`
-→ canonical graph rebuild
-→ provenance / lifecycle / regression / RBZ.
+This is NOT a redesign.
 
 Do NOT start V1.8.
+Do NOT invoke Codex yet.
+Do NOT run Owner real-host verification yet.
 
-V1.7 is a mandatory Codex xHigh integration-review stage, but Pi must NOT invoke
-Codex. Pi stops after its implementation packet for AIPM primary review.
+Correct the bounded findings below, regenerate trustworthy evidence, and produce
+an AIPM-readable source-review patch bundle so AIPM can complete the required
+primary source review before the mandatory Codex xHigh gate.
 
-# 1. READ FIRST
+---
 
-Read in canonical order:
+# 1. FINDING V17-R1 — CROSSING / BRANCH SAFETY IS NOT ACTUALLY PROVEN
 
-1. AGENTS.md
-2. PI_START_HERE.md
-3. PROJECT_HANDOFF.md
-4. PROJECT_MASTER_PLAN_V1X.md
-5. CURRENT_STATE.md
-6. Prompt/CURRENT_PI_DISPATCH.md
-7. Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md
-8. Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
-9. Review/CURRENT_PI_REPORT.md
-10. actual local Git/source/tests
+The frozen Blueprint requires explicit:
 
-Historical Prompt/Review artifacts are evidence only.
+X1 — proposed bridge intersects unrelated edge interior
+     → REVIEW_REQUIRED.
 
-The frozen V1.7 Blueprint owns design decisions for this stage.
+X2 — third canonical node lies on bridge
+     → REVIEW_REQUIRED.
 
-Pi does not independently redesign:
-- canonical identity;
-- repair types;
-- tolerance authority;
-- source/derived ownership;
-- transaction/recovery;
-- provenance;
+X3 — two proposed bridges cross
+     → conflicting proposals not executable.
+
+X4 — almost-closed triangle
+     → READY_TO_REPAIR.
+
+The prior Pi report claims:
+
+`§10.3 crossing / branch / pair conflict`
+→ `WorkingModeRunner._crossing_checker_proc`
+→ `(covered by G1)`
+
+This is insufficient.
+
+G1 is only a simple valid pair and cannot prove crossing / third-node /
+simultaneous-bridge conflict safety.
+
+## Required correction
+
+1. Inspect the ACTUAL `_crossing_checker_proc` implementation.
+2. Verify that it checks ALL frozen conditions:
+   - unrelated canonical-edge interior intersection;
+   - unrelated canonical node on proposed bridge interior;
+   - implicit T-junction / split requirement;
+   - crossing between simultaneously proposed bridges.
+3. Add explicit regression tests named/mapped to X1, X2, X3, X4.
+4. Each unsafe case must prove:
+   - no executable READY proposal for the unsafe bridge;
+   - stable review reason where applicable:
+     `bridge_crossing`,
+     `third_node_on_bridge`,
+     `bridge_conflict`;
+   - zero destructive bridge creation.
+5. X4 must use an almost-closed triangle-style topology and prove ONE safe
+   endpoint_bridge proposal exists.
+
+Do NOT treat "nearest" or "mutual unique" as a substitute for crossing safety.
+
+---
+
+# 2. FINDING V17-R2 — CANONICAL POST-REPAIR ADJACENCY IS UNDER-PROVEN
+
+The frozen Blueprint requires:
+
+T3 — repaired endpoints gain exactly the expected adjacency.
+
+T4 — an almost-closed triangle becomes canonical connected / cycle-capable
+     topology input for V1.8 after the bridge.
+
+The prior report lists canonical graph tests:
+
+T1, T2, T5-T7
+
+and does not provide explicit T3 / T4 evidence.
+
+## Required correction
+
+Add explicit tests:
+
+### T3
+
+Before repair:
+- endpoint node A degree = 1;
+- endpoint node B degree = 1.
+
+After applying one endpoint_bridge + rebuilding CanonicalGeometryGraph:
+- canonical gap bridge exists;
+- node A degree increases exactly as expected;
+- node B degree increases exactly as expected;
+- no unrelated node degree changes.
+
+### T4
+
+Construct an almost-closed triangle / equivalent 3-edge chain with one short
+unique missing closing segment.
+
+Before:
+- topology has two open endpoint nodes.
+
+After endpoint_bridge:
+- canonical graph contains the generated canonical edge;
+- the two formerly open nodes are connected through the expected adjacency;
+- topology is cycle-capable for V1.8;
+- V1.7 MUST NOT create a V1.8 Loop/Region object.
+
+This is topology evidence only, not a face-generation requirement.
+
+---
+
+# 3. FINDING V17-R3 — CANONICAL `origin_kind` CONTRACT MUST BE MADE EXACT
+
+The Blueprint deliberately distinguishes:
+
+Derived/workspace record origin kind:
+`generated_gap_bridge`
+
+from CanonicalEdge origin kind:
+`gap_bridge`
+
+Blueprint §15.1 explicitly requires:
+
+CanonicalEdge:
+`origin_kind = gap_bridge`
+
+The prior report maps §15.1 to:
+
+`GapBridgeExecutor.apply sets origin_kind='generated_gap_bridge'`
+
+This is ambiguous and may leak the workspace implementation enum into the
+canonical downstream contract.
+
+## Required correction
+
+Verify the actual canonical graph output.
+
+Required final contract:
+
+- raw/generated DerivedEntityRecord MAY remain:
+  `origin_kind = generated_gap_bridge`
+
+- CanonicalGeometryGraph CanonicalEdge MUST expose:
+  `origin_kind = gap_bridge`
+
+Add an explicit test proving this mapping.
+
+Do NOT change the frozen source/derived provenance meaning.
+
+V1.8 must be able to consume canonical `gap_bridge` without learning the
+workspace implementation enum.
+
+---
+
+# 4. FINDING V17-R4 — TEST MATRIX / REPORT CLAIMS MUST BE TRUTHFUL
+
+The dispatch required at minimum:
+
+- N1-N6
+- G1-G10
+- X1-X4
+- H1-H8
+- T1-T7
+- L1-L4
+- P1-P3
+
+The prior report labels:
+- H1-H7;
+- T1, T2, T5-T7;
+- no X1-X4.
+
+Do not claim "all Blueprint §§ covered" until the explicit missing evidence is
+present.
+
+After correction, report the matrix honestly.
+
+If some H-number was only a numbering mismatch but the underlying requirement
+is already tested, map it explicitly by Blueprint requirement rather than
+renaming evidence deceptively.
+
+In particular prove both:
+
+- source fingerprint unchanged;
+- existing source-derived endpoint coordinates unchanged.
+
+---
+
+# 5. AIPM SOURCE-REVIEW BUNDLE — REQUIRED
+
+AIPM cannot currently inspect local `dev/v1.7` through the remote repository
+because the branch is not available remotely from the current environment.
+
+Generate a durable review artifact from the actual local branch.
+
+Create:
+
+`Review/V17_AIPM_SOURCE_REVIEW.patch`
+
+using the exact closed V1.6 base:
+
+`d7e9c59`
+
+to the final corrected V1.7 HEAD.
+
+The patch must include all V1.7 production/test changes.
+
+Equivalent command conceptually:
+
+git diff d7e9c59..HEAD --   extension/su_ai_plugin   tests   scripts/build_rbz.rb   > Review/V17_AIPM_SOURCE_REVIEW.patch
+
+Additionally create:
+
+`Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`
+
+containing:
+
+- corrected final HEAD;
+- full list of changed V1.7 source/test files;
+- symbol index for:
+  - DerivedTopologySnapshotBuilder
+  - CanonicalTopologyBuilder
+  - CanonicalGeometryGraph
+  - GapPairProposer
+  - GapBridgeExecutor
+  - WorkingModeRunner compute/apply gap methods
+  - `_crossing_checker_proc`
+  - SU derived workspace repair-group methods
+  - topology UI renderer / CTA logic;
+- line ranges or grep anchors;
+- exact tests covering N/G/X/H/T/L/P matrix.
+
+Do NOT paraphrase code into this file.
+The patch remains the source evidence.
+
+---
+
+# 6. NO PRODUCT REDESIGN
+
+Do NOT change:
+
+- `endpoint_bridge` as the only executable V1.7 repair type;
+- `gap_search` authority;
+- `coordinate_epsilon` canonical identity semantics;
+- source immutability;
+- workspace-owned repair geometry;
+- mutual-unique pairing;
+- Curve/Face/layer/Z conservative rules;
+- Undo architecture;
+- Observer architecture;
+- Simplified Chinese UX;
 - V1.8 boundary.
 
-# 2. PRE-FLIGHT + V1.6 CLOSURE SYNC
+If an actual source bug makes one of the above impossible:
+STOP and report the exact blocker.
 
-## 2.1 Git truth
+---
 
-Record:
+# 7. REQUIRED REGRESSION
 
-- current branch;
-- current HEAD;
-- local `dev/v1.6` HEAD;
-- origin refs if reachable;
-- local-ahead counts;
-- tracked/untracked state.
+Run:
 
-Known environment fact:
-GitHub has repeatedly been unreachable from this host.
-Remote reachability is NOT required for local V1.7 implementation.
+1. explicit X1-X4 tests;
+2. explicit T3-T4 tests;
+3. canonical origin-kind mapping test;
+4. full focused V1.7 suite;
+5. full Ruby suite;
+6. Node DOM suite;
+7. V1.6 close-autodiscard regression;
+8. V1.5 host-state/BLOCK-005 regression;
+9. legacy compatibility;
+10. RBZ smoke/load;
+11. git diff --check.
 
-Do not repeatedly retry network.
+Rebuild RBZ if production code changes.
 
-## 2.2 Verify actual V1.6 base
+If only tests/report change and production code is proven correct, do not rebuild
+just to create a new hash unnecessarily unless current packaging policy requires
+a final stable candidate after the report checkpoint.
 
-The only permitted V1.7 base is the actual local V1.6 HEAD containing:
+---
 
-- Simplified Chinese UI;
-- discarded/failed fresh `准备处理`;
-- close-time auto-discard;
-- current final V1.6 RBZ source.
-
-Verify CURRENT_STATE can be truthfully updated to:
-
-- V1.6 CLOSED
-- Owner SU2020 PASS
-- V1.7 STARTED
-
-If the local source does not contain the final close-autodiscard implementation:
-STOP.
-
-## 2.3 Track AIPM authority docs unchanged
-
-Ensure these are tracked durable files on the V1.7 line:
-
-- Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md
-- Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
-
-Pi may add/commit them unchanged.
-
-Do NOT rewrite AIPM product/technical content.
-
-## 2.4 Branch
-
-If `dev/v1.7` does not exist:
-create it from the exact local closed V1.6 HEAD.
-
-If it exists unexpectedly:
-inspect it.
-
-Do not reset/rewrite a conflicting branch.
-
-No round-specific branch.
-
-# 3. CURRENT_STATE START UPDATE
-
-Before substantial V1.7 code, update current dynamic status:
-
-- V1.6 CLOSED
-- V1.6 Owner SU2020 PASS
-- V1.7 ACTIVE
-- frozen Blueprint path
-- mandatory future Codex xHigh integration review
-- V1.8 NOT STARTED
-
-Do not claim V1.7 PASS/CLOSED.
-
-# 4. IMPLEMENT FROZEN V1.7
-
-Follow the Blueprint exactly.
-
-Critical contracts:
-
-## 4.1 Canonical identity
-
-- host topology != canonical topology;
-- gap_search proximity != canonical identity;
-- canonical nodes use coordinate_epsilon;
-- no transitive tolerance collapse;
-- deterministic IDs/order.
-
-## 4.2 Executable repair type
-
-ONLY:
-
-`endpoint_bridge`
-
-Do not implement endpoint movement / midpoint snap / endpoint-to-edge / projected
-intersection / line extension / curve explosion.
-
-## 4.3 Pair authority
-
-Executable only when the pair is conservatively unambiguous:
-
-- open canonical degree 1;
-- direct distance within allowed range;
-- Z compatible;
-- mutual unique candidate;
-- no same-edge self-pair;
-- layer-safe;
-- no crossing;
-- no third node on bridge;
-- no proposed-bridge conflict;
-- no unsafe Curve/Face context.
-
-Anything else:
-review/skip, no destructive apply.
-
-## 4.4 Repair host ownership
-
-Generated bridge geometry is transient DERIVED workspace-owned repair geometry.
-
-Do not move existing source-derived endpoints.
-
-Do not mutate source.
-
-Include repair group/handles in:
-- handle registry;
-- Discard;
-- Rebuild;
-- close auto-discard;
-- host consistency validation.
-
-## 4.5 Canonical graph
-
-Build/rebuild:
-
-CanonicalGeometryGraph
-- deterministic nodes;
-- canonical edges;
-- adjacency;
-- unresolved topology issues;
-- provenance.
-
-Recompute from current derived truth after material changes.
-
-No live observer-replay graph.
-
-# 5. UI
-
-Keep Simplified Chinese.
-
-Add compact user-level `拓扑修复` section.
-
-Normal flow:
-
-ready workspace
-→ primary `检查间隙`
-
-safe proposals
-→ `发现可修复间隙`
-→ primary `修复间隙`
-
-ambiguous:
-→ `需要人工确认`
-→ no destructive CTA for ambiguous items.
-
-Default visible:
-- 开放端点
-- 可安全修复
-- 需人工确认
-- 最大间隙 where useful.
-
-Technical IDs/tolerances/provenance:
-collapsed `技术详情`.
-
-Preserve one-primary-action philosophy.
-
-Do not regress V1.6 UI.
-
-# 6. TEST REQUIREMENTS
-
-Implement the Blueprint matrix at minimum:
-
-- N1-N6 canonical identity;
-- G1-G10 pairing;
-- X1-X4 crossing/branch safety;
-- H1-H8 host mutation;
-- T1-T7 graph/provenance;
-- L1-L4 lifecycle;
-- P1-P3 performance evidence.
-
-Also preserve:
-
-- full V1.0-V1.6 regressions;
-- V1.6 close auto-discard;
-- V1.5 BLOCK-005;
-- legacy compatibility;
-- Node DOM;
-- RBZ smoke.
-
-No test may make source mutation acceptable.
-
-No fake Owner real-host PASS.
-
-# 7. PACKAGE / OWNER CANDIDATE
-
-Build RBZ.
-
-Verify:
-
-- root entry point;
-- all V1.7 modules included;
-- Chinese frontend included;
-- no dev-only paths;
-- production source/package hash match;
-- parse/load smoke;
-- legacy compatibility.
-
-Report:
-
-- path;
-- size;
-- entry count;
-- SHA-256;
-- relevant frontend hashes;
-- source/package match.
-
-Prepare Owner SU2020 instructions for Blueprint scenarios A-G.
-
-Do NOT run Owner verification.
-
-# 8. AIPM REVIEW PACKET
+# 8. REPORT
 
 Overwrite:
 
 Review/CURRENT_PI_REPORT.md
 
 DISPATCH_ID:
-V17-GAP-TOPOLOGY-IMPLEMENTATION-2026-09-01
+V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
 
-Include:
+Report:
 
-## A. Repository anchor
-- V17_BASE_SHA
-- branch
-- starting/final HEAD
-- origin refs/reachability
-- local ahead
+A. exact finding disposition R1-R4
+B. exact production code changed, if any
+C. X1-X4 evidence
+D. T3-T4 evidence
+E. canonical `origin_kind` mapping evidence
+F. corrected complete test matrix
+G. source-review patch path + SHA-256
+H. critical source index path
+I. full regression counts
+J. RBZ identity if rebuilt
+K. Git facts
+L. remaining confirmed defects / assumptions / unknowns
+M. `CODEX_GATE: STILL PENDING — DO NOT INVOKE`
+N. `OWNER GATE: NOT YET RUN`
 
-## B. Authority docs
-- closure path
-- Blueprint path
-- confirmation Pi did not rewrite Blueprint
+Do not claim AIPM PASS.
+Do not claim Codex PASS.
+Do not claim Owner PASS.
 
-## C. Changed-file map
+---
 
-## D. Canonical topology contract map
-Blueprint requirement
-→ symbol/file
-→ test.
+# 9. GIT
 
-## E. Gap-pairing evidence
-- spatial candidate retrieval;
-- mutual uniqueness;
-- layer;
-- Z;
-- curve/face;
-- crossing;
-- third-node;
-- pair conflicts.
-
-## F. Host mutation
-- workspace repair container;
-- add-line route;
-- operation counts;
-- failure/commit uncertainty;
-- post-validation.
-
-## G. Provenance
-- canonical node IDs;
-- edge provenance;
-- generated gap bridge provenance;
-- source occurrence trace.
-
-## H. Non-transitive tests
-Explicitly report A≈B/B≈C/A!≈C evidence.
-
-## I. Lifecycle
-- Undo;
-- Discard;
-- Rebuild;
-- close auto-discard;
-- source integrity.
-
-## J. Performance
-Actual synthetic sizes/timings available from tests.
-Do not invent real company-CAD performance.
-
-## K. UI
-Chinese states/buttons and DOM evidence.
-
-## L. Full tests
-Exact commands + counts.
-
-## M. RBZ
-Path/size/entries/hash.
-
-## N. Remaining risks/unknowns
-Separate confirmed defect / assumption / unknown / Owner-only.
-
-## O. Mandatory review state
-State:
-
-`CODEX_GATE: REQUIRED xHigh AFTER AIPM PRIMARY REVIEW`
-
-Pi must NOT call Codex.
-
-## P. Owner gate
-`NOT YET RUN`
-
-Provide exact Chinese real-host steps.
-
-# 9. AIPM/CODEX GATE BOUNDARY
-
-Pi must NOT mark V1.7 CLOSED.
-
-After Pi completion:
-
-Pi STOP
-→ AIPM direct source review
-→ if implementation packet is materially ready:
-   Codex mandatory xHigh integration review
-→ fix BLOCKs if any
-→ Owner SU2020 real-host scenarios
-→ AIPM V1.7 closure.
-
-Do not create additional arbitrary Codex gates.
-
-# 10. STOP EARLY ONLY FOR MATERIAL DESIGN GAPS
-
-STOP affected scope if:
-
-- source mutation becomes required;
-- cross-group repair cannot be represented as workspace-owned bridge geometry;
-- canonical graph requires transitive gap-tolerance identity;
-- current transforms invalidate world-coordinate assumptions;
-- source occurrence provenance cannot survive canonicalization;
-- separate execution tolerance is materially required;
-- host topology side effects cannot be isolated;
-- new Undo/Observer architecture is required;
-- V1.8 loop semantics become necessary.
-
-Otherwise continue autonomously through implementation/debug/tests.
-
-# 11. GIT
-
-Pi may create meaningful local commits.
+Create one meaningful correction checkpoint, or two only if production and tests
+are cleanly separable.
 
 Suggested:
 
-1. `feat(v1.7): add deterministic canonical topology`
-2. `feat(v1.7): propose conservative endpoint gap repairs`
-3. `feat(v1.7): apply derived gap bridge repairs`
-4. `feat(v1.7): expose Chinese topology repair workflow`
-5. `test(v1.7): complete topology and lifecycle regression`
+`fix(v1.7): complete topology safety contracts`
 
-Do not create trivial micro-commits.
+and/or
 
-Never:
+`test(v1.7): prove crossing and post-repair adjacency`
+
+Do not:
 - force-push;
-- reset shared work;
-- rebase published history;
+- rebase shared history;
 - merge main;
-- tag/release.
+- tag/release;
+- start V1.8.
 
-# 12. NETWORK
+Remote network failure remains non-blocking.
 
-At final completion only:
+---
 
-one bounded remote check.
+# 10. STOP
 
-If unreachable:
-report and STOP normally with stable local commits.
+After:
 
-If reachable:
-normal fast-forward push may be attempted only for assigned version branches
-under current governance.
-
-Never force.
-
-# 13. DEFINITION OF PI COMPLETE
-
-Pi Complete requires:
-
-- V1.6 truthfully CLOSED;
-- dev/v1.7 based on exact final local V1.6;
-- canonical topology implementation complete;
-- safe endpoint_bridge proposal/apply complete;
-- ambiguity/crossing protections complete;
-- source unchanged;
-- generated bridge provenance complete;
-- lifecycle integrations complete;
-- Chinese UI complete;
-- performance evidence complete;
+- R1-R4 corrected;
+- source-review patch generated;
+- current report updated;
 - full regressions green;
-- RBZ candidate built;
-- CURRENT_STATE truthful;
-- CURRENT_PI_REPORT complete;
-- mandatory Codex gate clearly pending;
-- Owner gate clearly NOT YET RUN;
-- V1.8 NOT STARTED.
+- stable local corrected HEAD exists;
 
-Then STOP and return control to AIPM.
+STOP.
 
-Do NOT invoke Codex.
-Do NOT start V1.8.
+Return control to AIPM.
+
+Next Gate:
+
+AIPM direct source review of `V17_AIPM_SOURCE_REVIEW.patch`.
+
+Only after AIPM primary PASS:
+mandatory Codex xHigh integration review.
+
+END

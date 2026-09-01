@@ -403,6 +403,52 @@ module SUAnalysis
           end
         end
 
+        # ---- X3 / Bridge conflict ----
+        # Blueprint §10.3: two proposed bridges must not cross.
+        # Walk every pair of ready_proposals; if their
+        # bridge segments cross in the interior, demote both
+        # to REVIEW_REQUIRED with reason `bridge_conflict`.
+        # The executor's preflight already rejects
+        # pairwise endpoint-disjoint violations; X3 adds the
+        # crossing-segment check that preflight does NOT do.
+        # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R1.
+        if ready_proposals.length >= 2
+          conflict_pairs = []
+          (0...ready_proposals.length).each do |i|
+            (i + 1...ready_proposals.length).each do |j|
+              pi = ready_proposals[i]
+              pj = ready_proposals[j]
+              eps_i = pi['expected_bridge_endpoints']
+              eps_j = pj['expected_bridge_endpoints']
+              next unless eps_i.is_a?(Array) && eps_i.length == 2 &&
+                          eps_j.is_a?(Array) && eps_j.length == 2
+              # Two proposals sharing an endpoint are allowed
+              # (they meet at a vertex, not an interior crossing).
+              shared = [pi['endpoint_a_key'], pi['endpoint_b_key']].any? { |k|
+                [pj['endpoint_a_key'], pj['endpoint_b_key']].include?(k)
+              }
+              next if shared
+              if _segments_intersect_interior?(
+                   eps_i[0], eps_i[1], eps_j[0], eps_j[1], coord_eps
+                 )
+                conflict_pairs << [i, j]
+              end
+            end
+          end
+          unless conflict_pairs.empty?
+            demote = conflict_pairs.flatten.uniq
+            demote.each do |idx|
+              p = ready_proposals[idx]
+              p['state']    = STATE_REVIEW_REQUIRED
+              p['reason']   = REASON_BRIDGE_CONFLICT
+              p['executable'] = false
+              p['crossing_reasons'] = Array(p['crossing_reasons']) + [REASON_BRIDGE_CONFLICT]
+              review_proposals << p
+            end
+            ready_proposals = ready_proposals.reject.with_index { |_p, idx| demote.include?(idx) }
+          end
+        end
+
         # Ambiguous / cross-layer / curve-face / non-OK
         # candidates emitted as REVIEW_REQUIRED evidence per
         # endpoint.
@@ -482,6 +528,40 @@ module SUAnalysis
         dy = a[1] - b[1]
         dz = a[2] - b[2]
         Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+      end
+
+      # Strict 2D interior intersection test for two segments,
+      # used by the X3 bridge-conflict check.
+      # Returns true iff the segments cross at a non-endpoint
+      # point in the XY plane (the V1.7 base Z-compat test
+      # already excludes non-coplanar bridges upstream).
+      # Mirrors the same predicate used by the working-mode
+      # runner's _crossing_checker_proc so the proposer + the
+      # external checker agree on what "crossing" means.
+      def _segments_intersect_interior?(p1, p2, q1, q2, eps)
+        return false unless p1.is_a?(Array) && p2.is_a?(Array) &&
+                            q1.is_a?(Array) && q2.is_a?(Array)
+        return false if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
+                        _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
+        d1 = _segment_orientation(p1, p2, q1)
+        d2 = _segment_orientation(p1, p2, q2)
+        d3 = _segment_orientation(q1, q2, p1)
+        d4 = _segment_orientation(q1, q2, p2)
+        return false if d1.abs < eps || d2.abs < eps || d3.abs < eps || d4.abs < eps
+        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+      end
+
+      def _segment_orientation(p, q, r)
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+      end
+
+      def _shared_endpoint?(a, b, eps)
+        return false unless a.is_a?(Array) && b.is_a?(Array)
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dz = a[2] - b[2]
+        Math.sqrt((dx * dx) + (dy * dy) + (dz * dz)) <= eps
       end
 
       def _build_canonical_adjacency(derived_edges)
