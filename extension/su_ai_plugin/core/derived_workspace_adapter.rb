@@ -201,6 +201,41 @@ module SUAnalysis
       def end_operation(_model, commit:)
         raise NotImplementedError, 'subclass must implement end_operation'
       end
+
+      # ---- V1.7 Endpoint / Gap Repair + Canonical Topology ----
+
+      # Ensure (or recreate) the workspace-owned REPAIR group
+      # for V1.7 gap bridges. Per Blueprint §12.1, the repair
+      # group is a dedicated transient derived group at model
+      # root. The executor calls this exactly once per apply
+      # batch.
+      #
+      # Default contract:
+      #   - if a repair group already exists for the supplied
+      #     workspace_id, return the existing one (idempotent).
+      #   - else create a fresh group and record it.
+      #
+      # Returns the group handle, or nil if creation fails.
+      def ensure_repair_group(workspace_id:, label:, model: nil)
+        raise NotImplementedError, 'subclass must implement ensure_repair_group'
+      end
+
+      # Add ONE explicit repair line to the supplied repair
+      # group. Per Blueprint §12.2 the primitive uses
+      # `entities.add_edges([start_point, end_point])` (or
+      # the legacy `add_line` equivalent). Returns the
+      # bridge host handle, OR nil on failure.
+      def add_line_to_repair_group(repair_group, p1, p2)
+        raise NotImplementedError, 'subclass must implement add_line_to_repair_group'
+      end
+
+      # List the bridge host handles currently belonging to
+      # the workspace-owned repair group (for discard /
+      # cleanup / rebuild). Returns an Array of host
+      # handles. Empty when no repair group exists.
+      def repair_group_handles(_model)
+        raise NotImplementedError, 'subclass must implement repair_group_handles'
+      end
     end
 
     # Test adapter: in-memory model that emulates the host
@@ -313,7 +348,8 @@ module SUAnalysis
       attr_reader :created_handles, :disposed_handles,
                   :operation_log, :operation_open,
                   :added_edges, :added_faces,
-                  :vertex_handles_by_edge
+                  :vertex_handles_by_edge,
+                  :repair_groups, :repair_group_bridges
 
       def initialize
         @created_handles = []
@@ -345,6 +381,13 @@ module SUAnalysis
         # false. Tests can flip this via
         # `simulate_host_state_change!`.
         @host_state_changed = false
+        # V1.7 Gap Repair: per-workspace repair group
+        # registry. Keyed by workspace_id -> FakeGroup handle.
+        @repair_groups = {}
+        # V1.7 Gap Repair: bridge edges created via
+        # add_line_to_repair_group. Each entry is
+        # { 'workspace_id' => ..., 'handle' => FakeEdge }.
+        @repair_group_bridges = []
       end
 
       def next_id
@@ -383,11 +426,91 @@ module SUAnalysis
         @host_state_changed ? true : false
       end
 
+      # Create a brand-new top-level group under the supplied
+      # (or active) model. Mirrors the production adapter's
+      # contract (1 positional + 1 keyword arg).
       def create_top_level_group(name, model: nil)
         derived_id = next_id
         g = FakeGroup.new(derived_id, name, FakeEntities.new, true)
         @created_handles << g
         g
+      end
+
+      # ---- V1.7 Gap Repair / Canonical Topology helpers ----
+
+      # ensure_repair_group: per-workspace repair group.
+      # Idempotent: if a repair group already exists for the
+      # given workspace_id (per @repair_groups) AND its
+      # handle is still valid, return it. Otherwise create a
+      # new one and record it. The handle is what the executor
+      # passes to add_line_to_repair_group.
+      def ensure_repair_group(workspace_id:, label:, model: nil)
+        existing = @repair_groups[workspace_id.to_s]
+        if existing && existing.respond_to?(:valid?) && existing.valid?
+          return existing
+        end
+        g = create_top_level_group(label.to_s, model: model)
+        @repair_groups[workspace_id.to_s] = g
+        g
+      end
+
+      # add_line_to_repair_group: append one bridge edge to
+      # the supplied repair group. Per Blueprint §12.2 this
+      # uses add_edges([p1, p2]) under the hood; in the fake
+      # model we emit a FakeEdge with the faithful world-coord
+      # endpoints and remember it in @repair_group_bridges for
+      # cleanup / rebuild.
+      def add_line_to_repair_group(repair_group, p1, p2)
+        return nil unless repair_group && repair_group.respond_to?(:add_child)
+        return nil unless _is_finite_point?(p1) && _is_finite_point?(p2)
+        edge = FakeEdge.new(
+          next_entity_id,
+          _copy_point(p1),
+          _copy_point(p2),
+          (repair_group.respond_to?(:name) ? repair_group.name.to_s : nil),
+          true
+        )
+        wid = @repair_groups.key(repair_group)
+        @repair_group_bridges << {
+          'workspace_id' => wid || '',
+          'handle'       => edge
+        }
+        repair_group.add_child(edge)
+        edge
+      end
+
+      # repair_group_handles: list every bridge edge currently
+      # belonging to workspace-owned repair groups. Returns an
+      # Array of FakeEdge handles.
+      def repair_group_handles(_model = nil)
+        @repair_group_bridges.map { |e| e['handle'] }
+      end
+
+      # dispose_repair_group_bridges: discard every bridge
+      # edge currently in workspace-owned repair groups
+      # (used by discard / rebuild / close).
+      def dispose_repair_group_bridges
+        handles = @repair_group_bridges.map { |e| e['handle'] }
+        handles.each do |h|
+          begin
+            dispose(h)
+          rescue StandardError
+            # never propagate adapter disposal failures from
+            # cleanup paths
+          end
+        end
+        @repair_group_bridges.clear
+        @repair_groups.each_value do |g|
+          begin
+            if g.respond_to?(:valid?) && g.valid?
+              g.erase! if g.respond_to?(:erase!)
+            end
+          rescue StandardError
+            # ignore
+          end
+        end
+        @repair_groups.clear
+        handles.length
       end
 
       # V1.4 CodeX BLOCK rework (2026-08-21): add_edge_to_group

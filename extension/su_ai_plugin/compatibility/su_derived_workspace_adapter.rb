@@ -511,6 +511,81 @@ module SUAnalysis
         nil
       end
 
+      # ---- V1.7 Gap Repair / Canonical Topology ----
+
+      # V1.7 ensure_repair_group: per-workspace repair group
+      # for V1.7 gap bridges. Per Blueprint §12.1 this is a
+      # dedicated derived group at model root with a
+      # recognizable prefix. Idempotent: we look up an
+      # existing repair group for the supplied workspace_id
+      # by suffix-matching the recognizable name, and create
+      # a fresh one if absent.
+      def ensure_repair_group(workspace_id:, label:, model: nil)
+        m = resolve_model(model)
+        unless m && m.respond_to?(:entities)
+          raise SketchupUnavailableError,
+                "ensure_repair_group: model not available"
+        end
+        # Look up an existing repair group for this
+        # workspace_id (idempotent path).
+        ws_str = workspace_id.to_s
+        entities = m.entities
+        if entities.respond_to?(:each)
+          entities.each do |e|
+            return e if e.respond_to?(:name) && e.name.to_s == label.to_s &&
+                          e.respond_to?(:valid?) && e.valid?
+          end
+        end
+        # No existing group: create a fresh one via the
+        # standard add_group path (V1.4 BLOCK fix).
+        g = entities.add_group
+        g.name = label.to_s
+        g
+      end
+
+      # V1.7 add_line_to_repair_group: create one explicit
+      # bridge edge in the supplied repair group. Uses the
+      # legacy-compatible `Sketchup::Entities#add_line` /
+      # `add_edges` primitive (Blueprint §12.2). The endpoint
+      # coordinates are preserved verbatim (no Z lift, no
+      # implicit Face / Curve creation).
+      def add_line_to_repair_group(repair_group, p1, p2)
+        unless repair_group && repair_group.respond_to?(:entities)
+          return nil
+        end
+        unless p1.is_a?(Array) && p1.length >= 3 &&
+               p2.is_a?(Array) && p2.length >= 3
+          return nil
+        end
+        # Sketchup API: add_line(p1, p2) is the long-standing
+        # legacy-compatible primitive. add_edges is the
+        # polyline variant.
+        ents = repair_group.entities
+        if ents.respond_to?(:add_line)
+          ents.add_line(p1, p2)
+        elsif ents.respond_to?(:add_edges)
+          ents.add_edges([p1, p2])
+        else
+          nil
+        end
+      end
+
+      # V1.7 repair_group_handles: enumerate bridge edges in
+      # the supplied repair group (used by discard / rebuild /
+      # close-time cleanup). Returns an Array; empty when no
+      # repair groups exist.
+      def repair_group_handles(model = nil)
+        m = resolve_model(model)
+        return [] unless m && m.respond_to?(:entities)
+        out = []
+        m.entities.each do |g|
+          next unless g.respond_to?(:name) && g.name.to_s.start_with?('SU-AI-Repair-GapBridge')
+          next unless g.respond_to?(:entities)
+          out.concat(g.entities.to_a.select { |e| _is_edge?(e) })
+        end
+        out
+      end
+
       # ---- V1.6 internals ----
 
       # V1.6 Blueprint §8.2 ownership proof: every supplied
