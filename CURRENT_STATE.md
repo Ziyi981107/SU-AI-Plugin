@@ -1,6 +1,112 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 AIPM-PRIMARY-REVIEW-CORRECTION (THIS UPDATE)
+## V1.7 AIPM-EVIDENCE-INTEGRATION-FINAL (THIS UPDATE)
+
+Updated: 2026-09-01 (V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
+Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
+- **V1.7 AIPM primary review**: pending direct source review
+  of this packet.
+- **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
+  primary review. Pi does NOT invoke Codex.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected the four bounded evidence / integration
+findings (R5 / R6 / R7 / R8 from the prior correction packet)
+AND unlocked the four production defects that the prior
+test seam could not have caught (only the real
+`WorkingModeRunner.compute_gap_repair` path exposed them).
+
+V1.7 EVIDENCE-INTEGRATION-FINAL PACKET — 2026-09-01.
+
+- Starting HEAD: `aa33ac6` (the prior V17 correction complete-
+  state doc-stamp).
+- Implementation commit: `e98326ee17cabdeec0b617f22576d1bdc5ce699a`.
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` (one
+  production commit + one doc-stamp, this dispatch).
+- V1.7 RBZ candidate: size **907,197 bytes**; entries **67**;
+  SHA-256
+  **`38e6dc1e71f79478a8882f899cfb14bb5ab021e1fbd84287c0d2bfb8d1070648`**.
+- Full Ruby suite: **906 / 906 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 56 V1.7 Ruby tests, +11 from this
+  dispatch: V17-X1 / V17-X2 / V17-X4 / V17-H3 / V17-T3 /
+  V17-T4 / V17-T4-EXACT3 / V17-R5-REG-LAYER /
+  V17-R5-REG-FROZEN / V17-R5-REG-CLUSTER /
+  V17-R6-NODE-IDENTITY).
+- `git diff --check`: clean.
+- per dispatch §8 + §10: STOPPED awaiting AIPM direct source
+  review; Codex xHigh integration review NOT invoked; V1.8 NOT
+  STARTED; final Owner SU2020 real-host verification gate
+  NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+Production defects fixed by this dispatch (each regression-locked
+in `tests/test_v17_production_gap_path.rb`):
+
+- R5-REG-LAYER: layered CAD used to raise `NoMethodError:
+  undefined method 'layer' for DerivedEntityRecord` on every
+  gap compute. Ruby's ternary precedence parsed the old
+  expression as `((gs['layer'] || rec.respond_to?(:layer)) ?
+  rec.layer : nil)`, evaluating `rec.layer` on every record.
+  Fixed in `core/endpoint_record.rb`.
+- R5-REG-FROZEN: `_canonical_topology_snapshot` mutated a
+  frozen Hash returned by `CanonicalTopologyBuilder.build`
+  and raised `FrozenError` on every `compute_gap_repair`.
+  Fixed via `.dup` in `core/working_mode_runner.rb`.
+- R5-REG-CLUSTER: `GapPairProposer.propose` and
+  `_open_endpoint_keys` read SYMBOL keys
+  (`topology_snapshot[:canonical_node_clusters]`) while
+  `CanonicalTopologyBuilder.build` publishes STRING keys. On
+  the real production path `canonical_node_clusters` was
+  therefore `{}`, so coincident corner endpoints were never
+  merged into one canonical node (Blueprint §7.2) and were
+  mis-reported as open endpoints (Blueprint §8). Fixed via a
+  shared `_ts_read` helper (defensive symbol-OR-string read,
+  same pattern already used by
+  `CanonicalGeometryGraph.build_from_workspace`).
+- R6-NODE-IDENTITY: `_build_canonical_node_record` minted a
+  DIFFERENT `canonical_node_id` per clique member
+  (`"<cluster>.n#{position}"`). An exactly-coincident corner
+  (two derived edges meeting at one point) therefore produced
+  TWO canonical nodes, and the rebuilt canonical graph of a
+  real almost-closed triangle was always disconnected /
+  acyclic. Fixed: resolved clique members now share the
+  cluster id as their `canonical_node_id` (ONE canonical
+  node per safe clique, Blueprint §7.2 / §7.3); non-transitive
+  cluster members still get distinct `.nN` ids (no identity
+  collapse, Blueprint §7.2).
+
+New review artifacts produced by this dispatch:
+
+- `Review/V17_AIPM_SOURCE_REVIEW.patch` (316,045 bytes;
+  SHA-256
+  `bc39afd7f9b139727043e9dddc1c2102c3a1afa7216de78ccd5e37ea7e504139`).
+- `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md` (updated).
+
+Next expected AIPM action: AIPM direct source review of this
+corrected V1.7 packet against the frozen Blueprint + the prior
+V1.4–V1.6 review evidence, then (on AIPM PASS) the mandatory
+Codex xHigh integration review, then the final Owner SU2020
+real-host verification gate Scenarios A–G.
+
+CODEX_GATE: STILL PENDING — DO NOT INVOKE.
+OWNER GATE: NOT YET RUN.
+
+## V1.7 AIPM-PRIMARY-REVIEW-CORRECTION (HISTORICAL)
 
 Updated: 2026-09-01 (V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
 dispatch EXECUTION on assigned `dev/v1.7` per dispatch
