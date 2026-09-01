@@ -12,7 +12,7 @@ Status:
 - **BLOCK-005: CLOSED**
 - **Owner SketchUp 2020 V1.5 verification: PASS** (Final Product Owner confirmation recorded by AIPM)
 - **BLOCK-005 technical direction (unchanged, frozen):** `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild`. No global ModelObserver / EntitiesObserver architecture added in V1.5. `persistent_id` is not the correctness Source of Truth. Old Ruby Entity handles must never be trusted after host-state divergence.
-- **V1.6: PI IMPLEMENTATION COMPLETE / AWAITING AIPM SOURCE REVIEW** (per dispatch `V16-PLANAR-NORMALIZATION-IMPLEMENTATION-2026-08-31`, on assigned `dev/v1.6`).
+- **V1.6: UI INTEGRATION CORRECTION COMPLETE / AWAITING AIPM SOURCE REVIEW** (per dispatch `V16-UI-INTEGRATION-CORRECTION-2026-09-01`, on assigned `dev/v1.6`). The prior V1.6 backend implementation is intact; this dispatch added the actual frontend rendering and action wiring for Planar Normalization + corrected the prior report's H5 evidence claim.
 - **V1.6: OWNER REAL-HOST VERIFICATION NOT YET RUN** (SketchUp 2020 Owner / Owner-AIPM step remains after AIPM source review).
 - **V1.6: NOT CLOSED** (closure is Owner / AIPM-side per dispatch §15 + §9; V1.6 frozen Blueprint §13 requires real-SU2020 Owner verification before closure).
 - **V1.7: NOT STARTED**
@@ -25,21 +25,152 @@ Accepted V1.5 RBZ (verified, unchanged by this CLOSURE-ONLY sync):
 - Entries: **59**
 - SHA-256: **`61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`**
 
-V1.6 PI-implementation RBZ candidate (this dispatch):
+V1.6 UI-INTEGRATION-CORRECTION RBZ candidate (this dispatch):
 
 - Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
-- Size: **733,504 bytes**
-- Entries: **62** (+3 vs V1.5: `planar_normalization_analyzer.rb`,
-  `planar_normalization_proposer.rb`,
-  `planar_normalization_executor.rb`)
-- SHA-256: **`c1e4b641b1ac8f509c7bfede52770bbd6d8a2f771f3003f4f5e572341dc72b68`**
+- Size: **744,607 bytes** (+11,103 vs V1.6 PI-impl RBZ, the delta is the
+  rendered Planar Normalization block + audit rendering + the
+  action button wiring + the H5 regression test).
+- Entries: **62** (unchanged from V1.6 PI-impl).
+- SHA-256: **`c9c1f4f0503957a1fe5073957df2d67996be6ec74cff0d95d5c046ab6bfa585d`**
+
+Packaged `html/app.js` SHA-256:
+**`b0056640d283a40e0db71f54f1b5405554ebc4d08ed5e96772cd6bd2f5c820d0`**
+(byte-identical to the in-tree source -- the RBZ contains the updated
+frontend).
 
 Next expected AIPM action: AIPM direct source review of the V1.6
-implementation packet against the frozen Blueprint, then (on AIPM
-PASS) the Owner SU2020 real-host verification gate. Codex review is
-NOT a routine reviewer for V1.6 and was NOT invoked.
+UI integration correction packet against the frozen Blueprint + the
+prior V1.6 review evidence, then (on AIPM PASS) the Owner SU2020
+real-host verification gate. Codex review is NOT a routine reviewer
+for V1.6 and was NOT invoked.
 
-## V1.6 PI-IMPLEMENTATION DISPATCH (THIS UPDATE)
+## V1.6 UI-INTEGRATION-CORRECTION DISPATCH (THIS UPDATE)
+
+Updated: 2026-09-01 (V16-UI-INTEGRATION-CORRECTION-2026-09-01
+dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. AIPM direct
+source review of the prior V1.6 PI-implementation packet found
+ONE concrete integration blocker:
+
+  - the prior V1.6 Ruby-side normalization state + dialog
+    callbacks were implemented correctly, but the actual
+    HTML/JS frontend was NOT wired to render the Planar
+    Normalization state or to expose the user actions
+    required by Blueprint section 11;
+  - the prior report claimed an existing "Planar
+    normalization" row was surfaced and that Owner should
+    click "Apply Safe Normalization", but inspection of the
+    unchanged V1.5 frontend source confirmed the rendered
+    Working Mode had no Planar Normalization rows
+    and no Planar Normalization action buttons.
+
+This dispatch corrected that bounded integration gap only.
+
+Concretely this dispatch added:
+
+  - `extension/su_ai_plugin/html/app.js`:
+    a new `renderPlanarNormalization(listEl, workspaceState,
+    pn)` helper that renders the compact Blueprint section 11
+    rows (State, Target Z, Eligible Vertices, Proposed Movable,
+    Outliers, Affected Derived Edges, Skipped / Ambiguous
+    Scope, Max Proposed Movement, Review Reason) AND a new
+    `renderPlanarNormalizationAction(actionsEl, workspaceState,
+    pn)` helper that wires the locked "Analyze Planarity" /
+    "Apply Safe Normalization" button. Action wiring contract:
+    workspaceState === 'ready' AND pnState ===
+    'NOT_COMPUTED' -> "Analyze Planarity" enabled ->
+    `window.sketchup.compute_planar_normalization`;
+    workspaceState === 'ready' AND pnState ===
+    'READY_TO_NORMALIZE' -> "Apply Safe Normalization"
+    enabled -> `window.sketchup.apply_planar_normalization`;
+    ALL other states (REVIEW_REQUIRED / NO_CANDIDATE /
+    APPLIED / FAILED / invalid_tolerance / invalid_input /
+    missing planar_normalization / non-ready workspace) ->
+    NO action button (info only). The destructive Apply
+    Safe Normalization action MUST NOT appear enabled in any
+    state other than READY_TO_NORMALIZE (per dispatch section
+    2.2 bullet 2). textContent only (locked contract preserved).
+  - The post-apply audit (state, target_z, moved/applied
+    count, max_movement, outliers_unchanged, failure_reason)
+    is rendered from `pn.audit` when present (no client-side
+    source of truth; the Ruby snapshot remains authoritative).
+  - `tests/test_html_render_dom.js`: 49 new assertions
+    covering UI1-UI8 (NOT_COMPUTED preview, READY_TO_NORMALIZE
+    apply, REVIEW_REQUIRED / NO_CANDIDATE / APPLIED / FAILED
+    fail-closed, missing / malformed payload degrade,
+    V1.4/V1.5 controls unchanged). The DOM test loads the
+    SHIPPED app.js (no parallel helper).
+  - `tests/test_v16_planar_normalization.rb`: 1 new test
+    (V16-H5: native Undo after applied normalization -> the
+    existing V1.5 BLOCK-005 validate-on-next-interaction path
+    remains safe; no new Observer architecture added). H5
+    was the one missing test from the prior V1.6 PI-impl
+    report's H1-H6 claim; it is now covered.
+  - `extension/su_ai_plugin/core/working_mode_runner.rb`:
+    trivial non-semantic integration seam fix in
+    `_attach_planar_normalization_to_snapshot` -- when only
+    an audit row is present (post-Apply), the snapshot's
+    `state` field is derived from the audit's `status`
+    (`'applied' -> 'APPLIED'`, `'failed' -> 'FAILED'`) so
+    the UI does not falsely render `NOT_COMPUTED` after a
+    terminal Apply. Pure data shape change; no normalization
+    semantics touched.
+
+Production files NOT modified by this dispatch:
+planar_normalization_analyzer.rb,
+planar_normalization_proposer.rb,
+planar_normalization_executor.rb, tolerance.rb,
+analysis_config.rb, derived_workspace_adapter.rb,
+su_derived_workspace_adapter.rb, dialog_runner.rb, main.rb.
+
+RBZ identity (post-rebuild):
+
+- Size: 744,607 bytes
+- Entries: 62 (unchanged)
+- SHA-256: `c9c1f4f0503957a1fe5073957df2d67996be6ec74cff0d95d5c046ab6bfa585d`
+- Packaged `html/app.js` SHA-256:
+  `b0056640d283a40e0db71f54f1b5405554ebc4d08ed5e96772cd6bd2f5c820d0`
+  (byte-identical to in-tree source)
+
+Test evidence (this dispatch):
+
+- Full Ruby suite: 843 / 843 PASS / 0 fail / 0 error
+  (was 842 before this dispatch; +1 = the V16-H5 test).
+- V16 substring: 26 / 26 PASS (P1-P9, G1-G6, H1-H6,
+  T1-T3, I1-I3) -- H5 is now covered.
+- LEGACY-COMPAT substring: 4 / 4 PASS (unchanged).
+- RBZ smoke: 9 / 9 PASS.
+- Node DOM (test_html_render_dom.js): PASS
+  (49 new UI1-UI8 assertions added on top of the existing
+  V14 / V15 / V1.6 assertions).
+- `git diff --check`: clean.
+
+H5 evidence disposition (per dispatch section 6): H5 is now
+covered by V16-H5 using the existing approved
+`simulate_host_state_change!` / `validate_host_state_consistency!`
+seam (same pattern as V15-B005-3). No new Observer / Undo
+architecture was added. Per dispatch section 6, the H5 test
+exercises: apply normalization -> simulate host-state
+invalidation -> validate-on-next-interaction -> workspace
+transitions to :failed with stable reason `host_state_changed`
+-> no stale READY_TO_NORMALIZE state in the snapshot ->
+source CAD immutable -> the existing V1.5 BLOCK-005 path
+remains the canonical recovery seam.
+
+CODEX_TRIGGER: NO (per dispatch section 8). No material
+repo-aware issue uncovered; the V1.6 backend architecture is
+unchanged; the prior frozen PlanarNormalizationAnalyzer /
+Proposer / Executor / Tolerance / Adapter / WorkingModeRunner /
+DialogRunner work is intact and re-verified by 26 V16 tests.
+The UI fix is the smallest frontend integration seam needed
+to make the already-registered callbacks reachable from the
+shipped frontend, plus a one-line trivial snapshot-state
+derivation fix in the runner so the UI does not falsely render
+NOT_COMPUTED after a terminal Apply.
+
+V1.6 OWNER REAL-HOST VERIFICATION NOT YET RUN. V1.6 NOT CLOSED.
+
+## V1.6 PI-IMPLEMENTATION DISPATCH
 
 Updated: 2026-08-31 (V16-PLANAR-NORMALIZATION-IMPLEMENTATION-2026-08-31
 dispatch EXECUTION COMPLETE on assigned `dev/v1.6`. The frozen V1.6
