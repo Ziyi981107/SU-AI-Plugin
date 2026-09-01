@@ -1,6 +1,120 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 AIPM-EVIDENCE-INTEGRATION-FINAL (THIS UPDATE)
+## V1.7 AIPM-DIRECT-SOURCE-REVIEW-FIX (THIS UPDATE)
+
+Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
+Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
+- **V1.7 AIPM primary review (re-review)**: pending direct
+  source re-review of this corrected packet.
+- **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
+  re-review. Pi does NOT invoke Codex.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected the SEVEN bounded direct-source-review
+findings (SR-01 through SR-07 from
+`Review/CURRENT_AIPM_REVIEW_V17_DIRECT_SOURCE_REVIEW.md`) —
+host ownership, failure, cleanup, post-validation, identity
+and provenance corrections — and added 22 new SR regression
+tests.
+
+V1.7 DIRECT-SOURCE-REVIEW-FIX PACKET — 2026-09-01.
+
+- Starting HEAD: `2cdebb2` (the prior V17 evidence-integration-
+  final doc-stamp).
+- Implementation SHA (preserved from prior substantive
+  packet): `e98326ee17cabdeec0b617f22576d1bdc5ce699a`.
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` (one
+  production commit + one doc-stamp, this dispatch).
+- V1.7 RBZ candidate: size **937,804 bytes**; entries **67**;
+  SHA-256
+  **`9C7F701CDFBA1A908B329546C53BA325AC035544A4B6FF356C883BD84403FCCF`**.
+- Full Ruby suite: **921 / 921 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 71 V1.7 Ruby tests, +22 from this
+  dispatch: V17-SR1-1 / V17-SR1-2 / V17-SR1-3 / V17-SR1-4 /
+  V17-SR2-1 / V17-SR2-2 / V17-SR2-3 / V17-SR2-4 /
+  V17-SR3-1 / V17-SR3-2 / V17-SR3-3 / V17-SR3-4 / V17-SR3-5 /
+  V17-SR4-1 / V17-SR4-2 / V17-SR4-3 / V17-SR5-1 /
+  V17-SR6-1 / V17-SR7-1 / V17-SR7-2 / V17-SR7-3 /
+  V17-SR7-4).
+- `git diff --check`: clean.
+- per dispatch §8 + §12: STOPPED awaiting AIPM direct source
+  re-review; Codex xHigh integration review NOT invoked;
+  V1.8 NOT STARTED; final Owner SU2020 real-host verification
+  gate NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+Corrections by this dispatch (each regression-locked in
+`tests/test_v17_production_gap_path.rb`):
+
+- SR-01 (ONE LOGICAL BRIDGE = ONE HOST BRIDGE): removed the
+  double-creation production route in
+  `core/gap_bridge_executor.rb`. The V1.7 base execution
+  path is now `workspace.build_entity` ONLY (not
+  `add_line_to_repair_group`); the bridge handle is owned
+  by the workspace's private handle_registry and is
+  disposed via the existing Discard / Rebuild / close-time
+  auto-discard.
+- SR-02 (TRUE FAILED WORKSPACE + LOGICAL ROLLBACK):
+  `GapBridgeExecutor.apply` now captures `pre_workspace`
+  before `begin_operation`; on confirmed abort, returns a
+  NEW `:failed` workspace derived from `pre_workspace`
+  inventory + handle_registry; on commit uncertainty,
+  retains current generated handles for Discard recovery.
+  No failure return path exposes `post_workspace.state ==
+  :ready`.
+- SR-03 (HARD RUNTIME POST-VALIDATION): executor-side
+  `_post_validate` now proves A (state) + B (origin_kind +
+  repair_action_id + host handle + host endpoint positions)
+  + D (source fingerprint) + E (pre-existing coords) + F
+  (proposal ID set) + G (no REVIEW_REQUIRED executed).
+  Runner-side `_canonical_post_validate` after commit + graph
+  rebuild proves H (canonical bridge count) + I
+  (repair_action_id in canonical edge) + J (repaired
+  endpoint adjacency) + K (no new
+  non_transitive_node_cluster). Failure -> workspace
+  transitions to `:failed` with reason
+  `canonical_post_validation_failed`; handles retained for
+  Discard; no fake rollback.
+- SR-04 (TRUE POINT-ON-SEGMENT INTERIOR):
+  `WorkingModeRunner._point_on_segment_interior?` is the new
+  pure predicate: (1) finite 3D, (2) projection t in
+  (0, 1) with endpoint exclusion (band
+  `[eps/seg_len, 1 - eps/seg_len]`), (3) closest-point
+  distance <= coordinate_epsilon.
+- SR-05 (DETERMINISTIC BRIDGE ID): generated bridge
+  `derived_id` is `"der-gap-#{proposal_id}"`
+  (deterministic; no `rand`).
+- SR-06 (PLURAL CANONICAL PROVENANCE):
+  `CanonicalGeometryGraph._build_canonical_edges` emits
+  `source_occurrence_ids` (plural, normalized sorted/uniq
+  String Array) alongside the existing singular field
+  (backwards-compat preserved).
+- SR-07 (UNIQUE LOGICAL GRAPH NODES):
+  `CanonicalGeometryGraph._collapse_nodes_by_id` collapses
+  per-endpoint records into ONE logical node per
+  `canonical_node_id` at the constructor boundary
+  (preserving membership data + representative world coord
+  from the lex-smallest endpoint_key member). The published
+  `metrics.canonical_node_count` now reflects the UNIQUE
+  logical node count. Non-transitive cluster members remain
+  distinct graph nodes.
+
+## V1.7 AIPM-EVIDENCE-INTEGRATION-FINAL (HISTORICAL)
 
 Updated: 2026-09-01 (V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
 dispatch EXECUTION on assigned `dev/v1.7` per dispatch

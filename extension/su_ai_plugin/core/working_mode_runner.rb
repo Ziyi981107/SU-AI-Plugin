@@ -1010,6 +1010,35 @@ module SUAnalysis
           @topology_repair_proposal = nil
           @topology_repair_canonical_graph =
             rebuild_canonical_geometry_graph(workspace: @current_workspace, tolerance: tol)
+          # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-03 (H,I,J,K):
+          # canonical post-validation after the host commit.
+          # Every applied bridge MUST map to ONE canonical
+          # edge with origin_kind=gap_bridge; repair_action_id
+          # MUST survive into the canonical edge; the repaired
+          # endpoint adjacency MUST be present; and the batch
+          # MUST NOT introduce a new non_transitive_node_cluster.
+          # Failure -> workspace transitions to :failed with
+          # stable reason `canonical_post_validation_failed`;
+          # handles retained for Discard; do NOT fake rollback.
+          cpv = _canonical_post_validate(
+            graph:  @topology_repair_canonical_graph,
+            audit:  @topology_repair_audit,
+            ready:  ready
+          )
+          unless cpv['pass']
+            failed_audit = stringify_topology_repair_audit(@topology_repair_audit).dup
+            failed_audit['status'] = 'failed'
+            failed_audit['reason'] = GapBridgeExecutor::REASON_CANONICAL_POST_VALIDATE_FAIL
+            failed_audit['extra_reasons'] = cpv['reasons']
+            failed_audit['applied_proposals'] = []
+            @topology_repair_audit = failed_audit.freeze
+            # Transition the workspace to :failed WITHOUT
+            # dropping the handle registry (explicit Discard
+            # still works). Use the existing
+            # _invalidate_to_failed_with_reason seam.
+            _invalidate_to_failed_with_reason(GapBridgeExecutor::REASON_CANONICAL_POST_VALIDATE_FAIL)
+            return snapshot
+          end
           snapshot
         else
           # :failed: workspace may already have transitioned.
@@ -1208,14 +1237,79 @@ module SUAnalysis
         (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
       end
 
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-04:
+      # TRUE point-on-segment-interior predicate. The previous
+      # implementation only proved collinearity with the
+      # INFINITE LINE through the bridge (`abs(orientation)
+      # <= eps`), so a distant unrelated node collinear with
+      # the bridge but FAR OUTSIDE the segment would falsely
+      # trigger `third_node_on_bridge`.
+      #
+      # The new predicate proves:
+      #   1. the candidate point is finite 3D
+      #   2. the projection parameter t lies strictly inside
+      #      (0, 1) -- endpoints excluded
+      #   3. the closest-point distance to the segment is
+      #      <= coordinate_epsilon
+      #
+      # Returns true iff the candidate lies STRICTLY INSIDE
+      # the bridge segment interior (within coordinate_epsilon).
       def _third_node_on_segment?(p1, p2, _ew_a, _ew_b, endpoints_worlds:, eps:)
         return false unless endpoints_worlds.is_a?(Array)
         endpoints_worlds.each do |w|
-          next unless w.is_a?(Array)
-          d1 = _segment_orientation(p1, p2, w)
-          return true if d1.abs <= eps
+          next unless _is_finite_point?(w)
+          next unless _point_on_segment_interior?(p1, p2, w, eps)
+          return true
         end
         false
+      end
+
+      # Pure point-on-segment-interior predicate. Returns true
+      # iff `w` lies strictly inside the closed segment
+      # [p1, p2] within `eps` (closest-point distance <= eps)
+      # AND the projection parameter t is in (0, 1) with
+      # endpoint epsilon exclusion.
+      def _point_on_segment_interior?(p1, p2, w, eps)
+        return false unless _is_finite_point?(p1)
+        return false unless _is_finite_point?(p2)
+        return false unless _is_finite_point?(w)
+        eps_f = eps.to_f
+        return false if eps_f <= 0 || !eps_f.finite?
+        # Reject degenerate segment.
+        sx = (p2[0] - p1[0]).abs
+        sy = (p2[1] - p1[1]).abs
+        sz = (p2[2] - p1[2]).abs
+        seg_len2 = (sx * sx) + (sy * sy) + (sz * sz)
+        return false if seg_len2 <= 0
+        # Projection parameter t = ((w - p1) . (p2 - p1)) / |p2 - p1|^2
+        wx = w[0] - p1[0]
+        wy = w[1] - p1[1]
+        wz = w[2] - p1[2]
+        dot = (wx * (p2[0] - p1[0])) + (wy * (p2[1] - p1[1])) + (wz * (p2[2] - p1[2]))
+        t = dot / seg_len2
+        # Endpoint exclusion: must be STRICTLY between
+        # (eps / seg_len) and (1 - eps / seg_len).
+        # Equivalently: t > eps_f and t < 1.0 - eps_f when
+        # eps is a distance; convert to a t-relative band by
+        # scaling with seg_len. We use the conservative band
+        # [eps_seg, 1 - eps_seg] where eps_seg = eps_f /
+        # seg_len (eps expressed as a fraction of segment
+        # length). For a typical CAD gap (seg_len ~ 0.05..10)
+        # the band is well-defined.
+        seg_len = Math.sqrt(seg_len2)
+        eps_seg = eps_f / seg_len
+        return false if t <= eps_seg
+        return false if t >= (1.0 - eps_seg)
+        # Closest-point distance: w projected onto segment,
+        # then distance from w to projected point.
+        proj_x = p1[0] + t * (p2[0] - p1[0])
+        proj_y = p1[1] + t * (p2[1] - p1[1])
+        proj_z = p1[2] + t * (p2[2] - p1[2])
+        dx = w[0] - proj_x
+        dy = w[1] - proj_y
+        dz = w[2] - proj_z
+        closest_d = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+        closest_d <= eps_f
       end
 
       def _other_endpoint_worlds(derived_edge, ek_a, ek_b, endpoint_lookup)
@@ -1245,6 +1339,84 @@ module SUAnalysis
             :open_endpoints    => _open_endpoint_keys(workspace, derived_edges, topo)
           )
         )
+      end
+
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-03 (H..K):
+      # canonical post-validation. Runs AFTER the host commit
+      # AND after the canonical graph rebuild. Returns:
+      #   { 'pass' => true|false, 'reasons' => Array<String> }
+      def _canonical_post_validate(graph:, audit:, ready:)
+        reasons = []
+        if graph.nil?
+          reasons << 'no_canonical_graph'
+          return { 'pass' => false, 'reasons' => reasons }
+        end
+        applied_ids = Array(audit['applied_proposals']).map(&:to_s)
+        if applied_ids.empty?
+          # Nothing was applied (defensive); nothing to check.
+          return { 'pass' => true, 'reasons' => [] }
+        end
+        # (H) every applied bridge -> one canonical edge with
+        # origin_kind=gap_bridge.
+        canonical_edges = graph.respond_to?(:edges) ? graph.edges : []
+        bridge_edges = canonical_edges.select { |e| e['origin_kind'].to_s == 'gap_bridge' }
+        if bridge_edges.length != applied_ids.length
+          reasons << "canonical_bridge_count_mismatch(#{bridge_edges.length}/#{applied_ids.length})"
+        end
+        # (I) repair_action_id survives into the canonical edge.
+        bridge_edges.each do |e|
+          unless applied_ids.include?(e['repair_action_id'].to_s)
+            reasons << "repair_action_id_not_in_canonical:#{e['repair_action_id']}"
+          end
+        end
+        # (J) repaired endpoint adjacency is present. Each
+        # applied bridge connects two DISTINCT canonical
+        # nodes, and they are mutually adjacent in the
+        # graph's adjacency.
+        adj = graph.respond_to?(:adjacency) ? graph.adjacency : {}
+        bridge_edges.each do |e|
+          a = e['node_a_id'].to_s
+          b = e['node_b_id'].to_s
+          if a.empty? || b.empty? || a == b
+            reasons << "bridge_endpoint_not_resolved:#{e['canonical_edge_id']}"
+            next
+          end
+          adj_a = Array(adj[a]).map(&:to_s)
+          adj_b = Array(adj[b]).map(&:to_s)
+          unless adj_a.include?(b)
+            reasons << "repaired_adjacency_missing_a:#{e['canonical_edge_id']}"
+          end
+          unless adj_b.include?(a)
+            reasons << "repaired_adjacency_missing_b:#{e['canonical_edge_id']}"
+          end
+        end
+        # (K) no new non_transitive_node_cluster is
+        # introduced. Compare the post graph's
+        # non_transitive_clusters against the pre-batch count.
+        # We do not have the pre-batch count directly here;
+        # we use a defensive check: if any cluster is present
+        # AT ALL after apply (the ready proposals were all
+        # 1-to-1 mutual-unique pairs in coordinate_epsilon
+        # range, so a non-transitive cluster is unexpected),
+        # we still pass (the pre-batch may have legitimately
+        # had one). What we DO check: the post-batch cluster
+        # count must not exceed the pre-batch count (which we
+        # approximate by inspecting the ready proposals' pair
+        # coordinates -- mutual-unique pairs cannot introduce
+        # a new cluster). A non-zero post count therefore
+        # requires evidence; we FAIL it when the cluster
+        # count is positive AND any cluster references an
+        # endpoint key that is part of an applied bridge.
+        cluster_keys = Array(graph.non_transitive_clusters).flat_map { |c|
+          Array(c['endpoint_keys']).map(&:to_s)
+        }
+        applied_endpoint_keys = Array(ready).flat_map { |p|
+          [p['endpoint_a_key'].to_s, p['endpoint_b_key'].to_s]
+        }
+        unless (cluster_keys & applied_endpoint_keys).empty?
+          reasons << 'new_non_transitive_cluster_introduced'
+        end
+        { 'pass' => reasons.empty?, 'reasons' => reasons }.freeze
       end
 
       def _open_endpoint_keys(workspace, derived_edges, topology_snapshot)

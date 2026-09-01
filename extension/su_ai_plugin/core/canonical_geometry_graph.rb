@@ -79,13 +79,27 @@ module SUAnalysis
         @source_snapshot_id          = source_snapshot_id.to_s
         @execution_config_digest     = execution_config_digest.to_s
         @workspace_id                = workspace_id.to_s
+        # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07:
+        # collapse per-endpoint canonical_node records into
+        # ONE LOGICAL NODE per canonical_node_id before
+        # publication. The internal endpoint-membership data
+        # is preserved on each logical node as sorted
+        # endpoint_keys + sorted derived_edge_ids + sorted
+        # source_occurrence_ids.
+        collapsed_nodes              = _collapse_nodes_by_id(Array(nodes))
         # Sort nodes + edges by deterministic IDs so the
         # digest is stable.
-        @nodes                       = _sort_nodes(nodes)
+        @nodes                       = _sort_nodes(collapsed_nodes)
         @edges                       = _sort_edges(edges)
         @adjacency                   = _freeze_adjacency(adjacency)
         @unresolved_topology_issues  = Array(unresolved_topology_issues).map(&:to_s).freeze
-        @metrics                     = (metrics || {}).each_with_object({}) { |(k, v), h| h[k.to_s] = v }.freeze
+        # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07:
+        # canonical_node_count in the published metrics now
+        # reflects the UNIQUE LOGICAL NODE count (not the
+        # per-endpoint record count from the builder). This
+        # is the metric downstream consumers (V1.8) will
+        # read.
+        @metrics                     = _finalize_metrics(metrics, collapsed_nodes, edges).freeze
         @non_transitive_clusters     = Array(non_transitive_clusters).freeze
         @open_endpoints              = Array(open_endpoints).map(&:to_s).sort.freeze
         @tolerance_digest            = tolerance_digest.to_s.freeze
@@ -350,6 +364,18 @@ module SUAnalysis
             'derived_edge_id'    => did,
             'source_occurrence_id' => (rec.respond_to?(:source_occurrence_ids) ?
                                           Array(rec.source_occurrence_ids).first : nil),
+            # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-06:
+            # PLURAL source_occurrence_ids provenance. For a
+            # gap_bridge, this contains the COMPLETE support
+            # union from both incident sides (the workspace
+            # record already carries both incident source
+            # occurrence IDs in `source_occurrence_ids`). The
+            # singular `source_occurrence_id` is kept for
+            # backwards compatibility with existing consumers;
+            # V1.8 authority is the plural field.
+            'source_occurrence_ids' => _normalize_occurrence_ids(
+              rec.respond_to?(:source_occurrence_ids) ? rec.source_occurrence_ids : nil
+            ),
             'repair_action_id'   => repair_action_id,
             'world_endpoints'    => [[s[0], s[1], s[2]], [e[0], e[1], e[2]]],
             'layer_name'         => (gs['layer'] if gs.is_a?(Hash)) || nil,
@@ -377,6 +403,15 @@ module SUAnalysis
         else
           workspace_origin.to_s
         end
+      end
+
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-06:
+      # normalize source occurrence IDs to a deterministic
+      # sorted/uniq String Array for the plural
+      # `source_occurrence_ids` field. Nil / empty inputs
+      # yield an empty Array (no nil entries leak downstream).
+      def self._normalize_occurrence_ids(values)
+        Array(values).map { |v| v.nil? ? '' : v.to_s }.reject { |s| s.empty? }.uniq.sort.freeze
       end
 
       # Resolve a bridge-edge endpoint to its canonical node id.
@@ -434,10 +469,85 @@ module SUAnalysis
 
       # ---- instance helpers ----
 
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07:
+      # collapse per-endpoint canonical_node records into ONE
+      # LOGICAL NODE per canonical_node_id. The internal
+      # endpoint-membership data is preserved on the logical
+      # node as sorted endpoint_keys + sorted derived_edge_ids
+      # + sorted source_occurrence_ids. Representative world
+      # coordinate = the member with the lex-smallest
+      # endpoint_key (deterministic ACTUAL member coordinate;
+      # no averaging).
+      def _collapse_nodes_by_id(nodes)
+        grouped = {}
+        Array(nodes).each do |n|
+          h = n.is_a?(Hash) ? n : (n.respond_to?(:to_h) ? n.to_h : {})
+          cid = h['canonical_node_id'].to_s
+          next if cid.empty?
+          grouped[cid] ||= {
+            'canonical_node_id'    => cid,
+            'endpoint_keys'        => [],
+            'derived_edge_ids'     => [],
+            'source_occurrence_ids' => [],
+            'layer_names'          => [],
+            'world_coordinates'    => [],
+            'resolved_clique'      => h['resolved_clique'],
+            'coordinate_epsilon'   => h['coordinate_epsilon']
+          }
+          grouped[cid]['endpoint_keys'] << h['endpoint_key'].to_s
+          grouped[cid]['derived_edge_ids'] << h['derived_edge_id'].to_s
+          sid = h['source_occurrence_id']
+          grouped[cid]['source_occurrence_ids'] << sid.to_s if sid && !sid.to_s.empty?
+          ln = h['layer_name']
+          grouped[cid]['layer_names'] << ln.to_s if ln && !ln.to_s.empty?
+          wc = h['world_coordinate']
+          grouped[cid]['world_coordinates'] << wc.dup if wc.is_a?(Array)
+        end
+        # Build the final logical node records.
+        logical = grouped.values.map do |g|
+          sorted_eks = g['endpoint_keys'].uniq.sort
+          sorted_dids = g['derived_edge_ids'].uniq.sort
+          sorted_sids = g['source_occurrence_ids'].uniq.sort
+          sorted_layers = g['layer_names'].uniq.sort
+          # Representative world coordinate = member with
+          # lex-smallest endpoint_key. No averaging.
+          members = g['world_coordinates'].zip(sorted_eks).sort_by { |_wc, ek| ek.to_s }
+          rep_wc = members.first ? members.first.first : nil
+          {
+            'canonical_node_id'      => g['canonical_node_id'],
+            'endpoint_keys'          => sorted_eks,
+            'derived_edge_ids'       => sorted_dids,
+            'source_occurrence_ids'  => sorted_sids,
+            'layer_names'            => sorted_layers,
+            'world_coordinate'       => (rep_wc.is_a?(Array) ? rep_wc.dup : nil),
+            'resolved_clique'        => g['resolved_clique'],
+            'coordinate_epsilon'     => g['coordinate_epsilon'],
+            'membership_count'       => sorted_eks.length
+          }.freeze
+        end
+        logical
+      end
+
       def _sort_nodes(nodes)
         Array(nodes).map { |n|
           n.is_a?(Hash) ? n : (n.respond_to?(:to_h) ? n.to_h : {})
         }.sort_by { |n| n['canonical_node_id'].to_s }
+      end
+
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07:
+      # finalize the published metrics. Preserve caller-supplied
+      # values, but overwrite `canonical_node_count` with the
+      # UNIQUE LOGICAL NODE count from the collapsed nodes
+      # (NOT the per-endpoint record count from the builder).
+      # Also add `canonical_edge_count` for downstream
+      # convenience (consumers should not need to count
+      # edges.length themselves).
+      def _finalize_metrics(supplied_metrics, collapsed_nodes, edges)
+        merged = {}
+        (supplied_metrics || {}).each { |k, v| merged[k.to_s] = v }
+        merged['canonical_node_count'] = collapsed_nodes.length
+        merged['canonical_edge_count'] = Array(edges).length
+        merged
       end
 
       def _sort_edges(edges)
@@ -464,11 +574,21 @@ module SUAnalysis
 
       def _compute_digest
         # Deterministic content hash. Stable for an unchanged
-        # canonical derivation.
+        # canonical derivation. After SR-07 the `nodes`
+        # collection is a per-canonical_node_id logical
+        # representation (each entry carries endpoint_keys +
+        # membership_count + a representative world_coordinate).
         canonical_lines = []
-        nodes.each { |n| canonical_lines << "N|#{n['canonical_node_id']}|#{n['resolved_clique'] ? 1 : 0}|#{n['endpoint_key']}|" +
-                                          sprintf('%.10f|%.10f|%.10f', n['world_coordinate'][0], n['world_coordinate'][1], n['world_coordinate'][2]) }
-        edges.each { |e| canonical_lines << "E|#{e['canonical_edge_id']}|#{e['origin_kind']}|#{e['node_a_id']}|#{e['node_b_id']}|#{e['derived_edge_id']}|#{e['repair_action_id']}" }
+        nodes.each do |n|
+          wc = n['world_coordinate']
+          coord_str = if wc.is_a?(Array) && wc.length == 3
+                        sprintf('%.10f|%.10f|%.10f', wc[0], wc[1], wc[2])
+                      else
+                        'none'
+                      end
+          canonical_lines << "N|#{n['canonical_node_id']}|#{n['resolved_clique'] ? 1 : 0}|#{Array(n['endpoint_keys']).join(',')}|#{n['membership_count']}|#{coord_str}"
+        end
+        edges.each { |e| canonical_lines << "E|#{e['canonical_edge_id']}|#{e['origin_kind']}|#{e['node_a_id']}|#{e['node_b_id']}|#{e['derived_edge_id']}|#{e['repair_action_id']}|#{Array(e['source_occurrence_ids']).join(',')}" }
         adj_lines = adjacency.sort.map { |k, vs| "A|#{k}|#{vs.join(',')}" }
         unresolved_lines = unresolved_topology_issues.sort.map { |x| "U|#{x}" }
         cl_lines = Array(non_transitive_clusters).map { |c| "C|#{c['cluster_id']}|#{Array(c['endpoint_keys']).join('|')}" }

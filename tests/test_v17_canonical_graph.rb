@@ -1,8 +1,8 @@
 #
-# tests/test_v17_canonical_graph.rb — V1.7 canonical topology
+# tests/test_v17_canonical_graph.rb 鈥?V1.7 canonical topology
 # tests (post-repair graph verification) + lifecycle tests.
 #
-# Per frozen V1.7 Blueprint §18.5 + §18.6:
+# Per frozen V1.7 Blueprint 搂18.5 + 搂18.6:
 #
 #   T1 bridge becomes canonical edge with origin_kind=gap_bridge.
 #   T2 bridge carries repair/source-support provenance.
@@ -20,7 +20,7 @@
 #      -> existing host-consistency path safe.
 #   L2 explicit Discard removes repair group + graph state.
 #   L3 dialog close auto-discard removes repair group + graph state.
-#   L4 reopen begins clean 处理工作区.
+#   L4 reopen begins clean 澶勭悊宸ヤ綔鍖?
 #
 
 $LOAD_PATH.unshift(File.expand_path('stubs', __dir__))
@@ -299,8 +299,7 @@ test 'V17-T4: after endpoint_bridge, the canonical graph contains a cycle-capabl
   # Triangle-with-gap workspace + apply one bridge.
   # After apply, the canonical graph contains the bridge edge,
   # and the two formerly-open nodes are connected through that
-  # bridge. V1.7 does NOT build a Loop/Region object —
-  # V1.8 will consume the canonical graph to do that.
+  # bridge. V1.7 does NOT build a Loop/Region object 鈥?  # V1.8 will consume the canonical graph to do that.
   adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
   ws = v17_build_triangle_workspace(adapter)
   tol = Tolerance.default
@@ -361,10 +360,10 @@ test 'V17-T4: after endpoint_bridge, the canonical graph contains a cycle-capabl
                   "T4: formerly-open node A's adjacency must include B after the bridge"
   assert_includes b_neighbors, a_node,
                   "T4: formerly-open node B's adjacency must include A after the bridge"
-  # T4 assertion 3: the graph is "cycle-capable" — for V1.8
+  # T4 assertion 3: the graph is "cycle-capable" 鈥?for V1.8
   # to construct a closed loop from this input, the triangle
   # nodes must form a path that closes via the new bridge. We
-  # don't construct the loop object here (Blueprint §15.3
+  # don't construct the loop object here (Blueprint 搂15.3
   # V1.8 boundary); we only verify the topology supports it.
   # The simplest invariant: from any of the 3 triangle
   # T4 assertion 4: V1.7 does NOT build a V1.8 Loop/Region.
@@ -553,7 +552,7 @@ def v17_minimal_result_for_workspace_unused(ws); end
 
 # ---- L2: explicit Discard removes repair group + graph state ----
 
-test 'V17-L2: explicit Discard clears the V1.7 repair-group bridges' do
+test 'V17-L2: explicit Discard removes the V1.7 bridge entity from the workspace' do
   FakeUI.install!
   Loader.register!
   WorkingModeRunner.reset_for_tests
@@ -576,22 +575,37 @@ test 'V17-L2: explicit Discard clears the V1.7 repair-group bridges' do
     workspace: ws, adapter: adapter, proposals: proposals,
     tolerance: Tolerance.default
   )
+  assert_equal :applied, result['status'],
+               "L2 precondition: apply must succeed; got #{result['audit'].inspect}"
   post_apply = result['post_workspace']
-  refute_empty adapter.repair_group_bridges
+  # SR-01: ONE workspace-owned bridge entity (NOT a separate
+  # repair-group edge).
+  bridges = post_apply.entities.select { |rec|
+    rec.respond_to?(:geometry_summary) && rec.geometry_summary.is_a?(Hash) &&
+      rec.geometry_summary['origin_kind'].to_s == 'generated_gap_bridge'
+  }
+  assert_equal 1, bridges.length,
+               'L2: exactly ONE workspace-owned bridge entity after apply'
   # Discard.
   discarded = post_apply.discard
   assert_equal :discarded, discarded.state
-  # The adapter-side repair group bridges are also cleared by
-  # _discard_if_present (called inside the next prepare / discard).
-  adapter.dispose_repair_group_bridges
-  assert_empty adapter.repair_group_bridges
+  # The workspace's bridge handle was disposed via the
+  # private handle_registry; the discarded workspace has
+  # zero entities.
+  assert_empty discarded.entities,
+               'L2: discard must empty the workspace entity inventory'
+  # The adapter's bridge host handle was also disposed.
+  bridge_host = post_apply.handle_for(bridges.first.derived_id)
+  refute_nil bridge_host
+  assert_equal false, bridge_host.valid?,
+               'L2: the bridge host handle must be invalid after discard'
 ensure
   FakeUI.uninstall!
 end
 
-# ---- L3: dialog close auto-discard removes repair group + graph state ----
+# ---- L3: dialog close auto-discard removes the V1.7 bridge ----
 
-test 'V17-L3: dialog close auto-discard removes repair group bridges (close-time cleanup)' do
+test 'V17-L3: dialog close auto-discard removes the V1.7 bridge entity (close-time cleanup)' do
   FakeUI.install!
   SUAnalysis::Extension::Loader.register!
   WorkingModeRunner.reset_for_tests
@@ -614,16 +628,29 @@ test 'V17-L3: dialog close auto-discard removes repair group bridges (close-time
     workspace: ws, adapter: adapter, proposals: proposals,
     tolerance: Tolerance.default
   )
-  refute_empty adapter.repair_group_bridges
-  # Manually trigger close-time cleanup path.
-  adapter.dispose_repair_group_bridges
-  assert_empty adapter.repair_group_bridges
+  assert_equal :applied, result['status'],
+               "L3 precondition: apply must succeed; got #{result['audit'].inspect}"
+  post_apply = result['post_workspace']
+  bridges = post_apply.entities.select { |rec|
+    rec.respond_to?(:geometry_summary) && rec.geometry_summary.is_a?(Hash) &&
+      rec.geometry_summary['origin_kind'].to_s == 'generated_gap_bridge'
+  }
+  assert_equal 1, bridges.length,
+               'L3: exactly ONE workspace-owned bridge entity after apply'
+  bridge_host = post_apply.handle_for(bridges.first.derived_id)
+  # Close-time cleanup = explicit discard path. After
+  # discard, the workspace is :discarded and the bridge
+  # handle is invalid.
+  discarded = post_apply.discard
+  assert_equal :discarded, discarded.state
+  assert_equal false, bridge_host.valid?,
+               'L3: the bridge host handle must be invalid after close-time discard'
 ensure
   FakeUI.uninstall!
   WorkingModeRunner.reset_for_tests
 end
 
-# ---- L4: reopen begins clean 处理工作区 ----
+# ---- L4: reopen begins clean 澶勭悊宸ヤ綔鍖?----
 
 test 'V17-L4: after discard + reset, the runner state is clean (treated as discarded for next open)' do
   FakeUI.install!

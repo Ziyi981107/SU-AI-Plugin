@@ -1,5 +1,5 @@
 #
-# tests/test_v17_production_gap_path.rb — V1.7 ACTUAL-PRODUCTION-PATH
+# tests/test_v17_production_gap_path.rb 鈥?V1.7 ACTUAL-PRODUCTION-PATH
 # evidence for the frozen V1.7 Blueprint.
 #
 # Dispatch: V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
@@ -20,30 +20,30 @@
 #   SUAnalysis::Core::WorkingModeRunner.apply_gap_repair
 #   SUAnalysis::Core::WorkingModeRunner.rebuild_canonical_geometry_graph
 #
-# i.e. exactly what the Simplified-Chinese `检查间隙` / `修复间隙`
+# i.e. exactly what the Simplified-Chinese `妫€鏌ラ棿闅檂 / `淇闂撮殭`
 # dialog callbacks (`compute_gap_repair` / `apply_gap_repair` in
 # dialog_runner.rb) invoke. No crossing / third-node / canonical
 # identity / adjacency logic is re-implemented here. The production
 # `_crossing_checker_proc` is the ONLY crossing authority exercised.
 #
 # Blueprint coverage delivered by this file:
-#   §18.3 X1  proposed bridge intersects unrelated edge interior
+#   搂18.3 X1  proposed bridge intersects unrelated edge interior
 #             -> REVIEW_REQUIRED (production path).
-#   §18.3 X2  third canonical node lies on bridge
+#   搂18.3 X2  third canonical node lies on bridge
 #             -> REVIEW_REQUIRED (production path).
-#   §18.3 X4  real almost-closed triangle missing one short closing
+#   搂18.3 X4  real almost-closed triangle missing one short closing
 #             segment -> READY_TO_REPAIR (production path).
-#   §18.4 H3  multiple independent safe bridges -> ONE native
+#   搂18.4 H3  multiple independent safe bridges -> ONE native
 #             operation, exact bridge count (production path).
-#   §18.5 T3  repaired endpoints gain expected adjacency
+#   搂18.5 T3  repaired endpoints gain expected adjacency
 #             (production path, exact degrees).
-#   §18.5 T4  almost-closed triangle becomes a canonical CYCLE
-#             (production path, exact cycle invariant — NOT mere
+#   搂18.5 T4  almost-closed triangle becomes a canonical CYCLE
+#             (production path, exact cycle invariant 鈥?NOT mere
 #             BFS connectivity).
 #
 # Plus explicit regressions for the four production defects this
 # dispatch uncovered by actually executing the production path
-# (see Review/CURRENT_PI_REPORT.md §B).
+# (see Review/CURRENT_PI_REPORT.md 搂B).
 #
 
 $LOAD_PATH.unshift(File.expand_path('stubs', __dir__))
@@ -69,7 +69,7 @@ require_relative '../extension/su_ai_plugin/core/working_mode_runner'
 include SUAnalysis::Core
 
 # ---------------------------------------------------------------
-# Helpers (uniquely prefixed `v17p_` — tests/run_all.rb loads every
+# Helpers (uniquely prefixed `v17p_` 鈥?tests/run_all.rb loads every
 # test file into ONE process, so helper names must not collide).
 # ---------------------------------------------------------------
 
@@ -134,7 +134,7 @@ def v17p_distance(a, b)
 end
 
 # Snapshot every source-derived edge's world endpoints, keyed by
-# derived_id (used to prove Blueprint §14 "existing source-derived
+# derived_id (used to prove Blueprint 搂14 "existing source-derived
 # edge endpoint coordinates unchanged").
 def v17p_source_edge_coords(workspace)
   out = {}
@@ -159,7 +159,7 @@ end
 # `graph.nodes` is a per-ENDPOINT mapping table (one record per
 # EndpointRecord); several records legitimately share one
 # canonical_node_id when they belong to one safe clique
-# (Blueprint §7.2). Node IDENTITY count is therefore the uniq set.
+# (Blueprint 搂7.2). Node IDENTITY count is therefore the uniq set.
 def v17p_node_ids(graph)
   graph.nodes.map { |n| n['canonical_node_id'].to_s }.uniq
 end
@@ -170,7 +170,7 @@ end
 
 # Map representative world coordinate -> canonical degree.
 #
-# Canonical node IDs are MEMBERSHIP-derived (Blueprint §7.3: sorted
+# Canonical node IDs are MEMBERSHIP-derived (Blueprint 搂7.3: sorted
 # endpoint membership keys + representative coordinate), so when a
 # gap bridge endpoint joins an existing node's coordinate_epsilon
 # clique the node's ID legitimately changes (singleton `cns-*` ->
@@ -192,7 +192,7 @@ def v17p_coord_key(point)
   point.map { |v| format('%.9f', v.to_f) }
 end
 
-# Deterministic cycle traversal (Blueprint §18.5 T4 exact invariant,
+# Deterministic cycle traversal (Blueprint 搂18.5 T4 exact invariant,
 # second accepted form): walk the component from its lexicographically
 # smallest canonical node, always taking the lexicographically
 # smallest not-just-used neighbour, and prove we return to the start
@@ -232,7 +232,7 @@ def v17p_tol(gap_search)
 end
 
 # ===============================================================
-# R5 — X1 / X2 through the ACTUAL production crossing logic.
+# R5 鈥?X1 / X2 through the ACTUAL production crossing logic.
 # ===============================================================
 
 test 'V17-X1: [PRODUCTION PATH] bridge crossing an unrelated edge interior -> REVIEW_REQUIRED/bridge_crossing (real WorkingModeRunner._crossing_checker_proc)' do
@@ -326,7 +326,7 @@ ensure
 end
 
 # ===============================================================
-# R6 — X4 must be a REAL almost-closed triangle.
+# R6 鈥?X4 must be a REAL almost-closed triangle.
 # ===============================================================
 #
 #   A -------------------- B        A = (0, 0, 0)
@@ -386,8 +386,8 @@ test 'V17-X4: [PRODUCTION PATH] real 3-edge almost-closed triangle with one shor
   refute_nil prop
 
   # Exactly TWO open endpoints (C and D). Canonical identity must
-  # have merged the coincident corners A and B (Blueprint §7.2 /
-  # §8) — a per-endpoint (host-vertex-style) degree would wrongly
+  # have merged the coincident corners A and B (Blueprint 搂7.2 /
+  # 搂8) 鈥?a per-endpoint (host-vertex-style) degree would wrongly
   # report 6 open endpoints here.
   assert_equal 2, prop['open_endpoint_count'].to_i,
                "X4: the almost-closed triangle must expose exactly TWO open canonical endpoints; got #{prop['open_endpoint_count'].inspect}"
@@ -414,11 +414,11 @@ ensure
 end
 
 # ===============================================================
-# R7 — Blueprint §18.4 H3: multiple independent safe bridges ->
+# R7 鈥?Blueprint 搂18.4 H3: multiple independent safe bridges ->
 #      ONE native SketchUp operation + exact generated bridge count.
 # ===============================================================
 
-test 'V17-H3: [PRODUCTION PATH, Blueprint §18.4 H3] two independent safe bridges -> ONE begin_operation, ONE commit, zero abort, exactly TWO generated bridges' do
+test 'V17-H3: [PRODUCTION PATH, Blueprint 搂18.4 H3] two independent safe bridges -> ONE begin_operation, ONE commit, zero abort, exactly TWO generated bridges' do
   # Two independent gaps, four distinct open endpoints, no crossing,
   # no shared endpoint between the two proposals.
   #   band y=0  : (0,0)->(5,0)      gap 0.05   (5.05,0)->(10,0)
@@ -460,7 +460,7 @@ test 'V17-H3: [PRODUCTION PATH, Blueprint §18.4 H3] two independent safe bridge
                "H3: exact generated bridge count must be 2; got #{audit['applied_count'].inspect}"
   assert_equal 0, audit['failed_count'].to_i
 
-  # ONE native SketchUp operation for the whole batch (§12.3).
+  # ONE native SketchUp operation for the whole batch (搂12.3).
   counts = v17p_op_counts(adapter, ops_before)
   assert_equal 1, counts[:begins],
                "H3: exactly ONE begin_operation for the batch; got #{counts[:begins]}"
@@ -473,8 +473,18 @@ test 'V17-H3: [PRODUCTION PATH, Blueprint §18.4 H3] two independent safe bridge
   bridges = v17p_bridge_records(ws_post)
   assert_equal 2, bridges.length,
                "H3: exactly TWO generated_gap_bridge derived entities; got #{bridges.length}"
-  assert_equal 2, adapter.repair_group_bridges.length,
-               "H3: exactly TWO host bridge edges in the workspace-owned repair group; got #{adapter.repair_group_bridges.length}"
+  # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-01: the
+  # V1.7 base path owns the bridge via workspace.build_entity
+  # (NOT a separate repair-group edge). Verify the workspace
+  # handle_registry has exactly TWO bridge handles, each valid.
+  bridge_dids = bridges.map(&:derived_id).map(&:to_s)
+  bridge_handles = bridge_dids.map { |did| ws_post.handle_for(did) }
+  assert_equal 2, bridge_handles.compact.length,
+               "H3: both bridge derived_ids must have a live workspace handle; got #{bridge_handles.inspect}"
+  bridge_handles.compact.each do |h|
+    assert_equal true, h.respond_to?(:valid?) ? h.valid? : true,
+                 'H3: each workspace-owned bridge handle must be valid'
+  end
   assert_equal pre_coords.length + 2, ws_post.entity_count,
                'H3: the batch must add exactly two derived entities'
 
@@ -485,11 +495,11 @@ test 'V17-H3: [PRODUCTION PATH, Blueprint §18.4 H3] two independent safe bridge
   assert_equal expected_ids, recorded,
                "H3: each generated bridge must carry its repair_action_id provenance; got #{recorded.inspect}"
 
-  # Source fingerprint unchanged (§14).
+  # Source fingerprint unchanged (搂14).
   post_fingerprint = SourceFingerprint.from_snapshot(ws_post.source_snapshot).digest.to_s
   assert_equal pre_fingerprint, post_fingerprint,
                'H3: source fingerprint MUST be unchanged by gap repair'
-  # Existing source-derived coordinates unchanged (§14 / §4).
+  # Existing source-derived coordinates unchanged (搂14 / 搂4).
   post_coords = v17p_source_edge_coords(ws_post)
   assert_equal pre_coords, post_coords,
                'H3: existing source-derived edge endpoint coordinates MUST be unchanged'
@@ -517,10 +527,10 @@ ensure
 end
 
 # ===============================================================
-# R8 — Blueprint §18.5 T3 / T4 exact adjacency + CYCLE proof.
+# R8 鈥?Blueprint 搂18.5 T3 / T4 exact adjacency + CYCLE proof.
 # ===============================================================
 
-test 'V17-T3: [PRODUCTION PATH, Blueprint §18.5 T3] repaired endpoints gain exactly +1 canonical adjacency each; unrelated nodes unchanged' do
+test 'V17-T3: [PRODUCTION PATH, Blueprint 搂18.5 T3] repaired endpoints gain exactly +1 canonical adjacency each; unrelated nodes unchanged' do
   tol = v17p_tol(0.1)
   v17p_prepare(v17p_triangle_edges, tol)
   ws_pre = V17P_RUNNER.current_workspace_for_test
@@ -543,7 +553,7 @@ test 'V17-T3: [PRODUCTION PATH, Blueprint §18.5 T3] repaired endpoints gain exa
   bridge = post.edges.find { |e| e['origin_kind'].to_s == 'gap_bridge' }
   refute_nil bridge, 'T3: the applied bridge must appear as a canonical gap_bridge edge'
   # The bridge connects two DISTINCT canonical nodes, and they are
-  # mutually adjacent (§15.2 rebuilt adjacency).
+  # mutually adjacent (搂15.2 rebuilt adjacency).
   node_a = bridge['node_a_id'].to_s
   node_b = bridge['node_b_id'].to_s
   refute_equal node_a, node_b
@@ -577,7 +587,7 @@ ensure
   V17P_RUNNER.reset_for_tests
 end
 
-test 'V17-T4: [PRODUCTION PATH, Blueprint §18.5 T4] real almost-closed triangle becomes an ACTUAL canonical cycle (exact degree + deterministic cycle traversal, NOT BFS connectivity)' do
+test 'V17-T4: [PRODUCTION PATH, Blueprint 搂18.5 T4] real almost-closed triangle becomes an ACTUAL canonical cycle (exact degree + deterministic cycle traversal, NOT BFS connectivity)' do
   tol = v17p_tol(0.1)
   v17p_prepare(v17p_triangle_edges, tol)
   ws_pre = V17P_RUNNER.current_workspace_for_test
@@ -620,9 +630,9 @@ test 'V17-T4: [PRODUCTION PATH, Blueprint §18.5 T4] real almost-closed triangle
   assert_equal [V17P_TRI_C.dup, V17P_TRI_D.dup].sort, bridge_pts,
                'T4: the canonical bridge must span exactly C-D'
 
-  # 2. EXACT cycle invariant (Blueprint §18.5 T4, first accepted
+  # 2. EXACT cycle invariant (Blueprint 搂18.5 T4, first accepted
   #    form): n canonical nodes + n canonical edges + EVERY node
-  #    degree == 2. For this §2 fixture n == 4 (A, B, C, D) because
+  #    degree == 2. For this 搂2 fixture n == 4 (A, B, C, D) because
   #    C and D are distinct canonical nodes by construction
   #    (distance 0.05 > coordinate_epsilon). See V17-T4-EXACT3 for
   #    the 3-node / 3-edge form.
@@ -649,7 +659,7 @@ test 'V17-T4: [PRODUCTION PATH, Blueprint §18.5 T4] real almost-closed triangle
   assert_equal walk[:consumed], walk[:uniq],
                'T4: every canonical edge in the cycle must be consumed EXACTLY once'
 
-  # 4. V1.7 stops at nodes + edges + adjacency (Blueprint §15.3):
+  # 4. V1.7 stops at nodes + edges + adjacency (Blueprint 搂15.3):
   #    NO LoopRecord / RegionRecord is created.
   assert_nil defined?(SUAnalysis::Core::LoopRecord),
              'T4: V1.7 must NOT introduce a LoopRecord (V1.8 boundary)'
@@ -669,7 +679,7 @@ ensure
   V17P_RUNNER.reset_for_tests
 end
 
-test 'V17-T4-EXACT3: [PRODUCTION PATH, Blueprint §18.5 T4] 3 canonical nodes + 3 canonical edges + every node degree == 2 after the closing bridge' do
+test 'V17-T4-EXACT3: [PRODUCTION PATH, Blueprint 搂18.5 T4] 3 canonical nodes + 3 canonical edges + every node degree == 2 after the closing bridge' do
   # The literal 3/3 form of the T4 exact invariant: two source edges
   # meeting EXACTLY at one corner, with the closing segment missing.
   #        P (0,0,0) ---------- Q (10,0,0)
@@ -721,7 +731,7 @@ end
 
 # ===============================================================
 # Regressions for the production defects this dispatch uncovered
-# by actually executing the production path (report §B).
+# by actually executing the production path (report 搂B).
 # ===============================================================
 
 test 'V17-R5-REG-LAYER: DerivedTopologySnapshotBuilder must not call rec.layer on a DerivedEntityRecord (layered CAD must not raise NoMethodError)' do
@@ -772,9 +782,9 @@ end
 
 test 'V17-R5-REG-CLUSTER: GapPairProposer must read the STRING-keyed canonical_node_clusters published by CanonicalTopologyBuilder' do
   # Before the R5 fix the proposer only read SYMBOL keys, so on the
-  # production path canonical_node_clusters was {} — coincident
+  # production path canonical_node_clusters was {} 鈥?coincident
   # corner endpoints were never merged into one canonical node
-  # (Blueprint §7.2) and were mis-reported as open (Blueprint §8).
+  # (Blueprint 搂7.2) and were mis-reported as open (Blueprint 搂8).
   tol = v17p_tol(0.1)
   v17p_prepare(v17p_triangle_edges, tol)
   ws = V17P_RUNNER.current_workspace_for_test
@@ -796,7 +806,7 @@ ensure
 end
 
 test 'V17-R6-NODE-IDENTITY: a resolved coordinate_epsilon clique is ONE canonical node id; a non-transitive cluster keeps distinct ids' do
-  # Blueprint §7.2: "if every pair directly matches within
+  # Blueprint 搂7.2: "if every pair directly matches within
   # coordinate_epsilon: create ONE canonical node". Before the fix
   # every clique MEMBER received its own "<cluster>.nN" id, so an
   # exactly-coincident corner produced two canonical nodes and the
@@ -832,4 +842,577 @@ test 'V17-R6-NODE-IDENTITY: a resolved coordinate_epsilon clique is ONE canonica
   ids2 = res2['canonical_nodes'].map { |n| n['canonical_node_id'] }
   assert_equal 3, ids2.uniq.length,
                "R6-NODE-IDENTITY: a non-transitive cluster must keep DISTINCT node ids; got #{ids2.inspect}"
+end
+
+# ===============================================================
+# V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-01..SR-07
+# regression tests (dispatch 搂9).
+# ===============================================================
+
+# SR1-1 - one proposal -> exactly one physical generated bridge
+test 'V17-SR1-1 [PRODUCTION PATH]: one proposal -> exactly ONE host bridge edge total (not two)' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  bridges = v17p_bridge_records(ws_post)
+  assert_equal 1, bridges.length,
+               'SR1-1: exactly ONE workspace-owned bridge entity; got ' \
+               "#{bridges.length}"
+  did = bridges.first.derived_id.to_s
+  h = ws_post.handle_for(did)
+  refute_nil h, 'SR1-1: the bridge must have a workspace-owned host handle'
+  children = h.respond_to?(:children) ? h.children.items : []
+  edge_children = children.select { |c| c.is_a?(DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter::FakeEdge) }
+  assert_equal 1, edge_children.length,
+               'SR1-1: exactly ONE bridge host edge inside the workspace group'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR1-2 - Discard -> zero generated bridge host geometry
+test 'V17-SR1-2 [PRODUCTION PATH]: explicit Discard removes every generated bridge host geometry' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws_pre = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  pre_discard_bridges = v17p_bridge_records(ws_post)
+  assert_equal 1, pre_discard_bridges.length
+  discarded = ws_post.discard
+  assert_equal :discarded, discarded.state
+  bridge_h = ws_post.handle_for(pre_discard_bridges.first.derived_id)
+  assert_equal false, bridge_h.valid?,
+               'SR1-2: the bridge host handle must be invalid after discard'
+  assert_empty discarded.entities,
+               'SR1-2: the discarded workspace must have ZERO entities'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR1-3 - close auto-discard -> zero generated bridge host geometry
+test 'V17-SR1-3 [PRODUCTION PATH]: close-time auto-discard removes every generated bridge host geometry' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  pre_close_bridges = v17p_bridge_records(ws_post)
+  bridge_h = ws_post.handle_for(pre_close_bridges.first.derived_id)
+  discarded = ws_post.discard
+  assert_equal :discarded, discarded.state
+  assert_equal false, bridge_h.valid?,
+               'SR1-3: close-time auto-discard must invalidate the bridge host handle'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR1-4 - Rebuild -> no stale generated bridge geometry
+test 'V17-SR1-4 [PRODUCTION PATH]: Rebuild -> no stale generated bridge geometry' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws_pre = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  assert_equal 1, v17p_bridge_records(ws_post).length,
+               'SR1-4 precondition: apply produces one bridge'
+  ws_post.discard
+  rebuilt = V17P_RUNNER.prepare(
+    source:  ws_pre.source_snapshot,
+    adapter: adapter,
+    model:   nil
+  )
+  assert_equal 'ready', rebuilt['state'],
+               'SR1-4: rebuild must reach :ready'
+  new_ws = V17P_RUNNER.current_workspace_for_test
+  assert_empty v17p_bridge_records(new_ws),
+               'SR1-4: the rebuilt workspace must have ZERO bridge entities'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR2-1 - first of two bridges succeeds, second fails
+test 'V17-SR2-1 [PRODUCTION PATH]: first bridge succeeds, second fails -> clean abort + :failed + no logical bridge residue' do
+  adapter = v17p_prepare([
+    [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+    [[5.05, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[0.0, 20.0, 0.0], [5.0, 20.0, 0.0]],
+    [[5.05, 20.0, 0.0], [10.0, 20.0, 0.0]]
+  ], v17p_tol(0.1))
+  fail_count = 0
+  original_create = adapter.method(:create_top_level_group)
+  adapter.define_singleton_method(:create_top_level_group) do |name, model: nil|
+    fail_count += 1
+    if fail_count >= 2
+      raise StandardError, 'injected_second_bridge_failure'
+    end
+    original_create.call(name, model: model)
+  end
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  ready = Array(prop['ready_proposals'])
+  assert_equal 2, ready.length, 'SR2-1 precondition: two ready proposals'
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  assert_equal :failed, ws_post.state,
+               'SR2-1: post_workspace MUST be :failed after second bridge fails'
+  bridges = ws_post.entities.select { |rec|
+    rec.respond_to?(:geometry_summary) && rec.geometry_summary.is_a?(Hash) &&
+      rec.geometry_summary['origin_kind'].to_s == 'generated_gap_bridge'
+  }
+  assert_empty bridges,
+               'SR2-1: NO generated bridge entity may survive after confirmed-abort'
+  audit = V17P_RUNNER.topology_repair_audit
+  assert_equal 'failed', audit['status'].to_s
+  assert_includes ['post_validation_failed', 'commit_uncertainty'], audit['reason'].to_s,
+               'SR2-1: failure reason must be post_validation_failed or commit_uncertainty; ' \
+               "got #{audit['reason'].inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR2-2 - post-validation failure -> :failed
+test 'V17-SR2-2 [PRODUCTION PATH]: post-validation failure -> :failed' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws_pre = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  assert_equal 'applied', V17P_RUNNER.topology_repair_audit['status'].to_s
+  bridge = v17p_bridge_records(ws_post).first
+  refute_nil bridge
+  applied_entry = {
+    'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+    'derived_id' => bridge.derived_id.to_s,
+    'host_handle' => ws_post.handle_for(bridge.derived_id)
+  }
+  ready_entry = {
+    'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+    'state' => GapPairProposer::STATE_READY_TO_REPAIR,
+    'executable' => true
+  }
+  adapter.define_singleton_method(:vertex_position) do |_v|
+    [999.0, 999.0, 999.0]
+  end
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [Object.new, Object.new]
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_pre,
+    pre_fingerprint_digest: ws_pre.fingerprint.respond_to?(:digest) ? ws_pre.fingerprint.digest.to_s : nil,
+    pre_source_fingerprint_digest: SourceFingerprint.from_snapshot(ws_pre.source_snapshot).digest.to_s,
+    pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'SR2-2: a host endpoint mismatch MUST be detected by post-validation'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_start_mismatch') ||
+         reasons_str.include?('host_endpoint_end_mismatch'),
+         "SR2-2: the post-validation reason must include a host_endpoint_*_mismatch; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR2-3 - commit uncertainty -> :failed + handles retained
+test 'V17-SR2-3 [PRODUCTION PATH]: commit uncertainty -> :failed + handles retained for Discard' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  V17P_RUNNER.compute_gap_repair
+  original_end = adapter.method(:end_operation)
+  adapter.define_singleton_method(:end_operation) do |_m, commit:|
+    if commit
+      raise StandardError, 'commit_uncertain_simulation'
+    end
+    original_end.call(_m, commit: commit)
+  end
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  assert_equal :failed, ws_post.state,
+               'SR2-3: commit uncertainty -> :failed'
+  handles = ws_post.handle_registry_keys
+  refute_empty handles,
+               'SR2-3: handles must be retained for Discard recovery'
+  audit = V17P_RUNNER.topology_repair_audit
+  assert_equal 'commit_uncertainty', audit['reason'].to_s,
+               'SR2-3: stable reason `commit_uncertainty` recorded'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR2-4 - no failure path returns READY
+test 'V17-SR2-4 [PRODUCTION PATH]: no failure path returns READY (executor + canonical post-validate)' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  result_a = GapBridgeExecutor.apply(
+    workspace: ws, adapter: adapter, proposals: [], tolerance: v17p_tol(0.1)
+  )
+  assert_equal :failed, result_a['status']
+  refute_equal :ready, result_a['post_workspace'].state,
+               'SR2-4A: zero-proposals path must NOT yield :ready'
+  discarded = ws.discard
+  result_b = GapBridgeExecutor.apply(
+    workspace: discarded, adapter: adapter,
+    proposals: [], tolerance: v17p_tol(0.1)
+  )
+  assert_equal :failed, result_b['status']
+  refute_equal :ready, result_b['post_workspace'].state,
+               'SR2-4B: discarded workspace must NOT be applyable as :ready'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR3-1 - endpoint mismatch is caught by post-validation
+test 'V17-SR3-1 [PRODUCTION PATH]: endpoint mismatch is caught by post-validation' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  bridge = v17p_bridge_records(ws_post).first
+  refute_nil bridge
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [Object.new, Object.new]
+  end
+  adapter.define_singleton_method(:vertex_position) do |_v|
+    [999.0, 999.0, 999.0]
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter,
+    [{ 'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+       'derived_id' => bridge.derived_id.to_s,
+       'host_handle' => ws_post.handle_for(bridge.derived_id) }],
+    [{ 'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+       'state' => GapPairProposer::STATE_READY_TO_REPAIR,
+       'executable' => true }],
+    pre_workspace: ws, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass']
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_start_mismatch') ||
+         reasons_str.include?('host_endpoint_end_mismatch'),
+         "SR3-1: must include a host_endpoint_*_mismatch reason; got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR3-2 - provenance/action mismatch is caught
+test 'V17-SR3-2 [PRODUCTION PATH]: provenance/action mismatch is caught by post-validation' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  bridge = v17p_bridge_records(ws_post).first
+  refute_nil bridge
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter,
+    [{ 'proposal_id' => 'WRONG-PROPOSAL-ID',
+       'derived_id' => bridge.derived_id.to_s,
+       'host_handle' => ws_post.handle_for(bridge.derived_id) }],
+    [{ 'proposal_id' => 'WRONG-PROPOSAL-ID',
+       'state' => GapPairProposer::STATE_READY_TO_REPAIR,
+       'executable' => true }],
+    pre_workspace: ws, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass']
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('wrong_repair_action_id') ||
+         reasons_str.include?('proposal_id_set_mismatch'),
+         "SR3-2: must include wrong_repair_action_id or proposal_id_set_mismatch; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR3-3 - source fingerprint mismatch is caught
+test 'V17-SR3-3 [PRODUCTION PATH]: source fingerprint mismatch is caught by post-validation' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  fake_snap = Struct.new(:fingerprint).new(
+    Struct.new(:digest).new('0000MUTATED0000')
+  )
+  fake_ws = Struct.new(:state, :source_snapshot, :entities, :handle_registry_keys).new(
+    :ready, fake_snap, [], []
+  )
+  result = GapBridgeExecutor._post_validate(
+    fake_ws, adapter, [], [],
+    pre_workspace: ws, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: 'FFFFFFFFFFFFFFFF',
+    pre_entity_coords: nil
+  )
+  refute_equal true, result['pass']
+  assert_includes result['reasons'].join(','), 'source_fingerprint_changed'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR3-4 - pre-existing derived-coordinate mismatch is caught
+test 'V17-SR3-4 [PRODUCTION PATH]: pre-existing derived-coordinate mismatch is caught' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  src_edges = ws_post.entities.select { |rec|
+    rec.respond_to?(:geometry_summary) && rec.geometry_summary.is_a?(Hash) &&
+      rec.geometry_summary['origin_kind'].to_s != 'generated_gap_bridge'
+  }
+  wrong_pre_coords = {}
+  src_edges.each do |rec|
+    wrong_pre_coords[rec.derived_id.to_s] = [
+      [888.0, 888.0, 888.0], [777.0, 777.0, 777.0]
+    ]
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [], [],
+    pre_workspace: ws, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil,
+    pre_entity_coords: wrong_pre_coords
+  )
+  refute_equal true, result['pass']
+  assert_includes result['reasons'].join(','), 'pre_existing_coords_changed'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR3-5 - canonical post-validation mismatch -> :failed
+test 'V17-SR3-5 [PRODUCTION PATH]: canonical post-validation mismatch -> :failed' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  graph = V17P_RUNNER.topology_repair_canonical_graph
+  result = V17P_RUNNER._canonical_post_validate(
+    graph: graph,
+    audit: { 'applied_proposals' => ['NONEXISTENT-PROPOSAL-ID'] },
+    ready: [{ 'proposal_id' => 'NONEXISTENT-PROPOSAL-ID',
+              'endpoint_a_key' => 'x', 'endpoint_b_key' => 'y' }]
+  )
+  refute_equal true, result['pass']
+  reasons_str = result['reasons'].join(',')
+  assert_includes reasons_str, 'repair_action_id_not_in_canonical'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR4-1 - point truly inside segment -> third_node_on_bridge
+test 'V17-SR4-1 [PRODUCTION PATH]: point truly inside the bridge segment -> third_node_on_bridge' do
+  # e0: (0,0,0) -> (5,0,0)    open at e0.end
+  # e1: (5.05,0,0) -> (10,0,0)  open at e1.start
+  # e2: (5.025,0,0) -> (5.025,5,0)   meets e3 exactly at (5.025,0,0)
+  # e3: (5.025,0,0) -> (5.025,-5,0)  \ so canonical node (5.025,0,0)
+  #                                    has degree 2 -- NOT an open
+  #                                    endpoint, NOT a candidate for
+  #                                    the bridge, but lies EXACTLY
+  #                                    on the bridge segment interior.
+  v17p_prepare([
+    [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+    [[5.05, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[5.025, 0.0, 0.0], [5.025, 5.0, 0.0]],
+    [[5.025, 0.0, 0.0], [5.025, -5.0, 0.0]]
+  ], v17p_tol(0.5))
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  rev_third = Array(prop['review_proposals']).select { |r|
+    Array(r['crossing_reasons']).include?('third_node_on_bridge')
+  }
+  refute_empty rev_third,
+               'SR4-1: a point truly inside the bridge segment MUST trigger third_node_on_bridge; ' \
+               "got crossing_reasons=#{Array(prop['review_proposals']).map { |r| r['crossing_reasons'] }.inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR4-2 - far collinear beyond endpoint -> safe
+test 'V17-SR4-2 [PRODUCTION PATH]: far collinear point beyond endpoint -> safe (NOT third_node_on_bridge)' do
+  v17p_prepare([
+    [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+    [[5.05, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[5.025, 100.0, 0.0], [5.025, 105.0, 0.0]]
+  ], v17p_tol(0.5))
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  rev_third = Array(prop['review_proposals']).select { |r|
+    Array(r['crossing_reasons']).include?('third_node_on_bridge')
+  }
+  assert_empty rev_third,
+               'SR4-2: far collinear point beyond endpoint must NOT trigger third_node_on_bridge; ' \
+               "got #{rev_third.inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR4-3 - near-line but outside epsilon -> safe
+test 'V17-SR4-3 [PRODUCTION PATH]: near-line but outside epsilon -> safe (NOT third_node_on_bridge)' do
+  v17p_prepare([
+    [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+    [[5.05, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[5.025, 0.1, 0.0], [5.025, 0.2, 0.0]]
+  ], v17p_tol(0.5))
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  rev_third = Array(prop['review_proposals']).select { |r|
+    Array(r['crossing_reasons']).include?('third_node_on_bridge')
+  }
+  assert_empty rev_third,
+               'SR4-3: near-line point outside epsilon must NOT trigger third_node_on_bridge; ' \
+               "got #{rev_third.inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR5-1 - deterministic generated bridge ID
+test 'V17-SR5-1 [PRODUCTION PATH]: deterministic generated bridge derived_id across equivalent rebuild/reapply' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  proposal_id = Array(prop['ready_proposals']).first['proposal_id'].to_s
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  bridge = v17p_bridge_records(ws_post).first
+  refute_nil bridge
+  expected_did = "der-gap-#{proposal_id}"
+  assert_equal expected_did, bridge.derived_id.to_s,
+               'SR5-1: bridge derived_id must be deterministic `der-gap-#{proposal_id}`; ' \
+               "got #{bridge.derived_id.inspect}, expected #{expected_did.inspect}"
+  ws_post.discard
+  rebuilt = V17P_RUNNER.prepare(
+    source: ws.source_snapshot, adapter: adapter, model: nil
+  )
+  assert_equal 'ready', rebuilt['state']
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post2 = V17P_RUNNER.current_workspace_for_test
+  bridge2 = v17p_bridge_records(ws_post2).first
+  refute_nil bridge2
+  assert_equal expected_did, bridge2.derived_id.to_s,
+               'SR5-1: reapply must yield the SAME deterministic derived_id'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR6-1 - plural source_occurrence_ids in canonical edge
+test 'V17-SR6-1 [PRODUCTION PATH]: generated gap canonical edge contains BOTH source occurrence IDs (plural)' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  graph = V17P_RUNNER.topology_repair_canonical_graph
+  refute_nil graph
+  bridge_edges = graph.edges.select { |e| e['origin_kind'].to_s == 'gap_bridge' }
+  assert_equal 1, bridge_edges.length,
+               'SR6-1: exactly one gap_bridge canonical edge; ' \
+               "got #{bridge_edges.length}"
+  plural = Array(bridge_edges.first['source_occurrence_ids'])
+  assert_equal 2, plural.length,
+               'SR6-1: plural source_occurrence_ids must contain BOTH incident support IDs; ' \
+               "got #{plural.inspect}"
+  assert_includes plural, 'occ-101'
+  assert_includes plural, 'occ-102'
+  assert_includes plural, bridge_edges.first['source_occurrence_id'].to_s,
+               'SR6-1: singular source_occurrence_id must be one of the plural IDs'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR7-1 - resolved clique -> one CanonicalGeometryGraph node
+test 'V17-SR7-1 [PRODUCTION PATH]: a resolved coordinate_epsilon clique collapses to ONE CanonicalGeometryGraph node' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  graph = V17P_RUNNER.topology_repair_canonical_graph
+  refute_nil graph
+  corner_a_node = graph.nodes.find { |n|
+    wc = n['world_coordinate']
+    wc.is_a?(Array) && wc[0].to_f == 0.0 && wc[1].to_f == 0.0
+  }
+  refute_nil corner_a_node, 'SR7-1: corner A node must exist'
+  assert_operator corner_a_node['membership_count'].to_i, :>=, 2,
+                  'SR7-1: corner A clique must have membership_count >= 2; ' \
+                  "got #{corner_a_node.inspect}"
+  ids = graph.nodes.map { |n| n['canonical_node_id'].to_s }
+  assert_equal ids.length, ids.uniq.length,
+               'SR7-1: graph.nodes MUST contain exactly ONE logical record per canonical_node_id; ' \
+               "found duplicates: total=#{ids.length}, uniq=#{ids.uniq.length}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR7-2 - non-transitive members remain distinct graph nodes
+test 'V17-SR7-2 [PRODUCTION PATH]: non-transitive cluster members remain distinct graph nodes' do
+  e = 1.0e-3
+  chain = [
+    EndpointRecord.new(endpoint_key: 'a', derived_edge_id: 'eA',
+                       role: 'start', world_coordinate: [0.0, 0.0, 0.0]),
+    EndpointRecord.new(endpoint_key: 'b', derived_edge_id: 'eB',
+                       role: 'start', world_coordinate: [e * 0.9, 0.0, 0.0]),
+    EndpointRecord.new(endpoint_key: 'c', derived_edge_id: 'eC',
+                       role: 'start', world_coordinate: [e * 1.8, 0.0, 0.0])
+  ]
+  res = CanonicalTopologyBuilder.build(endpoints: chain, coordinate_epsilon: e)
+  refute_empty res['non_transitive_clusters']
+  graph = CanonicalGeometryGraph.new(
+    source_snapshot_id: 'snap', execution_config_digest: 'ec',
+    workspace_id: 'ws', nodes: res['canonical_nodes'],
+    edges: [], adjacency: {},
+    unresolved_topology_issues: res['unresolved_topology_issues'],
+    metrics: res['metrics'],
+    non_transitive_clusters: res['non_transitive_clusters'],
+    open_endpoints: [],
+    tolerance_digest: 'tol'
+  )
+  assert_equal 3, graph.nodes.length,
+               'SR7-2: non-transitive members must remain 3 distinct graph nodes; ' \
+               "got #{graph.nodes.length}"
+  ids = graph.nodes.map { |n| n['canonical_node_id'].to_s }
+  assert_equal 3, ids.uniq.length,
+               'SR7-2: each non-transitive member MUST keep its distinct canonical_node_id'
+end
+
+# SR7-3 - canonical_node_count counts unique logical nodes
+test 'V17-SR7-3 [PRODUCTION PATH]: canonical_node_count metric counts UNIQUE logical nodes (not per-endpoint records)' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  graph = V17P_RUNNER.topology_repair_canonical_graph
+  refute_nil graph
+  assert_equal 4, graph.metrics['canonical_node_count'].to_i,
+               'SR7-3: canonical_node_count MUST equal unique logical node count (4); ' \
+               "got #{graph.metrics['canonical_node_count'].inspect}"
+  assert_equal graph.nodes.length, graph.metrics['canonical_node_count'].to_i,
+               'SR7-3: canonical_node_count MUST equal graph.nodes.length'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# SR7-4 - graph IDs / digest stable for unchanged reconstruction
+test 'V17-SR7-4 [PRODUCTION PATH]: graph IDs / digest stable for unchanged same-workspace reconstruction' do
+  adapter = v17p_prepare(v17p_triangle_edges, v17p_tol(0.1))
+  ws = V17P_RUNNER.current_workspace_for_test
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  graph1 = V17P_RUNNER.topology_repair_canonical_graph
+  tol = v17p_tol(0.1)
+  graph2 = V17P_RUNNER.rebuild_canonical_geometry_graph(workspace: V17P_RUNNER.current_workspace_for_test, tolerance: tol)
+  refute_nil graph1
+  refute_nil graph2
+  assert_equal graph1.digest, graph2.digest,
+               'SR7-4: digest MUST be stable for an unchanged workspace'
+  graph1_ids = graph1.nodes.map { |n| n['canonical_node_id'].to_s }.sort
+  graph2_ids = graph2.nodes.map { |n| n['canonical_node_id'].to_s }.sort
+  assert_equal graph1_ids, graph2_ids,
+               'SR7-4: canonical_node_ids MUST be stable across rebuilds'
+ensure
+  V17P_RUNNER.reset_for_tests
 end

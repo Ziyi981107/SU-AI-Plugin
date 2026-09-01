@@ -1,6 +1,6 @@
 # CURRENT PI DISPATCH
 
-DISPATCH_ID: V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
+DISPATCH_ID: V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01
 STATUS: ACTIVE
 PROJECT: SU-AI-Plugin
 STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
@@ -10,277 +10,326 @@ Dispatcher / Technical Authority: AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 
+AIPM REVIEW:
+Review/CURRENT_AIPM_REVIEW.md
+
 FROZEN BLUEPRINT:
 Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
 
-PRIOR REPORT:
-Review/CURRENT_PI_REPORT.md
-Dispatch:
-V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01
+REVIEWED HEAD:
+2cdebb234f004c6980eb737c364274b4a568e8f7
+
+SUBSTANTIVE IMPLEMENTATION HEAD:
+e98326ee17cabdeec0b617f22576d1bdc5ce699a
 
 ---
 
-# 0. PURPOSE
+# 0. MISSION
 
-AIPM reviewed the correction report before consuming the source patch.
+Execute the bounded V1.7 direct-source-review correction SR-01 through SR-07.
 
-The packet is materially improved, but three Blueprint requirements are still
-not proven by the evidence described in the report.
+This is NOT a redesign.
 
-This is a FINAL bounded evidence/integration correction.
+Do NOT:
+- invoke Codex;
+- run Owner real-host verification;
+- start V1.8;
+- change V1.7 repair authority beyond the AIPM findings;
+- add endpoint-to-edge / extension / intersection repair;
+- add Observer architecture;
+- mutate Source CAD.
 
-Do NOT redesign V1.7.
-Do NOT invoke Codex.
-Do NOT run Owner verification.
-Do NOT start V1.8.
-
----
-
-# 1. FINDING V17-R5 — X1/X2 TESTS MUST EXECUTE PRODUCTION CROSSING LOGIC
-
-The current report says V17-X1 / V17-X2 construct a
-`crossing_checker` proc "mirroring" `WorkingModeRunner._crossing_checker_proc`.
-
-A mirrored test implementation is not acceptable evidence for the production
-gate: the test and production code may diverge while both appear green.
-
-Required:
-
-1. X1 and X2 must execute the ACTUAL production crossing/third-node logic.
-2. Preferred evidence:
-   - invoke the normal `WorkingModeRunner.compute_gap_repair` path with the
-     real `_crossing_checker_proc`, OR
-   - call the actual production method/proc through the smallest existing
-     supported seam.
-3. Do not duplicate/reimplement the crossing algorithm inside the test.
-4. Prove:
-   - X1 -> REVIEW_REQUIRED / `bridge_crossing`;
-   - X2 -> REVIEW_REQUIRED / `third_node_on_bridge`;
-   - no executable unsafe proposal;
-   - no destructive host operation.
-
-The old mirror-proc tests may remain as low-level predicate tests, but they
-cannot be the only production evidence.
+The goal is to make the already-frozen endpoint_bridge architecture truthful
+under real host ownership, failure, cleanup, post-validation, identity and
+provenance contracts.
 
 ---
 
-# 2. FINDING V17-R6 — X4 MUST BE A REAL ALMOST-CLOSED TRIANGLE
+# 1. READ FIRST
 
-The current report explicitly says V17-X4 uses a simple 2-line topology rather
-than the Blueprint-required almost-closed triangle.
+Read:
 
-That does NOT satisfy X4.
+1. AGENTS.md
+2. PI_START_HERE.md
+3. PROJECT_HANDOFF.md
+4. PROJECT_MASTER_PLAN_V1X.md
+5. CURRENT_STATE.md
+6. Prompt/CURRENT_PI_DISPATCH.md
+7. Review/CURRENT_AIPM_REVIEW.md
+8. Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md
+9. Review/CURRENT_PI_REPORT.md
+10. actual source/tests on dev/v1.7
 
-Required:
-
-Construct an actual almost-closed triangular boundary, e.g.:
-
-A -------- B
- \        /
-  \      /
-   C --- D
-
-with:
-- three existing canonical/source-derived edges forming an almost triangle;
-- C and D are the two open endpoints;
-- distance(C,D) within gap_search and > coordinate_epsilon;
-- C and D are mutual-unique safe candidates;
-- no crossing / third-node / layer / Z / curve / face disqualifier.
-
-Prove:
-- exactly one READY_TO_REPAIR endpoint_bridge;
-- the bridge is C-D;
-- the input is actually a 3-edge almost-closed triangle.
-
-Important:
-
-The report says the 2-line substitute was chosen to avoid a
-"clique-merge interaction with co-incident endpoint keys".
-
-If a correct 3-edge almost-triangle cannot pass because canonical identity or
-open-endpoint filtering incorrectly collapses/loses the topology, this is a
-REAL implementation bug, not a reason to weaken the test.
-
-In that case:
-- fix the implementation within the frozen V1.7 contract;
-- do not change the Blueprint;
-- report the root cause.
+The AIPM review owns the bounded correction decisions.
 
 ---
 
-# 3. FINDING V17-R7 — H3 MULTI-BRIDGE BATCH MUST BE TESTED DIRECTLY
+# 2. SR-01 — ONE LOGICAL BRIDGE = ONE HOST BRIDGE
 
-Blueprint H3 requires:
+Remove the double-creation production route.
 
-multiple independent safe bridges
-→ ONE native SketchUp operation
-→ exact generated bridge count.
+CURRENT defect:
+- add_line_to_repair_group creates host bridge A;
+- workspace.build_entity creates host bridge B in a second group.
 
-The current report maps H3 to:
-- H2 single bridge, plus
-- H5 endpoint-disjoint/preflight behavior.
+Required V1.7 base route:
 
-That is not direct H3 evidence.
+ONE proposal
+→ deterministic derived_id
+→ `DerivedGeometryWorkspace#build_entity`
+→ one workspace-owned top-level derived group
+→ one bridge edge
+→ private handle_registry owns that derived group.
 
-Required explicit H3 test:
+Use this existing V1.4 ownership route as the Blueprint-approved "safer
+equivalent owned repair-geometry container".
 
-Input:
-- two independent safe endpoint_bridge proposals;
-- four distinct endpoints;
-- no crossing/conflict;
-- both executable.
+Do not also create a shared repair-group edge.
 
-Apply one batch.
+Do not create a parallel ownership registry.
 
-Prove:
-- exactly ONE begin_operation;
-- exactly ONE commit_operation;
-- zero abort;
-- exactly TWO generated bridge entities;
-- both expected proposal IDs/provenance recorded;
+If old ensure_repair_group / add_line_to_repair_group adapter APIs remain, they
+must be unused by the production base V1.7 path and clearly non-authoritative.
+
+Lifecycle:
+normal workspace Discard/Rebuild/close removes the generated bridge by the same
+private registry as other derived geometry.
+
+---
+
+# 3. SR-02 — TRUE FAILED WORKSPACE + LOGICAL ROLLBACK
+
+Capture pre_workspace before host operation.
+
+Apply into working_workspace.
+
+If a mutation/postvalidate failure occurs and host abort is CONFIRMED:
+- return a new `:failed` workspace based on exact pre_workspace inventory +
+  handle registry;
+- no generated bridge record survives logically;
+- stable last_error;
+- source unchanged.
+
+If commit/abort result is uncertain:
+- state MUST be :failed;
+- do NOT claim rollback;
+- preserve enough current generated handles for explicit Discard recovery;
+- no APPLIED truth.
+
+No failure return may expose `post_workspace.state == :ready`.
+
+---
+
+# 4. SR-03 — HARD RUNTIME POST-VALIDATION
+
+Implement the minimum runtime proof from CURRENT_AIPM_REVIEW §4.
+
+Executor-side before APPLIED:
+- exact generated count;
+- deterministic proposal IDs;
+- generated record origin/action;
+- record endpoint/length;
+- actual host endpoint positions via existing adapter read seams;
 - source fingerprint unchanged;
-- existing source-derived coordinates unchanged;
-- post canonical graph contains both gap_bridge canonical edges.
+- pre-existing derived source geometry unchanged;
+- no non-ready proposal executed.
 
-Name/map this test explicitly to Blueprint H3.
+Runner-side canonical proof after commit and graph rebuild:
+- every applied bridge -> canonical `gap_bridge`;
+- repair_action_id preserved;
+- expected adjacency present;
+- no new non_transitive_node_cluster.
 
----
-
-# 4. FINDING V17-R8 — T4 MUST PROVE A CYCLE, NOT ONLY CONNECTIVITY
-
-The current T4 report says BFS proves all three nodes are mutually reachable.
-
-Connectivity alone does NOT prove cycle-capability; a tree is connected.
-
-Required T4 evidence using the actual almost-closed triangle from X4 or an
-equivalent canonical fixture:
-
-Before bridge:
-- connected/open triangle-chain component;
-- exactly two open endpoint nodes;
-- no cycle.
-
-After bridge:
-- bridge exists as canonical `gap_bridge`;
-- component is connected;
-- component has an actual cycle.
-
-For the simple triangle fixture prove one of the following equivalent exact
-invariants:
-
-- 3 canonical nodes + 3 canonical edges + every node degree == 2; OR
-- deterministic cycle traversal returns to start after consuming the expected
-  3 canonical edges exactly once.
-
-Also prove:
-- no LoopRecord / RegionRecord is created in V1.7.
-
-Do NOT count BFS connectivity alone as T4 PASS.
+Canonical failure after commit:
+workspace -> :failed;
+retain handles for Discard;
+no fake rollback.
 
 ---
 
-# 5. REGENERATE SOURCE-REVIEW BUNDLE
+# 5. SR-04 — TRUE POINT-ON-SEGMENT INTERIOR
 
-After R5-R8 are complete, regenerate:
+Replace collinearity-only `_third_node_on_segment?`.
 
-`Review/V17_AIPM_SOURCE_REVIEW.patch`
+Use a pure point-on-segment-interior predicate:
+- finite 3D points;
+- projection `t`;
+- endpoint exclusion;
+- closest-point distance <= coordinate_epsilon.
 
-from exact closed V1.6 base:
+Test actual production path.
 
-`d7e9c59`
-
-to the final substantive corrected V1.7 implementation/test HEAD.
-
-Update:
-
-`Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`
-
-with:
-- actual production X1/X2 test seam;
-- real triangle X4;
-- direct H3;
-- exact T4 cycle invariant;
-- corrected line anchors.
-
-Record patch SHA-256.
+Far collinear points outside the bridge segment must NOT trigger
+third_node_on_bridge.
 
 ---
 
-# 6. REGRESSION
+# 6. SR-05 — DETERMINISTIC BRIDGE ID
 
-Run at minimum:
+Remove rand from generated bridge derived IDs.
 
-- X1 actual production-path test
-- X2 actual production-path test
-- X3 / X3-PAIRWISE
-- X4 real almost-closed triangle
-- direct H3 two-independent-bridges batch
-- T3
-- T4 exact cycle proof
-- OK-MAP-1 / OK-MAP-2
-- full V1.7
-- full Ruby
-- Node DOM
-- V1.6 close auto-discard
-- V1.5 BLOCK-005
-- LEGACY-COMPAT
-- RBZ smoke
-- git diff --check
+Preferred:
 
-Rebuild RBZ if production code changes.
+`der-gap-#{proposal_id}`
+
+Equivalent deterministic collision-safe form allowed.
+
+Canonical edge identity must therefore be stable for equivalent rebuild/reapply.
 
 ---
 
-# 7. REPORT
+# 7. SR-06 — PLURAL CANONICAL PROVENANCE
+
+CanonicalEdge must preserve:
+
+`source_occurrence_ids`
+
+as full normalized/sorted/uniq provenance.
+
+For gap_bridge:
+must contain the complete support union from both incident sides.
+
+Preserve `repair_action_id`.
+
+If a legacy singular field remains, plural is authoritative for V1.8.
+
+---
+
+# 8. SR-07 — UNIQUE LOGICAL GRAPH NODES
+
+Keep topology-builder endpoint membership records if useful.
+
+But CanonicalGeometryGraph.nodes must be one logical node per
+canonical_node_id.
+
+Aggregate deterministic membership evidence:
+- endpoint_keys;
+- derived_edge_ids;
+- source_occurrence_ids;
+- layer evidence.
+
+Representative world coordinate:
+use one deterministic ACTUAL member point selected by stable endpoint_key order.
+
+Do not average/fabricate.
+
+Non-transitive members remain separate.
+
+Correct canonical_node_count to unique logical nodes.
+
+---
+
+# 9. TESTS
+
+Implement the SR1-SR7 regression set from CURRENT_AIPM_REVIEW §9.
+
+Important required failure tests:
+- first bridge created, second bridge fails;
+- clean host abort;
+- no generated logical residue;
+- post_workspace FAILED;
+- commit uncertainty FAILED;
+- actual Discard removes all generated host bridge geometry.
+
+Important host-creation test:
+- one safe proposal produces exactly ONE host bridge edge total.
+
+Important topology:
+- real almost-closed triangle remains READY and becomes an actual cycle after
+  repair.
+
+Run all V1.7 + prior stage regressions.
+
+---
+
+# 10. PACKAGE
+
+If production code changes, rebuild RBZ.
+
+Report:
+- path;
+- size;
+- entry count;
+- SHA-256;
+- source/package match;
+- RBZ smoke.
+
+---
+
+# 11. SOURCE REVIEW RETURN
 
 Overwrite:
 
 Review/CURRENT_PI_REPORT.md
 
 DISPATCH_ID:
-V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01
+V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01
 
-Report:
+Include:
 
-A. R5-R8 disposition
-B. production code changed, if any
-C. X1/X2 actual-production-path evidence
-D. X4 real-triangle evidence
-E. H3 real multi-bridge batch evidence
-F. T4 exact cycle evidence
-G. corrected complete matrix
-H. source-review patch path / size / SHA-256
-I. critical source index
-J. regression counts
-K. RBZ identity
-L. exact substantive implementation HEAD + final doc-stamp HEAD
-M. remaining defect / assumption / unknown
-N. `CODEX_GATE: STILL PENDING — DO NOT INVOKE`
-O. `OWNER GATE: NOT YET RUN`
+A. SR-01..SR-07 disposition
+B. exact changed production files
+C. one-bridge/one-host-geometry evidence
+D. failed-state/rollback evidence
+E. runtime post-validation map
+F. point-on-segment tests
+G. deterministic ID evidence
+H. plural provenance evidence
+I. unique graph-node evidence
+J. complete V1.7 matrix
+K. prior-stage regressions
+L. RBZ identity
+M. exact final implementation commit
+N. remaining defect/assumption/unknown
+O. `CODEX_GATE: STILL PENDING`
+P. `OWNER_GATE: NOT YET RUN`
+Q. `V1.8: NOT STARTED`
 
-Do NOT claim AIPM PASS.
+Do not claim AIPM PASS.
 
 ---
 
-# 8. GIT / STOP
+# 12. GIT + PUSH
 
-Create one bounded checkpoint if needed.
+Create one or a small number of meaningful correction commits.
 
-Do NOT:
-- force-push;
-- rebase;
-- merge main;
-- tag/release;
-- start V1.8;
-- invoke Codex.
+After all required tests are green and the local checkpoint is stable:
 
-After R5-R8 + review bundle + green regressions:
+attempt ONE normal:
 
-STOP.
+`git push origin dev/v1.7`
 
-Return control to AIPM.
+Rules:
+- fast-forward only;
+- no force;
+- no rebase;
+- no main merge/push;
+- no tag/release.
+
+If push succeeds:
+report remote HEAD.
+
+If unreachable:
+report once and STOP normally.
+
+---
+
+# 13. STOP
+
+After:
+- SR-01..SR-07 corrected;
+- full regressions green;
+- RBZ rebuilt;
+- CURRENT_PI_REPORT updated;
+- stable commit exists;
+- one bounded push attempt complete;
+
+STOP and return control to AIPM.
 
 Next Gate:
-AIPM direct source review of the regenerated patch.
+AIPM direct source RE-REVIEW.
+
+Only after AIPM PASS:
+mandatory Codex xHigh integration review.
 
 END

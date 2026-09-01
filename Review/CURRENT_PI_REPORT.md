@@ -1,18 +1,21 @@
-# CURRENT PI REPORT — V17-AIPM-EVIDENCE-INTEGRATION-FINAL
+# CURRENT PI REPORT — V17-AIPM-DIRECT-SOURCE-REVIEW-FIX
 
 Project: `SU-AI-Plugin`
 Version: V1.7
-Stage: V17 GAP-TOPOLOGY EVIDENCE-INTEGRATION-FINAL COMPLETE /
-AWAITING AIPM DIRECT SOURCE REVIEW (NOT YET V1.7 CLOSED; mandatory
-Codex xHigh integration review + final Owner SU2020 real-host
-verification gate remain.)
-Dispatch: `V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01`
-Prior Dispatch: `V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01`
+Stage: V17 DIRECT-SOURCE-REVIEW-FIX COMPLETE /
+AWAITING AIPM DIRECT SOURCE RE-REVIEW (NOT yet V1.7 CLOSED;
+mandatory Codex xHigh integration review + final Owner SU2020
+real-host verification gate remain.)
+Dispatch: `V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01`
+Prior Dispatch: `V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01`
 Dispatcher / Technical Authority: ChatGPT / AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 Frozen Stage Technical Blueprint:
 `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`
+AIPM direct source review (the corrections this dispatch
+addresses):
+`Review/CURRENT_AIPM_REVIEW_V17_DIRECT_SOURCE_REVIEW.md`
 Frozen V1.6 Closure Anchor:
 `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`
 Branch: `dev/v1.7`
@@ -21,19 +24,21 @@ Source of Truth: `extension/su_ai_plugin/` + canonical contracts in
 
 ---
 
-## 0. Scope (per dispatch §0-§10)
+## 0. Scope (per dispatch §0-§13)
 
-This is a **frozen-Blueprint bounded evidence/integration correction
-packet**. AIPM primary review of the prior packet found FOUR
-concrete evidence gaps + Blueprint-requirement deviations
-(R5 / R6 / R7 / R8).
+This is a **frozen-Blueprint bounded direct-source-review
+correction packet**. AIPM direct source review of the prior
+V17-AIPM-EVIDENCE-INTEGRATION-FINAL packet found SEVEN BLOCKs
+(SR-01 through SR-07) requiring host-ownership, failure, cleanup,
+post-validation, identity and provenance corrections.
 
 This dispatch:
 
-- corrected all four findings with REAL production-path evidence;
-- uncovered FOUR production defects in the V1.7 code path by
-  actually executing the production `compute_gap_repair` path
-  and locked them with regression tests;
+- corrected all seven SR findings with REAL production-path
+  evidence;
+- preserved the four R5 / R6 / R7 / R8 production-defect
+  regressions and the seven production-path evidence tests from
+  the prior packet;
 - did NOT redesign V1.7;
 - did NOT invent new repair types;
 - did NOT silently widen Source of Truth or tolerance semantics;
@@ -46,301 +51,265 @@ This dispatch:
 
 ---
 
-## A. R5 / R6 / R7 / R8 disposition
+## A. SR-01..SR-07 disposition
 
 | ID | Finding | Disposition | Evidence |
 |----|---------|-------------|----------|
-| R5 | X1/X2 tests constructed a `crossing_checker` proc that MIRRORED `WorkingModeRunner._crossing_checker_proc`; mirrored implementations can stay green while production diverges. | CORRECTED — the authoritative X1 / X2 live in `tests/test_v17_production_gap_path.rb` and invoke `WorkingModeRunner._crossing_checker_proc(tolerance: tol)` directly. The old mirror-proc tests in `test_v17_branch_crossing.rb` are now relabeled `V17-X1-MIRROR-PREDICATE` / `V17-X2-MIRROR-PREDICATE` and explicitly scoped as low-level predicate tests (NOT production evidence). | `tests/test_v17_production_gap_path.rb` `V17-X1 [PRODUCTION PATH]`, `V17-X2 [PRODUCTION PATH]`; the same file's `V17-R5-REG-LAYER`, `V17-R5-REG-FROZEN`, `V17-R5-REG-CLUSTER` regressions. |
-| R6 | X4 used a 2-line substitute, not a 3-edge almost-closed triangle. The report claimed "to avoid the open-endpoint filter's clique-merge interaction with co-incident endpoint keys" — that is exactly the real implementation bug R6 anticipated. | CORRECTED — the authoritative X4 (`V17-X4 [PRODUCTION PATH]`) is now a real 3-edge almost-closed triangle A-B, A-C, B-D with one short unique closing gap C-D, driven by the real production path. The clique-merge interaction was a real bug, fixed in `core/canonical_topology_builder.rb` (one canonical_node_id per safe clique, Blueprint §7.2 / §7.3). The old 2-line test in `test_v17_branch_crossing.rb` is now explicitly relabeled `V17-X4-LOWLEVEL-2LINE` and scoped as NOT Blueprint X4 evidence. | `tests/test_v17_production_gap_path.rb` `V17-X4 [PRODUCTION PATH]`, `V17-T4-EXACT3`, `V17-R6-NODE-IDENTITY`. |
-| R7 | H3 (multi-bridge batch, Blueprint §18.4) was mapped to H2 (single bridge) + H5 (preflight) without a direct H3 test. | CORRECTED — the authoritative H3 (`V17-H3 [PRODUCTION PATH]`) is now a dedicated test exercising two independent safe bridges through the production `apply_gap_repair` path: exactly ONE begin_operation, ONE commit_operation, zero abort, exactly TWO generated bridge entities, both expected proposal IDs / provenance recorded, source fingerprint unchanged, existing source-derived edge endpoint coordinates unchanged, both gap_bridge canonical edges in the post canonical graph. | `tests/test_v17_production_gap_path.rb` `V17-H3 [PRODUCTION PATH]`. |
-| R8 | T4 used BFS connectivity alone; connectivity does NOT prove cycle-capability (a tree is connected). The dispatch specified "3 canonical nodes + 3 canonical edges + every node degree == 2 OR deterministic cycle traversal returns to start after consuming the expected 3 canonical edges exactly once." | CORRECTED — the authoritative T4 (`V17-T4 [PRODUCTION PATH]`) now proves BOTH forms on the REAL fixture: 4 canonical nodes + 4 canonical edges + every node degree == 2 (the §2 fixture has C and D as distinct canonical nodes, distance 0.05 > coordinate_epsilon), AND a deterministic cycle traversal closes after consuming all 4 edges exactly once. `V17-T4-EXACT3` proves the literal 3/3 form with the simpler "two source edges + bridge" fixture (P-Q, Q-R, bridge R-P). The old BFS-only T4 in `test_v17_canonical_graph.rb` is kept as a low-level companion and explicitly noted as superseded by the production-path form. | `tests/test_v17_production_gap_path.rb` `V17-T4 [PRODUCTION PATH]`, `V17-T4-EXACT3`, `V17-T3 [PRODUCTION PATH]`. |
+| SR-01 | DOUBLE-CREATION: `add_line_to_repair_group` created host bridge A in `SU-AI-Repair-GapBridge-*` while `workspace.build_entity` created host bridge B in a separate `SU-AI-Derived-*` group. Split ownership; normal Discard/Rebuild/close could delete the tracked copy and leave the production repair-group copy behind. | CORRECTED — V1.7 base execution path is the SOLE host-creation path: `workspace.build_entity(derived_id: "der-gap-#{proposal_id}", kind: :edge, ...)` exactly once per proposal. The old `add_line_to_repair_group` adapter API remains defined for backwards compatibility but is NOT called by the production path. The bridge handle is owned by the workspace's private `handle_registry` and is disposed via the existing Discard / Rebuild / close-time auto-discard (same lifecycle as every other derived entity). | `extension/su_ai_plugin/core/gap_bridge_executor.rb` (`GapBridgeExecutor.apply` no longer calls `adapter.add_line_to_repair_group`); `tests/test_v17_production_gap_path.rb` `V17-SR1-1`, `V17-SR1-2`, `V17-SR1-3`, `V17-SR1-4`. |
+| SR-02 | TRUE FAILED WORKSPACE + LOGICAL ROLLBACK: `_fail` returned the input workspace unchanged; a partially-mutated workspace could remain `:ready` after host abort. | CORRECTED — `GapBridgeExecutor.apply` now captures `pre_workspace` BEFORE `begin_operation`. On confirmed abort, it builds a NEW `:failed` workspace derived from `pre_workspace` (preserving `entity_pairs` + `handle_registry` + `source_snapshot`). On commit uncertainty, the current generated handles are preserved so explicit Discard can clean up. No failure return path exposes `post_workspace.state == :ready`. | `gap_bridge_executor.rb` (`apply` `_confirmed_abort` / `_transition_to_failed_with_handles` / `_fail`); `tests/test_v17_production_gap_path.rb` `V17-SR2-1`, `V17-SR2-2`, `V17-SR2-3`, `V17-SR2-4`. |
+| SR-03 | HARD RUNTIME POST-VALIDATION: `_post_validate` only proved state + count + handle validity; required runtime proofs of origin_kind, repair_action_id, host endpoint positions, source fingerprint, pre-existing coords, proposal ID set, and post-commit canonical graph invariants were missing. | CORRECTED — `_post_validate` now proves (A) state, (B) origin_kind + repair_action_id per bridge, (C) host endpoint positions match expected, (D) source fingerprint unchanged, (E) pre-existing derived coords unchanged, (F) generated proposal IDs exactly equal expected, (G) no REVIEW_REQUIRED was executed. The runner's `apply_gap_repair` rebuilds the canonical graph and proves (H) every bridge is one canonical `gap_bridge` edge, (I) repair_action_id survives, (J) repaired endpoint adjacency is present, (K) no new non_transitive_node_cluster was introduced. Failure -> workspace transitions to `:failed` with reason `canonical_post_validation_failed`. | `gap_bridge_executor.rb` (`_post_validate` checks A..G); `working_mode_runner.rb` (`apply_gap_repair` canonical post-validation H..K + `_canonical_post_validate`); `tests/test_v17_production_gap_path.rb` `V17-SR3-1`..`V17-SR3-5`. |
+| SR-04 | TRUE POINT-ON-SEGMENT INTERIOR: `_third_node_on_segment?` only checked `abs(orientation) <= eps`, proving collinearity with the infinite LINE. A distant collinear node would falsely trigger `third_node_on_bridge`. | CORRECTED — new `_point_on_segment_interior?` predicate proves (1) finite 3D point, (2) projection parameter t lies STRICTLY in (0, 1) with endpoint epsilon exclusion (band `[eps/seg_len, 1 - eps/seg_len]`), (3) closest-point distance to the segment is `<= coordinate_epsilon`. Endpoints are excluded. | `working_mode_runner.rb` (`_point_on_segment_interior?` + updated `_third_node_on_segment?`); `tests/test_v17_production_gap_path.rb` `V17-SR4-1`, `V17-SR4-2`, `V17-SR4-3`. |
+| SR-05 | DETERMINISTIC BRIDGE ID: `_next_bridge_id` used `rand(2**32)`, which produced non-deterministic IDs. | CORRECTED — generated bridge `derived_id` is now `"der-gap-#{proposal_id}"` (deterministic; `proposal_id` itself is deterministic per `GapPairProposer._proposal_id`). No Ruby random value. Same source + same captured config + same safe proposal -> same generated bridge derived_id + canonical_edge_id after rebuild/reapply. | `gap_bridge_executor.rb` (`_deterministic_bridge_id`); `tests/test_v17_production_gap_path.rb` `V17-SR5-1`. |
+| SR-06 | PLURAL CANONICAL PROVENANCE: `CanonicalEdge` emitted only `source_occurrence_id` (singular, `first(...)`), losing provenance from the second incident side of a `gap_bridge`. | CORRECTED — `CanonicalEdge` now carries `source_occurrence_ids` (plural, normalized sorted/uniq Array of String). For a `gap_bridge` this contains the COMPLETE support union from both incident sides. Singular `source_occurrence_id` is preserved for backwards compatibility with existing consumers; V1.8 authority is the plural field. | `canonical_geometry_graph.rb` (`_build_canonical_edges` emits `source_occurrence_ids` via `_normalize_occurrence_ids`); `tests/test_v17_production_gap_path.rb` `V17-SR6-1`. |
+| SR-07 | UNIQUE LOGICAL GRAPH NODES: `CanonicalGeometryGraph.nodes` was one record per EndpointRecord (Blueprint §7.2 / §7.3); `canonical_node_count` in metrics counted records, not unique logical node IDs. | CORRECTED — at the `CanonicalGeometryGraph` constructor boundary, per-endpoint records are collapsed into ONE LOGICAL NODE per `canonical_node_id` (preserving `endpoint_keys` + `derived_edge_ids` + `source_occurrence_ids` + `layer_names` + deterministic representative world coordinate from the lex-smallest endpoint_key member). The published `metrics.canonical_node_count` now reflects the UNIQUE logical node count. Non-transitive cluster members remain separate graph nodes. | `canonical_geometry_graph.rb` (`_collapse_nodes_by_id` + `_finalize_metrics`); `tests/test_v17_production_gap_path.rb` `V17-SR7-1`, `V17-SR7-2`, `V17-SR7-3`, `V17-SR7-4`. |
+
+---
 
 ## B. Production code changed (per dispatch §B)
 
 | File | Change | Why |
 |------|--------|-----|
-| `extension/su_ai_plugin/core/canonical_topology_builder.rb` | `_build_canonical_node_record` — resolved (safe-clique) members now share ONE canonical_node_id (the cluster id). Non-transitive members still get distinct `.nN` ids (no identity collapse). Blueprint §7.2 / §7.3. | R6 / R8 fix: without this, an exactly-coincident corner produced two canonical nodes and the rebuilt canonical graph of a real almost-closed triangle was always disconnected / acyclic. |
-| `extension/su_ai_plugin/core/endpoint_record.rb` | `DerivedTopologySnapshotBuilder.build` layer-name resolution — replaced the broken `(gs['layer'] \|\| rec.respond_to?(:layer) ? rec.layer : nil)` ternary with `layer_name = gs['layer']; if layer_name.nil? && rec.respond_to?(:layer) then layer_name = rec.layer`. Intent unchanged. | R5 fix: every layered CAD selection used to raise `NoMethodError: undefined method 'layer' for DerivedEntityRecord` and the production compute_gap_repair / apply_gap_repair paths could NEVER run. |
-| `extension/su_ai_plugin/core/gap_pair_proposer.rb` | `propose` + new `_ts_read` helper — defensive symbol-OR-string read of canonical topology fields. Same pattern already used by `CanonicalGeometryGraph.build_from_workspace`. | R5 fix: on the production path `topology_snapshot[:canonical_node_clusters]` resolved to `{}` because the builder publishes STRING keys; coincident corner endpoints were never merged into one canonical node (Blueprint §7.2) and were mis-reported as open (Blueprint §8). |
-| `extension/su_ai_plugin/core/working_mode_runner.rb` | `_canonical_topology_snapshot` — `.dup` the frozen `CanonicalTopologyBuilder.build` result before assigning `:endpoints`. Published canonical sub-structures stay frozen. | R5 fix: this used to raise `FrozenError` on every `compute_gap_repair` call. |
-| `extension/su_ai_plugin/core/working_mode_runner.rb` | `_open_endpoint_keys` — defensive symbol-OR-string read of `canonical_node_clusters` (same R5 root cause as the proposer). | R5 fix. |
-| `tests/test_v17_branch_crossing.rb` | comments + test-name relabel: `V17-X1-MIRROR-PREDICATE`, `V17-X2-MIRROR-PREDICATE`, `V17-X4-LOWLEVEL-2LINE`. | R5 / R6 honesty: the prior tests are kept as low-level predicate / mirror tests, explicitly scoped as NOT production evidence; the authoritative tests live in `test_v17_production_gap_path.rb`. |
-| `tests/test_v17_production_gap_path.rb` | NEW FILE: `V17-X1 [PRODUCTION PATH]`, `V17-X2 [PRODUCTION PATH]`, `V17-X4 [PRODUCTION PATH]`, `V17-H3 [PRODUCTION PATH]`, `V17-T3 [PRODUCTION PATH]`, `V17-T4 [PRODUCTION PATH]`, `V17-T4-EXACT3`, `V17-R5-REG-LAYER`, `V17-R5-REG-FROZEN`, `V17-R5-REG-CLUSTER`, `V17-R6-NODE-IDENTITY`. | dispatch §1-§4 + regression locks for the four production defects this dispatch uncovered. |
+| `extension/su_ai_plugin/core/gap_bridge_executor.rb` | Major rewrite: removed `add_line_to_repair_group` call (SR-01); captured `pre_workspace` for SR-02 confirmed-abort; rewrote `_post_validate` for SR-03 (A..G); added `_deterministic_bridge_id` for SR-05; rewrote `_fail` to return a NEW `:failed` workspace derived from `pre_workspace` (not the partially-mutated `working_workspace`); added `_transition_to_failed_with_handles` (preserves current generated handles so explicit Discard can clean up); added `_confirmed_abort` path; new `REASON_CANONICAL_POST_VALIDATE_FAIL` constant; bumped schema_version to `gap-bridge-apply.v2`. | SR-01 / SR-02 / SR-03 / SR-05 |
+| `extension/su_ai_plugin/core/working_mode_runner.rb` | New `_point_on_segment_interior?` predicate (SR-04); rewrote `_third_node_on_segment?` to delegate to the new predicate; new `_canonical_post_validate` runner-level post-validation method (SR-03 H..K); added canonical post-validation block in `apply_gap_repair` that transitions the workspace to `:failed` with stable reason `canonical_post_validation_failed` if any H..K check fails (handles retained for Discard). | SR-03 / SR-04 |
+| `extension/su_ai_plugin/core/canonical_geometry_graph.rb` | New `_collapse_nodes_by_id` instance helper (SR-07) collapses per-endpoint records into ONE logical node per `canonical_node_id` (preserves membership data + representative world coord from lex-smallest endpoint_key member). New `_finalize_metrics` instance helper overwrites `canonical_node_count` with the unique logical node count and adds `canonical_edge_count` for downstream convenience. New `_normalize_occurrence_ids` class helper (SR-06) emits a deterministic sorted/uniq String Array. `_build_canonical_edges` now emits `source_occurrence_ids` (plural) alongside the existing singular field. `_compute_digest` now uses the collapsed node format and includes `source_occurrence_ids` in the per-edge digest line. | SR-06 / SR-07 |
+| `tests/test_v17_canonical_graph.rb` | Updated V17-L2 and V17-L3 lifecycle tests to verify the new SR-01 ownership path (workspace-owned bridge entity + private handle_registry dispose on Discard / close-time auto-discard). | SR-01 |
+| `tests/test_v17_host_mutation.rb` | Rewrote V17-H3 to verify the new SR-01 build_entity path. The old test stubbed `add_line_to_repair_group`; the new test stubs `create_top_level_group` (the inner primitive that `workspace.build_entity` calls) so the second bridge in a 2-bridge batch fails after the first succeeded. Asserts `post_workspace.state == :failed` (SR-02) and exactly one `begin_operation` / zero `commit` (the failed batch aborts cleanly). | SR-01 / SR-02 |
+| `tests/test_v17_production_gap_path.rb` | Updated V17-H3 [PRODUCTION PATH] to verify workspace-owned bridge handles (not the legacy repair_group_bridges). Added 22 SR-01..SR-07 regression tests. | SR-01..SR-07 |
 
-Production byte diff vs the prior V17-AIPM-PRIMARY-REVIEW-CORRECTION
+Production byte diff vs the prior V17-AIPM-EVIDENCE-INTEGRATION-FINAL
 packet commit `aa33ac6`:
 
-- `extension/su_ai_plugin/core/canonical_topology_builder.rb`:
-  +22 / -8 lines (R6 fix + comments).
-- `extension/su_ai_plugin/core/endpoint_record.rb`: +20 / -3 lines
-  (R5 fix + comments).
-- `extension/su_ai_plugin/core/gap_pair_proposer.rb`:
-  +36 / -1 lines (R5 fix + new `_ts_read` helper + comments).
-- `extension/su_ai_plugin/core/working_mode_runner.rb`:
-  +20 / -10 lines (two R5 fixes + comments).
-- `tests/test_v17_branch_crossing.rb`: +28 / -19 lines (R5 / R6
-  relabel + comments).
-- `tests/test_v17_production_gap_path.rb`: +835 lines (new file,
-  production-path evidence + regression locks).
+- `extension/su_ai_plugin/core/gap_bridge_executor.rb`: rewritten
+  (~ +400 / -200 lines net).
+- `extension/su_ai_plugin/core/working_mode_runner.rb`: +90 / -10
+  lines.
+- `extension/su_ai_plugin/core/canonical_geometry_graph.rb`:
+  +95 / -25 lines.
+- `tests/test_v17_canonical_graph.rb`: +35 / -32 lines
+  (L2 / L3 rewrite).
+- `tests/test_v17_host_mutation.rb`: +60 / -369 lines (H3 rewrite;
+  the old 2nd-bridge logic was removed since the architecture is
+  now uniform).
+- `tests/test_v17_production_gap_path.rb`: +659 / -57 lines
+  (22 new SR tests + H3 update).
 
-Total production code change: ~98 / -22 lines across 4 production
-files (plus 835 lines of new tests + relabel). All changes are
-LOCAL to the V1.7 frozen contract:
+All changes are LOCAL to the V1.7 frozen contract:
+
 - tolerance semantics unchanged;
 - Source of Truth unchanged;
 - Source-of-CAD immutability unchanged;
 - gap repair type unchanged (still `endpoint_bridge`);
-- cross-layer / curve / face gates unchanged;
+- cross-layer / curve / face / Z / crossing uncertainty unchanged;
 - non-transitive cluster handling unchanged;
-- canonical `origin_kind` enum unchanged;
-- no V1.8 Loop / Region / face semantics introduced.
+- canonical `origin_kind` enum unchanged (`gap_bridge`);
+- no V1.8 Loop / Region / face semantics introduced;
+- no Observer architecture added.
 
-## C. X1 / X2 actual-production-path evidence (per dispatch §C)
+---
 
-`tests/test_v17_production_gap_path.rb`:
-
-- **V17-X1 [PRODUCTION PATH]** — drives the real
-  `WorkingModeRunner._crossing_checker_proc(tolerance: tol)`
-  via `WorkingModeRunner.compute_gap_repair`. Topology: e0
-  open at (5,0,0), e1 open at (5.1,0,0), and an UNRELATED
-  vertical edge e2 (5.05,-5,0)->(5.05,5,0) that crosses the
-  proposed bridge interior. Asserts:
-  - `prop['state'] == STATE_REVIEW_REQUIRED`;
-  - `ready_proposals` is empty;
-  - exactly one `review_proposals` entry with
-    `crossing_reasons == ['bridge_crossing']`, `reason ==
-    'bridge_crossing'`, `executable == false`, bridge endpoints
-    == e0.end <-> e1.start;
-  - ZERO `begin_operation` / `commit_operation` were issued by
-    `compute_gap_repair` (compute is mutation-free);
-  - `adapter.repair_group_bridges` is empty;
-  - workspace entity count unchanged.
-
-- **V17-X2 [PRODUCTION PATH]** — drives the real crossing
-  checker. Topology: e0 open at (5,0,0), e1 open at (5.1,0,0),
-  plus two collinear edges meeting EXACTLY at (5.05,0,0) so
-  that canonical node has degree 2 (it is NOT in the open set
-  and therefore NOT iterated as a candidate) but lies exactly
-  ON the bridge interior. Asserts the same set of invariants
-  as X1, with `third_node_on_bridge` instead of
-  `bridge_crossing`.
-
-The old `V17-X1-MIRROR-PREDICATE` / `V17-X2-MIRROR-PREDICATE` /
-`V17-X4-LOWLEVEL-2LINE` tests in `test_v17_branch_crossing.rb`
-are kept as low-level predicate tests but explicitly relabeled
-as NOT production evidence (per dispatch §1 + §2).
-
-## D. X4 real-triangle evidence (per dispatch §D)
+## C. One-bridge / one-host-geometry evidence (per dispatch §C)
 
 `tests/test_v17_production_gap_path.rb`:
 
-- **V17-X4 [PRODUCTION PATH]** — REAL almost-closed triangle:
-  - `A = (0, 0, 0)`, `B = (10, 0, 0)` (shared corner, exactly coincident).
-  - `A = (0, 0, 0)`, `C = (4.975, -6, 0)` (left leg, exactly coincident at A).
-  - `B = (10, 0, 0)`, `D = (5.025, -6, 0)` (right leg, exactly coincident at B).
-  - C and D are the only two open endpoints; |C - D| = 0.05,
-    inside `gap_search = 0.1` and `> coordinate_epsilon = 1.0e-6`.
-  - No crossing, third-node, layer, Z, curve, or face
-    disqualifier fires.
-  Asserts: workspace has exactly 3 source-derived edges with
-  the two corners exactly shared (corner A is hit by exactly
-  two edges, corner B is hit by exactly two edges); C and D
-  are exactly the open pair; gap is exactly inside the
-  tolerance band; `compute_gap_repair` returns exactly
-  ONE `READY_TO_REPAIR` proposal with `bridge = C-D`,
-  `expected_bridge_length = 0.05`, `action_type =
-  'endpoint_bridge'`, `reason = 'ok'`, `executable = true`,
-  `crossing_reasons = []`, NO `review_proposals`.
+- **V17-SR1-1**: drives the real production path. Exactly ONE
+  workspace-owned bridge entity after apply; the bridge host
+  handle resolves to a FakeGroup containing exactly ONE
+  FakeEdge child. NO `add_line_to_repair_group` is called.
+- **V17-SR1-2**: explicit Discard invalidates the bridge host
+  handle and empties the workspace entity inventory.
+- **V17-SR1-3**: close-time auto-discard (same handle_registry
+  path) invalidates the bridge host handle.
+- **V17-SR1-4**: Rebuild (discard + new prepare from the same
+  source) yields ZERO bridge entities — no stale handle leaks
+  from the old workspace.
 
-The 2-line substitute that the prior packet claimed as X4
-(`tests/test_v17_branch_crossing.rb`'s now-relabeled
-`V17-X4-LOWLEVEL-2LINE`) is kept for low-level pairing audit
-but explicitly NOT Blueprint X4 evidence.
+---
 
-## E. H3 real multi-bridge batch evidence (per dispatch §E)
+## D. Failed-state / rollback evidence (per dispatch §D)
 
 `tests/test_v17_production_gap_path.rb`:
 
-- **V17-H3 [PRODUCTION PATH, Blueprint §18.4 H3]** — drives the
-  real `WorkingModeRunner.apply_gap_repair` on TWO independent
-  safe bridges (4 distinct endpoints, no crossing, no shared
-  endpoints). Asserts:
-  - `audit['status'] == 'applied'`,
-    `audit['applied_count'] == 2`,
-    `audit['failed_count'] == 0`;
-  - adapter operation log shows exactly
-    `1 begin_operation + 1 commit_operation + 0 abort`
-    for the batch;
-  - workspace has exactly TWO `generated_gap_bridge` derived
-    entities;
-  - adapter has exactly TWO host bridge edges in the
-    workspace-owned repair group;
-  - workspace entity count = pre + 2;
-  - audit `applied_proposals` carries BOTH expected proposal
-    IDs;
-  - each generated bridge carries its `repair_action_id`
-    matching the proposal ID;
-  - source fingerprint unchanged (Blueprint §14);
-  - existing source-derived edge endpoint coordinates
-    unchanged (Blueprint §4 / §14);
-  - the post canonical graph contains TWO `gap_bridge`
-    canonical edges with matching `repair_action_id`s, and
-    both repaired endpoint pairs are mutually adjacent.
+- **V17-SR2-1**: first of two bridges succeeds, second fails ->
+  workspace transitions to `:failed`; NO bridge entity
+  survives logically; audit reason is `post_validation_failed`
+  or `commit_uncertainty`.
+- **V17-SR2-2**: direct post-validation mismatch (host endpoint
+  positions wrong) -> workspace transitions to `:failed` via
+  the canonical post-validation block.
+- **V17-SR2-3**: commit uncertainty (stub `end_operation` to
+  raise on commit) -> workspace transitions to `:failed`;
+  handles retained for Discard; audit reason
+  `commit_uncertainty`.
+- **V17-SR2-4**: zero-proposals path AND discarded-workspace
+  path both return `:failed`, never `:ready`.
 
-The old H3 mapping in the prior packet (H2 single bridge +
-H5 pairwise endpoint-disjoint preflight) was corrected. The
-prior `V17-H1..V17-H7` in `tests/test_v17_host_mutation.rb`
-remain as low-level single-bridge / failure-mode evidence
-(their numbers map to Blueprint §18.4 H1, H2, H4, H5, H6, H7,
-H8 respectively per the prior report's H-numbering note).
+---
 
-## F. T4 exact cycle evidence (per dispatch §F)
+## E. Runtime post-validation map (per dispatch §E)
+
+`GapBridgeExecutor._post_validate` (executor-side):
+
+| Check | Stable reason |
+|-------|---------------|
+| (A) workspace state | `post_workspace_state_#{state}` |
+| (A) applied count == expected | `applied_count_mismatch(N/M)` |
+| (B) origin_kind per bridge | `wrong_origin_kind:#{pid}` |
+| (B) repair_action_id per bridge | `wrong_repair_action_id:#{pid}` |
+| (B) entity record exists | `missing_entity_record:#{pid}` |
+| (B) geometry_summary exists | `missing_geometry_summary:#{pid}` |
+| (B) host handle present | `missing_host_handle:#{pid}` |
+| (B) host handle valid | `invalid_host_handle:#{pid}` |
+| (C) host endpoint start matches | `host_endpoint_start_mismatch:#{pid}` |
+| (C) host endpoint end matches | `host_endpoint_end_mismatch:#{pid}` |
+| (D) source fingerprint unchanged | `source_fingerprint_changed` |
+| (E) pre-existing coords unchanged | `pre_existing_coords_changed` |
+| (F) proposal ID set matches | `proposal_id_set_mismatch` |
+| (G) no REVIEW_REQUIRED executed | `non_ready_was_executed:#{pid}` |
+
+`WorkingModeRunner._canonical_post_validate` (runner-side):
+
+| Check | Stable reason |
+|-------|---------------|
+| (H) canonical bridge count == applied | `canonical_bridge_count_mismatch(N/M)` |
+| (I) repair_action_id in canonical edge | `repair_action_id_not_in_canonical:#{id}` |
+| (J) bridge endpoint adjacency A->B | `repaired_adjacency_missing_a:#{ce}` |
+| (J) bridge endpoint adjacency B->A | `repaired_adjacency_missing_b:#{ce}` |
+| (J) bridge endpoint resolution | `bridge_endpoint_not_resolved:#{ce}` |
+| (K) no new non_transitive_cluster | `new_non_transitive_cluster_introduced` |
+
+---
+
+## F. Point-on-segment tests (per dispatch §F)
 
 `tests/test_v17_production_gap_path.rb`:
 
-- **V17-T4 [PRODUCTION PATH]** — drives the REAL fixture
-  (the same A-B / A-C / B-D triangle from V17-X4):
+- **V17-SR4-1**: real fixture where a third edge's vertex lies
+  EXACTLY on the bridge segment interior (between two
+  coincident corners that are NOT open endpoints). The
+  proposal is demoted to REVIEW_REQUIRED with reason
+  `third_node_on_bridge`.
+- **V17-SR4-2**: third edge whose vertex is collinear with the
+  bridge line but FAR beyond the segment endpoint (y=100, well
+  outside the segment band). The proposal is NOT demoted; the
+  OLD collinearity-only predicate would have falsely demoted
+  it.
+- **V17-SR4-3**: third edge whose vertex is NEAR the bridge line
+  but outside `coordinate_epsilon`. The proposal is NOT demoted.
 
-  - BEFORE bridge: 4 canonical nodes (A, B, C, D), 3 canonical
-    edges (A-B, A-C, B-D), degrees [1, 1, 2, 2], 2 open
-    endpoints, connected BUT acyclic (edges == nodes - 1).
-    A deterministic cycle traversal does NOT close.
+---
 
-  - AFTER bridge: 4 canonical nodes, 4 canonical edges,
-    degrees [2, 2, 2, 2], 0 open endpoints. Connected AND
-    exactly one cycle (edges == nodes, every degree == 2).
-    A deterministic cycle traversal closes after consuming
-    the expected 4 canonical edges EXACTLY once each.
+## G. Deterministic ID evidence (per dispatch §G)
 
-  - V1.7 stops at nodes + edges + adjacency + topology
-    issues (Blueprint §15.3 V1.8 boundary): no LoopRecord
-    or RegionRecord is defined or referenced;
-    `metrics` does not carry `loops` / `regions` /
-    `loop_count` / `region_count` / `loop_records` /
-    `region_records`; `to_h` does not carry those keys;
-    the runner snapshot does not carry those keys.
+`V17-SR5-1` [PRODUCTION PATH]: drives the real production path
+THEN discards + rebuilds + reapplies. The new bridge's
+`derived_id` is identical to the previous one (`der-gap-#{proposal_id}`,
+where `proposal_id` itself is deterministic per
+`GapPairProposer._proposal_id`).
 
-- **V17-T4-EXACT3** — the literal 3/3 form: TWO source
-  edges meeting EXACTLY at one corner (P-Q, Q-R) with the
-  closing segment R-P missing. After apply: 3 canonical
-  nodes, 3 canonical edges, every node degree == 2,
-  deterministic 3-edge cycle traversal closes.
+---
 
-- **V17-T3 [PRODUCTION PATH]** — the repaired endpoints
-  (C, D in the §2 fixture) gain exactly +1 canonical
-  adjacency each; corners A, B unchanged; exactly one new
-  canonical edge; pre-repair open endpoint count = 2,
-  post-repair = 0. Anchored on world coordinates (which are
-  membership-independent) rather than on the changing
-  canonical_node_id (a singleton `cns-*` legitimately
-  becomes a clique `cn-*` once the bridge endpoint joins
-  it).
+## H. Plural provenance evidence (per dispatch §H)
 
-## G. Corrected complete test matrix (per dispatch §G)
+`V17-SR6-1` [PRODUCTION PATH]: after apply, the canonical graph
+contains exactly one `gap_bridge` canonical edge; its
+`source_occurrence_ids` field is an Array containing BOTH
+incident source occurrence IDs (`occ-101` AND `occ-102`). The
+singular `source_occurrence_id` is preserved and is one of the
+plural IDs (backwards compatibility).
 
-| Blueprint | Test | File | Status |
-|-----------|------|------|--------|
-| §18.1 N1 | V17-N1 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N2 | V17-N2 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N3 | V17-N3 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N4 | V17-N4 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N5 | V17-N5 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N6 | V17-N6 | `test_v17_topology_identity.rb` | PASS |
-| §18.1 N5b | V17-N5b | `test_v17_topology_identity.rb` | PASS |
-| §18.2 G1..G10 | V17-G1..G10 | `test_v17_gap_pairing.rb` | PASS |
-| §18.3 X1 (PRODUCTION PATH) | V17-X1 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.3 X1 (low-level mirror) | V17-X1-MIRROR-PREDICATE | `test_v17_branch_crossing.rb` | PASS (relabeled, not production evidence) |
-| §18.3 X2 (PRODUCTION PATH) | V17-X2 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.3 X2 (low-level mirror) | V17-X2-MIRROR-PREDICATE | `test_v17_branch_crossing.rb` | PASS (relabeled, not production evidence) |
-| §18.3 X3 | V17-X3 | `test_v17_branch_crossing.rb` | PASS |
-| §18.3 X3 (pairwise predicate) | V17-X3-PAIRWISE | `test_v17_branch_crossing.rb` | PASS |
-| §18.3 X4 (PRODUCTION PATH, real triangle) | V17-X4 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.3 X4 (2-line low-level) | V17-X4-LOWLEVEL-2LINE | `test_v17_branch_crossing.rb` | PASS (relabeled, not Blueprint X4) |
-| §18.4 H1 | V17-H1 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H2 | V17-H2 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H3 (PRODUCTION PATH, multi-bridge batch) | V17-H3 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.4 H4 (add-line failure; file V17-H3) | V17-H3 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H5 (commit uncertainty; file V17-H4) | V17-H4 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H6 (post-state mismatch; file V17-H5) | V17-H5 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H7 (source fingerprint unchanged) | V17-H6 | `test_v17_host_mutation.rb` | PASS |
-| §18.4 H8 (source-edge coordinates unchanged) | V17-H7 | `test_v17_host_mutation.rb` | PASS |
-| §18.5 T1 | V17-T1 | `test_v17_canonical_graph.rb` | PASS |
-| §18.5 T2 | V17-T2 | `test_v17_canonical_graph.rb` | PASS |
-| §18.5 T3 (PRODUCTION PATH) | V17-T3 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.5 T4 (PRODUCTION PATH, exact cycle) | V17-T4 [PRODUCTION PATH] | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.5 T4 (PRODUCTION PATH, 3/3 literal form) | V17-T4-EXACT3 | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| §18.5 T4 (BFS connectivity, low-level) | V17-T4 | `test_v17_canonical_graph.rb` | PASS (kept for audit, superseded by production-path form) |
-| §18.5 T5 | V17-T5 | `test_v17_canonical_graph.rb` | PASS |
-| §18.5 T6 | V17-T6 | `test_v17_canonical_graph.rb` | PASS |
-| §18.5 T7 | V17-T7 | `test_v17_canonical_graph.rb` | PASS |
-| §18.6 L1 | V17-L1 | `test_v17_canonical_graph.rb` | PASS |
-| §18.6 L2 | V17-L2 | `test_v17_canonical_graph.rb` | PASS |
-| §18.6 L3 | V17-L3 | `test_v17_canonical_graph.rb` | PASS |
-| §18.6 L4 | V17-L4 | `test_v17_canonical_graph.rb` | PASS |
-| §18.7 P1 | V17-P1 | `test_v17_performance.rb` | PASS |
-| §18.7 P2 | V17-P2 | `test_v17_performance.rb` | PASS |
-| §18.7 P3 | V17-P3 | `test_v17_performance.rb` | PASS |
-| §15.1 origin_kind translation | V17-OK-MAP-1 | `test_v17_branch_crossing.rb` | PASS |
-| §15.1 origin_kind translation (to_h) | V17-OK-MAP-2 | `test_v17_branch_crossing.rb` | PASS |
-| **R5 production defect — layer NoMethodError** | V17-R5-REG-LAYER | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| **R5 production defect — FrozenError** | V17-R5-REG-FROZEN | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| **R5 production defect — cluster key mismatch** | V17-R5-REG-CLUSTER | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
-| **R6 production defect — clique identity** | V17-R6-NODE-IDENTITY | `test_v17_production_gap_path.rb` | **PASS (NEW)** |
+---
 
-## H. Source-review patch + SHA-256 (per dispatch §H)
+## I. Unique graph-node evidence (per dispatch §I)
 
-- **Patch path**: `Review/V17_AIPM_SOURCE_REVIEW.patch`
-- **Patch generation command**:
-  `git diff d7e9c59..HEAD -- extension/su_ai_plugin tests scripts/build_rbz.rb > Review/V17_AIPM_SOURCE_REVIEW.patch`
-- **Patch size**: 316,045 bytes
-- **Patch SHA-256**:
-  `bc39afd7f9b139727043e9dddc1c2102c3a1afa7216de78ccd5e37ea7e504139`
+`V17-SR7-1` [PRODUCTION PATH]: after apply, `graph.nodes.length`
+equals the UNIQUE logical node count (4 for the triangle
+fixture); no duplicates. The corner-A clique has
+`membership_count >= 2`.
 
-## I. Critical source index (per dispatch §I)
+`V17-SR7-2`: a non-transitive cluster (A~=B, B~=C, A!~=C) keeps
+DISTINCT `canonical_node_id`s (3 distinct ids, no collapse).
 
-- **Index path**: `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`
-- **Contents**: complete R5 / R6 / R7 / R8 disposition table; full
-  per-file production change table; the four production defects
-  this dispatch uncovered (file / line / fix / regression);
-  Blueprint §18 test matrix; reviewer checklist.
+`V17-SR7-3`: `graph.metrics['canonical_node_count']` equals
+`graph.nodes.length` (UNIQUE logical count, not per-endpoint
+record count).
 
-## J. Regression counts (per dispatch §J)
+`V17-SR7-4`: rebuilding the canonical graph from the same
+unchanged workspace yields the SAME `digest` and the SAME
+`canonical_node_ids`.
 
-- **V17 production-path evidence** (X1 / X2 / X4 / H3 / T3 /
-  T4 / T4-EXACT3): 7/7 PASS
-  (`tests/test_v17_production_gap_path.rb`).
-- **V17 production-defect regressions** (R5-LAYER, R5-FROZEN,
-  R5-CLUSTER, R6-NODE-IDENTITY): 4/4 PASS
-  (`tests/test_v17_production_gap_path.rb`).
-- **Full V17 suite** (N + G + H + T + L + P + X + OK-MAP + new
-  production-path tests): 56/56 PASS (was 47 prior to this
-  dispatch; +9 new tests in this dispatch:
-  +7 production-path + +4 regressions −2 from relabeled names
-  = +9 net; the rename of X4-LOWLEVEL + X1/X2 mirror proc
-  keeps the same total test coverage as before).
-- **Full Ruby suite**: **906 / 906 PASS** (was 895 prior to
-  this dispatch; +11 new tests: 7 production-path + 4
-  regressions).
-- **V16 close-autodiscard** (V16-CLOSE-AUTODISCARD): 7/7 PASS
-  (no regression).
-- **V15 host-state / BLOCK-005** (V15): 149/149 PASS
-  (no regression).
-- **V16 substring**: 33/33 PASS (no regression).
+---
+
+## J. Complete V1.7 test matrix (per dispatch §G + dispatch §9)
+
+| Blueprint / SR | Test | File | Status |
+|----------------|------|------|--------|
+| §18.1 N1..N6 | V17-N1..N6 | test_v17_topology_identity.rb | PASS |
+| §18.1 N5b | V17-N5b | test_v17_topology_identity.rb | PASS |
+| §18.2 G1..G10 | V17-G1..G10 | test_v17_gap_pairing.rb | PASS |
+| §18.3 X1 (PRODUCTION PATH) | V17-X1 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.3 X1 (low-level mirror) | V17-X1-MIRROR-PREDICATE | test_v17_branch_crossing.rb | PASS (low-level) |
+| §18.3 X2 (PRODUCTION PATH) | V17-X2 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.3 X2 (low-level mirror) | V17-X2-MIRROR-PREDICATE | test_v17_branch_crossing.rb | PASS (low-level) |
+| §18.3 X3 | V17-X3 | test_v17_branch_crossing.rb | PASS |
+| §18.3 X3 (pairwise) | V17-X3-PAIRWISE | test_v17_branch_crossing.rb | PASS |
+| §18.3 X4 (PRODUCTION PATH) | V17-X4 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.3 X4 (low-level 2-line) | V17-X4-LOWLEVEL-2LINE | test_v17_branch_crossing.rb | PASS (low-level) |
+| §18.4 H1 | V17-H1 | test_v17_host_mutation.rb | PASS |
+| §18.4 H2 | V17-H2 | test_v17_host_mutation.rb | PASS |
+| §18.4 H3 (PRODUCTION PATH, multi-bridge batch) | V17-H3 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.4 H3 (build_entity failure) | V17-H3 | test_v17_host_mutation.rb | PASS |
+| §18.4 H4 (commit uncertainty) | V17-H4 | test_v17_host_mutation.rb | PASS |
+| §18.4 H5 (post-state mismatch) | V17-H5 | test_v17_host_mutation.rb | PASS |
+| §18.4 H6 (source fingerprint) | V17-H6 | test_v17_host_mutation.rb | PASS |
+| §18.4 H7 (source-edge coords) | V17-H7 | test_v17_host_mutation.rb | PASS |
+| §18.5 T1 | V17-T1 | test_v17_canonical_graph.rb | PASS |
+| §18.5 T2 | V17-T2 | test_v17_canonical_graph.rb | PASS |
+| §18.5 T3 (PRODUCTION PATH) | V17-T3 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.5 T4 (PRODUCTION PATH, exact cycle, 4 nodes) | V17-T4 [PRODUCTION PATH] | test_v17_production_gap_path.rb | PASS |
+| §18.5 T4 (PRODUCTION PATH, 3/3 form) | V17-T4-EXACT3 | test_v17_production_gap_path.rb | PASS |
+| §18.5 T4 (BFS, low-level) | V17-T4 | test_v17_canonical_graph.rb | PASS (kept for audit) |
+| §18.5 T5..T7 | V17-T5..T7 | test_v17_canonical_graph.rb | PASS |
+| §18.6 L1 | V17-L1 | test_v17_canonical_graph.rb | PASS |
+| §18.6 L2 (SR-01 ownership) | V17-L2 | test_v17_canonical_graph.rb | PASS |
+| §18.6 L3 (SR-01 ownership) | V17-L3 | test_v17_canonical_graph.rb | PASS |
+| §18.6 L4 | V17-L4 | test_v17_canonical_graph.rb | PASS |
+| §18.7 P1..P3 | V17-P1..P3 | test_v17_performance.rb | PASS |
+| §15.1 origin_kind translation | V17-OK-MAP-1, -2 | test_v17_branch_crossing.rb | PASS |
+| R5 (prior packet) | V17-R5-REG-LAYER, FROZEN, CLUSTER | test_v17_production_gap_path.rb | PASS |
+| R6 (prior packet) | V17-R6-NODE-IDENTITY | test_v17_production_gap_path.rb | PASS |
+| SR-01 | V17-SR1-1, -2, -3, -4 | test_v17_production_gap_path.rb | PASS |
+| SR-02 | V17-SR2-1, -2, -3, -4 | test_v17_production_gap_path.rb | PASS |
+| SR-03 | V17-SR3-1, -2, -3, -4, -5 | test_v17_production_gap_path.rb | PASS |
+| SR-04 | V17-SR4-1, -2, -3 | test_v17_production_gap_path.rb | PASS |
+| SR-05 | V17-SR5-1 | test_v17_production_gap_path.rb | PASS |
+| SR-06 | V17-SR6-1 | test_v17_production_gap_path.rb | PASS |
+| SR-07 | V17-SR7-1, -2, -3, -4 | test_v17_production_gap_path.rb | PASS |
+
+---
+
+## K. Prior-stage regressions + RBZ (per dispatch §K + L)
+
+- **V16 close-autodiscard** (V16-CLOSE-AUTODISCARD): 7/7 PASS (no
+  regression).
+- **V15 host-state / BLOCK-005** (V15): 149/149 PASS (no
+  regression).
 - **LEGACY-COMPAT**: 4/4 PASS (no regression).
 - **RBZ smoke** (`tests/test_rbz_smoke.rb`): 9/9 PASS
   (post-rebuild).
 - **`git diff --check`**: clean.
 
-## K. RBZ identity (per dispatch §K)
+---
+
+## L. RBZ identity (per dispatch §K)
 
 Rebuilt via `scripts/build_rbz.rb` after the production fixes
-landed (R5 / R6 production defects):
+landed:
 
 - **Path**: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
-- **Size**: 907,197 bytes
+- **Size**: 937,804 bytes
 - **Entries**: 67
 - **SHA-256**:
-  `38e6dc1e71f79478a8882f899cfb14bb5ab021e1fbd84287c0d2bfb8d1070648`
+  `9C7F701CDFBA1A908B329546C53BA325AC035544A4B6FF356C883BD84403FCCF`
 - **`su_ai_plugin.rb`** at RBZ root (entry-point convention OK).
 - **`su_ai_plugin/`** support folder (sibling of entry-point).
 - All V1.7 production files shipped (verified by
@@ -351,172 +320,100 @@ landed (R5 / R6 production defects):
 - `tests/`, `scripts/`, `Review/`, `Prompt/`, `.vendor/`,
   `.git/` dev-only paths excluded (rbz_smoke verified).
 
-## L. Git facts (per dispatch §L)
+---
 
-- **Starting HEAD (pre-this-dispatch)**: `aa33ac6`
-  (the prior V17-AIPM-PRIMARY-REVIEW-CORRECTION complete-state
-  doc-stamp commit).
+## M. Git facts (per dispatch §M)
+
+- **Starting HEAD (pre-this-dispatch)**: `2cdebb2`
+  (the prior V17-AIPM-EVIDENCE-INTEGRATION-FINAL doc-stamp
+  commit).
 - **Closed V1.6 base SHA**: `d7e9c59` (V1.6 CLOSE-AUTODISCARD).
-- **Implementation commit SHA (this dispatch)**:
-  `e98326ee17cabdeec0b617f22576d1bdc5ce699a`
-  (verifiable via `git rev-parse HEAD~1` after the doc-stamp
-  commit lands).
-- **Final HEAD (post-this-dispatch)**: see §L below; the
-  doc-stamp commit is one commit after the implementation
-  commit and references the implementation SHA
-  `e98326e...` in its commit-message body for `git log -1`
-  readers.
-- **Working tree (this dispatch, pre-doc-stamp)**: 4 modified
-  production files (canonical_topology_builder.rb,
-  endpoint_record.rb, gap_pair_proposer.rb,
-  working_mode_runner.rb), 1 modified test file
-  (test_v17_branch_crossing.rb), 1 new test file
-  (test_v17_production_gap_path.rb), 1 new review file
-  (Review/V17_AIPM_SOURCE_REVIEW.patch), 1 updated review
-  file (Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md).
-- **Local checkpoints on dev/v1.7 (this dispatch)**: 2 commits
-  (1 production + 1 doc-stamp).
-- **NOT PUSHED per dispatch §8 + the bounded network policy**
-  AT THE TIME OF TEST RUN. After all required tests were
-  green and the final stable local dev/v1.7 checkpoint
-  existed, the Owner/AIPM post-dispatch instruction was
-  applied: ONE normal fast-forward push of the assigned
-  branch was attempted. Result: PUSH SUCCEEDED.
-  - Remote `dev/v1.7` HEAD:
-    `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
-    (matches local `git rev-parse HEAD` byte-for-byte).
-  - Branch created as a new remote branch (GitHub reported
-    `[new branch] dev/v1.7 -> dev/v1.7`).
-  - No force-push, no rebase, no rewrite of shared history,
-    no `main` push/merge, no tag/release.
-- **`origin/dev/v1.7` HEAD**: `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
-  (new remote branch created by the single normal push
-  attempted post-dispatch per the Owner/AIPM instruction;
-  matches local HEAD byte-for-byte).
+- **V17 substantive implementation HEAD**: `e98326e` (preserved
+  from prior packet; this dispatch is a correction packet on
+  top).
+- **Final HEAD on `dev/v1.7`**: see `git rev-parse HEAD` after
+  the correction commits land; the doc-stamp commit is the last
+  commit on the assigned branch.
+- **Working tree (this dispatch, pre-commit)**: 4 modified
+  production files + 3 modified test files + 1 new patch file
+  (`Review/V17_AIPM_SOURCE_REVIEW.patch`) + 1 untracked review
+  file (`Review/CURRENT_AIPM_REVIEW_V17_DIRECT_SOURCE_REVIEW.md`).
+- **NOT PUSHED per dispatch §8 + §12 at the time of this report's
+  test run.** Push is attempted as the final step (after all
+  tests are green and the local checkpoint is stable).
 - **`git diff --check`**: clean.
+- **Local commits created (this dispatch)**: one production
+  commit (SR-01..SR-07 corrections + tests) + one doc-stamp
+  commit (CURRENT_STATE update + CURRENT_PI_REPORT overwrite +
+  patch refresh).
 
-## M. Local commits created (per dispatch §9)
+---
 
-This dispatch created two local commits on the assigned
-`dev/v1.7` (one production + one doc-stamp):
-
-1. `fix(v1.7): V17-EVIDENCE-INTEGRATION-FINAL — production-path
-   evidence + 4 production defects`
-   - 4 production files changed (R5 / R6 fixes + comments).
-   - 1 test file relabeled (`test_v17_branch_crossing.rb` —
-     V17-X1 / V17-X2 mirror relabel + V17-X4 2-line LOWLEVEL
-     relabel + scope comments).
-   - 1 test file added (`test_v17_production_gap_path.rb` —
-     11 new tests: V17-X1 / V17-X2 / V17-X4 / V17-H3 / V17-T3
-     / V17-T4 / V17-T4-EXACT3 / V17-R5-REG-LAYER /
-     V17-R5-REG-FROZEN / V17-R5-REG-CLUSTER /
-     V17-R6-NODE-IDENTITY).
-   - Implementation SHA:
-     `e98326ee17cabdeec0b617f22576d1bdc5ce699a`.
-2. `docs(v1.7): V17-AIPM-EVIDENCE-INTEGRATION-FINAL dispatch
-   state sync` (CURRENT_STATE update + this report + review
-   artifacts `Review/V17_AIPM_SOURCE_REVIEW.patch` +
-   `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md`).
-   - Doc-stamp SHA: see `git rev-parse HEAD` after this commit
-     lands.
-
-The doc-stamp commit's message body references the
-implementation SHA `e98326ee17cabdeec0b617f22576d1bdc5ce699a`
-for `git log -1` readers.
-
-## O. Remaining defects / assumptions / unknowns (per dispatch §M)
+## N. Remaining defects / assumptions / unknowns (per dispatch §M)
 
 ### Confirmed defects (this dispatch)
 
-None. All four R5-R8 findings are corrected; the four
-production defects uncovered by actually executing the
-production path are fixed and regression-locked; the
-corrected test matrix is reported honestly in §G.
+None. All seven SR findings are corrected; the 22 new SR
+regression tests are green; the full Ruby suite + RBZ smoke +
+V16 close-autodiscard + V15 host-state + LEGACY-COMPAT are all
+green; `git diff --check` is clean.
 
 ### Assumptions (require AIPM direct source review or Owner
 SU2020 confirmation)
 
-- The canonical_node_id change in
-  `CanonicalTopologyBuilder._build_canonical_node_record`
-  is membership-driven (Blueprint §7.3: sorted endpoint
-  membership keys + representative coordinate). The previous
-  `<cluster>.n#{position}` form was a per-member id, which
-  Blueprint §7.2 forbids. The new form (one canonical_node_id
-  per resolved clique, distinct ids for non-transitive
-  cluster members) implements §7.2 / §7.3 faithfully. The
-  V1.7-N5 deterministic-rebuild test (same input -> same
-  logical IDs / adjacency) passes, and the V1.7-N5b canonical
-  graph digest stability test passes unchanged. Pi verified
-  on the production-path fixtures that the post-apply graph
-  is exactly one canonical cycle.
-
-- The frozen V1.7 Blueprint §18.5 T4's literal phrase "3
-  canonical nodes + 3 canonical edges + every node degree
-  == 2" matches the V17-T4-EXACT3 fixture (P-Q, Q-R source
-  edges meeting exactly at Q + closing bridge R-P).
-  The §2 fixture (A-B, A-C, B-D source edges + closing bridge
-  C-D) yields 4 canonical nodes + 4 canonical edges + every
-  degree == 2 — the same exact invariant, with the expected
-  larger n, because C and D are at distance 0.05 (greater than
-  coordinate_epsilon 1.0e-6) and therefore remain distinct
-  canonical nodes. The dispatch accepted "equivalent
-  canonical fixture" in §4; both forms are explicitly tested.
-
-- The `V17-T3 [PRODUCTION PATH]` assertion anchors the
-  "+1 adjacency" invariant on world coordinates (which are
-  membership-independent) rather than on canonical_node_ids
-  (which legitimately change when a singleton `cns-*` becomes
-  a clique `cn-*` after the bridge endpoint joins it). This
-  is a more precise expression of the T3 invariant; the prior
-  T3 test in `test_v17_canonical_graph.rb` is kept as a
-  low-level companion (single-bridge) and continues to pass.
+- The new `_point_on_segment_interior?` predicate uses a
+  conservative band `[eps/seg_len, 1 - eps/seg_len]` for the
+  projection parameter t. For very short segments (seg_len
+  close to eps) the band becomes wide; for typical CAD gaps
+  the band is well-defined. Owner Scenario E (crossing) and the
+  Owner scenarios involving the bridge close to a pre-existing
+  vertex exercise this path.
+- The plural `source_occurrence_ids` field is the V1.8
+  authority; the singular `source_occurrence_id` is preserved
+  for backwards compatibility. V1.8 must consume the plural
+  field.
+- The canonical_node_count in the published metrics is
+  computed AT THE GRAPH CONSTRUCTOR boundary (after
+  SR-07 collapse). The topology snapshot's `metrics` Hash
+  still carries the per-endpoint builder counts; the GRAPH
+  finalizes the canonical_node_count before publication.
+- The new `_canonical_post_validate` runs AFTER the host
+  commit AND after the canonical graph rebuild. If canonical
+  post-validation fails after commit, the workspace
+  transitions to `:failed` with stable reason
+  `canonical_post_validation_failed`; handles are retained
+  for Discard; NO fake rollback is claimed. The
+  RUNNER-level audit is updated to `status=failed` +
+  `reason=canonical_post_validation_failed`.
 
 ### Unknowns (require real SketchUp 2020 evidence)
 
-- Real-host `add_line_to_repair_group` geometry-merge
-  semantics (SU may merge bridge endpoints with coincident
-  host vertices in the same group). V1.7 does NOT claim any
-  face insertion; the bridge is added in its OWN repair
-  group. Owner Scenario A is the canonical evidence.
-- SketchUp's bridge handle `valid?` semantics across native
-  Undo (Scenario F). V1.7's BLOCK-005 inheritance gives a
-  robust fallback (workspace transitions to `:failed` with
-  `host_state_changed`), but the Owner probe may surface
-  edge-case `valid?` timing.
-- Whether the host `transform_by_vectors` (V1.6 primitive)
-  interacts with `add_edges` / `add_line` calls issued in
-  the same native operation. V1.7 deliberately puts V1.6 and
-  V1.7 batch mutations in separate native operations
-  (Blueprint §12.3: "one native operation for the batch"); no
-  cross-talk evidence was discovered in the in-process test
-  env.
+- Whether real SketchUp's `Model#abort_operation` fully rolls
+  back all entities created in the operation when the
+  executor's `_confirmed_abort` path fires (Blueprint §12.3).
+  V1.7's BLOCK-005 inheritance provides the validate-on-next-
+  interaction fallback (workspace transitions to `:failed`
+  with `host_state_changed`), but real-host evidence is
+  required.
+- Whether the bridge-endpoint host_vertex_handle resolution
+  via `edge_endpoints` returns the same world coordinates on
+  real SU as the source-edge endpoints within
+  coordinate_epsilon. The V1.6 `vertex_position` seam is
+  exercised by the post-validation; the Owner Scenario F
+  (Undo + host-consistency) is the canonical evidence.
 
 ### Owner-only
 
-- Real human approval of the V1.7 UI simplification (Scenario
-  A's primary product feature: "发现 1 个可安全修复的间隙").
-- Acceptance that Scenario F (Undo + host-consistency)
-  demonstrates the BLOCK-005 inheritance is sufficient.
+- Real human approval of the V1.7 UI (Scenario A's primary
+  product feature: "发现 1 个可安全修复的间隙").
+- Acceptance that Scenario F demonstrates the BLOCK-005
+  inheritance is sufficient.
 - Final experience-freeze decision (this is an `Owner Gate`,
   not a Pi or AIPM decision).
 
-## P. Push outcome (per Owner/AIPM post-dispatch instruction)
+---
 
-A single normal fast-forward push of the assigned `dev/v1.7`
-branch was attempted after all required tests were green and
-the final stable local `dev/v1.7` checkpoint existed. Result:
-**PUSH SUCCEEDED**.
-
-- Remote `dev/v1.7` HEAD:
-  `a7c4c1db79d0ec364d69b819a447b2676c6c2d17`
-  (matches local `git rev-parse HEAD` byte-for-byte; verified
-  via `git ls-remote origin dev/v1.7`).
-- Branch created as a new remote branch (GitHub reported
-  `[new branch] dev/v1.7 -> dev/v1.7`).
-- No force-push, no rebase, no rewrite of shared history, no
-  `main` push/merge, no tag/release.
-
-## Q. Mandatory review state (per dispatch §N)
+## O. Mandatory review state (per dispatch §N)
 
 ```
 CODEX_GATE: STILL PENDING — DO NOT INVOKE
@@ -525,10 +422,9 @@ CODEX_GATE: STILL PENDING — DO NOT INVOKE
 Justification:
 - The V1.7 Blueprint §13 declares the canonical Codex xHigh
   integration review mandatory for V1.7.
-- This dispatch corrected the R5-R8 findings AND fixed four
-  production defects, but V1.7 is NOT ready for Codex until
-  AIPM direct source review (this report's owner) reaches
-  PASS.
+- This dispatch corrected the SR-01..SR-07 findings but V1.7
+  is NOT ready for Codex until AIPM direct source review (this
+  report's owner) reaches PASS.
 - After AIPM PASS, the dispatch lifecycle continues with
   Codex xHigh integration review (per the V1.7 Blueprint's
   mandatory review strategy).
@@ -542,43 +438,47 @@ The Owner shall run the Blueprint §19 scenarios A through G on
 real SketchUp 2020 once AIPM direct source review reaches PASS
 and Codex xHigh integration review also reaches PASS.
 
-Pi did NOT run any Owner scenario (per dispatch §7 + §10).
+---
+
+## P. Push outcome (per Owner/AIPM post-dispatch instruction)
+
+After all required tests were green and the final stable local
+`dev/v1.7` checkpoint existed, ONE normal fast-forward push of
+the assigned branch was attempted. Result: see `git ls-remote
+origin dev/v1.7` after push.
+
+- Branch pushed only to the assigned `dev/v1.7`.
+- No force-push, no rebase, no rewrite of shared history.
+- No `main` push/merge, no tag/release.
 
 ---
 
 ## Definition of done (per dispatch §10)
 
-- [x] R5 corrected (X1 / X2 drive the real
-      `WorkingModeRunner._crossing_checker_proc`; old mirror
-      tests relabeled as low-level predicate tests).
-- [x] R6 corrected (X4 is a real 3-edge almost-closed
-      triangle through the production path; the prior 2-line
-      substitute was a real implementation bug — the clique-
-      merge interaction — fixed in
-      `canonical_topology_builder._build_canonical_node_record`).
-- [x] R7 corrected (H3 [PRODUCTION PATH] proves 2-bridge
-      batch in ONE native operation with exact count).
-- [x] R8 corrected (T4 [PRODUCTION PATH] proves exact cycle
-      invariant on the real fixture + T4-EXACT3 proves the
-      literal 3/3 form; BFS-only connectivity explicitly NOT
-      accepted).
-- [x] Four production defects uncovered by running the
-      production path are fixed and regression-locked
-      (R5-REG-LAYER / R5-REG-FROZEN / R5-REG-CLUSTER /
-      R6-NODE-IDENTITY).
-- [x] `Review/V17_AIPM_SOURCE_REVIEW.patch` regenerated from
-      `d7e9c59` to the final substantive HEAD; SHA-256
-      recorded in §H.
-- [x] `Review/V17_AIPM_CRITICAL_SOURCE_INDEX.md` updated with
-      the new disposition table, production-defect table, and
-      reviewer checklist.
-- [x] Full regressions green (906 / 906 Ruby + 9 RBZ smoke +
-      V16 close-autodiscard + V15 host-state + LEGACY-COMPAT).
-- [x] Stable local corrected HEAD exists (see §L).
+- [x] SR-01 corrected (workspace-owned bridge; no separate
+      repair-group edge).
+- [x] SR-02 corrected (true `:failed` workspace on confirmed
+      abort; logical rollback via `pre_workspace`).
+- [x] SR-03 corrected (executor-side A..G + runner-side
+      H..K + `canonical_post_validation_failed` reason).
+- [x] SR-04 corrected (true point-on-segment-interior
+      predicate with projection parameter t + closest-point
+      distance + endpoint exclusion).
+- [x] SR-05 corrected (deterministic `der-gap-#{proposal_id}`;
+      no `rand`).
+- [x] SR-06 corrected (plural `source_occurrence_ids` +
+      singular preserved for backwards compatibility).
+- [x] SR-07 corrected (collapse records by `canonical_node_id`
+      into ONE logical graph node at the constructor boundary;
+      unique logical count in `canonical_node_count`).
+- [x] 22 SR-01..SR-07 regression tests added (dispatch §9).
+- [x] Prior-stage regressions + RBZ smoke green (921/921).
 - [x] `git diff --check` clean.
+- [x] RBZ rebuilt (937,804 bytes / 67 entries / SHA-256
+      `9C7F701CDFBA1A908B329546C53BA325AC035544A4B6FF356C883BD84403FCCF`).
 - [x] `CODEX_GATE: STILL PENDING — DO NOT INVOKE` recorded
-      in §P.
-- [x] `OWNER GATE: NOT YET RUN` recorded in §Q.
+      in §O.
+- [x] `OWNER GATE: NOT YET RUN` recorded in §O.
 - [x] No claim of AIPM PASS / Codex PASS / Owner PASS.
 - [x] V1.8 NOT STARTED.
 - [x] `main` not pushed / merged.
@@ -588,7 +488,7 @@ Pi did NOT run any Owner scenario (per dispatch §7 + §10).
 
 ## STOP and return control to AIPM.
 
-Next Gate: AIPM direct source review of
+Next Gate: AIPM direct source RE-REVIEW of
 `Review/V17_AIPM_SOURCE_REVIEW.patch` + the corrected V1.7 HEAD.
 
 Only after AIPM primary PASS: mandatory Codex xHigh integration review.
