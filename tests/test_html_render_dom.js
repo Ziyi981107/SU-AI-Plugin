@@ -3355,6 +3355,205 @@ assert('V17-UI4: APPLIED renders "已修复间隙" count row (=1)',
                 c.textContent.indexOf('1') !== -1;
        }));
 
+// --- V1.8 Polyline / Closed Loop / Region Reconstruction UI -----
+
+// V18-UI1: NOT_COMPUTED + ready workspace renders a 轮廓与区域 row.
+renderWithPayload({
+  selectionLabel: 'wm-v18-u1', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v18-u1-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v18cfg',
+    workspace_id: 'ws-v18-u1',
+    topology_repair: {
+      computed: true, state: 'APPLIED',
+      metrics: { open_endpoint_count: 0, ready_proposal_count: 0, review_proposal_count: 0 }
+    },
+    structure_reconstruction: {
+      computed: false, state: 'NOT_COMPUTED',
+      canonical_graph_digest: null, digest: null, metrics: null,
+      unresolved_issues: null
+    }
+  }
+});
+var v18u1List = mockElements['working-mode-list'];
+assert('V18-UI1: NOT_COMPUTED + ready workspace renders a 轮廓与区域 State row with Simplified Chinese "未检查" label',
+       v18u1List && v18u1List.children.some(function (c) {
+         return c.textContent.indexOf('轮廓与区域') !== -1 &&
+                c.textContent.indexOf('未检查') !== -1;
+       }));
+assert('V18-UI1: NOT_COMPUTED + ready workspace renders "检查结构" primary CTA (after APPLIED topology state)',
+       mockElements['working-mode-actions'] &&
+       mockElements['working-mode-actions'].children.some(function (c) {
+         return c.textContent.indexOf('检查结构') !== -1 &&
+                c.getAttribute('data-action') === 'compute_structure_reconstruction';
+       }));
+
+// V18-UI2: READY + structure_reconstruction.computed=true shows
+// metric rows.
+renderWithPayload({
+  selectionLabel: 'wm-v18-u2', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v18-u2-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v18cfg',
+    workspace_id: 'ws-v18-u2',
+    topology_repair: { computed: true, state: 'APPLIED' },
+    structure_reconstruction: {
+      computed: true, state: 'READY',
+      canonical_graph_digest: 'cn18-graph-digest',
+      digest: 'cn18-result-digest',
+      metrics: {
+        component_count: 1, open_chain_count: 0, closed_loop_count: 1,
+        region_count: 1, hole_count: 0, invalid_loop_count: 0,
+        invalid_component_count: 0, unresolved_issue_count: 0
+      },
+      unresolved_issues: []
+    }
+  }
+});
+var v18u2List = mockElements['working-mode-list'];
+assert('V18-UI2: READY + computed structure renders 轮廓与区域 card with "结构可用" label',
+       v18u2List && v18u2List.children.some(function (c) {
+         return c.textContent.indexOf('轮廓与区域') !== -1 &&
+                c.textContent.indexOf('结构可用') !== -1;
+       }));
+assert('V18-UI2: READY + computed structure renders all five metric rows',
+       v18u2List && v18u2List.children.some(function (c) {
+         return c.textContent.indexOf('开放链') !== -1 &&
+                c.textContent.indexOf('0') !== -1;
+       }) && v18u2List.children.some(function (c) {
+         return c.textContent.indexOf('闭合轮廓') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
+       }) && v18u2List.children.some(function (c) {
+         return c.textContent.indexOf('区域') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
+       }));
+
+// V18-UI3: READY_WITH_WARNINGS + invalid_loop_count=1 shows 异常.
+renderWithPayload({
+  selectionLabel: 'wm-v18-u3', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v18-u3-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v18cfg',
+    workspace_id: 'ws-v18-u3',
+    topology_repair: { computed: true, state: 'APPLIED' },
+    structure_reconstruction: {
+      computed: true, state: 'READY_WITH_WARNINGS',
+      canonical_graph_digest: 'cn18-graph-digest',
+      digest: 'cn18-result-digest',
+      metrics: {
+        component_count: 1, open_chain_count: 0, closed_loop_count: 1,
+        region_count: 0, hole_count: 0, invalid_loop_count: 1,
+        invalid_component_count: 0, unresolved_issue_count: 1
+      },
+      unresolved_issues: ['self_intersection']
+    }
+  }
+});
+var v18u3List = mockElements['working-mode-list'];
+assert('V18-UI3: READY_WITH_WARNINGS renders 轮廓与区域 card with "存在需检查项" label',
+       v18u3List && v18u3List.children.some(function (c) {
+         return c.textContent.indexOf('轮廓与区域') !== -1 &&
+                c.textContent.indexOf('存在需检查项') !== -1;
+       }));
+assert('V18-UI3: READY_WITH_WARNINGS renders 异常 row with count=1',
+       v18u3List && v18u3List.children.some(function (c) {
+         return c.textContent.indexOf('异常') !== -1 &&
+                c.textContent.indexOf('1') !== -1;
+       }));
+
+// V18-UI4: FAILED + host_state_changed reason shows failure row.
+renderWithPayload({
+  selectionLabel: 'wm-v18-u4', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'failed',
+    source_snapshot_id: 'wm-v18-u4-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v18cfg',
+    workspace_id: 'ws-v18-u4',
+    topology_repair: { computed: true, state: 'APPLIED' },
+    structure_reconstruction: {
+      computed: true, state: 'FAILED',
+      canonical_graph_digest: null, digest: '',
+      metrics: {
+        component_count: 0, open_chain_count: 0, closed_loop_count: 0,
+        region_count: 0, hole_count: 0, invalid_loop_count: 0,
+        invalid_component_count: 0, unresolved_issue_count: 1
+      },
+      unresolved_issues: ['host_state_changed']
+    }
+  }
+});
+var v18u4List = mockElements['working-mode-list'];
+assert('V18-UI4: FAILED renders 轮廓与区域 card with "检查失败" label',
+       v18u4List && v18u4List.children.some(function (c) {
+         return c.textContent.indexOf('轮廓与区域') !== -1 &&
+                c.textContent.indexOf('检查失败') !== -1;
+       }));
+assert('V18-UI4: FAILED renders failure reason row containing host_state_changed',
+       v18u4List && v18u4List.children.some(function (c) {
+         return c.textContent.indexOf('host_state_changed') !== -1;
+       }));
+
+// V18-UI5: technical details block carries V1.8 audit fields.
+renderWithPayload({
+  selectionLabel: 'wm-v18-u5', selectionType: 'Group',
+  summary: { edges: 4, vertices: 4, non_zero_z_vertices: 0, warnings: 0,
+             faces: 0, faces_with_holes: 0, issues: {} },
+  groups:  [], layerGroups: [], layerIssueGroups: [],
+  faceInventoryGroups: [],
+  derivedWorkspace: {
+    state: 'ready',
+    source_snapshot_id: 'wm-v18-u5-snap',
+    source_fingerprint_digest: 'eeee3333cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222cccc3333',
+    execution_config_digest: 'v18cfg',
+    workspace_id: 'ws-v18-u5',
+    topology_repair: { computed: true, state: 'APPLIED' },
+    structure_reconstruction: {
+      computed: true, state: 'READY',
+      canonical_graph_digest: 'cn18-graph-digest',
+      digest: 'cn18-result-digest',
+      metrics: { open_chain_count: 0, closed_loop_count: 1,
+                 region_count: 1, hole_count: 0 },
+      unresolved_issues: []
+    }
+  }
+});
+var v18u5Tech = mockElements['technical-details-list'];
+assert('V18-UI5: 技术详情 carries structure_reconstruction_state',
+       v18u5Tech && v18u5Tech.children.some(function (c) {
+         return c.getAttribute('data-field') === 'structure_reconstruction_state';
+       }));
+assert('V18-UI5: 技术详情 carries structure_reconstruction_digest',
+       v18u5Tech && v18u5Tech.children.some(function (c) {
+         return c.getAttribute('data-field') === 'structure_reconstruction_digest';
+       }));
+assert('V18-UI5: 技术详情 carries structure_reconstruction_canonical_graph_digest',
+       v18u5Tech && v18u5Tech.children.some(function (c) {
+         return c.getAttribute('data-field') === 'structure_reconstruction_canonical_graph_digest';
+       }));
+
 // --- final verdict -----------------------------------------------------
 
 var failed = results.filter(function (r) { return !r.pass; });

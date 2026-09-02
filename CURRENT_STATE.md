@@ -1,6 +1,133 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX (THIS UPDATE)
+## V1.8 BASE-STRUCTURE-RECONSTRUCTION (THIS UPDATE)
+
+Updated: 2026-09-02 (V18-BASE-STRUCTURE-RECONSTRUCTION-
+2026-09-02 dispatch EXECUTION on assigned `dev/v1.8` per
+dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.8
+Stage Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_8_LOOP_REGION_2026-09-02.md`.)
+
+Status (this dispatch):
+
+- **V1.7: CLOSED** (per
+  `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
+- **V1.8: ACTIVE** (per dispatch §0).
+- **Frozen V1.8 Blueprint**: ACTIVE.
+- **V1.8 AIPM source review**: pending.
+- **V1.8 Codex gate**: NOT REQUIRED (CODEX_RISK_TRIGGER = NO).
+- **V1.8 Owner SU2020 gate (Scenarios A–D)**: pending
+  AFTER AIPM PASS.
+- **V1.9 / PreparedCadDataset NOT STARTED.**
+- **V2 / MCP OUT OF SCOPE.**
+
+V1.8 BASE PACKET — 2026-09-02.
+
+- Starting HEAD: `ac0f26727574e4ea3830fec9fe4764a56e743358`.
+- Implementation SHA: produced by this dispatch (see
+  `git log -1` after commit).
+- Final HEAD on `dev/v1.8`: see `git rev-parse HEAD`
+  after push.
+- V1.8 RBZ candidate: size **1,052,723 bytes**; entries
+  **69**; SHA-256
+  **`c27e4ead97466f18a37dedf39f4fb6308de11d9ace962850e5bb113cf91bfb9d`**.
+- Full Ruby suite: **997 / 997 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 127 V1.7 tests + 9 V1.5
+  BLOCK-005 + 7 V1.6 close-autodiscard + 4
+  LEGACY-COMPAT + 9 RBZ smoke + 15 new V1.8 focused core
+  tests (V18-T01..T15) + 5 new V1.8 runner integration
+  tests (V18-I01..I05) + prior V17-INT 33 tests).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  327 assertions PASS, final line `PASS` (14 new
+  V18-UI assertions added by this dispatch).
+- `git diff --check`: clean.
+- per dispatch §13: STOPPED awaiting AIPM source review;
+  Codex xHigh integration review NOT invoked (no
+  risk trigger); V1.9 NOT STARTED; final Owner SU2020
+  real-host verification gate (Blueprint §22 A–D) NOT
+  YET RUN.
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.8`. Pi did NOT rewrite any frozen
+design authority.
+
+Corrections / implementations by this dispatch
+(each regression-locked in
+`tests/test_v18_structure_reconstruction.rb` or
+`tests/test_v18_working_mode_integration.rb`):
+
+- **Pure V1.8 reconstructor**
+  (`extension/su_ai_plugin/core/canonical_structure_reconstructor.rb`).
+  Deterministic JSON-safe value object. Consumes the
+  current V1.7 `CanonicalGeometryGraph` (or its
+  JSON-safe Hash form) and produces a frozen
+  `StructureReconstructionResult` with `chains`,
+  `loops`, `regions`, `unresolved_issues`, `metrics`,
+  `digest`. All IDs derive from SHA-256 over
+  `schema + ordered_ids` (no random). Upstream
+  V1.7 issues are propagated. Safe-clique collapse /
+  non-transitive separation / V1.7 digest
+  semantics UNCHANGED.
+
+- **WorkingModeRunner integration**:
+  `@structure_reconstruction_result` state;
+  `compute_structure_reconstruction` entry point
+  (Blueprint §15.2 order: ready guard -> host-state
+  validator FIRST -> captured tolerance -> fresh
+  graph rebuild -> pure reconstructor -> cache); reset
+  on prepare / discard / rebuild / successful
+  apply_gap_repair / reset_for_tests / host-state
+  invalidation; `_attach_structure_reconstruction_to_snapshot`
+  publishes the result into the snapshot under
+  `structure_reconstruction`.
+
+- **V1.8 UI in Simplified Chinese**:
+  `轮廓与区域` block; `检查结构` primary CTA surfaced
+  after a terminal V1.7 topology_repair state when
+  the V1.8 result is NOT_COMPUTED; metric rows
+  (开放链 / 闭合轮廓 / 区域 / 洞 / 异常); state
+  labels (未检查 / 结构可用 / 存在需检查项 /
+  检查失败); technical details preserved under
+  `技术详情` (state, computed, canonical_graph_digest,
+  result digest, full metrics, reason codes). No
+  "生成建筑" / "生成道路" / "场地边界" wording. No
+  mandatory Face button. No observer architecture.
+
+- **Tests added by this dispatch**: 15 focused core
+  cases (V18-T01..T15) + 5 runner integration cases
+  (V18-I01..I05) + 14 DOM assertions (V18-UI1..UI5).
+
+- **CODEX_RISK_TRIGGER = NO**. Per Blueprint §21: V1.7
+  schema, V1.7 identity, V1.7 digest semantics, source /
+  provenance authority, workspace ownership, native
+  SketchUp mutation, host Face creation, Undo /
+  Observer architecture, tolerance authority are all
+  UNCHANGED. V1.8 is a separate downstream immutable
+  reconstruction result. Therefore: AIPM source review
+  only.
+
+- **Source CAD immutable.** V1.8 does not mutate
+  Source CAD or create host entities. No
+  `begin_operation`. No observer. Face generation
+  is explicitly DEFERRED per Blueprint §17
+  (`FACE_PREVIEW = DEFERRED_FROM_V1.8_BASE`).
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected AIPM action: AIPM direct source review
+of the V1.8 packet against the frozen Blueprint. On
+AIPM PASS: final Owner SU2020 real-host verification
+gate (Blueprint §22 Scenarios A–D). V1.9 /
+PreparedCadDataset remains deferred.
+
+CODEX_GATE: NOT REQUIRED.
+OWNER_GATE: NOT YET RUN.
+V1.9: NOT STARTED.
+
+## V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX (HISTORICAL)
 
 Updated: 2026-09-02 (V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-
 2026-09-02 dispatch EXECUTION on assigned `dev/v1.7` per

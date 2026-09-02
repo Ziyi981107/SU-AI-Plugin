@@ -39,6 +39,9 @@ require_relative 'tolerance'
 # requires.
 require_relative 'planar_normalization_proposer'
 require_relative 'planar_normalization_executor'
+# V1.8 Polyline / Closed Loop / Region Reconstruction:
+# read-only consumer of the current V1.7 CanonicalGeometryGraph.
+require_relative 'canonical_structure_reconstructor'
 
 module SUAnalysis
   module Core
@@ -67,6 +70,14 @@ module SUAnalysis
       # SourceSnapshot's execution_config.tolerance_values.
       # Recomputed on prepare()/rebuild().
       @planar_normalization_tolerance = nil
+      # V1.8 Polyline / Closed Loop / Region Reconstruction:
+      # derived state for the current workspace's
+      # canonical structure. Recomputed by
+      # compute_structure_reconstruction; cleared on
+      # prepare / rebuild / discard / duplicate-repair
+      # mutation / planar normalization apply / gap
+      # repair apply / failed transitions.
+      @structure_reconstruction_result = nil
 
       STATES = [:none, :building, :ready, :discarded, :failed].freeze
 
@@ -173,6 +184,8 @@ module SUAnalysis
         @topology_repair_audit             = nil
         @topology_repair_canonical_graph   = nil
         @topology_v17_loaded               = false
+        # V1.8: clear per-build structure reconstruction.
+        @structure_reconstruction_result    = nil
 
         # V1.4 V14-STAGE-BLOCK-002 (2026-08-24): the prepare
         # path is the SINGLE operation owner for the build.
@@ -313,6 +326,10 @@ module SUAnalysis
         @topology_repair_proposal          = nil
         @topology_repair_audit             = nil
         @topology_repair_canonical_graph   = nil
+        # V1.8: clear structure reconstruction on discard
+        # so the next compute_structure_reconstruction
+        # rebuilds it from the post-Discard state.
+        @structure_reconstruction_result    = nil
         # NOTE: do NOT clear @current_workspace here. The
         # discarded workspace carries the :discarded state
         # that the UI needs to render. The next prepare()
@@ -395,6 +412,9 @@ module SUAnalysis
           # sub-snapshot (state + ready_proposals + audit +
           # canonical graph digest).
           _attach_topology_repair_to_snapshot(snap)
+          # V1.8 Polyline / Closed Loop / Region Reconstruction
+          # sub-snapshot.
+          _attach_structure_reconstruction_to_snapshot(snap)
           snap
         else
           ws = @current_workspace
@@ -431,6 +451,9 @@ module SUAnalysis
           _attach_planar_normalization_to_snapshot(snap)
           # V1.7 Endpoint / Gap Repair + Canonical Topology.
           _attach_topology_repair_to_snapshot(snap)
+          # V1.8 Polyline / Closed Loop / Region Reconstruction
+          # sub-snapshot.
+          _attach_structure_reconstruction_to_snapshot(snap)
           snap
         end
       end
@@ -1128,6 +1151,11 @@ module SUAnalysis
           @current_workspace = result['post_workspace'] if result['post_workspace']
           @topology_repair_audit = stringify_topology_repair_audit(result['audit'])
           @topology_repair_proposal = nil
+          # V1.8: a successful gap apply mutates the derived
+          # geometry; invalidate the cached structure so the
+          # next compute_structure_reconstruction sees the
+          # post-apply graph.
+          @structure_reconstruction_result = nil
           snapshot
         end
       end
@@ -1151,6 +1179,103 @@ module SUAnalysis
 
       def topology_repair_canonical_graph
         @topology_repair_canonical_graph
+      end
+
+      # ===========================================================
+      # V1.8 Polyline / Closed Loop / Region Reconstruction
+      # ===========================================================
+      #
+      # V18-BASE-STRUCTURE-RECONSTRUCTION-2026-09-02 dispatch
+      # (frozen Blueprint
+      # Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_8_LOOP_REGION_2026-09-02.md).
+      #
+      # Read-only consumer of the current V1.7
+      # CanonicalGeometryGraph. Per Blueprint §15:
+      #
+      #   1. require V1.8 pure dependencies
+      #   2. ensure current workspace/source/adapter exist
+      #   3. require current workspace state == ready
+      #   4. run existing validate_host_state_consistency! FIRST
+      #   5. if stale: fail closed; clear V1.8 result;
+      #      surface stable `host_state_changed`; no
+      #      reconstruction from stale geometry
+      #   6. get captured current tolerance using existing
+      #      authority
+      #   7. rebuild a FRESH CanonicalGeometryGraph from
+      #      current workspace via the existing
+      #      `rebuild_canonical_geometry_graph`
+      #   8. run CanonicalStructureReconstructor on that graph
+      #   9. cache JSON-safe immutable result
+      #  10. return normal snapshot
+      #
+      # V1.8 MUST work even if the user never ran `检查间隙`.
+      # The canonical graph is rebuilt read-only from the
+      # current workspace as needed. No host operation. No
+      # source mutation. No derived host geometry mutation.
+      def compute_structure_reconstruction
+        if @current_workspace.nil? || @current_source.nil? ||
+           @current_adapter.nil?
+          @structure_reconstruction_result = nil
+          return snapshot
+        end
+        if @current_workspace.state != :ready
+          @structure_reconstruction_result = nil
+          return snapshot
+        end
+        # Blueprint §15.2 step 4: validate host state FIRST
+        # (validate-on-next-interaction). If stale, the
+        # workspace is already :failed with stable reason
+        # `host_state_changed`; clear V1.8 result; publish a
+        # truthful FAILED audit; do NOT recompute geometry.
+        unless validate_host_state_consistency!
+          @structure_reconstruction_result = nil
+          audit = {
+            'state'         => 'FAILED',
+            'computed'      => true,
+            'reason'        => 'host_state_changed',
+            'canonical_graph_digest' => nil,
+            'digest'        => '',
+            'metrics'       => {},
+            'unresolved_issues' => ['host_state_changed'],
+            'chains'        => [],
+            'loops'         => [],
+            'regions'       => []
+          }.freeze
+          @structure_reconstruction_result = audit
+          return snapshot
+        end
+        # Blueprint §15.2 step 6: captured current tolerance.
+        tol = @topology_repair_tolerance ||
+              @planar_normalization_tolerance ||
+              _tolerance_from_snapshot(@current_source)
+        @topology_repair_tolerance = tol
+        # Blueprint §15.2 step 7: rebuild a FRESH canonical
+        # graph from the current workspace.
+        graph = rebuild_canonical_geometry_graph(
+          workspace: @current_workspace, tolerance: tol
+        )
+        if graph.nil?
+          @structure_reconstruction_result = nil
+          return snapshot
+        end
+        # Blueprint §15.2 step 8: run the pure reconstructor.
+        result = SUAnalysis::Core::CanonicalStructureReconstructor.reconstruct(
+          graph,
+          source_snapshot_id: @current_source.respond_to?(:snapshot_id) ?
+                                @current_source.snapshot_id.to_s : '',
+          workspace_id: @current_workspace.respond_to?(:workspace_id) ?
+                          @current_workspace.workspace_id.to_s : ''
+        )
+        # Blueprint §15.2 step 9: cache JSON-safe immutable
+        # result. The reconstructor already returns a frozen
+        # Hash; we keep it as-is.
+        @structure_reconstruction_result = result
+        snapshot
+      end
+
+      # Read-only accessor for the V1.8 cached result.
+      def structure_reconstruction_result
+        @structure_reconstruction_result
       end
 
       # ---- V1.7 internals ----
@@ -2160,6 +2285,35 @@ module SUAnalysis
         snap['topology_repair'] = sub.freeze
       end
 
+      # V1.8 Polyline / Closed Loop / Region Reconstruction
+      # sub-snapshot. Attaches the cached structure
+      # reconstruction result (or a NOT_COMPUTED placeholder)
+      # to the published snapshot so the UI can render the
+      # 轮廓与区域 block.
+      def _attach_structure_reconstruction_to_snapshot(snap)
+        if @structure_reconstruction_result.is_a?(Hash) &&
+           !@structure_reconstruction_result.empty?
+          # Decorate the result with a `computed` marker so
+          # callers can distinguish a fresh NOT_COMPUTED
+          # placeholder from a real result. We do NOT mutate
+          # the cached Hash; we shallow-duplicate.
+          decorated = @structure_reconstruction_result.merge(
+            'computed' => true
+          )
+          snap['structure_reconstruction'] = decorated.freeze
+        else
+          snap['structure_reconstruction'] = {
+            'state'            => 'NOT_COMPUTED',
+            'computed'         => false,
+            'reason'           => nil,
+            'canonical_graph_digest' => nil,
+            'digest'           => nil,
+            'metrics'          => nil,
+            'unresolved_issues' => nil
+          }.freeze
+        end
+      end
+
       # ===========================================================
       # Round-5 BLOCK-005 §7: host-state reconciliation.
       # ===========================================================
@@ -2306,6 +2460,8 @@ module SUAnalysis
         @topology_repair_tolerance        = nil
         @topology_repair_canonical_graph  = nil
         @topology_v17_loaded              = false
+        # V1.8 Polyline / Closed Loop / Region Reconstruction.
+        @structure_reconstruction_result   = nil
       end
 
       # V1.5 Phase 1 (internal): convert the duplicate-repair

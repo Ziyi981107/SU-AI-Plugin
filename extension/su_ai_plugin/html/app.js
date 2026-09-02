@@ -200,7 +200,9 @@
     apply_planar_normalization:    '应用平面校正',
     // V1.7 Endpoint / Gap Repair + Canonical Topology.
     compute_gap_repair:            '检查间隙',
-    apply_gap_repair:              '修复间隙'
+    apply_gap_repair:              '修复间隙',
+    // V1.8 Polyline / Closed Loop / Region Reconstruction.
+    compute_structure_reconstruction: '检查结构'
   };
 
   // V1.6 UI-CN-SIMPLIFICATION: section header Simplified Chinese
@@ -218,7 +220,8 @@
     planarNormalization:     '平面校正',
     technicalDetails:        '技术详情',
     moreActions:             '更多操作',
-    topologyRepair:          '拓扑修复'
+    topologyRepair:          '拓扑修复',
+    structureReconstruction: '轮廓与区域'
   };
 
   // V1.7 Endpoint / Gap Repair + Canonical Topology:
@@ -243,6 +246,26 @@
     appliedCount:         '已修复间隙',
     remainingOpen:        '剩余开放端点',
     computed:             '已检查'
+  };
+
+  // V1.8 Polyline / Closed Loop / Region Reconstruction:
+  // Simplified Chinese state labels (Blueprint §16).
+  var STRUCTURE_STATE_LABELS_CN = {
+    NOT_COMPUTED:        '未检查',
+    READY:               '结构可用',
+    READY_WITH_WARNINGS: '存在需检查项',
+    FAILED:              '检查失败'
+  };
+
+  // V1.8: short user-facing row labels for the new
+  // "轮廓与区域" card. Internal identifiers remain in
+  // `技术详情`.
+  var FIELD_LABEL_CN_STRUCT = {
+    openChains:           '开放链',
+    closedLoops:          '闭合轮廓',
+    regions:              '区域',
+    holes:                '洞',
+    exceptions:           '异常'
   };
 
   function render(payload) {
@@ -774,6 +797,15 @@
       if (ws.topology_repair && typeof ws.topology_repair === 'object') {
         renderTopologyRepair(listEl, state, ws.topology_repair);
       }
+      // V1.8 Polyline / Closed Loop / Region Reconstruction:
+      // condensed card (per Blueprint §16). The locked
+      // metric rows (开放链 / 闭合轮廓 / 区域 / 洞 / 异常)
+      // are rendered here. The reconstruction digest,
+      // canonical-graph digest, full metrics + reason codes
+      // are preserved in `技术详情`.
+      if (ws.structure_reconstruction && typeof ws.structure_reconstruction === 'object') {
+        renderStructureReconstruction(listEl, state, ws.structure_reconstruction);
+      }
     }
 
     // V1.6 UI-CN-SIMPLIFICATION (per dispatch §4): ONE primary
@@ -781,7 +813,8 @@
     // actions are HIDDEN (NOT rendered as disabled). The
     // primary action is chosen by current workspace + planar
     // normalization + topology-repair state.
-    renderPrimaryAction(actionsEl, state, ws.planar_normalization, ws.topology_repair);
+    renderPrimaryAction(actionsEl, state, ws.planar_normalization,
+                        ws.topology_repair, ws.structure_reconstruction);
 
     // Secondary operational controls live in a collapsed
     // `更多操作` block under the primary CTA (per dispatch
@@ -838,7 +871,7 @@
   // (priority alongside the V1.6 normalization CTA when both
   // are NOT_COMPUTED; topology-repair is the more visible one
   // because it produces visible derived geometry).
-  function renderPrimaryAction(actionsEl, workspaceState, pn, topo) {
+  function renderPrimaryAction(actionsEl, workspaceState, pn, topo, struct) {
     if (workspaceState === 'none') {
       // No workspace yet -> Prepare.
       addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
@@ -872,6 +905,8 @@
                     ? pn.state : 'NOT_COMPUTED';
       var topoActive = (topo && typeof topo === 'object' && typeof topo.state === 'string');
       var topoState  = topoActive ? topo.state : null;
+      var structActive = (struct && typeof struct === 'object' && typeof struct.state === 'string');
+      var structState  = structActive ? struct.state : 'NOT_COMPUTED';
       // V1.7 priority: a READY_TO_REPAIR topology proposal is
       // the most visible product of the gateway. Show it as
       // the primary CTA before any other action.
@@ -888,6 +923,21 @@
       if (topoState === 'NOT_COMPUTED') {
         addAction(actionsEl, ACTION_LABEL_CN.compute_gap_repair,
                   'compute_gap_repair', true);
+        return;
+      }
+      // V1.8 priority: when topology_repair is in a terminal
+      // state (APPLIED / NO_CANDIDATE / REVIEW_REQUIRED /
+      // FAILED) and the user has not yet computed the
+      // structure reconstruction, surface `检查结构` as the
+      // next primary CTA. The structure check is read-only
+      // and does not require the user to first run gap repair.
+      if (structState === 'NOT_COMPUTED' &&
+          (topoState === 'APPLIED' ||
+           topoState === 'NO_CANDIDATE' ||
+           topoState === 'REVIEW_REQUIRED' ||
+           topoState === 'FAILED')) {
+        addAction(actionsEl, ACTION_LABEL_CN.compute_structure_reconstruction,
+                  'compute_structure_reconstruction', true);
         return;
       }
       // V1.6 PN / V1.7 fallback. PN state retains its previous
@@ -1012,6 +1062,12 @@ function renderMoreActions(actionsEl, workspaceState) {
     // dispatch §5).
     if (ws.topology_repair && typeof ws.topology_repair === 'object') {
       renderTopologyRepairTechnicalRows(listEl, ws.topology_repair);
+    }
+    // V1.8 Polyline / Closed Loop / Region Reconstruction:
+    // raw reconstruction digest / canonical graph digest /
+    // full metrics / reason codes (per Blueprint §16).
+    if (ws.structure_reconstruction && typeof ws.structure_reconstruction === 'object') {
+      renderStructureReconstructionTechnicalRows(listEl, ws.structure_reconstruction);
     }
   }
 
@@ -1458,6 +1514,97 @@ function renderMoreActions(actionsEl, workspaceState) {
           addTechRow(listEl, 'canonical_graph_unresolved_' + idx, u);
         });
       }
+    }
+  }
+
+  // V1.8 Polyline / Closed Loop / Region Reconstruction:
+  // condensed Simplified-Chinese user-facing card for the
+  // new `轮廓与区域` section. The default visible rows are
+  // the locked Blueprint §16 metrics: 开放链 / 闭合轮廓 /
+  // 区域 / 洞 / 异常. Internal identifiers (canonical graph
+  // digest, result digest, full metrics, reason codes, loop
+  // / chain / region ids) live under `技术详情`
+  // (renderStructureReconstructionTechnicalRows).
+  function renderStructureReconstruction(listEl, workspaceState, struct) {
+    if (!struct || typeof struct !== 'object') return;
+    var state = (typeof struct.state === 'string') ? struct.state : 'NOT_COMPUTED';
+    var label = STRUCTURE_STATE_LABELS_CN[state] || state;
+    // Card title row (visible name).
+    addRow(listEl, workspaceState, SECTION_LABEL_CN.structureReconstruction,
+           label, label);
+    var metrics = (struct.metrics && typeof struct.metrics === 'object')
+                  ? struct.metrics : {};
+    var openChains    = (typeof metrics.open_chain_count  === 'number') ? metrics.open_chain_count  : 0;
+    var closedLoops   = (typeof metrics.closed_loop_count === 'number') ? metrics.closed_loop_count : 0;
+    var regions       = (typeof metrics.region_count      === 'number') ? metrics.region_count      : 0;
+    var holes         = (typeof metrics.hole_count        === 'number') ? metrics.hole_count        : 0;
+    // 异常 = distinct unresolved issue codes (the canonical
+    // per-component / per-loop / per-region count). Avoids
+    // double-counting overlapping loop / component metrics.
+    var invalid       = (typeof metrics.unresolved_issue_count === 'number')
+                       ? metrics.unresolved_issue_count : 0;
+    if (state === 'NOT_COMPUTED') {
+      addRow(listEl, workspaceState, null, null, '尚未检查结构。');
+      return;
+    }
+    if (state === 'READY' || state === 'READY_WITH_WARNINGS') {
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.openChains,
+             '' + openChains, '' + openChains);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.closedLoops,
+             '' + closedLoops, '' + closedLoops);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.regions,
+             '' + regions, '' + regions);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.holes,
+             '' + holes, '' + holes);
+      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.exceptions,
+             '' + invalid, '' + invalid);
+      return;
+    }
+    if (state === 'FAILED') {
+      var issues = Array.isArray(struct.unresolved_issues)
+                   ? struct.unresolved_issues : [];
+      var reason = (issues.length > 0) ? issues.join('；') :
+                    (struct.reason || '未知错误');
+      addRow(listEl, workspaceState, null, null,
+             '结构检查失败：' + String(reason));
+      return;
+    }
+  }
+
+  // renderStructureReconstructionTechnicalRows: full audit
+  // evidence for `技术详情`. Reconstruction digest,
+  // canonical-graph digest, full metrics, reason codes.
+  function renderStructureReconstructionTechnicalRows(listEl, struct) {
+    if (!struct || typeof struct !== 'object') return;
+    var state = (typeof struct.state === 'string') ? struct.state : 'NOT_COMPUTED';
+    addTechRow(listEl, 'structure_reconstruction_state', state);
+    if (typeof struct.computed === 'boolean') {
+      addTechRow(listEl, 'structure_reconstruction_computed',
+                 struct.computed ? 'true' : 'false');
+    }
+    if (typeof struct.canonical_graph_digest === 'string') {
+      addTechRow(listEl, 'structure_reconstruction_canonical_graph_digest',
+                 struct.canonical_graph_digest);
+    }
+    if (typeof struct.digest === 'string' && struct.digest.length > 0) {
+      addTechRow(listEl, 'structure_reconstruction_digest',
+                 struct.digest);
+    }
+    if (struct.metrics && typeof struct.metrics === 'object') {
+      Object.keys(struct.metrics).sort().forEach(function (k) {
+        addTechRow(listEl, 'structure_reconstruction_metric_' + k,
+                   struct.metrics[k]);
+      });
+    }
+    if (Array.isArray(struct.unresolved_issues)) {
+      struct.unresolved_issues.forEach(function (u, idx) {
+        addTechRow(listEl, 'structure_reconstruction_unresolved_' + idx, u);
+      });
+    }
+    if (Array.isArray(struct.reasons)) {
+      struct.reasons.forEach(function (r, idx) {
+        addTechRow(listEl, 'structure_reconstruction_reason_' + idx, r);
+      });
     }
   }
 
