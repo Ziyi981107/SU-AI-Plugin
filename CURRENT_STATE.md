@@ -69,6 +69,7 @@ V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX PACKET — 2026-09-02.
   fix commit was `9a81585`).
 - Implementation SHA: produced by this dispatch (see
   `git log -1` after commit).
+- Implementation commit: `7ea811e6dd98de60cc2a5d5204578f832b0f326f`.
 - Final HEAD on `dev/v1.7`: see `git rev-parse HEAD`
   after push.
 - V1.7 RBZ candidate: size **984,319 bytes**; entries
