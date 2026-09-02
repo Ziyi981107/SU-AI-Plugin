@@ -98,6 +98,7 @@ module SUAnalysis
       REASON_BRIDGE_BUILD_FAILED = 'workspace_build_failed'.freeze
       REASON_POST_VALIDATE_FAIL  = 'post_validation_failed'.freeze
       REASON_COMMIT_UNCERTAIN    = 'commit_uncertainty'.freeze
+      REASON_ABORT_UNCERTAIN     = 'abort_uncertainty'.freeze
       REASON_CANONICAL_POST_VALIDATE_FAIL = 'canonical_post_validation_failed'.freeze
 
       # Apply a batch of approved gap-bridge proposals to the
@@ -170,19 +171,29 @@ module SUAnalysis
                                              workspace.source_snapshot.fingerprint.digest.to_s : nil : nil
         pre_entity_coords = _pre_existing_source_derived_coords(workspace)
 
-        # ---- SR-02: maintain working_workspace as the
-        # progressively-mutated workspace. After commit (or
-        # confirmed abort), it is replaced with the appropriate
-        # final workspace; on uncertain failure, we fall back
-        # to the pre_workspace and transition to :failed.
+        # ---- SR-02 + RR-01: maintain working_workspace as
+        # the progressively-mutated workspace. After commit
+        # (or confirmed abort), it is replaced with the
+        # appropriate final workspace; on uncertain failure,
+        # we fall back to the pre_workspace and transition
+        # to :failed.
         working_workspace = workspace
         applied = []
         failed  = []
         commit_completed = false
         abort_completed = false
+        # RR-01: operation_started tracks whether the host
+        # operation was successfully opened. Only set after
+        # begin_operation returns without raising. Every exit
+        # path MUST reduce operation_started exactly once (via
+        # confirmed commit, confirmed abort, or close
+        # uncertainty state). Never returns without one of
+        # these resolutions.
+        operation_started = false
         begin
           adapter.begin_operation(working_workspace.instance_variable_get(:@model),
                                   label: OPERATION_NAME)
+          operation_started = true
           ready.each do |prop|
             eps = prop['expected_bridge_endpoints']
             p1 = eps[0]
@@ -237,12 +248,37 @@ module SUAnalysis
                                 pre_source_fingerprint_digest: pre_source_fingerprint_digest,
                                 pre_entity_coords: pre_entity_coords)
           if !post['pass']
-            # SR-02: confirmed host abort path. Discard any
-            # working handles built so far (the workspace's
-            # private handle_registry holds them all), then
-            # return a NEW :failed workspace derived from
-            # pre_workspace.
-            _confirmed_abort(adapter, working_workspace, pre_workspace)
+            # RR-01 + SR-02: confirmed host abort path.
+            # 1. Close the operation with commit:false EXACTLY
+            #    ONCE. If the adapter succeeds, mark
+            #    abort_completed=true and operation_started=
+            #    false. If the adapter raises, fall through
+            #    to the abort-uncertainty branch below
+            #    (preserve working handles for Discard).
+            # 2. Discard any working handles built so far
+            #    (the workspace's private handle_registry
+            #    holds them all), then return a NEW :failed
+            #    workspace derived from pre_workspace.
+            abort_outcome = _confirmed_abort(adapter, working_workspace, pre_workspace)
+            unless abort_outcome == :abort_completed
+              # Abort ITSELF raised (close-uncertainty).
+              # Preserve current handles, mark :failed,
+              # record stable reason `abort_uncertainty`.
+              audit = _abort_uncertain_audit(applied, post['reasons'])
+              post_ws = _transition_to_failed_with_handles(
+                pre_workspace, working_workspace,
+                REASON_ABORT_UNCERTAIN, audit['reason'].to_s
+              )
+              return {
+                'status'         => :failed,
+                'post_workspace' => post_ws,
+                'audit'          => audit,
+                'applied_proposals' => applied,
+                'failed_proposals'  => failed,
+                'repair_group'   => nil
+              }
+            end
+            operation_started = false
             return _fail(pre_workspace, REASON_POST_VALIDATE_FAIL, applied,
                          post['reasons'])
           end
@@ -250,26 +286,40 @@ module SUAnalysis
           adapter.end_operation(working_workspace.instance_variable_get(:@model),
                                 commit: true)
           commit_completed = true
+          operation_started = false
         rescue StandardError => e
-          # SR-02: try to abort the operation (best-effort).
-          begin
-            adapter.end_operation(working_workspace.instance_variable_get(:@model),
+          # RR-01 + SR-02: try to abort the operation
+          # (best-effort). Track success. If abort itself
+          # raises, we are in abort-uncertainty: preserve
+          # working handles for Discard.
+          abort_uncertain = false
+          if operation_started
+            begin
+              adapter.end_operation(working_workspace.instance_variable_get(:@model),
                                   commit: false)
-            abort_completed = true
-          rescue StandardError
-            # ignore nested cleanup
+              abort_completed = true
+              operation_started = false
+            rescue StandardError
+              abort_uncertain = true
+              operation_started = false
+            end
           end
-          # SR-02: on commit uncertainty / abort uncertainty /
-          # exception, return :failed based on pre_workspace.
-          # Preserve enough current generated handles so
-          # explicit Discard can clean any host entity that
-          # may still exist (per dispatch §3).
-          audit = _commit_uncertain_audit(applied, e)
+          # RR-01 + SR-02: on commit uncertainty / abort
+          # uncertainty / exception, return :failed based on
+          # pre_workspace. Preserve enough current generated
+          # handles so explicit Discard can clean any host
+          # entity that may still exist.
+          audit = if abort_uncertain
+                    _abort_uncertain_audit(applied, [e.message.to_s])
+                  else
+                    _commit_uncertain_audit(applied, e)
+                  end
+          reason = abort_uncertain ? REASON_ABORT_UNCERTAIN : REASON_COMMIT_UNCERTAIN
           # Use the partially-mutated working_workspace as the
           # source of current handles (Discard needs them).
           # Mark it :failed so it cannot claim :ready.
           post_ws = _transition_to_failed_with_handles(
-            pre_workspace, working_workspace, REASON_COMMIT_UNCERTAIN,
+            pre_workspace, working_workspace, reason,
             audit['reason'].to_s
           )
           return {
@@ -416,8 +466,15 @@ module SUAnalysis
           unless gs['repair_action_id'].to_s == prop_id.to_s
             reasons << "wrong_repair_action_id:#{prop_id}"
           end
-          # (C) actual host endpoint positions must match
-          # expected values within coordinate_epsilon.
+          # (C) RR-02: actual host endpoint positions must
+          # match the READY proposal's expected endpoints
+          # within that proposal's `coordinate_epsilon`. The
+          # comparison is ORDER-INSENSITIVE (undirected
+          # segment match: host may report (A,B) or (B,A)).
+          # The check FAIL-CLOSED: missing capability, nil
+          # handles, raised/nil position reads ALL count as
+          # failure. No hardcoded 1e-5 epsilon -- each
+          # proposal carries its own.
           h = a['host_handle']
           if h.nil?
             reasons << "missing_host_handle:#{prop_id}"
@@ -425,32 +482,72 @@ module SUAnalysis
           end
           if h.respond_to?(:valid?) && !h.valid?
             reasons << "invalid_host_handle:#{prop_id}"
+            next
           end
-          if adapter.respond_to?(:edge_endpoints)
-            host_eps = begin
-                          adapter.edge_endpoints(h)
-                        rescue StandardError
-                          nil
-                        end
-            if host_eps.is_a?(Array) && host_eps.length == 2
-              # host_eps returns VERTEX HANDLES; their world
-              # position is read via vertex_position when
-              # available.
-              actual_start = _vertex_position_safely(adapter, host_eps[0])
-              actual_end   = _vertex_position_safely(adapter, host_eps[1])
-              exp_start = gs['start']
-              exp_end   = gs['end']
-              if exp_start.is_a?(Array) && actual_start.is_a?(Array)
-                unless _point_within_eps?(actual_start, exp_start, 1.0e-5)
-                  reasons << "host_endpoint_start_mismatch:#{prop_id}"
-                end
-              end
-              if exp_end.is_a?(Array) && actual_end.is_a?(Array)
-                unless _point_within_eps?(actual_end, exp_end, 1.0e-5)
-                  reasons << "host_endpoint_end_mismatch:#{prop_id}"
-                end
-              end
-            end
+          unless adapter.respond_to?(:edge_endpoints)
+            reasons << "host_endpoint_handles_unavailable:#{prop_id}"
+            next
+          end
+          host_eps = begin
+                        adapter.edge_endpoints(h)
+                      rescue StandardError
+                        nil
+                      end
+          unless host_eps.is_a?(Array) && host_eps.length == 2 &&
+                 !host_eps[0].nil? && !host_eps[1].nil?
+            reasons << "host_endpoint_handles_malformed:#{prop_id}"
+            next
+          end
+          unless adapter.respond_to?(:vertex_position)
+            reasons << "host_endpoint_position_unavailable:#{prop_id}"
+            next
+          end
+          actual_a_raw = begin
+                            adapter.vertex_position(host_eps[0])
+                          rescue StandardError
+                            nil
+                          end
+          actual_b_raw = begin
+                            adapter.vertex_position(host_eps[1])
+                          rescue StandardError
+                            nil
+                          end
+          unless actual_a_raw.is_a?(Array) && actual_b_raw.is_a?(Array) &&
+                 actual_a_raw.length == 3 && actual_b_raw.length == 3 &&
+                 _finite_point?(actual_a_raw) && _finite_point?(actual_b_raw)
+            reasons << "host_endpoint_position_unreadable:#{prop_id}"
+            next
+          end
+          # Use the proposal's own coordinate_epsilon
+          # (NO hardcoded fallback).
+          prop_eps = prop_lookup = ready.find { |p| p['proposal_id'].to_s == prop_id.to_s }
+          ce = if prop_eps && prop_eps['coordinate_epsilon']
+                 prop_eps['coordinate_epsilon'].to_f
+               else
+                 # If the proposal didn't carry its epsilon
+                 # (defensive), the executor MUST fail closed
+                 # instead of silently using a hardcoded
+                 # fallback.
+                 reasons << "host_endpoint_epsilon_missing:#{prop_id}"
+                 next
+               end
+          # Undirected segment match: host segment matches the
+          # expected endpoints iff (host_a == exp_a AND
+          # host_b == exp_b) OR (host_a == exp_b AND host_b
+          # == exp_a).
+          exp_start = gs['start']
+          exp_end   = gs['end']
+          unless exp_start.is_a?(Array) && exp_end.is_a?(Array) &&
+                 exp_start.length == 3 && exp_end.length == 3
+            reasons << "host_endpoint_expected_malformed:#{prop_id}"
+            next
+          end
+          forward_ok = _point_within_eps?(actual_a_raw, exp_start, ce) &&
+                         _point_within_eps?(actual_b_raw, exp_end,   ce)
+          reverse_ok = _point_within_eps?(actual_a_raw, exp_end,   ce) &&
+                         _point_within_eps?(actual_b_raw, exp_start, ce)
+          unless forward_ok || reverse_ok
+            reasons << "host_endpoint_segment_mismatch:#{prop_id}"
           end
         end
         # (F) generated proposal IDs must exactly equal the
@@ -538,39 +635,43 @@ module SUAnalysis
         "#{BRIDGE_DERIVED_ID_PREFIX}#{proposal_id.to_s}"
       end
 
-      # ---- SR-02: confirmed host abort path ----
+      # ---- RR-01 + SR-02: confirmed host abort path ----
       #
-      # The host operation has been aborted (or end(commit:
-      # false) succeeded). On SketchUp a confirmed abort rolls
-      # back every entity created in the operation, so the
-      # workspace's inventory + handle_registry will look
-      # unchanged after the abort. We DO NOT rely on host
-      # rollback alone; we build a NEW :failed workspace from
-      # pre_workspace (inventory + handle_registry + source
-      # snapshot), so no generated bridge record survives
-      # logically.
-      def _confirmed_abort(_adapter, working_workspace, pre_workspace)
-        # The production adapter's `end_operation(commit:
-        # false)` rolls back every entity created in the
-        # operation. For defensive purposes, we ask the
-        # adapter to dispose any repair_group bridges it
-        # tracked (legacy path), so the host sees no surviving
-        # bridge geometry. We do NOT call this on the
-        # production path because the V1.7 base does not
-        # create repair-group bridges.
+      # Closes the SketchUp operation with commit:false
+      # EXACTLY ONCE. Returns:
+      #   :abort_completed -- adapter.end_operation(commit: false)
+      #                       returned successfully; the host
+      #                       operation is now closed and
+      #                       every entity created in it has
+      #                       been rolled back.
+      #   :abort_uncertain  -- adapter.end_operation(commit: false)
+      #                       RAISED; the operation may still
+      #                       be open or partially-rolled-back.
+      #                       Caller MUST preserve current
+      #                       working handles and emit a
+      #                       :failed uncertainty workspace.
+      #
+      # After a confirmed abort, no generated bridge record
+      # survives logically: pre_workspace already carries the
+      # pre-batch inventory + handle_registry.
+      def _confirmed_abort(adapter, working_workspace, pre_workspace)
+        # Defensive: if no operation was opened (shouldn't
+        # happen because we only enter this path after
+        # begin_operation returned without raising), still
+        # return :abort_completed because there's nothing to
+        # close.
+        return :abort_completed if adapter.nil?
+        # Get the model the runner passed to begin_operation.
+        model = pre_workspace.instance_variable_get(:@model) ||
+                (working_workspace.respond_to?(:instance_variable_get) ?
+                 working_workspace.instance_variable_get(:@model) : nil)
+        # Make the SINGLE end_operation(commit: false) call.
         begin
-          if @_adapter_for_cleanup && @_adapter_for_cleanup.respond_to?(:dispose_repair_group_bridges)
-            @_adapter_for_cleanup.dispose_repair_group_bridges
-          end
+          adapter.end_operation(model, commit: false)
+          :abort_completed
         rescue StandardError
-          # ignore
+          :abort_uncertain
         end
-        # No generated record survives logically: the
-        # pre_workspace already carries the pre-batch handle
-        # registry. Discard any partially-tracked handles on
-        # the working side (best-effort; the workspace's
-        # discard is idempotent and skips nil handles).
-        nil
       end
 
       # ---- SR-02: transition to :failed, preserve handles ----
@@ -688,6 +789,24 @@ module SUAnalysis
           'applied_proposals' => applied,
           'exception_class'  => exception.class.to_s,
           'exception_message' => exception.message.to_s,
+          'schema_version'   => PROVENANCE_SCHEMA_VERSION,
+          'applied_at'       => '1970-01-01T00:00:00Z'
+        }.freeze
+      end
+
+      # RR-01: abort-uncertainty audit builder. The host
+      # operation may STILL be open after end_operation
+      # raised; we did not achieve a confirmed abort. The
+      # caller preserves current handles for Discard and
+      # marks the workspace :failed with stable reason
+      # `abort_uncertainty` (no fake rollback success).
+      def _abort_uncertain_audit(applied, extra_reasons)
+        {
+          'status'           => :failed,
+          'reason'           => REASON_ABORT_UNCERTAIN,
+          'applied_count'    => applied.length,
+          'applied_proposals' => applied,
+          'extra_reasons'    => Array(extra_reasons),
           'schema_version'   => PROVENANCE_SCHEMA_VERSION,
           'applied_at'       => '1970-01-01T00:00:00Z'
         }.freeze

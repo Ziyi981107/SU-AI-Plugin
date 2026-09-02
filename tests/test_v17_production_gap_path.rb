@@ -987,10 +987,16 @@ test 'V17-SR2-2 [PRODUCTION PATH]: post-validation failure -> :failed' do
     'derived_id' => bridge.derived_id.to_s,
     'host_handle' => ws_post.handle_for(bridge.derived_id)
   }
+  tol = v17p_tol(0.1)
   ready_entry = {
     'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
     'state' => GapPairProposer::STATE_READY_TO_REPAIR,
-    'executable' => true
+    'executable' => true,
+    'coordinate_epsilon' => tol.coordinate_epsilon.to_f,
+    'expected_bridge_endpoints' => [
+      bridge.geometry_summary['start'].dup,
+      bridge.geometry_summary['end'].dup
+    ]
   }
   adapter.define_singleton_method(:vertex_position) do |_v|
     [999.0, 999.0, 999.0]
@@ -1008,9 +1014,10 @@ test 'V17-SR2-2 [PRODUCTION PATH]: post-validation failure -> :failed' do
   refute_equal true, result['pass'],
                'SR2-2: a host endpoint mismatch MUST be detected by post-validation'
   reasons_str = result['reasons'].join(',')
-  assert(reasons_str.include?('host_endpoint_start_mismatch') ||
+  assert(reasons_str.include?('host_endpoint_segment_mismatch') ||
+         reasons_str.include?('host_endpoint_start_mismatch') ||
          reasons_str.include?('host_endpoint_end_mismatch'),
-         "SR2-2: the post-validation reason must include a host_endpoint_*_mismatch; " \
+         "SR2-2: the post-validation reason must include a host_endpoint_* mismatch; " \
          "got #{reasons_str.inspect}")
 ensure
   V17P_RUNNER.reset_for_tests
@@ -1072,6 +1079,7 @@ test 'V17-SR3-1 [PRODUCTION PATH]: endpoint mismatch is caught by post-validatio
   ws_post = V17P_RUNNER.current_workspace_for_test
   bridge = v17p_bridge_records(ws_post).first
   refute_nil bridge
+  tol = v17p_tol(0.1)
   adapter.define_singleton_method(:edge_endpoints) do |_h|
     [Object.new, Object.new]
   end
@@ -1085,15 +1093,21 @@ test 'V17-SR3-1 [PRODUCTION PATH]: endpoint mismatch is caught by post-validatio
        'host_handle' => ws_post.handle_for(bridge.derived_id) }],
     [{ 'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
        'state' => GapPairProposer::STATE_READY_TO_REPAIR,
-       'executable' => true }],
+       'executable' => true,
+       'coordinate_epsilon' => tol.coordinate_epsilon.to_f,
+       'expected_bridge_endpoints' => [
+         bridge.geometry_summary['start'].dup,
+         bridge.geometry_summary['end'].dup
+       ] }],
     pre_workspace: ws, pre_fingerprint_digest: nil,
     pre_source_fingerprint_digest: nil, pre_entity_coords: nil
   )
   refute_equal true, result['pass']
   reasons_str = result['reasons'].join(',')
-  assert(reasons_str.include?('host_endpoint_start_mismatch') ||
+  assert(reasons_str.include?('host_endpoint_segment_mismatch') ||
+         reasons_str.include?('host_endpoint_start_mismatch') ||
          reasons_str.include?('host_endpoint_end_mismatch'),
-         "SR3-1: must include a host_endpoint_*_mismatch reason; got #{reasons_str.inspect}")
+         "SR3-1: must include a host_endpoint_* mismatch reason; got #{reasons_str.inspect}")
 ensure
   V17P_RUNNER.reset_for_tests
 end
@@ -1198,7 +1212,19 @@ test 'V17-SR3-5 [PRODUCTION PATH]: canonical post-validation mismatch -> :failed
   )
   refute_equal true, result['pass']
   reasons_str = result['reasons'].join(',')
-  assert_includes reasons_str, 'repair_action_id_not_in_canonical'
+  # V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-04: the
+  # canonical post-validate now checks CURRENT-BATCH bridges
+  # (those whose repair_action_id is in applied_ids). A
+  # nonexistent applied_id therefore emits EITHER
+  # canonical_bridge_count_mismatch(0/N) OR
+  # repair_action_id_not_in_canonical (whichever the check
+  # order reaches first).
+  assert(
+    reasons_str.include?('repair_action_id_not_in_canonical') ||
+      reasons_str.include?('canonical_bridge_count_mismatch'),
+    "SR3-5: must include repair_action_id_not_in_canonical OR canonical_bridge_count_mismatch; " \
+    "got #{reasons_str.inspect}"
+  )
 ensure
   V17P_RUNNER.reset_for_tests
 end
@@ -1413,6 +1439,491 @@ test 'V17-SR7-4 [PRODUCTION PATH]: graph IDs / digest stable for unchanged same-
   graph2_ids = graph2.nodes.map { |n| n['canonical_node_id'].to_s }.sort
   assert_equal graph1_ids, graph2_ids,
                'SR7-4: canonical_node_ids MUST be stable across rebuilds'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ===============================================================
+# V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-02:
+# HOST ENDPOINT POST-VALIDATION MUST FAIL CLOSED.
+# Use the proposal's own coordinate_epsilon; no hardcoded
+# 1e-5; undirected (forward OR reverse) segment match.
+# Tests: missing capability, nil handles, raised/nil
+# vertex reads, epsilon ownership, reversed host order.
+# ===============================================================
+
+# Helper: build a complete applied+ready pair from the
+# already-applied bridge on the workspace, with the supplied
+# proposal's coordinate_epsilon and expected endpoints.
+def v17p_rr02_build_entries(ws_post, bridge, ce)
+  applied_entry = {
+    'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+    'derived_id'  => bridge.derived_id.to_s,
+    'host_handle' => ws_post.handle_for(bridge.derived_id)
+  }
+  ready_entry = {
+    'proposal_id' => bridge.geometry_summary['repair_action_id'].to_s,
+    'state' => GapPairProposer::STATE_READY_TO_REPAIR,
+    'executable' => true,
+    'coordinate_epsilon' => ce.to_f,
+    'expected_bridge_endpoints' => [
+      bridge.geometry_summary['start'].dup,
+      bridge.geometry_summary['end'].dup
+    ]
+  }
+  [applied_entry, ready_entry]
+end
+
+def v17p_rr02_workspace(tol)
+  adapter = v17p_prepare(v17p_triangle_edges, tol)
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  ws_post = V17P_RUNNER.current_workspace_for_test
+  bridge  = v17p_bridge_records(ws_post).first
+  refute_nil bridge
+  [adapter, ws_post, bridge]
+end
+
+# RR-02-A: missing edge_endpoints capability -> fail
+test 'V17-RR02-A [PRODUCTION PATH]: missing edge_endpoints capability -> post-validate fails' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  # Make the adapter NOT expose edge_endpoints. We use a
+  # respond_to? singleton override that returns false for
+  # :edge_endpoints (does NOT modify the class itself, so
+  # subsequent tests still have a working edge_endpoints
+  # capability on fresh adapter instances).
+  adapter.define_singleton_method(:respond_to?) do |sym, *args|
+    sym.to_sym == :edge_endpoints ? false : super(sym, *args)
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'RR02-A: missing edge_endpoints capability MUST fail post-validation'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_handles_unavailable'),
+         "RR02-A: reason must include 'host_endpoint_handles_unavailable'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-02-B: nil handles -> fail
+test 'V17-RR02-B [PRODUCTION PATH]: edge_endpoints returns nil handles -> post-validate fails' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [nil, nil]
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'RR02-B: nil handles MUST fail post-validation'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_handles_malformed'),
+         "RR02-B: reason must include 'host_endpoint_handles_malformed'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-02-C: vertex_position raises -> fail
+test 'V17-RR02-C [PRODUCTION PATH]: vertex_position raises -> post-validate fails' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [Object.new, Object.new]
+  end
+  adapter.define_singleton_method(:vertex_position) do |_v|
+    raise StandardError, 'vertex_position failure'
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'RR02-C: raising vertex_position MUST fail post-validation'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_position_unreadable'),
+         "RR02-C: reason must include 'host_endpoint_position_unreadable'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-02-D: vertex_position returns nil -> fail
+test 'V17-RR02-D [PRODUCTION PATH]: vertex_position returns nil -> post-validate fails' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [Object.new, Object.new]
+  end
+  adapter.define_singleton_method(:vertex_position) do |_v|
+    nil
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'RR02-D: nil vertex_position MUST fail post-validation'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_position_unreadable'),
+         "RR02-D: reason must include 'host_endpoint_position_unreadable'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-02-E: difference between coordinate_epsilon and 1e-5 is enforced.
+# The production code MUST use the proposal's own
+# coordinate_epsilon. A delta that is inside the proposal's
+# coordinate_epsilon but OUTSIDE 1e-5 must therefore be a
+# pass at proposal epsilon AND a fail at the legacy 1e-5
+# epsilon. Verify the proposal-epsilon pass.
+test 'V17-RR02-E [PRODUCTION PATH]: difference between coordinate_epsilon and 1e-5 is enforced (proposal epsilon used)' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  bridge_start = bridge.geometry_summary['start'].dup
+  bridge_end   = bridge.geometry_summary['end'].dup
+  # Apply a perturbation that is 5e-6 in magnitude (well
+  # below 1e-5, so the legacy 1e-5 check would PASS) but
+  # larger than the proposal's coordinate_epsilon (1e-6).
+  pert_start = [bridge_start[0] + 5.0e-6, bridge_start[1], bridge_start[2]]
+  pert_end   = [bridge_end[0]   - 5.0e-6, bridge_end[1],   bridge_end[2]]
+  # Proposal coordinate_epsilon = 1.0e-6 (from v17p_tol).
+  proposal_ce = 1.0e-6
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, proposal_ce)
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [Object.new, Object.new]
+  end
+  adapter.define_singleton_method(:vertex_position) do |v|
+    # First vertex -> perturbed start; second vertex ->
+    # perturbed end. The host actually disagrees from the
+    # expected endpoints by 5e-6.
+    v.equal?(applied_entry['host_handle']) ? bridge_start.dup : pert_start.dup
+  end
+  # Use the perturbation pattern: alternate calls.
+  vertex_seq = [pert_start, pert_end]
+  adapter.define_singleton_method(:vertex_position) do |_v|
+    vertex_seq.shift || pert_end
+  end
+  # The 5e-6 perturbation is INSIDE the legacy 1e-5 limit
+  # but OUTSIDE the proposal's coordinate_epsilon of 1e-6.
+  # RR-02 contract: post-validate MUST use the proposal's
+  # epsilon (1e-6), so this MUST FAIL with
+  # host_endpoint_segment_mismatch.
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               'RR02-E: 5e-6 host perturbation MUST exceed proposal 1e-6 epsilon -> FAIL'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('host_endpoint_segment_mismatch'),
+         "RR02-E: reason must include 'host_endpoint_segment_mismatch'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-02-F: reversed host endpoint order passes
+test 'V17-RR02-F [PRODUCTION PATH]: reversed host endpoint order passes (undirected segment match)' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  bridge_start = bridge.geometry_summary['start'].dup
+  bridge_end   = bridge.geometry_summary['end'].dup
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  # Host reports the endpoints in REVERSED order (end, start).
+  vh_a = Object.new
+  vh_b = Object.new
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [vh_a, vh_b]
+  end
+  adapter.define_singleton_method(:vertex_position) do |v|
+    if v.equal?(vh_a)
+      bridge_end.dup     # reversed: vertex_a reports END coord
+    elsif v.equal?(vh_b)
+      bridge_start.dup   # reversed: vertex_b reports START coord
+    else
+      [0.0, 0.0, 0.0]
+    end
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  assert_equal true, result['pass'],
+               "RR02-F: reversed host endpoint order MUST pass undirected match; " \
+               "got reasons=#{result['reasons'].inspect}"
+  # The only non-endpoint-related reason permitted in a
+  # valid pass is none.
+  assert_empty result['reasons'].select { |r| r.start_with?('host_endpoint') },
+               'RR02-F: no host_endpoint_* reasons expected when reversed order matches'
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ===============================================================
+# V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-05:
+# ORDER-INDEPENDENT LOGICAL-NODE COLLAPSE.
+# Forward / reversed / shuffled member order MUST yield the
+# same logical-node payload (endpoint_keys, derived_edge_ids,
+# source_occurrence_ids, layer_names, membership_count),
+# the SAME representative world_coordinate, and the SAME
+# graph digest.
+# ===============================================================
+
+def v17p_rr05_build_graph(ce, members)
+  # Build a CanonicalGeometryGraph directly from the supplied
+  # members. The `_collapse_nodes_by_id` is the function under
+  # test.
+  cid = 'clq-A'
+  nodes_input = members.map do |m|
+    {
+      'canonical_node_id' => cid,
+      'endpoint_key'      => m[:endpoint_key],
+      'derived_edge_id'   => m[:derived_edge_id],
+      'source_occurrence_id' => m[:source_occurrence_id],
+      'layer_name'        => m[:layer_name],
+      'world_coordinate'  => m[:world_coordinate],
+      'resolved_clique'   => true,
+      'coordinate_epsilon'=> ce
+    }
+  end
+  CanonicalGeometryGraph.new(
+    source_snapshot_id: 'snap', execution_config_digest: 'ec',
+    workspace_id: 'ws', nodes: nodes_input, edges: [],
+    adjacency: {},
+    unresolved_topology_issues: [],
+    metrics: { 'foo' => 'bar' },
+    non_transitive_clusters: [],
+    open_endpoints: [],
+    tolerance_digest: 'tol'
+  )
+end
+
+test 'V17-RR05 [PRODUCTION PATH]: forward / reversed / shuffled members -> identical logical node payload + representative coord + graph digest' do
+  ce = 1.0e-6
+  base_members = [
+    { endpoint_key: 'kA', derived_edge_id: 'eA',
+      source_occurrence_id: 'occ-a', layer_name: 'L0',
+      world_coordinate: [1.0, 2.0, 3.0] },
+    { endpoint_key: 'kB', derived_edge_id: 'eB',
+      source_occurrence_id: 'occ-b', layer_name: 'L0',
+      world_coordinate: [4.0, 5.0, 6.0] },
+    { endpoint_key: 'kC', derived_edge_id: 'eC',
+      source_occurrence_id: 'occ-c', layer_name: 'L1',
+      world_coordinate: [7.0, 8.0, 9.0] }
+  ]
+  # Forward order (lex-sorted by key).
+  g_forward = v17p_rr05_build_graph(ce, base_members)
+  # Reversed order (kC, kB, kA).
+  g_reversed = v17p_rr05_build_graph(ce, base_members.reverse)
+  # Shuffled order (kB, kA, kC).
+  g_shuffled = v17p_rr05_build_graph(
+    ce, [base_members[1], base_members[0], base_members[2]]
+  )
+  # All three MUST expose the SAME logical node payload.
+  [g_forward, g_reversed, g_shuffled].each do |g|
+    assert_equal 1, g.nodes.length,
+                 "RR05: collapsed nodes MUST contain exactly ONE logical node; got #{g.nodes.length}"
+    n = g.nodes.first
+    assert_equal %w[kA kB kC], n['endpoint_keys'],
+                 "RR05: endpoint_keys must be sorted ['kA','kB','kC']; got #{n['endpoint_keys'].inspect}"
+    assert_equal %w[eA eB eC], n['derived_edge_ids'],
+                 "RR05: derived_edge_ids must be sorted ['eA','eB','eC']; got #{n['derived_edge_ids'].inspect}"
+    assert_equal %w[occ-a occ-b occ-c], n['source_occurrence_ids'],
+                 "RR05: source_occurrence_ids must be sorted; got #{n['source_occurrence_ids'].inspect}"
+    assert_equal %w[L0 L1], n['layer_names'],
+                 "RR05: layer_names must be sorted uniq; got #{n['layer_names'].inspect}"
+    assert_equal 3, n['membership_count'].to_i,
+                 "RR05: membership_count must be 3; got #{n['membership_count'].inspect}"
+  end
+  # Representative world_coordinate = ACTUAL coordinate of
+  # the lex-smallest endpoint_key member (kA -> [1.0, 2.0, 3.0]).
+  [g_forward, g_reversed, g_shuffled].each do |g|
+    rep = g.nodes.first['world_coordinate']
+    assert_equal [1.0, 2.0, 3.0], rep,
+                 "RR05: representative coord MUST be the lex-smallest member's ACTUAL coord; got #{rep.inspect}"
+  end
+  # Graph digests MUST be identical.
+  assert_equal g_forward.digest, g_reversed.digest,
+               'RR05: forward vs reversed digest MUST match'
+  assert_equal g_forward.digest, g_shuffled.digest,
+               'RR05: forward vs shuffled digest MUST match'
+end
+
+# ===============================================================
+# V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-04:
+# EXACT CANONICAL PRE/POST VALIDATION.
+# Three required tests:
+# 1. prior gap bridge + later independent valid gap bridge
+#    -> PASS (pre-existing bridge allowed; new bridge maps
+#    1:1 to applied proposal_id).
+# 2. unchanged pre-existing non-transitive cluster -> PASS
+#    (post signatures - pre signatures is empty).
+# 3. genuinely new cluster -> FAIL
+#    (post signatures - pre signatures is non-empty).
+# ===============================================================
+
+# Helper: synthesize a minimal CanonicalGeometryGraph with
+# the supplied gap_bridge repair_action_ids and non_transitive
+# cluster signatures.
+def v17p_rr04_build_graph(action_ids:, non_trans_sigs: [])
+  bridge_edges = action_ids.map do |aid|
+    {
+      'canonical_edge_id'  => "ce-#{aid}",
+      'origin_kind'        => 'gap_bridge',
+      'repair_action_id'   => aid,
+      'derived_edge_id'    => "der-#{aid}",
+      'source_occurrence_id' => 'occ-bridge',
+      'source_occurrence_ids' => ['occ-bridge'],
+      'node_a_id'          => "cn-A-#{aid}",
+      'node_b_id'          => "cn-B-#{aid}",
+      'world_endpoints'    => [[0.0, 0.0, 0.0], [0.05, 0.0, 0.0]],
+      'layer_name'         => 'L0',
+      'unresolved_flags'   => []
+    }
+  end
+  clusters = non_trans_sigs.map do |sig|
+    keys = sig.split('|').reject(&:empty?)
+    { 'cluster_id' => "clq-#{keys.join('-')}",
+      'endpoint_keys' => keys }
+  end
+  # Synthetic adjacency: each bridge edge's two nodes are
+  # mutually adjacent. The keys must be distinct from cluster
+  # membership to avoid noise.
+  adj = {}
+  bridge_edges.each do |e|
+    adj[e['node_a_id']] ||= []
+    adj[e['node_a_id']] << e['node_b_id']
+    adj[e['node_b_id']] ||= []
+    adj[e['node_b_id']] << e['node_a_id']
+  end
+  adj.each_value { |v| v.uniq!; v.sort! }
+  CanonicalGeometryGraph.new(
+    source_snapshot_id: 'snap', execution_config_digest: 'ec',
+    workspace_id: 'ws', nodes: [], edges: bridge_edges,
+    adjacency: adj,
+    unresolved_topology_issues: [],
+    metrics: { 'foo' => 'bar' },
+    non_transitive_clusters: clusters,
+    open_endpoints: [],
+    tolerance_digest: 'tol'
+  )
+end
+
+# RR-04-A: prior gap bridge + later independent valid gap
+# bridge -> PASS (pre-existing bridge is allowed; new bridge
+# maps 1:1 to the batch's applied proposal_id).
+test 'V17-RR04-A [PRODUCTION PATH]: prior gap bridge + later independent valid gap bridge -> PASS' do
+  graph = v17p_rr04_build_graph(
+    action_ids: %w[prior-gap-001 current-gap-002],
+    non_trans_sigs: []
+  )
+  # Pretend the pre-batch baseline already contains the prior
+  # bridge.
+  pre_batch_ids   = %w[prior-gap-001]
+  pre_batch_sigs  = []
+  # The batch's applied proposal_id is current-gap-002.
+  result = V17P_RUNNER._canonical_post_validate(
+    graph: graph,
+    audit: { 'applied_proposals' => %w[current-gap-002] },
+    ready: [{ 'proposal_id' => 'current-gap-002',
+              'endpoint_a_key' => 'a',
+              'endpoint_b_key' => 'b' }],
+    pre_batch_gap_bridge_action_ids: pre_batch_ids,
+    pre_batch_non_transitive_sigs:   pre_batch_sigs
+  )
+  assert_equal true, result['pass'],
+               "RR04-A: prior + new bridge must PASS; got reasons=#{result['reasons'].inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-04-B: unchanged pre-existing non-transitive cluster
+# -> PASS (post signatures - pre signatures is EMPTY).
+test 'V17-RR04-B [PRODUCTION PATH]: unchanged pre-existing non-transitive cluster -> PASS' do
+  existing_sig = 'kA|kB|kC'
+  graph = v17p_rr04_build_graph(
+    action_ids: %w[current-gap-002],
+    non_trans_sigs: [existing_sig]
+  )
+  pre_batch_ids  = []
+  pre_batch_sigs = [existing_sig]   # pre-existing cluster
+  result = V17P_RUNNER._canonical_post_validate(
+    graph: graph,
+    audit: { 'applied_proposals' => %w[current-gap-002] },
+    ready: [{ 'proposal_id' => 'current-gap-002',
+              'endpoint_a_key' => 'a',
+              'endpoint_b_key' => 'b' }],
+    pre_batch_gap_bridge_action_ids: pre_batch_ids,
+    pre_batch_non_transitive_sigs:   pre_batch_sigs
+  )
+  assert_equal true, result['pass'],
+               "RR04-B: unchanged pre-existing cluster must PASS; " \
+               "got reasons=#{result['reasons'].inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-04-C: genuinely new non-transitive cluster -> FAIL
+# (post signatures - pre signatures is NON-EMPTY).
+test 'V17-RR04-C [PRODUCTION PATH]: genuinely new non-transitive cluster -> FAIL' do
+  new_sig = 'kX|kY|kZ'
+  graph = v17p_rr04_build_graph(
+    action_ids: %w[current-gap-002],
+    non_trans_sigs: [new_sig]
+  )
+  # Pre-batch baseline does NOT include the new cluster.
+  pre_batch_ids  = []
+  pre_batch_sigs = []
+  result = V17P_RUNNER._canonical_post_validate(
+    graph: graph,
+    audit: { 'applied_proposals' => %w[current-gap-002] },
+    ready: [{ 'proposal_id' => 'current-gap-002',
+              'endpoint_a_key' => 'a',
+              'endpoint_b_key' => 'b' }],
+    pre_batch_gap_bridge_action_ids: pre_batch_ids,
+    pre_batch_non_transitive_sigs:   pre_batch_sigs
+  )
+  refute_equal true, result['pass'],
+               'RR04-C: a genuinely new cluster MUST fail'
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('new_non_transitive_cluster_introduced'),
+         "RR04-C: must include 'new_non_transitive_cluster_introduced'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# RR-04-D: runner-side baseline capture hooks exist and
+# return deterministic shapes.
+test 'V17-RR04-D [PRODUCTION PATH]: runner exposes RR-04 baseline capture hooks with deterministic shapes' do
+  V17P_RUNNER.reset_for_tests
+  empty_ids  = V17P_RUNNER._current_gap_bridge_action_ids
+  empty_sigs = V17P_RUNNER._current_non_transitive_signatures
+  assert_equal [], empty_ids,
+               "RR04-D: _current_gap_bridge_action_ids returns [] when no workspace; " \
+               "got #{empty_ids.inspect}"
+  assert_equal [], empty_sigs,
+               "RR04-D: _current_non_transitive_signatures returns [] when no workspace; " \
+               "got #{empty_sigs.inspect}"
 ensure
   V17P_RUNNER.reset_for_tests
 end

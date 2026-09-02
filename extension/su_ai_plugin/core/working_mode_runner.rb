@@ -998,6 +998,22 @@ module SUAnalysis
           }.freeze
           return snapshot
         end
+        # V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-04:
+        # capture the EXACT pre-batch canonical baseline BEFORE
+        # the executor apply:
+        #   - existing gap_bridge repair_action_id set
+        #   - non_transitive cluster signatures (sorted
+        #     endpoint_keys)
+        # The post-batch canonical_post_validate then compares
+        # EXACTLY against this baseline:
+        #   - every current-batch proposal_id maps to ONE
+        #     canonical gap_bridge edge
+        #   - pre-existing gap_bridges are allowed (current
+        #     batch may have additional ones)
+        #   - post non_transitive signatures minus pre
+        #     signatures must be EMPTY
+        pre_batch_gap_bridge_action_ids = _current_gap_bridge_action_ids
+        pre_batch_non_transitive_sigs   = _current_non_transitive_signatures
         result = GapBridgeExecutor.apply(
           workspace: @current_workspace,
           adapter:   @current_adapter,
@@ -1020,10 +1036,21 @@ module SUAnalysis
           # Failure -> workspace transitions to :failed with
           # stable reason `canonical_post_validation_failed`;
           # handles retained for Discard; do NOT fake rollback.
+          #
+          # V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-04:
+          # post-validation receives the EXACT pre-batch
+          # baseline captured above (gap_bridge repair_action_id
+          # set + non_transitive cluster signatures). Pre-existing
+          # gap bridges are allowed; only the BATCH-INTRODUCED
+          # ones must map 1:1 to applied proposal_ids; post
+          # non_transitive signatures minus pre signatures
+          # must be EMPTY.
           cpv = _canonical_post_validate(
             graph:  @topology_repair_canonical_graph,
             audit:  @topology_repair_audit,
-            ready:  ready
+            ready:  ready,
+            pre_batch_gap_bridge_action_ids:    pre_batch_gap_bridge_action_ids,
+            pre_batch_non_transitive_sigs:      pre_batch_non_transitive_sigs
           )
           unless cpv['pass']
             failed_audit = stringify_topology_repair_audit(@topology_repair_audit).dup
@@ -1345,7 +1372,24 @@ module SUAnalysis
       # canonical post-validation. Runs AFTER the host commit
       # AND after the canonical graph rebuild. Returns:
       #   { 'pass' => true|false, 'reasons' => Array<String> }
-      def _canonical_post_validate(graph:, audit:, ready:)
+      #
+      # V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-04:
+      # receives the EXACT pre-batch baseline captured before
+      # the executor apply:
+      #   pre_batch_gap_bridge_action_ids : Set<String> of
+      #     repair_action_ids already present in the
+      #     pre-batch canonical graph's gap_bridge edges.
+      #     Pre-existing gap_bridges are allowed; only the
+      #     BATCH-INTRODUCED ones must map 1:1 to applied
+      #     proposal_ids.
+      #   pre_batch_non_transitive_sigs : Array<String> of
+      #     sorted-endpoint-keys signatures of non-transitive
+      #     clusters already present before this batch.
+      #     The post-batch non_transitive signatures minus
+      #     this set MUST be EMPTY.
+      def _canonical_post_validate(graph:, audit:, ready:,
+                                  pre_batch_gap_bridge_action_ids: nil,
+                                  pre_batch_non_transitive_sigs: nil)
         reasons = []
         if graph.nil?
           reasons << 'no_canonical_graph'
@@ -1356,15 +1400,23 @@ module SUAnalysis
           # Nothing was applied (defensive); nothing to check.
           return { 'pass' => true, 'reasons' => [] }
         end
-        # (H) every applied bridge -> one canonical edge with
-        # origin_kind=gap_bridge.
+        # (H) RR-04: every CURRENT-BATCH applied bridge ->
+        # one canonical edge with origin_kind=gap_bridge AND
+        # repair_action_id equal to one of the applied
+        # proposal_ids. Pre-existing gap_bridges are excluded
+        # from this count by intersecting with applied_ids.
         canonical_edges = graph.respond_to?(:edges) ? graph.edges : []
         bridge_edges = canonical_edges.select { |e| e['origin_kind'].to_s == 'gap_bridge' }
-        if bridge_edges.length != applied_ids.length
-          reasons << "canonical_bridge_count_mismatch(#{bridge_edges.length}/#{applied_ids.length})"
+        # Current-batch bridge edges = those whose
+        # repair_action_id is one of the applied_ids.
+        batch_bridge_edges = bridge_edges.select { |e|
+          applied_ids.include?(e['repair_action_id'].to_s)
+        }
+        unless batch_bridge_edges.length == applied_ids.length
+          reasons << "canonical_bridge_count_mismatch(#{batch_bridge_edges.length}/#{applied_ids.length})"
         end
         # (I) repair_action_id survives into the canonical edge.
-        bridge_edges.each do |e|
+        batch_bridge_edges.each do |e|
           unless applied_ids.include?(e['repair_action_id'].to_s)
             reasons << "repair_action_id_not_in_canonical:#{e['repair_action_id']}"
           end
@@ -1374,7 +1426,7 @@ module SUAnalysis
         # nodes, and they are mutually adjacent in the
         # graph's adjacency.
         adj = graph.respond_to?(:adjacency) ? graph.adjacency : {}
-        bridge_edges.each do |e|
+        batch_bridge_edges.each do |e|
           a = e['node_a_id'].to_s
           b = e['node_b_id'].to_s
           if a.empty? || b.empty? || a == b
@@ -1390,33 +1442,90 @@ module SUAnalysis
             reasons << "repaired_adjacency_missing_b:#{e['canonical_edge_id']}"
           end
         end
-        # (K) no new non_transitive_node_cluster is
+        # (K) RR-04: no NEW non_transitive_node_cluster is
         # introduced. Compare the post graph's
-        # non_transitive_clusters against the pre-batch count.
-        # We do not have the pre-batch count directly here;
-        # we use a defensive check: if any cluster is present
-        # AT ALL after apply (the ready proposals were all
-        # 1-to-1 mutual-unique pairs in coordinate_epsilon
-        # range, so a non-transitive cluster is unexpected),
-        # we still pass (the pre-batch may have legitimately
-        # had one). What we DO check: the post-batch cluster
-        # count must not exceed the pre-batch count (which we
-        # approximate by inspecting the ready proposals' pair
-        # coordinates -- mutual-unique pairs cannot introduce
-        # a new cluster). A non-zero post count therefore
-        # requires evidence; we FAIL it when the cluster
-        # count is positive AND any cluster references an
-        # endpoint key that is part of an applied bridge.
-        cluster_keys = Array(graph.non_transitive_clusters).flat_map { |c|
-          Array(c['endpoint_keys']).map(&:to_s)
-        }
-        applied_endpoint_keys = Array(ready).flat_map { |p|
-          [p['endpoint_a_key'].to_s, p['endpoint_b_key'].to_s]
-        }
-        unless (cluster_keys & applied_endpoint_keys).empty?
-          reasons << 'new_non_transitive_cluster_introduced'
+        # non_transitive cluster signatures against the
+        # pre-batch baseline. The post_sigs - pre_sigs
+        # difference MUST be EMPTY. An unchanged pre-existing
+        # cluster does NOT cause a failure.
+        pre_sigs = Array(pre_batch_non_transitive_sigs).map(&:to_s)
+        post_sigs = Array(graph.non_transitive_clusters).map { |c|
+          _non_transitive_signature(c)
+        }.map(&:to_s)
+        new_sigs = post_sigs - pre_sigs
+        unless new_sigs.empty?
+          reasons << "new_non_transitive_cluster_introduced:#{new_sigs.length}"
         end
         { 'pass' => reasons.empty?, 'reasons' => reasons }.freeze
+      end
+
+      # RR-04: capture the EXACT pre-batch canonical baseline
+      # (existing gap_bridge repair_action_id set). Rebuilds
+      # the current canonical graph from the current
+      # workspace state (read-only) and collects the
+      # gap_bridge repair_action_ids present BEFORE the
+      # executor apply.
+      def _current_gap_bridge_action_ids
+        return [] if @current_workspace.nil?
+        return [] unless @current_workspace.state == :ready
+        tol = v17_tolerance
+        graph = rebuild_canonical_geometry_graph(
+          workspace: @current_workspace, tolerance: tol
+        )
+        return [] if graph.nil?
+        Array(graph.edges).select { |e| e['origin_kind'].to_s == 'gap_bridge' }
+                          .map { |e| e['repair_action_id'].to_s }
+                          .reject { |s| s.empty? }
+                          .uniq
+      end
+
+      # RR-04: capture the EXACT pre-batch canonical baseline
+      # (non_transitive cluster signatures). Each cluster's
+      # signature = sorted endpoint_keys joined with a stable
+      # separator. A pre-existing cluster whose sorted
+      # endpoint_keys are unchanged across the batch yields
+      # an identical signature and is NOT a failure.
+      def _current_non_transitive_signatures
+        return [] if @current_workspace.nil?
+        return [] unless @current_workspace.state == :ready
+        tol = v17_tolerance
+        graph = rebuild_canonical_geometry_graph(
+          workspace: @current_workspace, tolerance: tol
+        )
+        return [] if graph.nil?
+        Array(graph.non_transitive_clusters).map { |c|
+          _non_transitive_signature(c)
+        }
+      end
+
+      # Build the canonical signature for a non_transitive
+      # cluster. Stable sorted endpoint_keys joined with '|'.
+      # The signature is identical for any two clusters
+      # whose endpoint membership keys are the same set.
+      def _non_transitive_signature(cluster)
+        return '' unless cluster.is_a?(Hash)
+        Array(cluster['endpoint_keys']).map(&:to_s).sort.join('|')
+      end
+
+      # Read the V1.7 tolerance from the current source
+      # snapshot, falling back to a sane default when the
+      # runner has no source. Used by RR-04 baseline capture.
+      def v17_tolerance
+        return Tolerance.default if @current_source.nil?
+        if @current_source.respond_to?(:execution_config) &&
+           @current_source.execution_config.respond_to?(:tolerance_values)
+          vals = @current_source.execution_config.tolerance_values
+          if vals.is_a?(Hash) && !vals.empty?
+            # Build a fresh Tolerance from the captured values.
+            return Tolerance.new(
+              duplicate:          vals['duplicate']          || 1.0e-4,
+              short_edge:         vals['short_edge']         || 0.5,
+              gap_search:         vals['gap_search']         || 0.1,
+              coordinate_epsilon: vals['coordinate_epsilon'] || 1.0e-6
+            )
+          end
+        end
+        Tolerance.default
       end
 
       def _open_endpoint_keys(workspace, derived_edges, topology_snapshot)

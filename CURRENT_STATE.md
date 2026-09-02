@@ -1,11 +1,11 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 AIPM-DIRECT-SOURCE-REVIEW-FIX (THIS UPDATE)
+## V1.7 AIPM-DIRECT-SOURCE-REREVIEW-FIX (THIS UPDATE)
 
-Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01
-dispatch EXECUTION on assigned `dev/v1.7` per dispatch
-`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
-Technical Blueprint
+Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REREVIEW-FIX-
+2026-09-01 dispatch EXECUTION on assigned `dev/v1.7` per
+dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7
+Stage Technical Blueprint
 `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
 
 Status (this dispatch):
@@ -16,12 +16,117 @@ Status (this dispatch):
   confirmation recorded by AIPM).
 - **V1.7: ACTIVE** (per dispatch §0).
 - **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
-- **V1.7 AIPM primary review (re-review)**: pending direct
-  source re-review of this corrected packet.
+- **V1.7 AIPM FINAL direct source re-review**: pending
+  AIPM direct source RE-review of this corrected packet.
 - **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
-  re-review. Pi does NOT invoke Codex.
+  RE-review. Pi does NOT invoke Codex.
 - **V1.8 NOT STARTED**.
 - **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected the FIVE bounded direct-source-
+REREVIEW findings (RR-01 through RR-05 from
+`Review/CURRENT_AIPM_REVIEW.md`) — host-operation truthful
+close, host-endpoint fail-closed validation, host-mutation
+suite restoration, exact canonical pre/post validation, and
+order-independent node collapse corrections — and added 18
+new RR regression tests.
+
+V1.7 DIRECT-SOURCE-REREVIEW-FIX PACKET — 2026-09-01.
+
+- Starting HEAD: `2f45a20` (the prior V17 DIRECT-SOURCE-
+  REVIEW-FIX doc-stamp).
+- Implementation SHA (preserved from prior substantive
+  packet): `e98326ee17cabdeec0b617f22576d1bdc5ce699a`.
+- Prior SR-correction SHA: `b2b08bdd` (preserved).
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` after
+  push (one production commit + one doc-stamp, this dispatch).
+- V1.7 RBZ candidate: size **949,575 bytes**; entries **67**;
+  SHA-256
+  **`3D97401433DBEE666E97681C18BF33E16E4AB267ADC334DCFBABB72F93BCCD08`**.
+- Full Ruby suite: **939 / 939 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 89 V1.7 Ruby tests, +18 from this
+  dispatch: V17-H1 / V17-H2 / V17-H3 / V17-H4 / V17-H5 /
+  V17-H6 / V17-H7 [suite restored per RR-03] /
+  V17-RR02-A / V17-RR02-B / V17-RR02-C / V17-RR02-D /
+  V17-RR02-E / V17-RR02-F / V17-RR04-A / V17-RR04-B /
+  V17-RR04-C / V17-RR04-D / V17-RR05).
+- `git diff --check`: clean.
+- per dispatch §8 + §9: STOPPED awaiting AIPM FINAL direct
+  source re-review; Codex xHigh integration review NOT
+  invoked; V1.8 NOT STARTED; final Owner SU2020 real-host
+  verification gate NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+Corrections by this dispatch (each regression-locked in
+`tests/test_v17_host_mutation.rb` or
+`tests/test_v17_production_gap_path.rb`):
+
+- RR-01 (CLOSE THE SKETCHUP OPERATION TRUTHFULLY):
+  `GapBridgeExecutor.apply` tracks `operation_started` only
+  after `begin_operation` returns without raising. The new
+  `_confirmed_abort` makes the SINGLE
+  `adapter.end_operation(model, commit: false)` call and
+  returns `:abort_completed` (closed) or `:abort_uncertain`
+  (preserves current generated handles for explicit Discard).
+  Every exit path reaches exactly one of confirmed commit,
+  confirmed abort, or close-uncertainty state. Confirmed
+  abort returns a NEW `:failed` workspace derived from
+  `pre_workspace`; abort-uncertainty returns `:failed` with
+  current handles retained. New `REASON_ABORT_UNCERTAIN`
+  constant + `_abort_uncertain_audit` builder. No nested
+  cleanup operation. No fake rollback claim on abort
+  uncertainty.
+- RR-02 (HOST ENDPOINT PROOF MUST FAIL CLOSED):
+  `GapBridgeExecutor._post_validate` block (C) rewritten to
+  fail closed on every missing capability / nil handle /
+  nil-or-raised position read. Uses the proposal's own
+  `coordinate_epsilon` (no hardcoded fallback). Undirected
+  segment matching (host may report A,B OR B,A). Stable
+  reason codes:
+  `host_endpoint_handles_unavailable:<pid>` /
+  `host_endpoint_handles_malformed:<pid>` /
+  `host_endpoint_position_unavailable:<pid>` /
+  `host_endpoint_position_unreadable:<pid>` /
+  `host_endpoint_epsilon_missing:<pid>` /
+  `host_endpoint_segment_mismatch:<pid>`.
+- RR-03 (RESTORE `test_v17_host_mutation.rb`): file restored
+  from pre-dispatch `2cdebb2` with newlines preserved (CRLF
+  -> LF cleanup for git diff --check). H1, H2, H4, H5, H6,
+  H7 remain active. H3 updated to inject failure into
+  `create_top_level_group` (the actual production primitive
+  that `workspace.build_entity` calls). H3 asserts begin=1,
+  abort=1, commit=0 + workspace :failed + source unchanged.
+- RR-04 (EXACT CANONICAL PRE/POST EVIDENCE):
+  `WorkingModeRunner.apply_gap_repair` now captures the
+  EXACT pre-batch canonical baseline BEFORE the executor
+  apply (existing gap_bridge repair_action_id set +
+  non_transitive cluster signatures with sorted endpoint_keys).
+  `_canonical_post_validate` now accepts
+  `pre_batch_gap_bridge_action_ids` +
+  `pre_batch_non_transitive_sigs` kwargs. Current-batch
+  bridges are those whose repair_action_id is in the batch's
+  applied_ids (pre-existing bridges are allowed). Post
+  signatures minus pre signatures MUST be empty.
+- RR-05 (ORDER-INDEPENDENT NODE COLLAPSE):
+  `CanonicalGeometryGraph._collapse_nodes_by_id` now stores
+  LINKED MEMBER RECORDS (NOT separate parallel arrays).
+  Members sorted by endpoint_key; every aggregate field
+  derived from these same linked records. Representative
+  world_coordinate = the ACTUAL coordinate of the
+  lex-smallest endpoint_key member (no averaging, no
+  zip-mixing). Forward / reversed / shuffled input orders
+  all yield identical logical node payload + representative
+  coordinate + graph digest.
+
+## V1.7 AIPM-DIRECT-SOURCE-REVIEW-FIX (HISTORICAL)
+
+Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7 Stage
+Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
 
 This dispatch corrected the SEVEN bounded direct-source-review
 findings (SR-01 through SR-07 from

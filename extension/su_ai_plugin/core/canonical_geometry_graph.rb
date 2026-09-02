@@ -469,15 +469,21 @@ module SUAnalysis
 
       # ---- instance helpers ----
 
-      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07:
+      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-07 +
+      # V17-AIPM-DIRECT-SOURCE-REREVIEW-2026-09-01 RR-05:
       # collapse per-endpoint canonical_node records into ONE
       # LOGICAL NODE per canonical_node_id. The internal
       # endpoint-membership data is preserved on the logical
       # node as sorted endpoint_keys + sorted derived_edge_ids
-      # + sorted source_occurrence_ids. Representative world
-      # coordinate = the member with the lex-smallest
-      # endpoint_key (deterministic ACTUAL member coordinate;
-      # no averaging).
+      # + sorted source_occurrence_ids.
+      #
+      # RR-05 ORDER-INDEPENDENCE: members are stored as LINKED
+      # MEMBER RECORDS (NOT separate parallel arrays). We sort
+      # the linked members by endpoint_key, then pick the
+      # ACTUAL world_coordinate of the lex-smallest member.
+      # Forward / reversed / shuffled input order all yield
+      # the same node payload, representative coordinate, and
+      # graph digest.
       def _collapse_nodes_by_id(nodes)
         grouped = {}
         Array(nodes).each do |n|
@@ -486,33 +492,48 @@ module SUAnalysis
           next if cid.empty?
           grouped[cid] ||= {
             'canonical_node_id'    => cid,
-            'endpoint_keys'        => [],
-            'derived_edge_ids'     => [],
-            'source_occurrence_ids' => [],
-            'layer_names'          => [],
-            'world_coordinates'    => [],
+            'members'              => [],   # linked records
             'resolved_clique'      => h['resolved_clique'],
             'coordinate_epsilon'   => h['coordinate_epsilon']
           }
-          grouped[cid]['endpoint_keys'] << h['endpoint_key'].to_s
-          grouped[cid]['derived_edge_ids'] << h['derived_edge_id'].to_s
-          sid = h['source_occurrence_id']
-          grouped[cid]['source_occurrence_ids'] << sid.to_s if sid && !sid.to_s.empty?
-          ln = h['layer_name']
-          grouped[cid]['layer_names'] << ln.to_s if ln && !ln.to_s.empty?
           wc = h['world_coordinate']
-          grouped[cid]['world_coordinates'] << wc.dup if wc.is_a?(Array)
+          # Store a LINKED member record (one Hash per input
+          # member) keyed by endpoint_key. The representative
+          # world_coordinate is the ACTUAL member coord of
+          # the lex-smallest endpoint_key; we never zip
+          # separately-tracked arrays.
+          member = {
+            'endpoint_key'         => h['endpoint_key'].to_s,
+            'derived_edge_id'      => h['derived_edge_id'].to_s,
+            'source_occurrence_id' => (
+              sid = h['source_occurrence_id']
+              sid && !sid.to_s.empty? ? sid.to_s : nil
+            ),
+            'layer_name'           => (
+              ln = h['layer_name']
+              ln && !ln.to_s.empty? ? ln.to_s : nil
+            ),
+            'world_coordinate'     => wc.is_a?(Array) ? wc.dup : nil
+          }
+          grouped[cid]['members'] << member
         end
         # Build the final logical node records.
         logical = grouped.values.map do |g|
-          sorted_eks = g['endpoint_keys'].uniq.sort
-          sorted_dids = g['derived_edge_ids'].uniq.sort
-          sorted_sids = g['source_occurrence_ids'].uniq.sort
-          sorted_layers = g['layer_names'].uniq.sort
-          # Representative world coordinate = member with
-          # lex-smallest endpoint_key. No averaging.
-          members = g['world_coordinates'].zip(sorted_eks).sort_by { |_wc, ek| ek.to_s }
-          rep_wc = members.first ? members.first.first : nil
+          # RR-05: sort the LINKED members by endpoint_key;
+          # every aggregate field is derived from these
+          # same linked records. Forward / reversed /
+          # shuffled input orders all yield the same
+          # sorted members sequence because the comparator
+          # is stable on the canonical key.
+          sorted_members = g['members'].sort_by { |m| m['endpoint_key'].to_s }
+          sorted_eks     = sorted_members.map { |m| m['endpoint_key'] }.uniq
+          sorted_dids    = sorted_members.map { |m| m['derived_edge_id'] }.uniq.sort
+          sorted_sids    = sorted_members.map { |m| m['source_occurrence_id'] }.compact.uniq.sort
+          sorted_layers  = sorted_members.map { |m| m['layer_name'] }.compact.uniq.sort
+          # RR-05 representative world_coordinate: ACTUAL
+          # coordinate of the lex-smallest endpoint_key
+          # member. NEVER averaged or zip-mixed.
+          rep_wc = sorted_members.first ? sorted_members.first['world_coordinate'] : nil
           {
             'canonical_node_id'      => g['canonical_node_id'],
             'endpoint_keys'          => sorted_eks,
