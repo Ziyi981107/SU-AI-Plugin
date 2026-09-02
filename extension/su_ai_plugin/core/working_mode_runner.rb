@@ -928,6 +928,17 @@ module SUAnalysis
       # tolerance return the same proposal Hash. Clears the
       # audit so the UI shows the READY_TO_REPAIR / REVIEW /
       # NO_CANDIDATE state before the user applies.
+      #
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-004:
+      # validate-on-next-V1.7-interaction (existing
+      # BLOCK-005 seam) runs BEFORE any current-workspace
+      # topology/proposal read. If the host state has been
+      # invalidated (e.g. native SketchUp Undo removed the
+      # generated bridge handles), the workspace transitions
+      # to :failed with stable reason `host_state_changed`,
+      # stale V1.7 proposal/canonical-graph state is cleared,
+      # a truthful failed audit is published, and no topology
+      # is rebuilt. Zero begin_operation.
       def compute_gap_repair
         require_v17_dependencies if @topology_v17_loaded != true
         @topology_v17_loaded = true
@@ -937,6 +948,21 @@ module SUAnalysis
         end
         if @current_workspace.state != :ready
           @topology_repair_proposal = nil
+          return snapshot
+        end
+        # INT-004: validate host state FIRST, BEFORE any
+        # topology snapshot / proposal recomputation.
+        unless validate_host_state_consistency!
+          # The validator already transitioned the workspace
+          # to :failed with reason `host_state_changed`.
+          # Clear stale V1.7 state and publish a truthful
+          # failed audit; do NOT recompute topology.
+          @topology_repair_proposal        = nil
+          @topology_repair_canonical_graph = nil
+          @topology_repair_audit = {
+            'status' => :failed,
+            'reason' => 'host_state_changed'
+          }.freeze
           return snapshot
         end
         tol = @topology_repair_tolerance || _tolerance_from_snapshot(@current_source)
@@ -959,6 +985,14 @@ module SUAnalysis
       # Idempotent at the apply level: a second call when
       # already-APPLIED returns the existing audit. On failure
       # the workspace transitions to :failed.
+      #
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-004:
+      # host-state validation runs BEFORE the proposal
+      # recomputation AND BEFORE the `ready.empty?` early
+      # return. The previous ordering let an apply path on a
+      # Undo-invalidated workspace return early with a stale
+      # NO_CANDIDATE-like audit; the validator now short-
+      # circuits with stable reason `host_state_changed`.
       def apply_gap_repair
         require_v17_dependencies if @topology_v17_loaded != true
         @topology_v17_loaded = true
@@ -966,6 +1000,24 @@ module SUAnalysis
           return snapshot
         end
         if @current_workspace.state != :ready
+          return snapshot
+        end
+        # INT-004: validate host state FIRST, BEFORE any
+        # proposal recomputation AND BEFORE any `ready.empty?`
+        # early return. If the workspace is already :failed
+        # (from a prior Undo invalidation), the validator
+        # returns true but the workspace is already
+        # non-ready; the basic :ready guard above catches
+        # that. The validator below catches the case where
+        # the workspace CLAIMS :ready but the host has
+        # invalidated generated handles.
+        unless validate_host_state_consistency!
+          @topology_repair_proposal        = nil
+          @topology_repair_canonical_graph = nil
+          @topology_repair_audit = {
+            'status' => :failed,
+            'reason' => 'host_state_changed'
+          }.freeze
           return snapshot
         end
         tol = @topology_repair_tolerance || _tolerance_from_snapshot(@current_source)
@@ -990,7 +1042,11 @@ module SUAnalysis
           }.freeze
           return snapshot
         end
-        # Pre-check: workspace.host_consistency.
+        # Defense-in-depth: re-validate immediately before
+        # the executor apply. The validator is idempotent /
+        # cheap; this catches any race where the host changed
+        # between the top-of-method check and the executor
+        # entry (e.g. a parallel native operation).
         unless validate_host_state_consistency!
           @topology_repair_audit = {
             'status' => :failed,
@@ -1166,66 +1222,99 @@ module SUAnalysis
         out
       end
 
-      # Crossing checker: a Proc suitable for
-      # GapPairProposer.propose(... crossing_checker:).
-      # For V1.7 base we use a simple exact-match segment
-      # intersection against the current derived edges
-      # (Blueprint §10.3 minimal implementation). A real SU
-      # crossing check would consult the world-coord
-      # endpoints; the in-test implementation mirrors that.
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # Crossing checker delegates to the SHARED PURE V1.7
+      # segment-conflict predicate in core/segment_conflict.rb.
+      # The previous implementation only detected strict
+      # orientation crossings (which return false for collinear
+      # cases), so V1.7 could create collinear-overlap bridges
+      # or implicit T-junctions despite the conservative
+      # repair contract. The shared predicate detects:
+      #   - proper interior crossing
+      #   - full collinear containment
+      #   - partial collinear interior overlap
+      #   - bridge endpoint strictly inside unrelated edge
+      #   - unrelated endpoint strictly inside bridge
+      # WITHOUT rejecting merely disjoint collinear segments.
+      # The reason codes emitted by the shared predicate are
+      # mapped to the required stable V1.7 reason families:
+      #   - existing-edge conflict -> 'bridge_crossing'
+      #   - actual third canonical node on bridge interior ->
+      #     'third_node_on_bridge'
       def _crossing_checker_proc(tolerance:)
+        require_relative 'segment_conflict'
         proc do |proposal, derived_edges, endpoint_lookup, _topology_snapshot|
           eps = Array(proposal ? proposal['coordinate_epsilon'] : nil).first ||
                  (tolerance.respond_to?(:coordinate_epsilon) ? tolerance.coordinate_epsilon.to_f : 1.0e-6)
           bridge_a = Array(proposal['expected_bridge_endpoints'])
-          return { 'safe' => false, 'reasons' => ['invalid_bridge_endpoints'] } unless bridge_a.length == 2
+          unless bridge_a.length == 2
+            return { 'safe' => false, 'reasons' => ['invalid_bridge_endpoints'] }
+          end
           pa1, pa2 = bridge_a[0], bridge_a[1]
           reasons = []
           ek_a = proposal['endpoint_a_key']
           ek_b = proposal['endpoint_b_key']
-          ea_a = endpoint_lookup[ek_a]
-          ea_b = endpoint_lookup[ek_b]
-          if ea_a && ea_b && ea_a['derived_edge_id'] == ea_b['derived_edge_id']
-            # Same incident edge on BOTH sides is allowed
-            # only if the endpoints are DIFFERENT (no
-            # self-loop); both endpoints come from the same
-            # edge but at different roles (start vs end).
-            # No third-party check.
-          end
           # Walk every other derived edge that is not
           # incident to either endpoint; check whether the
-          # bridge segment intersects that edge's interior
-          # OR shares a non-trivial node.
+          # bridge segment conflicts with that edge in any
+          # V1.7-conservative way (proper crossing /
+          # collinear overlap / T-junction).
           Array(derived_edges).each do |e|
             next if e.endpoint_a_key == ek_a || e.endpoint_b_key == ek_a
             next if e.endpoint_a_key == ek_b || e.endpoint_b_key == ek_b
-            # Compare world endpoints.
             ew_a = e.world_endpoints[0]
             ew_b = e.world_endpoints[1]
-            # Bridge and edge share an endpoint?
-            if (_dist(pa1, ew_a) < eps && _dist(pa2, ew_b) < eps) ||
-               (_dist(pa1, ew_b) < eps && _dist(pa2, ew_a) < eps)
-              # Share both endpoints; that's literally the
-              # same segment (already excluded by endpoint
-              # key). Skip.
-              next
+            # ---- Bridge vs edge segment conflict (collinear /
+            # proper crossing / T-junction by bridge endpoint) ----
+            segment_result = SUAnalysis::Core::SegmentConflict.conflict?(
+              [pa1, pa2], [ew_a, ew_b], eps: eps
+            )
+            if segment_result['conflict']
+              r = segment_result['reason']
+              case r
+              when 'proper_interior_crossing', 'collinear_overlap',
+                   'bridge_endpoint_on_unrelated'
+                reasons << 'bridge_crossing'
+                break
+              when 'unrelated_endpoint_on_bridge'
+                # The bridge segment intersects an unrelated
+                # endpoint. That endpoint is a node ON the
+                # bridge interior; per Blueprint §10.3 this
+                # is reported as third_node_on_bridge so the
+                # caller can surface the canonical-node
+                # signal.
+                reasons << 'third_node_on_bridge'
+                break
+              else
+                # Unknown reason: surface as bridge_crossing
+                # (the conservative default).
+                reasons << 'bridge_crossing'
+                break
+              end
             end
-            if (_shared_endpoint?(pa1, ew_a, eps) ||
-                _shared_endpoint?(pa1, ew_b, eps) ||
-                _shared_endpoint?(pa2, ew_a, eps) ||
-                _shared_endpoint?(pa2, ew_b, eps))
-              # The bridge touches this edge's endpoint;
-              # no interior crossing.
-              next
+            # ---- Third canonical node on bridge ----
+            # The segment conflict predicate already covers
+            # the "unrelated endpoint on bridge" case for the
+            # two endpoints of `e` itself. We additionally
+            # check OTHER unrelated endpoint coordinates
+            # (canonical-node coordinates) that the segment
+            # predicate does not see, so an unrelated node
+            # whose world coordinate lies STRICTLY INSIDE the
+            # proposed bridge interior still triggers the
+            # V1.7 third_node_on_bridge reason code.
+            other_worlds = _other_endpoint_worlds(e, ek_a, ek_b, endpoint_lookup)
+            other_hit = false
+            other_worlds.each do |w|
+              next unless _is_finite_point?(w)
+              if SUAnalysis::Core::SegmentConflict.point_in_segment_interior?(
+                   w, [pa1, pa2], eps: eps
+                 )
+                reasons << 'third_node_on_bridge'
+                other_hit = true
+                break
+              end
             end
-            if _segments_intersect_interior?(pa1, pa2, ew_a, ew_b, eps)
-              reasons << 'bridge_crossing'
-              break
-            end
-            if _third_node_on_segment?(pa1, pa2, ew_a, ew_b, endpoints_worlds: _other_endpoint_worlds(e, ek_a, ek_b, endpoint_lookup), eps: eps)
-              reasons << 'third_node_on_bridge'
-              break
-            end
+            break if other_hit
           end
           { 'safe' => reasons.empty?, 'reasons' => reasons }
         end
@@ -1244,19 +1333,27 @@ module SUAnalysis
         _dist(a, b) <= eps
       end
 
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # segment-vs-segment interior intersection predicate
+      # is now a thin delegation to the SHARED PURE V1.7
+      # predicate. This preserves the runner's own internal
+      # callers (none remain in production) while ensuring
+      # the GapPairProposer X3 check + the runner's
+      # crossing checker + this helper all share one source
+      # of truth.
       def _segments_intersect_interior?(p1, p2, q1, q2, eps)
-        return false unless p1.is_a?(Array) && p2.is_a?(Array) && q1.is_a?(Array) && q2.is_a?(Array)
-        return false if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
-                        _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
-        d1 = _segment_orientation(p1, p2, q1)
-        d2 = _segment_orientation(p1, p2, q2)
-        d3 = _segment_orientation(q1, q2, p1)
-        d4 = _segment_orientation(q1, q2, p2)
-        return false if d1.abs < eps || d2.abs < eps || d3.abs < eps || d4.abs < eps
-        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+        require_relative 'segment_conflict'
+        r = SUAnalysis::Core::SegmentConflict.conflict?([p1, p2], [q1, q2], eps: eps)
+        r['conflict'] && r['reason'] == 'proper_interior_crossing'
       end
 
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # legacy 2D orientation predicate retained for the
+      # runner's own callers (none in production; tests may
+      # use it). The shared SegmentConflict.conflict?
+      # predicate is the authoritative source of truth for
+      # the production crossing / T-junction / collinear
+      # detection.
       def _segment_orientation(p, q, r)
         # 2D orientation projected onto the XY plane (the V1.7
         # base Z-compat test already excludes non-coplanar
@@ -1264,79 +1361,30 @@ module SUAnalysis
         (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
       end
 
-      # V17-AIPM-DIRECT-SOURCE-REVIEW-FIX-2026-09-01 SR-04:
-      # TRUE point-on-segment-interior predicate. The previous
-      # implementation only proved collinearity with the
-      # INFINITE LINE through the bridge (`abs(orientation)
-      # <= eps`), so a distant unrelated node collinear with
-      # the bridge but FAR OUTSIDE the segment would falsely
-      # trigger `third_node_on_bridge`.
-      #
-      # The new predicate proves:
-      #   1. the candidate point is finite 3D
-      #   2. the projection parameter t lies strictly inside
-      #      (0, 1) -- endpoints excluded
-      #   3. the closest-point distance to the segment is
-      #      <= coordinate_epsilon
-      #
-      # Returns true iff the candidate lies STRICTLY INSIDE
-      # the bridge segment interior (within coordinate_epsilon).
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # third-node check now delegates to the shared
+      # SegmentConflict.point_in_segment_interior? predicate.
       def _third_node_on_segment?(p1, p2, _ew_a, _ew_b, endpoints_worlds:, eps:)
         return false unless endpoints_worlds.is_a?(Array)
+        require_relative 'segment_conflict'
         endpoints_worlds.each do |w|
           next unless _is_finite_point?(w)
-          next unless _point_on_segment_interior?(p1, p2, w, eps)
-          return true
+          if SUAnalysis::Core::SegmentConflict.point_in_segment_interior?(
+               w, [p1, p2], eps: eps
+             )
+            return true
+          end
         end
         false
       end
 
-      # Pure point-on-segment-interior predicate. Returns true
-      # iff `w` lies strictly inside the closed segment
-      # [p1, p2] within `eps` (closest-point distance <= eps)
-      # AND the projection parameter t is in (0, 1) with
-      # endpoint epsilon exclusion.
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # pure point-on-segment-interior predicate delegates to
+      # the shared SegmentConflict.point_in_segment_interior?
+      # predicate.
       def _point_on_segment_interior?(p1, p2, w, eps)
-        return false unless _is_finite_point?(p1)
-        return false unless _is_finite_point?(p2)
-        return false unless _is_finite_point?(w)
-        eps_f = eps.to_f
-        return false if eps_f <= 0 || !eps_f.finite?
-        # Reject degenerate segment.
-        sx = (p2[0] - p1[0]).abs
-        sy = (p2[1] - p1[1]).abs
-        sz = (p2[2] - p1[2]).abs
-        seg_len2 = (sx * sx) + (sy * sy) + (sz * sz)
-        return false if seg_len2 <= 0
-        # Projection parameter t = ((w - p1) . (p2 - p1)) / |p2 - p1|^2
-        wx = w[0] - p1[0]
-        wy = w[1] - p1[1]
-        wz = w[2] - p1[2]
-        dot = (wx * (p2[0] - p1[0])) + (wy * (p2[1] - p1[1])) + (wz * (p2[2] - p1[2]))
-        t = dot / seg_len2
-        # Endpoint exclusion: must be STRICTLY between
-        # (eps / seg_len) and (1 - eps / seg_len).
-        # Equivalently: t > eps_f and t < 1.0 - eps_f when
-        # eps is a distance; convert to a t-relative band by
-        # scaling with seg_len. We use the conservative band
-        # [eps_seg, 1 - eps_seg] where eps_seg = eps_f /
-        # seg_len (eps expressed as a fraction of segment
-        # length). For a typical CAD gap (seg_len ~ 0.05..10)
-        # the band is well-defined.
-        seg_len = Math.sqrt(seg_len2)
-        eps_seg = eps_f / seg_len
-        return false if t <= eps_seg
-        return false if t >= (1.0 - eps_seg)
-        # Closest-point distance: w projected onto segment,
-        # then distance from w to projected point.
-        proj_x = p1[0] + t * (p2[0] - p1[0])
-        proj_y = p1[1] + t * (p2[1] - p1[1])
-        proj_z = p1[2] + t * (p2[2] - p1[2])
-        dx = w[0] - proj_x
-        dy = w[1] - proj_y
-        dz = w[2] - proj_z
-        closest_d = Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
-        closest_d <= eps_f
+        require_relative 'segment_conflict'
+        SUAnalysis::Core::SegmentConflict.point_in_segment_interior?(w, [p1, p2], eps: eps)
       end
 
       def _other_endpoint_worlds(derived_edge, ek_a, ek_b, endpoint_lookup)
@@ -2089,16 +2137,25 @@ module SUAnalysis
           end
         end
         # Canonical graph digest (when available).
+        # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-005:
+        # SketchUp 2017 embeds Ruby 2.2.4; Hash#compact is
+        # Ruby 2.4+. Build the digest Hash + delete_if nil
+        # values + freeze, WITHOUT Hash#compact. The
+        # compact-equivalent is `delete_if { |_k, v| v.nil? }`.
+        # Same semantics as Hash#compact (remove pairs whose
+        # value is nil) but Ruby 2.2-compatible.
         if @topology_repair_canonical_graph.is_a?(Hash) ||
            @topology_repair_canonical_graph.respond_to?(:to_h)
           cg = @topology_repair_canonical_graph
           graph_h = cg.is_a?(Hash) ? cg : cg.to_h
-          sub['canonical_graph'] = {
+          graph_summary = {
             'digest'              => graph_h['digest'],
             'schema_version'      => graph_h['schema_version'],
             'metrics'             => graph_h['metrics'],
             'unresolved_issues'   => graph_h['unresolved_topology_issues']
-          }.compact.freeze
+          }
+          graph_summary.delete_if { |_k, v| v.nil? }
+          sub['canonical_graph'] = graph_summary.freeze
         end
         snap['topology_repair'] = sub.freeze
       end

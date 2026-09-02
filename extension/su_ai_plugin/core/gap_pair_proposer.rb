@@ -148,12 +148,25 @@ module SUAnalysis
           ek_b = e.endpoint_b_key.to_s
           rec_a = endpoint_records_by_key[ek_a]
           rec_b = endpoint_records_by_key[ek_b]
+          # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+          # plural source provenance is authoritative. Read the
+          # COMPLETE sorted/uniq union of source occurrence IDs
+          # from the EndpointRecord when available (it carries
+          # the snapshotted union from DerivedTopologySnapshot
+          # Builder); fall back to the DerivedEdgeRecord's
+          # `source_occurrence_ids` (also plural). The singular
+          # `source_occurrence_id` accessor is preserved for
+          # backwards compatibility and is derived from the
+          # plural field (first element).
+          sids_a = _plurals_from(rec_a, e)
+          sids_b = _plurals_from(rec_b, e)
           endpoint_lookup[ek_a] = {
             'endpoint_key'  => ek_a,
             'derived_edge_id' => e.derived_edge_id.to_s,
             'world_coordinate' => e.world_endpoints[0].dup,
             'layer_name'    => e.layer_name,
-            'source_occurrence_id' => e.source_occurrence_id,
+            'source_occurrence_id' => (sids_a.first || e.source_occurrence_id),
+            'source_occurrence_ids' => sids_a,
             'canonical_node_id' => canonical_node_by_endpoint[ek_a] || "cns-#{ek_a}",
             'host_vertex_handle'  => nil,
             'curve_membership'   => (rec_a.respond_to?(:curve_membership) ? rec_a.curve_membership : nil),
@@ -165,7 +178,8 @@ module SUAnalysis
             'derived_edge_id' => e.derived_edge_id.to_s,
             'world_coordinate' => e.world_endpoints[1].dup,
             'layer_name'    => e.layer_name,
-            'source_occurrence_id' => e.source_occurrence_id,
+            'source_occurrence_id' => (sids_b.first || e.source_occurrence_id),
+            'source_occurrence_ids' => sids_b,
             'canonical_node_id' => canonical_node_by_endpoint[ek_b] || "cns-#{ek_b}",
             'host_vertex_handle'  => nil,
             'curve_membership'   => (rec_b.respond_to?(:curve_membership) ? rec_b.curve_membership : nil),
@@ -369,7 +383,15 @@ module SUAnalysis
             'layer_a'             => ep_a['layer_name'],
             'layer_b'             => ep_b['layer_name'],
             'incident_derived_edge_ids'   => [ep_a['derived_edge_id'], ep_b['derived_edge_id']],
-            'incident_source_occurrence_ids' => [ep_a['source_occurrence_id'], ep_b['source_occurrence_id']].compact,
+            # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+            # plural source provenance end-to-end. The
+            # `incident_source_occurrence_ids` field carries
+            # the FULL sorted/uniq union from BOTH incident
+            # sides (a + b), including duplicates that reduce
+            # to a single occurrence ID. Built by the shared
+            # `_plurals_union` helper from the plural
+            # endpoint_lookup entries.
+            'incident_source_occurrence_ids' => _plurals_union(ep_a, ep_b),
             'expected_bridge_endpoints' => [ep_a['world_coordinate'].dup, ep_b['world_coordinate'].dup],
             'expected_bridge_length'    => d,
             'rule_id'             => RULE_ID,
@@ -407,15 +429,29 @@ module SUAnalysis
         end
 
         # ---- X3 / Bridge conflict ----
-        # Blueprint §10.3: two proposed bridges must not cross.
+        # Blueprint §10.3: two proposed bridges must not
+        # cross OR overlap (collinear) OR T-junction each
+        # other in the interior.
         # Walk every pair of ready_proposals; if their
-        # bridge segments cross in the interior, demote both
-        # to REVIEW_REQUIRED with reason `bridge_conflict`.
-        # The executor's preflight already rejects
-        # pairwise endpoint-disjoint violations; X3 adds the
-        # crossing-segment check that preflight does NOT do.
+        # bridge segments conflict in any V1.7-conservative
+        # way, demote both to REVIEW_REQUIRED with reason
+        # `bridge_conflict`. The executor's preflight
+        # already rejects pairwise endpoint-disjoint
+        # violations; X3 adds the segment-conflict check
+        # (proper crossing / collinear overlap / T-junction)
+        # that preflight does NOT do.
         # V17-AIPM-PRIMARY-REVIEW-CORRECTION-2026-09-01 R1.
+        #
+        # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+        # uses the SHARED PURE V1.7 segment-conflict
+        # predicate (core/segment_conflict.rb). The shared
+        # predicate detects proper crossing, full collinear
+        # containment, partial collinear interior overlap,
+        # and T-junction intent. Two proposals sharing an
+        # endpoint (legitimate vertex meeting, not interior
+        # crossing) remain un-demoted.
         if ready_proposals.length >= 2
+          require_relative 'segment_conflict'
           conflict_pairs = []
           (0...ready_proposals.length).each do |i|
             (i + 1...ready_proposals.length).each do |j|
@@ -426,14 +462,16 @@ module SUAnalysis
               next unless eps_i.is_a?(Array) && eps_i.length == 2 &&
                           eps_j.is_a?(Array) && eps_j.length == 2
               # Two proposals sharing an endpoint are allowed
-              # (they meet at a vertex, not an interior crossing).
+              # (they meet at a vertex, not an interior
+              # crossing).
               shared = [pi['endpoint_a_key'], pi['endpoint_b_key']].any? { |k|
                 [pj['endpoint_a_key'], pj['endpoint_b_key']].include?(k)
               }
               next if shared
-              if _segments_intersect_interior?(
-                   eps_i[0], eps_i[1], eps_j[0], eps_j[1], coord_eps
-                 )
+              seg = SUAnalysis::Core::SegmentConflict.conflict?(
+                [eps_i[0], eps_i[1]], [eps_j[0], eps_j[1]], eps: coord_eps
+              )
+              if seg['conflict']
                 conflict_pairs << [i, j]
               end
             end
@@ -478,7 +516,7 @@ module SUAnalysis
               'layer_a'          => ep_a['layer_name'],
               'layer_b'          => ep_b['layer_name'],
               'incident_derived_edge_ids'  => [ep_a['derived_edge_id'], ep_b['derived_edge_id']],
-              'incident_source_occurrence_ids' => [ep_a['source_occurrence_id'], ep_b['source_occurrence_id']].compact,
+              'incident_source_occurrence_ids' => _plurals_union(ep_a, ep_b),
               'expected_bridge_endpoints' => [ep_a['world_coordinate'].dup, ep_b['world_coordinate'].dup],
               'expected_bridge_length'    => d,
               'state'       => STATE_REVIEW_REQUIRED,
@@ -557,23 +595,34 @@ module SUAnalysis
       # Returns true iff the segments cross at a non-endpoint
       # point in the XY plane (the V1.7 base Z-compat test
       # already excludes non-coplanar bridges upstream).
-      # Mirrors the same predicate used by the working-mode
-      # runner's _crossing_checker_proc so the proposer + the
-      # external checker agree on what "crossing" means.
+      #
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # delegates to the SHARED PURE V1.7 segment-conflict
+      # predicate in core/segment_conflict.rb. The previous
+      # implementation used strict orientation crossing only,
+      # which returns false for collinear cases, so V1.7
+      # could accept overlapping bridges despite the
+      # conservative repair contract. The shared predicate
+      # now detects collinear overlap AND proper crossing in
+      # one place; the proposer's X3 check + the runner's
+      # crossing checker + this helper all share one source
+      # of truth. Backwards-compatible: returns true iff the
+      # segment conflict is a PROPER crossing or a COLLINEAR
+      # OVERLAP (so X3 demotes both bridge forms together).
       def _segments_intersect_interior?(p1, p2, q1, q2, eps)
         return false unless p1.is_a?(Array) && p2.is_a?(Array) &&
                             q1.is_a?(Array) && q2.is_a?(Array)
-        return false if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
-                        _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
-        d1 = _segment_orientation(p1, p2, q1)
-        d2 = _segment_orientation(p1, p2, q2)
-        d3 = _segment_orientation(q1, q2, p1)
-        d4 = _segment_orientation(q1, q2, p2)
-        return false if d1.abs < eps || d2.abs < eps || d3.abs < eps || d4.abs < eps
-        ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+        require_relative 'segment_conflict'
+        r = SUAnalysis::Core::SegmentConflict.conflict?([p1, p2], [q1, q2], eps: eps)
+        return false unless r['conflict']
+        r['reason'] == 'proper_interior_crossing' || r['reason'] == 'collinear_overlap'
       end
 
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-002:
+      # legacy 2D orientation predicate retained for
+      # backwards-compatible callers. The shared
+      # SegmentConflict.conflict? predicate is the
+      # authoritative source of truth.
       def _segment_orientation(p, q, r)
         (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
       end
@@ -604,6 +653,48 @@ module SUAnalysis
         keys = [a_key.to_s, b_key.to_s].sort.join('|')
         body = "gap.v1|#{keys}|#{sprintf('%.10f', distance.to_f)}|#{sprintf('%.10f', gap_search.to_f)}|#{sprintf('%.10f', coord_eps.to_f)}"
         'gp-' + Digest::SHA256.hexdigest(body)[0, 16]
+      end
+
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+      # plural source provenance is authoritative end-to-end.
+      # Resolve the COMPLETE sorted/uniq union of source
+      # occurrence IDs from the EndpointRecord (preferred) or
+      # fall back to the DerivedEdgeRecord's plural field.
+      # Returns a frozen sorted/uniq String Array (no nils,
+      # no empties).
+      def _plurals_from(endpoint_record, derived_edge)
+        out = []
+        if endpoint_record.is_a?(EndpointRecord)
+          out.concat(endpoint_record.source_occurrence_ids)
+        elsif endpoint_record.respond_to?(:source_occurrence_ids)
+          out.concat(Array(endpoint_record.source_occurrence_ids))
+        end
+        if out.empty? && derived_edge.respond_to?(:source_occurrence_ids)
+          out.concat(Array(derived_edge.source_occurrence_ids))
+        end
+        if out.empty? && derived_edge.respond_to?(:source_occurrence_id) &&
+           derived_edge.source_occurrence_id
+          out << derived_edge.source_occurrence_id.to_s
+        end
+        out.map { |v| v.nil? ? '' : v.to_s }
+           .reject { |s| s.empty? }
+           .uniq
+           .sort
+           .freeze
+      end
+
+      # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+      # compute the COMPLETE sorted/uniq union of source
+      # occurrence IDs across BOTH incident sides of a bridge.
+      # Deliberate duplicates are deduplicated deterministically.
+      def _plurals_union(ep_a, ep_b)
+        a = ep_a.is_a?(Hash) ? Array(ep_a['source_occurrence_ids']) : []
+        b = ep_b.is_a?(Hash) ? Array(ep_b['source_occurrence_ids']) : []
+        (a + b).map { |v| v.nil? ? '' : v.to_s }
+                .reject { |s| s.empty? }
+                .uniq
+                .sort
+                .freeze
       end
     end
 

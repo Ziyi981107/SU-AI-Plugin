@@ -201,7 +201,26 @@ module SUAnalysis
           else
             # Non-transitive cluster: emit one canonical node
             # record per endpoint (no identity collapse).
-            cluster_id = "ntc-#{comp_idx}-#{_digest_component(sorted_indices, epss)}"
+            #
+            # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-001:
+            # the cluster id MUST NOT depend on DFS discovery
+            # order. The previous form
+            #   "ntc-#{comp_idx}-#{_digest_component(...)}"
+            # included `comp_idx` (the ORIGINAL pre-sort
+            # discovery index of the component), which meant
+            # the SAME endpoint membership produced DIFFERENT
+            # cluster_ids when the input was shuffled /
+            # reversed / fed in a different host iteration
+            # order. The fix drops `comp_idx` entirely: the
+            # cluster id now derives ONLY from a stable digest
+            # of the SORTED endpoint_keys (i.e. the cluster
+            # membership, not the discovery order). The
+            # per-member canonical_node_id
+            # `#{cluster_id}.n#{position}` likewise derives
+            # its position from the sorted-by-endpoint_key
+            # iteration of `sorted_indices`, which is also
+            # stable across rebuilds.
+            cluster_id = "ntc-#{_digest_component(sorted_indices, epss)}"
             endpoint_keys = sorted_indices.map { |i| epss[i].endpoint_key.to_s }
             non_transitive_clusters << {
               'cluster_id'    => cluster_id,

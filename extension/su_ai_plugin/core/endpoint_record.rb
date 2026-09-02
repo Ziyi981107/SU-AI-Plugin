@@ -57,13 +57,15 @@ module SUAnalysis
 
       attr_reader :endpoint_key, :derived_edge_id, :role,
                   :world_coordinate, :layer_name,
-                  :source_occurrence_id, :incident_derived_edge_ids,
+                  :source_occurrence_id, :source_occurrence_ids,
+                  :incident_derived_edge_ids,
                   :curve_membership, :face_adjacency_count,
                   :origin_kind, :host_vertex_handle
 
       def initialize(endpoint_key:, derived_edge_id:, role:,
                      world_coordinate:, layer_name: nil,
                      source_occurrence_id: nil,
+                     source_occurrence_ids: nil,
                      incident_derived_edge_ids: [],
                      curve_membership: nil,
                      face_adjacency_count: 0,
@@ -78,7 +80,24 @@ module SUAnalysis
         end
         @world_coordinate          = world_coordinate.dup.freeze
         @layer_name                = layer_name.nil? ? nil : layer_name.to_s
-        @source_occurrence_id      = source_occurrence_id.nil? ? nil : source_occurrence_id.to_s
+        # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+        # plural source provenance is AUTHORITATIVE end-to-end.
+        # The plural `source_occurrence_ids` field is the
+        # normalized-sorted-uniq String Array carried through
+        # the V1.7 pipeline. The singular `source_occurrence_id`
+        # is a backwards-compatible accessor derived from the
+        # plural field (first element) so older callers still
+        # see a single representative occurrence ID.
+        plural_raw = if source_occurrence_ids.nil?
+                       # Allow singular-only legacy callers.
+                       source_occurrence_id.nil? ? [] : [source_occurrence_id]
+                     else
+                       Array(source_occurrence_ids)
+                     end
+        @source_occurrence_ids = plural_raw.map { |v|
+          v.nil? ? '' : v.to_s
+        }.reject { |s| s.empty? }.uniq.sort.freeze
+        @source_occurrence_id = @source_occurrence_ids.first
         @incident_derived_edge_ids = Array(incident_derived_edge_ids).map(&:to_s).freeze
         @curve_membership          = curve_membership.nil? ? nil : curve_membership.to_s
         @face_adjacency_count      = face_adjacency_count.to_i
@@ -96,7 +115,7 @@ module SUAnalysis
           role == other.role &&
           world_coordinate == other.world_coordinate &&
           layer_name == other.layer_name &&
-          source_occurrence_id == other.source_occurrence_id &&
+          source_occurrence_ids == other.source_occurrence_ids &&
           curve_membership == other.curve_membership &&
           face_adjacency_count == other.face_adjacency_count &&
           origin_kind == other.origin_kind
@@ -105,7 +124,7 @@ module SUAnalysis
 
       def hash
         [endpoint_key, derived_edge_id, role, world_coordinate,
-         layer_name, source_occurrence_id, curve_membership,
+         layer_name, source_occurrence_ids, curve_membership,
          face_adjacency_count, origin_kind].hash
       end
 
@@ -119,6 +138,7 @@ module SUAnalysis
           'world_coordinate'          => world_coordinate.dup,
           'layer_name'                => layer_name,
           'source_occurrence_id'      => source_occurrence_id,
+          'source_occurrence_ids'     => source_occurrence_ids.dup,
           'incident_derived_edge_ids' => incident_derived_edge_ids.dup,
           'curve_membership'          => curve_membership,
           'face_adjacency_count'      => face_adjacency_count,
@@ -138,11 +158,13 @@ module SUAnalysis
     class DerivedEdgeRecord
       attr_reader :derived_edge_id, :endpoint_a_key, :endpoint_b_key,
                   :world_endpoints, :source_occurrence_id,
+                  :source_occurrence_ids,
                   :layer_name, :origin_kind, :repair_action_id,
                   :created_at, :host_handle
 
       def initialize(derived_edge_id:, endpoint_a_key:, endpoint_b_key:,
                      world_endpoints:, source_occurrence_id: nil,
+                     source_occurrence_ids: nil,
                      layer_name: nil,
                      origin_kind: EndpointRecord::ORIGIN_KIND_SOURCE_DERIVED,
                      repair_action_id: nil,
@@ -157,7 +179,23 @@ module SUAnalysis
                 "DerivedEdgeRecord requires world_endpoints = [p1, p2] (each 3-Float); got #{world_endpoints.inspect}"
         end
         @world_endpoints      = world_endpoints.map { |p| [p[0], p[1], p[2]] }.freeze
-        @source_occurrence_id = source_occurrence_id.nil? ? nil : source_occurrence_id.to_s
+        # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+        # plural source provenance is AUTHORITATIVE end-to-end.
+        # The plural `source_occurrence_ids` field is the
+        # normalized-sorted-uniq String Array carried through
+        # the V1.7 pipeline. The singular `source_occurrence_id`
+        # is a backwards-compatible accessor derived from the
+        # plural field (first element) so older callers still
+        # see a single representative occurrence ID.
+        plural_raw = if source_occurrence_ids.nil?
+                       source_occurrence_id.nil? ? [] : [source_occurrence_id]
+                     else
+                       Array(source_occurrence_ids)
+                     end
+        @source_occurrence_ids = plural_raw.map { |v|
+          v.nil? ? '' : v.to_s
+        }.reject { |s| s.empty? }.uniq.sort.freeze
+        @source_occurrence_id = @source_occurrence_ids.first
         @layer_name           = layer_name.nil? ? nil : layer_name.to_s
         @origin_kind          = origin_kind.to_s
         @repair_action_id     = repair_action_id.nil? ? nil : repair_action_id.to_s
@@ -171,13 +209,14 @@ module SUAnalysis
           endpoint_a_key == other.endpoint_a_key &&
           endpoint_b_key == other.endpoint_b_key &&
           world_endpoints == other.world_endpoints &&
+          source_occurrence_ids == other.source_occurrence_ids &&
           origin_kind == other.origin_kind
       end
       alias eql? ==
 
       def hash
         [derived_edge_id, endpoint_a_key, endpoint_b_key,
-         world_endpoints, origin_kind].hash
+         world_endpoints, source_occurrence_ids, origin_kind].hash
       end
 
       # JSON-safe Hash. host_handle is intentionally omitted.
@@ -188,6 +227,7 @@ module SUAnalysis
           'endpoint_b_key'       => endpoint_b_key,
           'world_endpoints'      => world_endpoints.map { |p| p.dup },
           'source_occurrence_id' => source_occurrence_id,
+          'source_occurrence_ids' => source_occurrence_ids.dup,
           'layer_name'           => layer_name,
           'origin_kind'          => origin_kind,
           'repair_action_id'     => repair_action_id,
@@ -310,6 +350,32 @@ module SUAnalysis
           occ_id = if rec.respond_to?(:source_occurrence_ids)
                      Array(rec.source_occurrence_ids).first
                    end
+          # V17-AIPM-CODEX-XHIGH-BLOCK-FIX-2026-09-02 INT-003:
+          # PLURAL source provenance is AUTHORITATIVE end-to-end.
+          # The previous code captured only `Array(...).first`
+          # so any survivor that already represented multiple
+          # source occurrences had all but the first lost
+          # before proposal creation. Read the FULL
+          # `source_occurrence_ids` from the derived record and
+          # normalize: Strings, uniq, sorted. This preserves
+          # the complete union across the snapshot builder,
+          # endpoint lookup, proposer, generated record, and
+          # canonical gap_bridge edge.
+          occ_ids_plural = if rec.respond_to?(:source_occurrence_ids)
+                             Array(rec.source_occurrence_ids).map { |v|
+                               v.nil? ? '' : v.to_s
+                             }.reject { |s| s.empty? }.uniq.sort
+                           else
+                             []
+                           end
+          # Backwards-compat fallback: if the record carries
+          # only the singular accessor and no plural list, use
+          # that singular value (wrapped as a 1-element
+          # sorted/uniq array).
+          if occ_ids_plural.empty? && rec.respond_to?(:source_occurrence_id) &&
+             rec.source_occurrence_id && !rec.source_occurrence_id.to_s.empty?
+            occ_ids_plural = [rec.source_occurrence_id.to_s]
+          end
           # DerivedEdgeRecord (parent).
           origin_kind = _origin_kind_for(rec)
           repair_action_id = rec.respond_to?(:respond_to?) && rec.respond_to?(:repair_action_id) ?
@@ -320,6 +386,7 @@ module SUAnalysis
             endpoint_b_key:       "#{edid}.end",
             world_endpoints:      [[s[0], s[1], s[2]], [e[0], e[1], e[2]]],
             source_occurrence_id: occ_id,
+            source_occurrence_ids: occ_ids_plural,
             layer_name:           layer_name,
             origin_kind:          origin_kind,
             repair_action_id:     repair_action_id,
@@ -338,6 +405,7 @@ module SUAnalysis
             world_coordinate:          [s[0], s[1], s[2]],
             layer_name:                layer_name,
             source_occurrence_id:      occ_id,
+            source_occurrence_ids:     occ_ids_plural,
             incident_derived_edge_ids: [edid],
             curve_membership:          curve_membership,
             face_adjacency_count:      face_adjacency_count,
@@ -351,6 +419,7 @@ module SUAnalysis
             world_coordinate:          [e[0], e[1], e[2]],
             layer_name:                layer_name,
             source_occurrence_id:      occ_id,
+            source_occurrence_ids:     occ_ids_plural,
             incident_derived_edge_ids: [edid],
             curve_membership:          curve_membership,
             face_adjacency_count:      face_adjacency_count,
