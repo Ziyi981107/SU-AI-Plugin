@@ -1,10 +1,101 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 AIPM-DIRECT-SOURCE-REREVIEW-FIX (THIS UPDATE)
+## V1.7 AIPM-FINAL-PRE-CODEX-FIX (THIS UPDATE)
 
-Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REREVIEW-FIX-
-2026-09-01 dispatch EXECUTION on assigned `dev/v1.7` per
+Updated: 2026-09-02 (V17-AIPM-FINAL-PRE-CODEX-FIX-
+2026-09-02 dispatch EXECUTION on assigned `dev/v1.7` per
 dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7
+Stage Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
+- **V1.7 AIPM FINAL direct source re-review**: pending
+  AIPM direct source RE-review of this corrected packet.
+- **V1.7 mandatory Codex review**: pending xHigh AFTER AIPM
+  RE-review. Pi does NOT invoke Codex.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected the TWO FINAL bounded pre-Codex
+findings (F-01 + F-02 from `Review/CURRENT_AIPM_REVIEW.md`)
+— captured tolerance authority (RR-04 pre-batch baseline
+honors the captured tolerance; no silent fallback to
+defaults) and independent proposal-vs-record-vs-host
+post-validation (record endpoints/length AND host endpoint
+positions are each compared against the READY proposal, not
+against the record itself) — and added 5 new F-01/F-02
+regression tests.
+
+V1.7 FINAL-PRE-CODEX-FIX PACKET — 2026-09-02.
+
+- Starting HEAD: `43a3ac0` (the prior V17 DIRECT-SOURCE-
+  REREVIEW-FIX doc-stamp).
+- Implementation SHA (preserved from prior substantive
+  packet): `e98326ee17cabdeec0b617f22576d1bdc5ce699a`.
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD` after
+  push (one production commit + one doc-stamp, this dispatch).
+- V1.7 RBZ candidate: size **956,742 bytes**; entries **67**;
+  SHA-256
+  **`98e9cb2ed659ec1b0d80efac2691c3380dc3c39875f316dae58cb47191d13710`**.
+- Full Ruby suite: **944 / 944 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 89 V1.7 Ruby tests, +5 from this
+  dispatch: V17-F01-A / V17-F01-B / V17-F02-A / V17-F02-B /
+  V17-F02-C).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS; final line `PASS`.
+- `git diff --check`: clean.
+- per dispatch §8 + §9: STOPPED awaiting AIPM FINAL direct
+  source re-review; Codex xHigh integration review NOT
+  invoked; V1.8 NOT STARTED; final Owner SU2020 real-host
+  verification gate NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the assigned
+`dev/v1.7`. Pi did NOT rewrite any frozen design authority.
+
+Corrections by this dispatch (each regression-locked in
+`tests/test_v17_production_gap_path.rb`):
+
+- F-01 (CAPTURED TOLERANCE AUTHORITY):
+  `WorkingModeRunner#v17_tolerance` is now a 2-line
+  delegation to the already-correct
+  `_tolerance_from_snapshot(@current_source)` (with
+  `Tolerance.default` fallback when no source is captured).
+  The helper already accepts BOTH symbol and string keys
+  defensively and preserves the complete tolerance field
+  set. The RR-04 pre-batch baseline capture AND the
+  proposal/apply path therefore use IDENTICAL captured
+  `gap_search` / `coordinate_epsilon` values, with NO
+  silent fallback to the legacy defaults (0.1 / 1e-6).
+- F-02 (INDEPENDENT PROPOSAL-vs-RECORD-vs-HOST
+  POST-VALIDATE):
+  `GapBridgeExecutor._post_validate` now resolves the
+  READY proposal by `proposal_id` (fails closed with
+  `proposal_not_found:<pid>` when missing) and uses the
+  PROPOSAL's `expected_bridge_endpoints` /
+  `expected_bridge_length` / `coordinate_epsilon` as the
+  authoritative reference for BOTH the record AND host
+  comparisons. Independent record-vs-proposal
+  (`record_endpoint_mismatch:<pid>` /
+  `record_length_mismatch:<pid>`) AND host-vs-proposal
+  (`host_endpoint_segment_mismatch:<pid>`) reasons are
+  emitted on disagreement. Host comparison remains
+  undirected (host may report `(A,B)` or `(B,A)`). Host
+  capability / handle / position failures still fail
+  closed with the existing stable reasons. No hardcoded
+  epsilon fallback.
+
+## V1.7 AIPM-DIRECT-SOURCE-REREVIEW-FIX (HISTORICAL)
+
+Updated: 2026-09-01 (V17-AIPM-DIRECT-SOURCE-REREVIEW-FIX-2026-09-01
+dispatch EXECUTION on assigned `dev/v1.7` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the frozen V1.7
 Stage Technical Blueprint
 `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
 

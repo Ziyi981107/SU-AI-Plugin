@@ -1,103 +1,193 @@
-# CURRENT AIPM SOURCE REVIEW
+# CURRENT AIPM REVIEW
 
-STATUS: BLOCK — CORRECTIVE DISPATCH ACTIVE
-VERDICT: BLOCK
-Project: SU-AI-Plugin
-Version: V1.5
-Stage: Round-5 AIPM Source Review
-Reviewed branch: `dev/v1.5`
-Functional candidate reviewed: `d3b3d791d9972c3fcb48e2da26ea4b06e41df1a9`
-Governance HEAD at review packet creation: `89f62457887d5d5d2b04f8d01f8d1ed27464c37e`
-Pi report: `Review/CURRENT_PI_REPORT.md`
+REVIEW_ID: V17-AIPM-FINAL-SOURCE-REREVIEW-2026-09-02
+PROJECT: SU-AI-Plugin
+STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
+REVIEWER: AIPM
+FINAL PRODUCT OWNER: Owner
 
-## Evidence basis
+REMOTE_HEAD_REVIEWED:
+43a3ac080d02d4aa809df7429d0589760a2594b3
 
-AIPM directly inspected:
-- real Round-5 functional diff;
-- all changed production files;
-- directly affected upstream/downstream source;
-- Round-5 and continuation tests;
-- frozen Round-5 AIPM Guidance.
+VERDICT:
+FIX REQUIRED — FINAL TWO NARROW CONTRACT CORRECTIONS
 
-This is a real AIPM Source Review, not a verdict inferred from Pi's report.
+CODEX_GATE: HOLD
+OWNER_GATE: HOLD
+V1.8: NOT ACTIVE
 
-## Findings
+# 0. OWNER SUMMARY
 
-### PASS / closed within this review boundary
-- BLOCK-001 core executor live-handle / alias protection is directionally accepted, subject to small strict-validity hardening in the corrective packet.
-- BLOCK-002B non-transitive complete-graph-or-skip behavior is accepted.
+RR-01..RR-05 are materially corrected and the restored 939-test suite is meaningful.
 
-### BLOCK — BLOCK-002A / BLOCK-004 tolerance fail-closed semantics
-Current production code still contains:
-- permissive `.to_f` tolerance coercion;
-- runtime default fallback paths that can substitute `0.0001`;
-- exact-zero key/layer implementation inconsistency.
+AIPM final direct source rereview found exactly TWO remaining source-contract defects.
 
-Minimum outcome:
-strict parse, invalid -> no auto-repair, no hidden default, captured `0.0` preserved exactly.
+No new architecture is authorized.
+No additional review scope should be invented after these two items unless the fixes themselves introduce a new concrete defect.
 
-### BLOCK — BLOCK-003 exact provenance union
-Current validator proves non-empty survivor provenance but does not prove exact deterministic union from authoritative pre-state members.
+# 1. PASS / PRESERVE
 
-Minimum outcome:
-derive expected union from pre-state component membership and require exact normalized equality before host begin.
+Preserve unchanged:
 
-### BLOCK — BLOCK-005 discard / Undo reconciliation
-Current proof does not establish the real case:
-`discard -> registry/evidence cleared -> SketchUp Undo restores derived geometry -> next normal interaction detects/reconciles`.
+- truthful native abort/commit/uncertainty handling;
+- one logical bridge = one workspace-owned host bridge;
+- restored H1..H7 host mutation suite;
+- fail-closed host endpoint capability reads;
+- exact canonical pre/post non-transitive comparison;
+- deterministic bridge IDs;
+- plural provenance;
+- unique logical CanonicalGeometryGraph nodes;
+- point-on-segment-interior predicate;
+- Source CAD immutability;
+- endpoint_bridge as the only V1.7 executable repair;
+- no Observer architecture;
+- V1.8 remains blocked.
 
-This is classified as an AIPM technical-design gap, not a Pi implementation-choice gap.
+# 2. FINAL BLOCK F-01 — PRE-BATCH CANONICAL BASELINE REBUILDS WITH DEFAULT TOLERANCE WHEN CAPTURED KEYS ARE SYMBOLS
 
-BLOCK-005 is intentionally NOT assigned in the current Pi corrective packet.
+## Source finding
 
-## Current corrective action
+`WorkingModeRunner#v17_tolerance` rebuilds tolerance values using string keys only:
 
-ACTIVE DISPATCH:
-`SUAI-V15-R5-AIPM-SOURCE-REVIEW-FIX-20260828-01`
+- `vals['duplicate']`
+- `vals['short_edge']`
+- `vals['gap_search']`
+- `vals['coordinate_epsilon']`
 
-Frozen Guidance:
-`Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
+But `Tolerance#to_h` publishes SYMBOL keys:
 
-Pi is authorized to fix only:
-- tolerance/fallback;
-- exact provenance union;
-- strict handle liveness;
-- bounded exact-zero layer-key consistency;
-- required regressions/package evidence.
+- `:duplicate`
+- `:short_edge`
+- `:gap_search`
+- `:coordinate_epsilon`
+- etc.
 
-## BLOCK-005 next design step
+`ExecutionConfigSnapshot.from_live_config` preserves that Hash shape.
 
-AIPM will perform targeted technical research before freezing the recovery fix:
-- SketchUp official API;
-- 2–4 mature open-source SketchUp extensions;
-- Undo/Redo / ModelObserver / EntitiesObserver;
-- entity lifecycle / persistent identity;
-- state invalidation / reconciliation patterns;
-- license constraints.
+Therefore a normal captured SourceSnapshot can carry symbol-keyed tolerance values while `v17_tolerance` silently falls back to defaults.
 
-Pi must not invent a broad Observer/recovery architecture meanwhile.
+RR-04's "exact pre-batch canonical baseline" can therefore be rebuilt with a DIFFERENT coordinate_epsilon / gap_search from the proposal/apply path when a non-default profile or override is used.
 
-## Codex status
+This violates captured-config authority.
 
-Do NOT dispatch Codex yet.
+## Required correction
 
-Reason:
-the current AIPM BLOCKs are already causally identified and part of the implementation remains uncorrected.
+Do not maintain a second tolerance parser.
 
-Codex xHigh narrow recheck is appropriate only after:
-1. Pi completes the bounded corrective packet;
-2. AIPM directly re-reviews that real diff/source;
-3. AIPM freezes and Pi implements the BLOCK-005 recovery design;
-4. AIPM Source Review reaches PASS for the complete V1.5 candidate.
+Preferred:
 
-## Next permitted action
+`v17_tolerance` should delegate directly to the already-correct:
 
-Pi executes the active bounded corrective dispatch and STOPs.
+`_tolerance_from_snapshot(@current_source)`
 
-Then:
-AIPM direct source re-review.
+That existing helper already accepts both symbol and string keys and preserves the complete tolerance field set.
 
-OWNER ACTION REQUIRED: NO.
-OWNER VERIFICATION: BLOCKED.
-V1.6: NOT AUTHORIZED.
-FORMAL RELEASE: NOT AUTHORIZED.
+Equivalent implementation is acceptable only if it uses the exact same captured-config semantics.
+
+## Required regression
+
+Create a SourceSnapshot whose captured tolerance is deliberately non-default, e.g.:
+
+- gap_search = 0.25
+- coordinate_epsilon = 5e-6
+
+Prove:
+
+- compute_gap_repair uses those captured values;
+- pre-batch canonical baseline uses the SAME values;
+- no silent fallback to 0.1 / 1e-6 occurs.
+
+# 3. FINAL BLOCK F-02 — HARD POST-VALIDATION DOES NOT INDEPENDENTLY COMPARE RECORD/HOST GEOMETRY TO THE READY PROPOSAL
+
+## Source finding
+
+`GapBridgeExecutor._post_validate` correctly looks up the READY proposal to obtain `coordinate_epsilon`.
+
+But the expected endpoints used for host comparison are currently:
+
+- `gs['start']`
+- `gs['end']`
+
+where `gs` is the newly-created DerivedEntityRecord's own `geometry_summary`.
+
+The code comment says the host is compared against the READY proposal's expected endpoints, but the implementation compares host output against the derived record that was created from the same mutation path.
+
+The current method also does not independently prove:
+
+- record start/end == proposal expected_bridge_endpoints;
+- record length == proposal expected_bridge_length.
+
+This weakens the hard post-validation contract because a wrong record/mutation input can self-consistently agree with the host while disagreeing with the authoritative proposal.
+
+## Required correction
+
+For each applied bridge:
+
+1. resolve the matching READY proposal by proposal_id;
+2. fail if no matching proposal exists;
+3. read:
+   - proposal `expected_bridge_endpoints`
+   - proposal `expected_bridge_length`
+   - proposal `coordinate_epsilon`
+4. independently verify DerivedEntityRecord:
+   - geometry_summary start/end match proposal endpoints;
+   - geometry_summary length matches proposal expected length;
+   - origin_kind and repair_action_id remain correct;
+5. independently verify actual host edge endpoints against the PROPOSAL endpoints, not against geometry_summary;
+6. use proposal coordinate_epsilon;
+7. host segment comparison remains undirected.
+
+Stable reason examples:
+
+- `proposal_not_found:<pid>`
+- `record_endpoint_mismatch:<pid>`
+- `record_length_mismatch:<pid>`
+- existing `host_endpoint_segment_mismatch:<pid>`
+
+## Required regression
+
+Add a test that intentionally creates this contradictory evidence:
+
+- READY proposal expects segment A-B;
+- DerivedEntityRecord geometry_summary says A-C;
+- fake host edge also reports A-C.
+
+Old code would self-consistently pass host-vs-record.
+
+Correct code MUST fail because both record and host disagree with READY proposal A-B.
+
+Also preserve:
+- reversed host endpoint order PASS;
+- proposal coordinate_epsilon ownership.
+
+# 4. FINAL GATE
+
+Run fresh:
+
+- focused F-01/F-02 tests;
+- full V1.7;
+- full Ruby;
+- restored H1..H7;
+- V1.6 close-autodiscard;
+- V1.5 BLOCK-005;
+- LEGACY-COMPAT;
+- Node DOM;
+- RBZ smoke;
+- git diff --check.
+
+Rebuild RBZ after production changes.
+
+# 5. REVIEW POLICY
+
+This is the FINAL AIPM pre-Codex correction packet.
+
+After F-01 and F-02 are corrected and pushed:
+
+Pi STOP
+→ AIPM verifies only these two deltas
+→ if both PASS, AIPM PRIMARY SOURCE REVIEW = PASS
+→ mandatory Codex xHigh integration review
+
+Do not open another AIPM correction round for speculative polish.
+
+END

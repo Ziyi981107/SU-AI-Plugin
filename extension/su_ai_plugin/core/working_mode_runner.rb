@@ -1510,22 +1510,35 @@ module SUAnalysis
       # Read the V1.7 tolerance from the current source
       # snapshot, falling back to a sane default when the
       # runner has no source. Used by RR-04 baseline capture.
+      #
+      # V17-AIPM-FINAL-PRE-CODEX-FIX-2026-09-02 F-01: do NOT
+      # maintain a second tolerance parser. The previous
+      # implementation read only STRING keys while
+      # Tolerance#to_h publishes SYMBOL keys (and
+      # ExecutionConfigSnapshot.from_live_config preserves
+      # that Hash shape), so a normal captured SourceSnapshot
+      # could carry symbol-keyed tolerance values while
+      # v17_tolerance silently fell back to the legacy
+      # defaults. RR-04's exact pre-batch canonical baseline
+      # could therefore be rebuilt with a DIFFERENT
+      # coordinate_epsilon / gap_search from the
+      # proposal/apply path when a non-default profile or
+      # override was used. This violated captured-config
+      # authority.
+      #
+      # The fix delegates directly to the already-correct
+      # `_tolerance_from_snapshot(@current_source)`, which
+      # accepts BOTH symbol and string keys (defensive
+      # `vals[:k] || vals['k']`) and preserves the complete
+      # tolerance field set (including big_z /
+      # large_coordinate / planar_z_snap). The RR-04
+      # baseline capture AND the proposal/apply path MUST
+      # therefore use IDENTICAL captured gap_search and
+      # coordinate_epsilon values, with NO silent fallback
+      # to defaults.
       def v17_tolerance
         return Tolerance.default if @current_source.nil?
-        if @current_source.respond_to?(:execution_config) &&
-           @current_source.execution_config.respond_to?(:tolerance_values)
-          vals = @current_source.execution_config.tolerance_values
-          if vals.is_a?(Hash) && !vals.empty?
-            # Build a fresh Tolerance from the captured values.
-            return Tolerance.new(
-              duplicate:          vals['duplicate']          || 1.0e-4,
-              short_edge:         vals['short_edge']         || 0.5,
-              gap_search:         vals['gap_search']         || 0.1,
-              coordinate_epsilon: vals['coordinate_epsilon'] || 1.0e-6
-            )
-          end
-        end
-        Tolerance.default
+        _tolerance_from_snapshot(@current_source)
       end
 
       def _open_endpoint_keys(workspace, derived_edges, topology_snapshot)

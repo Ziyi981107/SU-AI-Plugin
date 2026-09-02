@@ -1927,3 +1927,295 @@ test 'V17-RR04-D [PRODUCTION PATH]: runner exposes RR-04 baseline capture hooks 
 ensure
   V17P_RUNNER.reset_for_tests
 end
+
+# ===============================================================
+# V17-AIPM-FINAL-PRE-CODEX-FIX-2026-09-02
+# F-01 -- CAPTURED TOLERANCE AUTHORITY
+# F-02 -- INDEPENDENT PROPOSAL-vs-RECORD-vs-HOST POST-VALIDATE
+# ===============================================================
+#
+# These are the FINAL TWO bounded pre-Codex corrections
+# from `Review/CURRENT_AIPM_REVIEW.md` (REVIEW_ID
+# V17-AIPM-FINAL-SOURCE-REREVIEW-2026-09-02).
+#
+# F-01 captures tolerance authority in RR-04's pre-batch
+# baseline: the previous v17_tolerance parsed only STRING keys
+# while Tolerance#to_h publishes SYMBOL keys. v17_tolerance now
+# delegates to the already-correct _tolerance_from_snapshot,
+# which accepts both symbol and string keys.
+#
+# F-02 forces _post_validate to compare host / record /
+# proposal independently: it resolves the READY proposal by
+# proposal_id and verifies both the record (start/end/length)
+# AND the host endpoint positions against the proposal's
+# expected endpoints -- not against the record itself.
+
+# ---- F-01-A: captured non-default tolerance is honored by both
+#       compute_gap_repair and the pre-batch canonical baseline ----
+test 'V17-F01-A [PRODUCTION PATH]: v17_tolerance honors non-default captured symbol-keyed tolerance (no silent fallback to defaults)' do
+  # Build a SourceSnapshot whose captured execution_config
+  # carries a Tolerance with SYMBOL-keyed tolerance_values
+  # (the production Tolerance#to_h shape). Use non-default
+  # values:
+  #   gap_search = 0.25
+  #   coordinate_epsilon = 5e-6
+  custom_tol = Tolerance.new(
+    duplicate: 1.0e-4, short_edge: 0.5,
+    gap_search: 0.25, coordinate_epsilon: 5.0e-6
+  )
+  # Use the production prepare path with a triangle fixture
+  # whose single gap is INSIDE the custom tolerance window
+  # but OUTSIDE the legacy default window.
+  adapter = v17p_prepare(v17p_triangle_edges, custom_tol)
+  refute_nil adapter
+  # The runner's v17_tolerance accessor MUST surface the
+  # captured tolerance, not the legacy default. In particular,
+  # gap_search and coordinate_epsilon are the two values the
+  # RR-04 pre-batch baseline capture relies on.
+  rtol = V17P_RUNNER.v17_tolerance
+  refute_nil rtol, 'F-01-A: v17_tolerance must return a Tolerance when a source is captured'
+  assert_in_delta 0.25,    rtol.gap_search.to_f,         1.0e-12,
+               "F-01-A: v17_tolerance.gap_search must honor the captured value 0.25; " \
+               "got #{rtol.gap_search.inspect}"
+  assert_in_delta 5.0e-6,  rtol.coordinate_epsilon.to_f, 1.0e-12,
+               "F-01-A: v17_tolerance.coordinate_epsilon must honor the captured value 5e-6; " \
+               "got #{rtol.coordinate_epsilon.inspect}"
+  # Compute must use the SAME captured tolerance (no silent
+  # fallback). The custom coordinate_epsilon (5e-6) is LARGER
+  # than the legacy default (1e-6), so a triangle whose gap
+  # is 0.05 -- which the legacy default rejects as
+  # "within coordinate_epsilon" (NO bridge) -- now passes as
+  # a real gap.
+  V17P_RUNNER.compute_gap_repair
+  prop = V17P_RUNNER.topology_repair_proposal
+  refute_nil prop
+  # The almost-closed triangle yields exactly ONE
+  # READY_TO_REPAIR proposal using the custom tolerance.
+  assert_equal GapPairProposer::STATE_READY_TO_REPAIR, prop['state'],
+               "F-01-A: custom captured tolerance must produce READY_TO_REPAIR; " \
+               "got #{prop['state'].inspect}"
+  ready = Array(prop['ready_proposals'])
+  assert_equal 1, ready.length,
+               "F-01-A: exactly one READY_TO_REPAIR proposal expected; got #{ready.length}"
+  p0 = ready.first
+  # The proposal MUST carry the captured coordinate_epsilon
+  # (5e-6), NOT the legacy default (1e-6).
+  assert_in_delta 5.0e-6, p0['coordinate_epsilon'].to_f, 1.0e-12,
+               "F-01-A: ready_proposal.coordinate_epsilon must be the captured 5e-6; " \
+               "got #{p0['coordinate_epsilon'].inspect}"
+  # The proposal's expected bridge length MUST equal the
+  # actual gap (C-D = 0.05). The captured tolerance is the
+  # authoritative reference for the entire compute path.
+  assert_in_delta 0.05, p0['expected_bridge_length'].to_f, 1.0e-9,
+               "F-01-A: expected bridge length must equal the captured C-D gap (0.05); " \
+               "got #{p0['expected_bridge_length'].inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ---- F-01-B: RR-04 pre-batch baseline capture uses the SAME
+#       captured tolerance (no silent divergence from the
+#       proposal/apply path) ----
+test 'V17-F01-B [PRODUCTION PATH]: RR-04 baseline capture honors the captured tolerance (no silent fallback)' do
+  custom_tol = Tolerance.new(
+    duplicate: 1.0e-4, short_edge: 0.5,
+    gap_search: 0.25, coordinate_epsilon: 5.0e-6
+  )
+  v17p_prepare(v17p_triangle_edges, custom_tol)
+  ws = V17P_RUNNER.current_workspace_for_test
+  # _current_gap_bridge_action_ids + _current_non_transitive_signatures
+  # both rebuild the canonical graph via v17_tolerance. Both
+  # MUST use the captured tolerance (5e-6 / 0.25), NOT the
+  # legacy default (1e-6 / 0.1).
+  ids  = V17P_RUNNER._current_gap_bridge_action_ids
+  sigs = V17P_RUNNER._current_non_transitive_signatures
+  # Empty pre-batch workspace -> both are empty Arrays.
+  assert_equal [], ids,
+               "F-01-B: _current_gap_bridge_action_ids returns [] when no bridges yet; " \
+               "got #{ids.inspect}"
+  assert_equal [], sigs,
+               "F-01-B: _current_non_transitive_signatures returns [] when no clusters yet; " \
+               "got #{sigs.inspect}"
+  # The runner's v17_tolerance accessor MUST also be visible
+  # to the pre-batch baseline path (the baseline rebuild
+  # calls rebuild_canonical_geometry_graph with this
+  # tolerance).
+  rtol = V17P_RUNNER.v17_tolerance
+  assert_in_delta 0.25, rtol.gap_search.to_f, 1.0e-12,
+               "F-01-B: v17_tolerance.gap_search must be the captured 0.25"
+  assert_in_delta 5.0e-6, rtol.coordinate_epsilon.to_f, 1.0e-12,
+               "F-01-B: v17_tolerance.coordinate_epsilon must be the captured 5e-6"
+  # And the apply path uses the SAME captured tolerance
+  # (no divergence from the baseline path).
+  V17P_RUNNER.compute_gap_repair
+  V17P_RUNNER.apply_gap_repair
+  post = V17P_RUNNER.topology_repair_canonical_graph
+  refute_nil post
+  bridge = post.edges.find { |e| e['origin_kind'].to_s == 'gap_bridge' }
+  refute_nil bridge
+  # The canonical bridge MUST carry the captured tolerance
+  # influence (canonical graph is built from the captured
+  # tolerance via rebuild_canonical_geometry_graph).
+  # Indirect check: apply succeeded with the custom tolerance
+  # and the canonical graph is structurally consistent.
+  assert_equal 4, post.edges.length,
+               "F-01-B: canonical graph must contain the bridge + 3 source edges"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ---- F-02-A: ready proposal with endpoints (A,B) -- record + host
+#       both report (A,B) -- PASSES ----
+test 'V17-F02-A [PRODUCTION PATH]: record + host both match READY proposal endpoints -> PASS' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  bridge_start = bridge.geometry_summary['start'].dup
+  bridge_end   = bridge.geometry_summary['end'].dup
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  # Add expected_bridge_length to the proposal so the F-02
+  # length check has an authoritative reference.
+  ready_entry['expected_bridge_length'] = bridge.geometry_summary['length'].to_f
+  # Host reports the endpoints in FORWARD order (start, end).
+  vh_a = Object.new
+  vh_b = Object.new
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [vh_a, vh_b]
+  end
+  adapter.define_singleton_method(:vertex_position) do |v|
+    if v.equal?(vh_a)
+      bridge_start.dup
+    elsif v.equal?(vh_b)
+      bridge_end.dup
+    else
+      [0.0, 0.0, 0.0]
+    end
+  end
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  assert_equal true, result['pass'],
+               "F-02-A: forward host + record agreeing with proposal MUST pass; " \
+               "got reasons=#{result['reasons'].inspect}"
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ---- F-02-B: CONTRADICTION regression. READY proposal expects
+#       segment (A,B); record says (A,C); host says (A,C).
+#       MUST FAIL because both record and host disagree with
+#       the READY proposal A-B. The previous self-consistent
+#       host-vs-record check would have passed this case. ----
+test 'V17-F02-B [PRODUCTION PATH]: contradictory record/host vs proposal MUST FAIL (independent proposal-vs-record-vs-host check)' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  bridge_start = bridge.geometry_summary['start'].dup
+  bridge_end   = bridge.geometry_summary['end'].dup
+  applied_entry, ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  # Inject the CONTRADICTION: the proposal says A-B (the real
+  # bridge); the record (geometry_summary) we will overwrite
+  # to say A-C; the host will also say A-C.
+  expected_a = bridge_start.dup
+  expected_b = bridge_end.dup
+  # Build a coordinate 0.01 away from expected_b (well inside
+  # gap_search 0.1, well outside coordinate_epsilon 1e-6).
+  contradictory_b = [
+    expected_b[0] + 0.01,
+    expected_b[1],
+    expected_b[2]
+  ]
+  # DerivedEntityRecord is frozen; we cannot mutate
+  # bridge.geometry_summary directly. Instead we attach a
+  # duplicate record (with the contradictory summary) to the
+  # workspace via build_entity; build_entity returns a NEW
+  # workspace, so we capture that and use it for the post-
+  # validate call. The original bridge stays as the proposal's
+  # evidence, while the new contradictory record exercises
+  # the F-02 path.
+  contradictory_did = 'der-gap-contradictory-test'
+  ws_with_contradictory = ws_post.build_entity(
+    derived_id: contradictory_did,
+    kind: :edge,
+    source_occurrence_ids: bridge.source_occurrence_ids.dup,
+    geometry_summary: {
+      'layer'           => 'L0',
+      'length'          => 0.01,
+      'start'           => expected_a.dup,
+      'end'             => contradictory_b.dup,
+      'origin_kind'     => 'generated_gap_bridge',
+      'repair_action_id'=> bridge.geometry_summary['repair_action_id'].to_s
+    },
+    geometry_data: [expected_a.dup, contradictory_b.dup]
+  )
+  refute_equal :failed, ws_with_contradictory.state,
+               "F-02-B setup: workspace.build_entity with contradictory endpoints must succeed"
+  contradictory_handle = ws_with_contradictory.handle_for(contradictory_did)
+  refute_nil contradictory_handle, 'F-02-B setup: contradictory record must have a live host handle'
+  applied_entry['derived_id']  = contradictory_did
+  applied_entry['host_handle'] = contradictory_handle
+  # Host reports the SAME contradictory (A, C) endpoints.
+  vh_a = Object.new
+  vh_b = Object.new
+  adapter.define_singleton_method(:edge_endpoints) do |_h|
+    [vh_a, vh_b]
+  end
+  adapter.define_singleton_method(:vertex_position) do |v|
+    if v.equal?(vh_a)
+      expected_a.dup          # host agrees with record (A)
+    elsif v.equal?(vh_b)
+      contradictory_b.dup     # host agrees with record (C -- contradicts proposal B)
+    else
+      [0.0, 0.0, 0.0]
+    end
+  end
+  # Add explicit expected_bridge_length to the proposal so
+  # the F-02 length check has an authoritative reference.
+  ready_entry['expected_bridge_length'] = 0.05
+  result = GapBridgeExecutor._post_validate(
+    ws_with_contradictory, adapter, [applied_entry], [ready_entry],
+    pre_workspace: ws_with_contradictory, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               "F-02-B: contradictory record+host vs READY proposal MUST FAIL; " \
+               "got reasons=#{result['reasons'].inspect}"
+  reasons_str = result['reasons'].join(',')
+  # The contract is: independent comparison against the
+  # PROPOSAL. The post-validation MUST surface all three
+  # proposal-comparison reasons: record endpoint mismatch,
+  # record length mismatch, and host segment mismatch.
+  assert(reasons_str.include?('record_endpoint_mismatch'),
+         "F-02-B: record_endpoint_mismatch MUST appear (record vs proposal); " \
+         "got #{reasons_str.inspect}")
+  assert(reasons_str.include?('record_length_mismatch'),
+         "F-02-B: record_length_mismatch MUST appear (record length 0.01 != proposal 0.05); " \
+         "got #{reasons_str.inspect}")
+  assert(reasons_str.include?('host_endpoint_segment_mismatch'),
+         "F-02-B: host_endpoint_segment_mismatch MUST appear (host vs proposal, not host vs record); " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end
+
+# ---- F-02-C: missing READY proposal entry -> proposal_not_found ----
+test 'V17-F02-C [PRODUCTION PATH]: missing READY proposal entry -> proposal_not_found' do
+  tol = v17p_tol(0.1)
+  adapter, ws_post, bridge = v17p_rr02_workspace(tol)
+  applied_entry, _ready_entry = v17p_rr02_build_entries(ws_post, bridge, tol.coordinate_epsilon)
+  # Pass an EMPTY ready list: the applied bridge has no
+  # matching READY proposal.
+  result = GapBridgeExecutor._post_validate(
+    ws_post, adapter, [applied_entry], [],
+    pre_workspace: ws_post, pre_fingerprint_digest: nil,
+    pre_source_fingerprint_digest: nil, pre_entity_coords: nil
+  )
+  refute_equal true, result['pass'],
+               "F-02-C: missing READY proposal MUST fail"
+  reasons_str = result['reasons'].join(',')
+  assert(reasons_str.include?('proposal_not_found'),
+         "F-02-C: reason must include 'proposal_not_found'; " \
+         "got #{reasons_str.inspect}")
+ensure
+  V17P_RUNNER.reset_for_tests
+end

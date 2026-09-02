@@ -100,6 +100,18 @@ module SUAnalysis
       REASON_COMMIT_UNCERTAIN    = 'commit_uncertainty'.freeze
       REASON_ABORT_UNCERTAIN     = 'abort_uncertainty'.freeze
       REASON_CANONICAL_POST_VALIDATE_FAIL = 'canonical_post_validation_failed'.freeze
+      # V17-AIPM-FINAL-PRE-CODEX-FIX-2026-09-02 F-02: stable
+      # reason codes for INDEPENDENT proposal-vs-record-vs-host
+      # post-validation. The post-validation block no longer
+      # self-consistently compares host output against the
+      # derived record that was created from the same mutation
+      # path. It resolves the READY proposal by proposal_id,
+      # then independently verifies (a) record endpoints/length
+      # vs proposal AND (b) host endpoint positions vs the
+      # proposal's expected endpoints.
+      REASON_PROPOSAL_NOT_FOUND  = 'proposal_not_found'.freeze
+      REASON_RECORD_ENDPOINT_MISMATCH = 'record_endpoint_mismatch'.freeze
+      REASON_RECORD_LENGTH_MISMATCH   = 'record_length_mismatch'.freeze
 
       # Apply a batch of approved gap-bridge proposals to the
       # current workspace. Returns:
@@ -413,7 +425,7 @@ module SUAnalysis
         { 'pass' => reasons.empty?, 'reasons' => reasons }.freeze
       end
 
-      # ---- Post-validation (Blueprint §14 + SR-03) ----
+      # ---- Post-validation (Blueprint §14 + SR-03 + F-02) ----
       #
       # Returns a Hash:
       #   {
@@ -428,6 +440,48 @@ module SUAnalysis
       # `pre_source_fingerprint_digest`, and
       # `pre_entity_coords` are passed as keyword args so
       # the test seams can drive individual checks.
+      #
+      # V17-AIPM-FINAL-PRE-CODEX-FIX-2026-09-02 F-02: every
+      # applied bridge is now validated AGAINST THE READY
+      # PROPOSAL (the source of truth), NOT against the
+      # derived record's own geometry_summary. The previous
+      # implementation looked up the proposal only to
+      # extract `coordinate_epsilon`; the expected endpoints
+      # used for the host comparison were `gs['start']` /
+      # `gs['end']` from the new DerivedEntityRecord itself
+      # -- a self-consistent comparison that a wrong
+      # mutation input could pass while disagreeing with the
+      # authoritative proposal.
+      #
+      # New contract (per F-02):
+      #   1. Resolve the matching READY proposal by
+      #      proposal_id; FAIL-CLOSED if missing.
+      #   2. Independently verify DerivedEntityRecord:
+      #      - geometry_summary start/end == proposal
+      #        expected_bridge_endpoints (per-axis,
+        #        within proposal.coordinate_epsilon)
+      #      - geometry_summary length == proposal
+      #        expected_bridge_length (within
+      #        proposal.coordinate_epsilon)
+      #      - origin_kind + repair_action_id remain
+      #        correct
+      #   3. Independently verify actual HOST edge endpoints
+      #      against the PROPOSAL's expected endpoints (NOT
+      #      against geometry_summary). Use proposal
+      #      coordinate_epsilon. Undirected segment match.
+      #   4. If proposal coordinate_epsilon is missing /
+      #      non-finite, FAIL CLOSED
+      #      (`host_endpoint_epsilon_missing:<pid>`).
+      #
+      # Stable reason codes:
+      #   `proposal_not_found:<pid>`           (F-02 new)
+      #   `record_endpoint_mismatch:<pid>`    (F-02 new)
+      #   `record_length_mismatch:<pid>`      (F-02 new)
+      #   `host_endpoint_segment_mismatch:<pid>` (existing,
+      #       now compares host vs proposal, not host vs
+      #       geometry_summary)
+      #   `host_endpoint_epsilon_missing:<pid>` (existing)
+      #   ...plus all pre-existing (A)/(B)/(D)/(E)/(G) reasons.
       def _post_validate(workspace, adapter, applied, ready,
                          pre_workspace: nil,
                          pre_fingerprint_digest: nil,
@@ -447,6 +501,9 @@ module SUAnalysis
         # the workspace handle_registry, valid, and reachable
         # via the adapter; AND carry the expected origin_kind
         # + repair_action_id.
+        # (F-02) record endpoints / length must be independently
+        # verified against the READY proposal, NOT against the
+        # record itself.
         applied.each do |a|
           did = a['derived_id']
           prop_id = a['proposal_id']
@@ -466,15 +523,97 @@ module SUAnalysis
           unless gs['repair_action_id'].to_s == prop_id.to_s
             reasons << "wrong_repair_action_id:#{prop_id}"
           end
-          # (C) RR-02: actual host endpoint positions must
-          # match the READY proposal's expected endpoints
-          # within that proposal's `coordinate_epsilon`. The
-          # comparison is ORDER-INSENSITIVE (undirected
-          # segment match: host may report (A,B) or (B,A)).
-          # The check FAIL-CLOSED: missing capability, nil
-          # handles, raised/nil position reads ALL count as
-          # failure. No hardcoded 1e-5 epsilon -- each
-          # proposal carries its own.
+          # ---- F-02 step 1: resolve the READY proposal by
+          # proposal_id. FAIL-CLOSED if missing.
+          prop = ready.find { |p| p['proposal_id'].to_s == prop_id.to_s }
+          if prop.nil? || prop['state'] != GapPairProposer::STATE_READY_TO_REPAIR ||
+             prop['executable'] != true
+            reasons << "#{REASON_PROPOSAL_NOT_FOUND}:#{prop_id}"
+            next
+          end
+          # ---- F-02 step 2: independent record-vs-proposal
+          # endpoint + length verification.
+          exp_endpoints = prop['expected_bridge_endpoints']
+          # Use the proposal's own `expected_bridge_length`
+          # when present (the production proposal always
+          # carries it). When absent (test seams driving
+          # individual checks), DERIVE the expected length
+          # from the proposal's expected endpoints so the
+          # verification still has an authoritative reference.
+          derived_exp_length = if exp_endpoints.is_a?(Array) &&
+                                  exp_endpoints.length == 2 &&
+                                  exp_endpoints[0].is_a?(Array) && exp_endpoints[0].length == 3 &&
+                                  exp_endpoints[1].is_a?(Array) && exp_endpoints[1].length == 3
+                                dx = exp_endpoints[1][0].to_f - exp_endpoints[0][0].to_f
+                                dy = exp_endpoints[1][1].to_f - exp_endpoints[0][1].to_f
+                                dz = exp_endpoints[1][2].to_f - exp_endpoints[0][2].to_f
+                                Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+                              else
+                                nil
+                              end
+          exp_length_raw = prop['expected_bridge_length']
+          exp_length = if exp_length_raw.is_a?(Numeric)
+                         exp_length_raw.to_f
+                       elsif derived_exp_length.is_a?(Numeric)
+                         derived_exp_length
+                       else
+                         nil
+                       end
+          ce           = prop['coordinate_epsilon']
+          # Fail closed on missing epsilon (defensive; a real
+          # proposal always carries it).
+          unless ce.is_a?(Numeric) && ce.respond_to?(:finite?) && ce.finite? && ce > 0
+            reasons << "host_endpoint_epsilon_missing:#{prop_id}"
+            next
+          end
+          # Validate geometry_summary start/end against the
+          # PROPOSAL's expected endpoints (NOT against
+          # itself). Both records are independently verified.
+          rec_start = gs['start']
+          rec_end   = gs['end']
+          if exp_endpoints.is_a?(Array) && exp_endpoints.length == 2 &&
+             exp_endpoints[0].is_a?(Array) && exp_endpoints[0].length == 3 &&
+             exp_endpoints[1].is_a?(Array) && exp_endpoints[1].length == 3 &&
+             rec_start.is_a?(Array) && rec_start.length == 3 &&
+             rec_end.is_a?(Array) && rec_end.length == 3 &&
+             _finite_point?(rec_start) && _finite_point?(rec_end)
+            # Undirected match (record endpoints vs proposal
+            # expected endpoints).
+            fwd = _point_within_eps?(rec_start, exp_endpoints[0], ce) &&
+                  _point_within_eps?(rec_end,   exp_endpoints[1], ce)
+            rev = _point_within_eps?(rec_start, exp_endpoints[1], ce) &&
+                  _point_within_eps?(rec_end,   exp_endpoints[0], ce)
+            unless fwd || rev
+              reasons << "#{REASON_RECORD_ENDPOINT_MISMATCH}:#{prop_id}"
+            end
+          else
+            reasons << "#{REASON_RECORD_ENDPOINT_MISMATCH}:#{prop_id}"
+          end
+          # Validate geometry_summary length against the
+          # proposal's expected_bridge_length.
+          rec_length = gs['length']
+          if exp_length.is_a?(Numeric) && rec_length.is_a?(Numeric)
+            unless (rec_length.to_f - exp_length).abs <= ce
+              reasons << "#{REASON_RECORD_LENGTH_MISMATCH}:#{prop_id}"
+            end
+          elsif rec_length.nil? && exp_length.is_a?(Numeric)
+            # The record omits a length but the proposal has
+            # one (defensive). Treat as a mismatch so the
+            # caller can investigate.
+            reasons << "#{REASON_RECORD_LENGTH_MISMATCH}:#{prop_id}"
+          end
+          # When BOTH the record and proposal lack a length
+          # (defensive test seam), we skip the length check
+          # -- the undirected endpoint check above already
+          # proves the geometry.
+          # (C) RR-02 + F-02: actual host endpoint positions
+          # must match the PROPOSAL's expected endpoints
+          # (NOT the geometry_summary) within the proposal's
+          # own coordinate_epsilon. The comparison remains
+          # ORDER-INSENSITIVE (undirected segment match:
+          # host may report (A,B) or (B,A)). The check
+          # FAIL-CLOSED: missing capability, nil handles,
+          # raised/nil position reads ALL count as failure.
           h = a['host_handle']
           if h.nil?
             reasons << "missing_host_handle:#{prop_id}"
@@ -518,34 +657,14 @@ module SUAnalysis
             reasons << "host_endpoint_position_unreadable:#{prop_id}"
             next
           end
-          # Use the proposal's own coordinate_epsilon
-          # (NO hardcoded fallback).
-          prop_eps = prop_lookup = ready.find { |p| p['proposal_id'].to_s == prop_id.to_s }
-          ce = if prop_eps && prop_eps['coordinate_epsilon']
-                 prop_eps['coordinate_epsilon'].to_f
-               else
-                 # If the proposal didn't carry its epsilon
-                 # (defensive), the executor MUST fail closed
-                 # instead of silently using a hardcoded
-                 # fallback.
-                 reasons << "host_endpoint_epsilon_missing:#{prop_id}"
-                 next
-               end
-          # Undirected segment match: host segment matches the
-          # expected endpoints iff (host_a == exp_a AND
-          # host_b == exp_b) OR (host_a == exp_b AND host_b
-          # == exp_a).
-          exp_start = gs['start']
-          exp_end   = gs['end']
-          unless exp_start.is_a?(Array) && exp_end.is_a?(Array) &&
-                 exp_start.length == 3 && exp_end.length == 3
-            reasons << "host_endpoint_expected_malformed:#{prop_id}"
-            next
-          end
-          forward_ok = _point_within_eps?(actual_a_raw, exp_start, ce) &&
-                         _point_within_eps?(actual_b_raw, exp_end,   ce)
-          reverse_ok = _point_within_eps?(actual_a_raw, exp_end,   ce) &&
-                         _point_within_eps?(actual_b_raw, exp_start, ce)
+          # Undirected segment match against the PROPOSAL's
+          # expected endpoints (NOT against the
+          # geometry_summary) within the proposal's own
+          # coordinate_epsilon.
+          forward_ok = _point_within_eps?(actual_a_raw, exp_endpoints[0], ce) &&
+                         _point_within_eps?(actual_b_raw, exp_endpoints[1], ce)
+          reverse_ok = _point_within_eps?(actual_a_raw, exp_endpoints[1], ce) &&
+                         _point_within_eps?(actual_b_raw, exp_endpoints[0], ce)
           unless forward_ok || reverse_ok
             reasons << "host_endpoint_segment_mismatch:#{prop_id}"
           end
