@@ -26,6 +26,7 @@ V1.8 BASE PACKET — 2026-09-02.
 - Starting HEAD: `ac0f26727574e4ea3830fec9fe4764a56e743358`.
 - Implementation SHA: produced by this dispatch (see
   `git log -1` after commit).
+- Implementation commit: `cc766fb266f34c33fc2713877583556646d906e0`.
 - Final HEAD on `dev/v1.8`: see `git rev-parse HEAD`
   after push.
 - V1.8 RBZ candidate: size **1,052,723 bytes**; entries
