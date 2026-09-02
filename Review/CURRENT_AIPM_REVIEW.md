@@ -1,193 +1,273 @@
 # CURRENT AIPM REVIEW
 
-REVIEW_ID: V17-AIPM-FINAL-SOURCE-REREVIEW-2026-09-02
+REVIEW_ID: V17-CODEX-BLOCK-NARROW-DELTA-REVIEW-2026-09-02
 PROJECT: SU-AI-Plugin
 STAGE: V1.7 — Endpoint / Gap Repair + Canonical Topology
 REVIEWER: AIPM
 FINAL PRODUCT OWNER: Owner
 
-REMOTE_HEAD_REVIEWED:
-43a3ac080d02d4aa809df7429d0589760a2594b3
+REVIEWED REMOTE HEAD:
+40277b0ca8be04ce7f0eff36dcbf4e8b6c490251
+
+SUBSTANTIVE INT-001..005 FIX COMMIT:
+9a8158535d846b5e8e06f96f091adfc6d6095c0f
 
 VERDICT:
-FIX REQUIRED — FINAL TWO NARROW CONTRACT CORRECTIONS
+FIX REQUIRED — TWO NARROW RESIDUALS INSIDE INT-001 / INT-002
 
-CODEX_GATE: HOLD
+INT-003: AIPM NARROW PASS
+INT-004: AIPM NARROW PASS
+INT-005: AIPM CODE PASS / SU2017_RUNTIME_EVIDENCE_PENDING
+CODEX_RECHECK: HOLD UNTIL INT-001 / INT-002 RESIDUALS CLOSE
 OWNER_GATE: HOLD
 V1.8: NOT ACTIVE
 
 # 0. OWNER SUMMARY
 
-RR-01..RR-05 are materially corrected and the restored 939-test suite is meaningful.
+Pi's one-packet correction materially closes most of the five Codex xHigh BLOCK findings.
 
-AIPM final direct source rereview found exactly TWO remaining source-contract defects.
+AIPM narrow source review accepts:
+- INT-003 plural provenance;
+- INT-004 validate-on-next-V1.7-interaction;
+- INT-005 removal of Hash#compact from the V1.7 production path, with the
+  explicitly truthful SU2017 runtime evidence still pending.
 
-No new architecture is authorized.
-No additional review scope should be invented after these two items unless the fixes themselves introduce a new concrete defect.
+Two residuals remain INSIDE the original Codex findings:
 
-# 1. PASS / PRESERVE
+1. INT-001: logical IDs are now stable, but component/raw-output ordering and
+   non-transitive cluster digest serialization are not fully order-independent.
+2. INT-002: SegmentConflict returns SAFE immediately for ANY shared endpoint,
+   even when the two collinear segments share an endpoint AND overlap through
+   their interiors.
 
-Preserve unchanged:
+No other V1.7 scope is reopened.
 
-- truthful native abort/commit/uncertainty handling;
-- one logical bridge = one workspace-owned host bridge;
-- restored H1..H7 host mutation suite;
-- fail-closed host endpoint capability reads;
-- exact canonical pre/post non-transitive comparison;
-- deterministic bridge IDs;
-- plural provenance;
-- unique logical CanonicalGeometryGraph nodes;
-- point-on-segment-interior predicate;
-- Source CAD immutability;
-- endpoint_bridge as the only V1.7 executable repair;
-- no Observer architecture;
-- V1.8 remains blocked.
+# 1. INT-001 — PARTIAL PASS / RESIDUAL ORDER-DETERMINISM BLOCK
 
-# 2. FINAL BLOCK F-01 — PRE-BATCH CANONICAL BASELINE REBUILDS WITH DEFAULT TOLERANCE WHEN CAPTURED KEYS ARE SYMBOLS
+## What is fixed
 
-## Source finding
+Accepted:
+- discovery ordinal `comp_idx` was removed from non-transitive cluster_id;
+- cluster_id now derives from sorted membership digest;
+- per-member `.n#{position}` derives from sorted member order.
 
-`WorkingModeRunner#v17_tolerance` rebuilds tolerance values using string keys only:
+## Residual source issue
 
-- `vals['duplicate']`
-- `vals['short_edge']`
-- `vals['gap_search']`
-- `vals['coordinate_epsilon']`
+`CanonicalTopologyBuilder.build` says it sorts components by the smallest
+endpoint_key, but currently does:
 
-But `Tolerance#to_h` publishes SYMBOL keys:
+`epss[comp.first].endpoint_key`
 
-- `:duplicate`
-- `:short_edge`
-- `:gap_search`
-- `:coordinate_epsilon`
-- etc.
+`comp.first` is the first member encountered by DFS/input discovery, NOT
+necessarily the lexicographically-smallest endpoint_key of the component.
 
-`ExecutionConfigSnapshot.from_live_config` preserves that Hash shape.
+Therefore two interleaved components can swap output order when the input
+enumeration changes.
 
-Therefore a normal captured SourceSnapshot can carry symbol-keyed tolerance values while `v17_tolerance` silently falls back to defaults.
+Additionally `CanonicalGeometryGraph#_compute_digest` serializes
+`non_transitive_clusters` into `cl_lines` without sorting the cluster lines.
+Even with stable cluster IDs, changed raw cluster ordering can change the graph
+digest.
 
-RR-04's "exact pre-batch canonical baseline" can therefore be rebuilt with a DIFFERENT coordinate_epsilon / gap_search from the proposal/apply path when a non-default profile or override is used.
+The current INT-001 tests do not fully prove this:
+- INT-001-A compares sorted cluster ID sets;
+- INT-001-B compares sorted member ID sets;
+- INT-001-C does not actually rebuild non-transitive components from shuffled
+  endpoint enumeration; it mainly reverses an open_endpoints list.
 
-This violates captured-config authority.
-
-## Required correction
-
-Do not maintain a second tolerance parser.
-
-Preferred:
-
-`v17_tolerance` should delegate directly to the already-correct:
-
-`_tolerance_from_snapshot(@current_source)`
-
-That existing helper already accepts both symbol and string keys and preserves the complete tolerance field set.
-
-Equivalent implementation is acceptable only if it uses the exact same captured-config semantics.
-
-## Required regression
-
-Create a SourceSnapshot whose captured tolerance is deliberately non-default, e.g.:
-
-- gap_search = 0.25
-- coordinate_epsilon = 5e-6
-
-Prove:
-
-- compute_gap_repair uses those captured values;
-- pre-batch canonical baseline uses the SAME values;
-- no silent fallback to 0.1 / 1e-6 occurs.
-
-# 3. FINAL BLOCK F-02 — HARD POST-VALIDATION DOES NOT INDEPENDENTLY COMPARE RECORD/HOST GEOMETRY TO THE READY PROPOSAL
-
-## Source finding
-
-`GapBridgeExecutor._post_validate` correctly looks up the READY proposal to obtain `coordinate_epsilon`.
-
-But the expected endpoints used for host comparison are currently:
-
-- `gs['start']`
-- `gs['end']`
-
-where `gs` is the newly-created DerivedEntityRecord's own `geometry_summary`.
-
-The code comment says the host is compared against the READY proposal's expected endpoints, but the implementation compares host output against the derived record that was created from the same mutation path.
-
-The current method also does not independently prove:
-
-- record start/end == proposal expected_bridge_endpoints;
-- record length == proposal expected_bridge_length.
-
-This weakens the hard post-validation contract because a wrong record/mutation input can self-consistently agree with the host while disagreeing with the authoritative proposal.
+This leaves the original Codex requirement
+"identity AND output ordering / graph digest independent of input enumeration"
+only partially closed.
 
 ## Required correction
 
-For each applied bridge:
+A. CanonicalTopologyBuilder component iteration:
+- derive a stable component membership key from ALL sorted endpoint_keys;
+- sort components by that stable membership key;
+- do not use DFS/input first member as the sort authority.
 
-1. resolve the matching READY proposal by proposal_id;
-2. fail if no matching proposal exists;
-3. read:
-   - proposal `expected_bridge_endpoints`
-   - proposal `expected_bridge_length`
-   - proposal `coordinate_epsilon`
-4. independently verify DerivedEntityRecord:
-   - geometry_summary start/end match proposal endpoints;
-   - geometry_summary length matches proposal expected length;
-   - origin_kind and repair_action_id remain correct;
-5. independently verify actual host edge endpoints against the PROPOSAL endpoints, not against geometry_summary;
-6. use proposal coordinate_epsilon;
-7. host segment comparison remains undirected.
+Example conceptual key:
+`comp.map { |i| epss[i].endpoint_key.to_s }.sort.join('|')`
 
-Stable reason examples:
+B. Before publishing builder output:
+- canonical_nodes: stable sort by canonical_node_id + endpoint_key;
+- non_transitive_clusters: stable sort by cluster_id;
+- if canonical_node_clusters iteration order is externally serialized, publish
+  it in stable sorted-key insertion order.
 
-- `proposal_not_found:<pid>`
-- `record_endpoint_mismatch:<pid>`
-- `record_length_mismatch:<pid>`
-- existing `host_endpoint_segment_mismatch:<pid>`
+C. CanonicalGeometryGraph digest:
+- defensively sort non-transitive cluster serialization lines by stable
+  cluster_id/signature before hashing.
+
+Do not change canonical membership semantics.
 
 ## Required regression
 
-Add a test that intentionally creates this contradictory evidence:
+Use at least TWO non-transitive components whose endpoint-key ranges INTERLEAVE,
+so arbitrary first-member order can actually flip component order.
 
-- READY proposal expects segment A-B;
-- DerivedEntityRecord geometry_summary says A-C;
-- fake host edge also reports A-C.
+Example membership domains:
+- component A: `a`, `z`, `zz`
+- component B: `m`, `n`, `o`
 
-Old code would self-consistently pass host-vs-record.
+Forward / reversed / deliberately shuffled input must produce EXACTLY identical:
+- non_transitive_clusters array order/content;
+- canonical_nodes array order/content;
+- canonical_node_clusters key order/content if serialized;
+- membership -> cluster_id mapping;
+- membership -> canonical_node_id mapping;
+- CanonicalGeometryGraph digest.
 
-Correct code MUST fail because both record and host disagree with READY proposal A-B.
+Do not compare only sorted sets.
 
-Also preserve:
-- reversed host endpoint order PASS;
-- proposal coordinate_epsilon ownership.
+# 2. INT-002 — PARTIAL PASS / SHARED-ENDPOINT OVERLAP BLOCK
 
-# 4. FINAL GATE
+## What is fixed
 
-Run fresh:
+Accepted:
+- one shared pure SegmentConflict module now exists;
+- runner and proposer use the shared predicate;
+- full containment, partial non-shared overlap, T-junction and ordinary crossing
+  are represented;
+- disjoint collinear geometry is allowed.
 
-- focused F-01/F-02 tests;
-- full V1.7;
-- full Ruby;
-- restored H1..H7;
-- V1.6 close-autodiscard;
-- V1.5 BLOCK-005;
-- LEGACY-COMPAT;
-- Node DOM;
-- RBZ smoke;
-- git diff --check.
+## Residual source issue
 
-Rebuild RBZ after production changes.
+`SegmentConflict.conflict?` currently returns SAFE immediately when ANY endpoint
+is shared:
 
-# 5. REVIEW POLICY
+`return { conflict: false, reason: 'shared_endpoint' }`
 
-This is the FINAL AIPM pre-Codex correction packet.
+This happens BEFORE the collinear-overlap check.
 
-After F-01 and F-02 are corrected and pushed:
+That means these invalid cases are incorrectly SAFE:
 
-Pi STOP
-→ AIPM verifies only these two deltas
-→ if both PASS, AIPM PRIMARY SOURCE REVIEW = PASS
-→ mandatory Codex xHigh integration review
+1. same start endpoint + both segments run along the same ray and overlap;
+2. identical segments (both endpoints shared);
+3. one segment is a longer continuation of the other from a shared endpoint.
 
-Do not open another AIPM correction round for speculative polish.
+The dispatch did NOT say "all shared endpoints are safe".
+It said shared endpoints that merely meet at the legitimate target vertex are
+not AUTOMATICALLY conflicts.
+
+Interior overlap remains a conflict even when the overlap includes a shared
+endpoint.
+
+The current regression `V17-INT-002-F` is itself incorrect:
+- bridge `[5,0] -> [8,0]`
+- unrelated `[5,0] -> [10,0]`
+- these share an endpoint AND overlap on `[5,8]`
+- the test currently expects SAFE.
+
+That expectation must be corrected.
+
+## Required correction
+
+Reorder / refine SegmentConflict:
+
+1. validate inputs;
+2. bbox quick reject;
+3. if collinear:
+   - evaluate finite INTERIOR overlap FIRST;
+   - genuine interior overlap -> `collinear_overlap` conflict, even when an
+     endpoint is shared;
+   - pure endpoint-only touch -> SAFE shared endpoint;
+   - disjoint -> SAFE;
+4. for non-collinear geometry:
+   - shared endpoint-only meeting -> SAFE;
+5. then proper crossing / T-junction checks.
+
+Required semantics:
+
+SAFE:
+- non-collinear segments meeting only at one shared endpoint;
+- collinear segments touching only at one endpoint with zero interior overlap;
+- disjoint collinear segments.
+
+CONFLICT:
+- identical segments;
+- same-endpoint same-ray containment;
+- same-endpoint partial interior overlap;
+- all previously-detected proper crossing / T-junction cases.
+
+## Required regression
+
+Pure shared predicate:
+- shared endpoint + non-collinear divergence -> SAFE;
+- shared endpoint + collinear endpoint-only touch -> SAFE;
+- shared endpoint + collinear interior overlap -> CONFLICT;
+- identical segments -> CONFLICT;
+- existing disjoint-collinear SAFE remains.
+
+Production path:
+- existing unrelated edge sharing one bridge endpoint but overlapping bridge
+  interior -> no READY proposal;
+- ordinary legitimate triangle corner/shared endpoint does not false-block;
+- simultaneous proposed bridges with shared endpoint but interior collinear
+  overlap are conflict if such a fixture is possible; otherwise directly test
+  the actual shared production predicate and report why mutual-unique proposal
+  generation makes that exact high-level fixture unreachable.
+
+Do not restore duplicated crossing algorithms.
+
+# 3. INT-003 — AIPM NARROW PASS
+
+Verified source direction:
+- EndpointRecord + DerivedEdgeRecord carry plural source_occurrence_ids;
+- snapshot builder reads the full plural list;
+- proposer endpoint lookup carries plural provenance;
+- incident_source_occurrence_ids is the sorted/uniq union across both sides;
+- generated record/canonical edge retain plural support.
+
+The retained singular accessor is compatibility-only and derived from plural.
+
+No further INT-003 correction requested.
+
+# 4. INT-004 — AIPM NARROW PASS
+
+Verified:
+- compute_gap_repair calls validate_host_state_consistency! before topology /
+  proposal read;
+- apply_gap_repair validates before proposal recomputation and before the
+  ready.empty? return;
+- defense-in-depth validation remains before executor apply;
+- mismatch clears stale main V1.7 proposal/canonical state on the normal
+  validate-on-next-interaction path;
+- no Observer architecture added.
+
+No further INT-004 correction requested.
+
+# 5. INT-005 — AIPM CODE PASS / RUNTIME EVIDENCE PENDING
+
+Verified production change:
+- V1.7 snapshot path no longer uses Hash#compact;
+- uses Ruby-2.2-compatible `delete_if { |_k, v| v.nil? }`.
+
+Accepted automated evidence:
+- Hash#compact removal test;
+- successful V1.7 snapshot path with compact undefined.
+
+Known unknown remains truthful:
+`SU2017_RUNTIME_EVIDENCE_PENDING`.
+
+Do NOT fabricate SU2017 runtime PASS.
+
+The mandatory Codex narrow recheck will adjudicate whether:
+- code/static/API-removal evidence is sufficient for this stage; OR
+- a separate SU2017-compatible probe is required before V1.x release/closure.
+
+# 6. NEXT GATE
+
+Pi corrects ONLY INT-001 and INT-002 residuals.
+
+Then:
+AIPM checks ONLY those two deltas.
+
+If PASS:
+→ Codex xHigh NARROW RECHECK of INT-001..INT-005
+→ if Codex PASS: Owner SU2020 A-G
+→ V1.7 closure.
+
+No new speculative AIPM review scope after this packet.
 
 END

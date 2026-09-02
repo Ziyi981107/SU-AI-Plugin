@@ -146,11 +146,26 @@ module SUAnalysis
         open_endpoints = []
         unresolved_topology_issues = []
 
-        # Deterministic component iteration: sort by the
-        # smallest endpoint_key in each component so cluster
-        # IDs and downstream consumers observe stable order.
+        # Deterministic component iteration. The previous
+        # form used `comp.first` (the DFS-discovery first
+        # member), which is NOT necessarily the lex-
+        # smallest endpoint_key in the component. Two
+        # interleaved components could therefore swap
+        # output order when the input enumeration changed.
+        #
+        # V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02
+        # INT-001: derive a stable component key from the
+        # SORTED endpoint_keys of EVERY member of the
+        # component. This is independent of DFS / input
+        # order: forward / reversed / shuffled input all
+        # yield identical sorted component keys and
+        # therefore identical component order.
         components_sorted = components.each_with_index.sort_by do |comp, _idx|
-          comp.empty? ? '' : epss[comp.first].endpoint_key.to_s
+          if comp.empty?
+            ''
+          else
+            comp.map { |i| epss[i].endpoint_key.to_s }.sort.join('|')
+          end
         end
 
         components_sorted.each do |comp, comp_idx|
@@ -266,13 +281,42 @@ module SUAnalysis
         # the runner rebuilds the full adjacency from the
         # canonical edges after gap-pair matching.
         # ---- Provenance digest ----
+        #
+        # V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02
+        # INT-001: defensively re-sort the published
+        # canonical_nodes + non_transitive_clusters +
+        # canonical_node_clusters by stable keys BEFORE
+        # freezing, so the published array order is
+        # independent of which component the DFS finished
+        # first (even within a single component class) and
+        # independent of which cluster the iteration chose
+        # to publish first. canonical_nodes sorts by
+        # (canonical_node_id, endpoint_key); non_transitive
+        # clusters sort by cluster_id; canonical_node_clusters
+        # is a Hash (already keyed by cluster_id) so its
+        # iteration order is Hash insertion order — we
+        # explicitly rebuild it in cluster_id-sorted order
+        # so external consumers that serialize it get a
+        # stable representation. Forward / reversed /
+        # shuffled input enumerations must produce
+        # byte-identical published payloads.
+        sorted_canonical_nodes = canonical_nodes.sort_by { |n|
+          [n['canonical_node_id'].to_s, n['endpoint_key'].to_s]
+        }
+        sorted_non_transitive_clusters = non_transitive_clusters.sort_by { |c|
+          c['cluster_id'].to_s
+        }
+        sorted_canonical_node_clusters = {}
+        canonical_node_clusters.keys.map(&:to_s).sort.each do |cid|
+          sorted_canonical_node_clusters[cid] = canonical_node_clusters[cid]
+        end
         {
-          'canonical_nodes'              => canonical_nodes.freeze,
-          'canonical_node_clusters'      => canonical_node_clusters.freeze,
-          'non_transitive_clusters'      => non_transitive_clusters.freeze,
+          'canonical_nodes'              => sorted_canonical_nodes.freeze,
+          'canonical_node_clusters'      => sorted_canonical_node_clusters.freeze,
+          'non_transitive_clusters'      => sorted_non_transitive_clusters.freeze,
           'open_endpoints'               => open_endpoints.freeze,
           'unresolved_topology_issues'   => unresolved_topology_issues.freeze,
-          'metrics'                      => _metrics(endpoints, canonical_nodes, non_transitive_clusters).freeze,
+          'metrics'                      => _metrics(endpoints, sorted_canonical_nodes, sorted_non_transitive_clusters).freeze,
           'coordinate_epsilon'           => eps,
           'schema_version'               => PROVENANCE_SCHEMA_VERSION
         }.freeze

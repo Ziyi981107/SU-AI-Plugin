@@ -612,7 +612,9 @@ module SUAnalysis
         edges.each { |e| canonical_lines << "E|#{e['canonical_edge_id']}|#{e['origin_kind']}|#{e['node_a_id']}|#{e['node_b_id']}|#{e['derived_edge_id']}|#{e['repair_action_id']}|#{Array(e['source_occurrence_ids']).join(',')}" }
         adj_lines = adjacency.sort.map { |k, vs| "A|#{k}|#{vs.join(',')}" }
         unresolved_lines = unresolved_topology_issues.sort.map { |x| "U|#{x}" }
-        cl_lines = Array(non_transitive_clusters).map { |c| "C|#{c['cluster_id']}|#{Array(c['endpoint_keys']).join('|')}" }
+        cl_lines = Array(non_transitive_clusters)
+                     .sort_by { |c| c['cluster_id'].to_s }
+                     .map { |c| "C|#{c['cluster_id']}|#{Array(c['endpoint_keys']).sort.join('|')}" }
         metric_lines = (metrics || {}).sort.map { |k, v| "M|#{k}|#{v}" }
         adj_section = adj_lines.empty? ? '' : (adj_lines.join("\n") + "\n")
         n_section = canonical_lines.empty? ? '' : (canonical_lines.join("\n") + "\n")

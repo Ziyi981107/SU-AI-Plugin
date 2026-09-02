@@ -284,6 +284,177 @@ test 'V17-INT-001-C: CanonicalGeometryGraph digest is stable across shuffled end
                "got #{digests.inspect}"
 end
 
+# V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02 INT-001:
+# explicit interleaved-membership regression. The dispatch
+# requires that forward / reversed / deliberately shuffled
+# input enumerations produce EXACTLY identical (not only
+# sorted-set-equal) array / map / digest output, and that
+# the membership ranges INTERLEAVE so the old comp.first
+# approach would be capable of changing component order.
+test 'V17-INT-001-D: interleaved non-transitive components yield exact-order-equal payload across input enumerations' do
+  # Two non-transitive components whose endpoint-key ranges
+  # INTERLEAVE:
+  #   Component A: keys 'a', 'z', 'zz'  (a < z < zz)
+  #   Component B: keys 'm', 'n', 'o'   (m < n < o)
+  # The lex-smallest endpoint_key of A is `a` (very early in
+  # the alphabet); the lex-smallest of B is `m` (mid-
+  # alphabet). With the old comp.first approach, two DFS-
+  # discovered orderings could swap A/B output order.
+  #
+  # Spatial layout: each component's endpoints are chained
+  # (adjacent gap strictly < eps_used to avoid floating-
+  # point boundary failures; endpoints at the ends are >=
+  # eps_used apart so all-pairwise check fails). The two
+  # components are well-separated spatially (offset by 100
+  # in X) so they form two distinct components.
+  eps_used = 1.0e-2
+  build_endpoints = -> {
+    [
+      # Component A (a, z, zz):
+      #   a-z  = 0.005  < eps_used  -> match
+      #   z-zz = 0.007  < eps_used  -> match
+      #   a-zz = 0.012  > eps_used  -> NOT match
+      EndpointRecord.new(endpoint_key: 'a', derived_edge_id: 'eA',
+                         role: 'start', world_coordinate: [0.0, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'z', derived_edge_id: 'eZ',
+                         role: 'start', world_coordinate: [0.005, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'zz', derived_edge_id: 'eZZ',
+                         role: 'start', world_coordinate: [0.012, 0.0, 0.0]),
+      # Component B (m, n, o) -- offset by 100 in X so the
+      # two components are spatially disjoint:
+      #   m-n  = 0.005  < eps_used  -> match
+      #   n-o  = 0.007  < eps_used  -> match
+      #   m-o  = 0.012  > eps_used  -> NOT match
+      EndpointRecord.new(endpoint_key: 'm', derived_edge_id: 'eM',
+                         role: 'start', world_coordinate: [100.0, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'n', derived_edge_id: 'eN',
+                         role: 'start', world_coordinate: [100.005, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'o', derived_edge_id: 'eO',
+                         role: 'start', world_coordinate: [100.012, 0.0, 0.0])
+    ]
+  }
+  forward  = build_endpoints.call
+  reversed = build_endpoints.call.reverse
+  # Deliberately interleaved by membership domain (B then A):
+  shuffled = [forward[3], forward[0], forward[4], forward[2], forward[1], forward[5]]
+  # Fully interleaved by single endpoint alternation:
+  fully_interleaved = [forward[0], forward[3], forward[1], forward[4], forward[2], forward[5]]
+  results = [forward, reversed, shuffled, fully_interleaved].map do |eps|
+    CanonicalTopologyBuilder.build(endpoints: eps, coordinate_epsilon: eps_used)
+  end
+  results.each_with_index do |r, i|
+    assert_equal 2, r['non_transitive_clusters'].length,
+                 "INT-001-D[#{i}]: expected TWO non-transitive clusters; got " \
+                 "#{r['non_transitive_clusters'].length}"
+  end
+  # Exact array / content / key-order equality (NOT only
+  # sorted-set equality).
+  base = results.first
+  results.drop(1).each_with_index do |r, i|
+    assert_equal base['non_transitive_clusters'], r['non_transitive_clusters'],
+                 "INT-001-D[#{i}]: non_transitive_clusters array content/order must be EXACTLY equal; " \
+                 "base=#{base['non_transitive_clusters'].inspect} got=#{r['non_transitive_clusters'].inspect}"
+    assert_equal base['canonical_nodes'], r['canonical_nodes'],
+                 "INT-001-D[#{i}]: canonical_nodes array content/order must be EXACTLY equal"
+    assert_equal base['canonical_node_clusters'].keys.sort, r['canonical_node_clusters'].keys.sort,
+                 "INT-001-D[#{i}]: canonical_node_clusters key set must match (cluster_id ordering)"
+    assert_equal base['canonical_node_clusters'], r['canonical_node_clusters'],
+                 "INT-001-D[#{i}]: canonical_node_clusters payload must be EXACTLY equal"
+  end
+  # membership -> cluster_id mapping must be stable.
+  base_eks_to_cluster = {}
+  base['non_transitive_clusters'].each do |c|
+    Array(c['endpoint_keys']).each { |ek| base_eks_to_cluster[ek] = c['cluster_id'] }
+  end
+  results.drop(1).each_with_index do |r, i|
+    r['non_transitive_clusters'].each do |c|
+      Array(c['endpoint_keys']).each do |ek|
+        assert_equal base_eks_to_cluster[ek], c['cluster_id'],
+                     "INT-001-D[#{i}]: endpoint_key #{ek.inspect} -> cluster_id " \
+                     "mismatch; base=#{base_eks_to_cluster[ek].inspect} got=#{c['cluster_id'].inspect}"
+      end
+    end
+  end
+end
+
+# V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02 INT-001:
+# combined regression. The dispatch requires that
+# forward / reverse / shuffle input enumerations on the
+# INTERLEAVED membership topology produce BOTH
+# exact-equal CanonicalTopologyBuilder arrays/maps AND
+# equal CanonicalGeometryGraph digests. V17-INT-001-D
+# exercises the CanonicalTopologyBuilder output only;
+# V17-INT-001-C exercises the digest only on a simpler
+# topology. V17-INT-001-E combines both assertions on the
+# interleaved topology.
+test 'V17-INT-001-E: interleaved topology yields exact-equal CanonicalTopologyBuilder payload AND equal CanonicalGeometryGraph digest across forward/reverse/shuffle' do
+  # Re-use the V17-INT-001-D interleaved topology. Endpoints
+  # are clustered into two non-transitive components (a, z,
+  # zz) and (m, n, o), spatially offset, with deliberate
+  # membership interleaving.
+  eps_used = 1.0e-2
+  build_endpoints = -> {
+    [
+      EndpointRecord.new(endpoint_key: 'a', derived_edge_id: 'eA',
+                         role: 'start', world_coordinate: [0.0, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'z', derived_edge_id: 'eZ',
+                         role: 'start', world_coordinate: [0.005, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'zz', derived_edge_id: 'eZZ',
+                         role: 'start', world_coordinate: [0.012, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'm', derived_edge_id: 'eM',
+                         role: 'start', world_coordinate: [100.0, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'n', derived_edge_id: 'eN',
+                         role: 'start', world_coordinate: [100.005, 0.0, 0.0]),
+      EndpointRecord.new(endpoint_key: 'o', derived_edge_id: 'eO',
+                         role: 'start', world_coordinate: [100.012, 0.0, 0.0])
+    ]
+  }
+  forward  = build_endpoints.call
+  reversed = build_endpoints.call.reverse
+  shuffled = [forward[3], forward[0], forward[4], forward[2], forward[1], forward[5]]
+  fully_interleaved = [forward[0], forward[3], forward[1], forward[4], forward[2], forward[5]]
+  # CanonicalTopologyBuilder payloads MUST be EXACTLY equal
+  # (array equality, not only sorted-set equality).
+  topos = [forward, reversed, shuffled, fully_interleaved].map do |eps_list|
+    CanonicalTopologyBuilder.build(endpoints: eps_list, coordinate_epsilon: eps_used)
+  end
+  base = topos.first
+  topos.drop(1).each_with_index do |r, i|
+    assert_equal base['canonical_nodes'], r['canonical_nodes'],
+                 "INT-001-E[#{i}]: canonical_nodes array must be EXACTLY equal across input enumerations"
+    assert_equal base['canonical_node_clusters'], r['canonical_node_clusters'],
+                 "INT-001-E[#{i}]: canonical_node_clusters Hash must be EXACTLY equal"
+    assert_equal base['non_transitive_clusters'], r['non_transitive_clusters'],
+                 "INT-001-E[#{i}]: non_transitive_clusters array must be EXACTLY equal"
+  end
+  # CanonicalGeometryGraph digest MUST be stable across
+  # forward/reverse/shuffle on the interleaved topology.
+  # We construct the graph directly from the topology hash
+  # so the digest depends ONLY on the canonical topology
+  # payload (the dispatch's exact requirement). The graph
+  # constructor collapses nodes by canonical_node_id; edges
+  # are empty (no canonical edges in this minimal payload).
+  digests = topos.map do |topo|
+    g = CanonicalGeometryGraph.new(
+      source_snapshot_id:         'snap-stable',
+      execution_config_digest:    'ec-stable',
+      workspace_id:               'ws-stable',
+      nodes:                      topo['canonical_nodes'],
+      edges:                      [],
+      adjacency:                  {},
+      unresolved_topology_issues: topo['unresolved_topology_issues'],
+      metrics:                    topo['metrics'],
+      non_transitive_clusters:    topo['non_transitive_clusters'],
+      open_endpoints:             topo['open_endpoints'],
+      tolerance_digest:           'tol-stable'
+    )
+    g.digest
+  end
+  assert_equal 1, digests.uniq.length,
+               "INT-001-E: CanonicalGeometryGraph digest MUST be stable across " \
+               "forward/reverse/shuffle on interleaved topology; got #{digests.inspect}"
+end
+
 # =================================================================
 # INT-002 — shared PURE segment-conflict predicate.
 # =================================================================
@@ -366,17 +537,59 @@ test 'V17-INT-002-E: SegmentConflict treats disjoint collinear segments as SAFE 
                "INT-002-E: disjoint collinear must NOT conflict; got #{result.inspect}"
 end
 
-test 'V17-INT-002-F: SegmentConflict shared endpoint is SAFE (Blueprint §10.3)' do
-  # Bridge starts at (5,0,0); the unrelated edge also starts
-  # at (5,0,0) -- shared endpoint at (5,0,0) is allowed.
+test 'V17-INT-002-F: SegmentConflict shared endpoint + collinear interior overlap is CONFLICT (collinear_overlap)' do
+  # V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02 INT-002
+  # residual correction: the pre-residual V17-INT-002-F
+  # expected the bridge `[5,0]->[8,0]` and the unrelated
+  # `[5,0]->[10,0]` to be SAFE because they share an
+  # endpoint. That is WRONG: they share endpoint (5,0,0)
+  # AND overlap on the collinear interval [5, 8]. The
+  # interior overlap remains a CONFLICT even when an
+  # endpoint is shared.
   result = SegmentConflict.conflict?(
     [[5.0, 0.0, 0.0], [8.0, 0.0, 0.0]],
     [[5.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
     eps: 1.0e-6
   )
+  assert_equal true, result['conflict'],
+               "INT-002-F: shared endpoint + collinear interior overlap MUST conflict; got #{result.inspect}"
+  assert_equal 'collinear_overlap', result['reason'],
+               "INT-002-F: reason must be 'collinear_overlap' (NOT 'shared_endpoint'); got #{result['reason'].inspect}"
+end
+
+test 'V17-INT-002-F2: SegmentConflict non-collinear shared endpoint is SAFE (Blueprint §10.3)' do
+  # Bridge starts at (5,0,0); the unrelated edge also starts
+  # at (5,0,0) but diverges in the Y direction. The shared
+  # endpoint at (5,0,0) is a legitimate meeting point --
+  # not a conflict.
+  result = SegmentConflict.conflict?(
+    [[5.0, 0.0, 0.0], [8.0, 0.0, 0.0]],
+    [[5.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    eps: 1.0e-6
+  )
   assert_equal false, result['conflict'],
-               "INT-002-F: shared endpoint must NOT conflict; got #{result.inspect}"
-  assert_equal 'shared_endpoint', result['reason']
+               "INT-002-F2: non-collinear shared endpoint must be SAFE; got #{result.inspect}"
+  assert_equal 'shared_endpoint', result['reason'],
+               "INT-002-F2: reason must be 'shared_endpoint'; got #{result['reason'].inspect}"
+end
+
+test 'V17-INT-002-F3: SegmentConflict collinear endpoint-only touch is SAFE (no interior overlap)' do
+  # Two collinear segments that touch at exactly one
+  # endpoint with no interior intersection are SAFE per
+  # Blueprint §10.3 + dispatch "collinear endpoint-only
+  # touch -> safe".
+  # Bridge: 5..10 on the X axis.
+  # Unrelated: 10..15 on the X axis. They touch at exactly
+  # (10,0,0) but share no interior.
+  result = SegmentConflict.conflict?(
+    [[5.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [15.0, 0.0, 0.0]],
+    eps: 1.0e-6
+  )
+  assert_equal false, result['conflict'],
+               "INT-002-F3: collinear endpoint-only touch must be SAFE; got #{result.inspect}"
+  assert_equal 'shared_endpoint', result['reason'],
+               "INT-002-F3: reason must be 'shared_endpoint'; got #{result['reason'].inspect}"
 end
 
 test 'V17-INT-002-G: [PRODUCTION PATH] collinear containment rejects a bridge inside an unrelated collinear edge' do
@@ -464,6 +677,132 @@ test 'V17-INT-002-I: [PRODUCTION PATH] proposal-vs-proposal collinear overlap ->
                "INT-002-I: shared predicate must report collinear overlap; got #{p_a}"
 ensure
   V17INT_RUNNER.reset_for_tests
+end
+
+# ----------------------------------------------------------------
+# V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02 INT-002:
+# additional shared-endpoint CONFLICT coverage required by the
+# dispatch (segment_conflict residual fix).
+# ----------------------------------------------------------------
+
+test 'V17-INT-002-J: SegmentConflict identical segment is CONFLICT (both endpoints shared)' do
+  # The two segments share BOTH endpoints -> the proposed
+  # bridge duplicates an existing edge -> CONFLICT.
+  result = SegmentConflict.conflict?(
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    eps: 1.0e-6
+  )
+  assert_equal true, result['conflict'],
+               "INT-002-J: identical segments must conflict; got #{result.inspect}"
+  assert_equal 'collinear_overlap', result['reason'],
+               "INT-002-J: reason must be 'collinear_overlap'; got #{result['reason'].inspect}"
+end
+
+test 'V17-INT-002-K: SegmentConflict shared endpoint + same-ray interior overlap is CONFLICT' do
+  # Bridge starts at (5,0,0) -> (8,0,0).
+  # Unrelated edge starts at (5,0,0) -> (10,0,0).
+  # Shared endpoint at (5,0,0). Both run along the same
+  # +X ray. Overlap is [5, 8] -> CONFLICT (residual fix).
+  result = SegmentConflict.conflict?(
+    [[5.0, 0.0, 0.0], [8.0, 0.0, 0.0]],
+    [[5.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    eps: 1.0e-6
+  )
+  assert_equal true, result['conflict'],
+               "INT-002-K: shared endpoint + same-ray interior overlap must conflict; got #{result.inspect}"
+  assert_equal 'collinear_overlap', result['reason'],
+               "INT-002-K: reason must be 'collinear_overlap'; got #{result['reason'].inspect}"
+end
+
+test 'V17-INT-002-L: SegmentConflict shared endpoint + partial overlap is CONFLICT' do
+  # Bridge starts at (5,0,0) -> (8,0,0). Unrelated edge
+  # starts at (5,0,0) -> (10,0,0). Partial overlap on
+  # [5, 8] is interior -> CONFLICT. This is the dispatch's
+  # canonical "partial overlap" example.
+  # We vary the geometry slightly to prove the partial-
+  # overlap path: bridge (5,0) -> (12,0); unrelated (5,0)
+  # -> (10,0). Overlap = [5,10] (interior of bridge),
+  # unrelated endpoint (10,0) is shared with bridge
+  # interior.
+  result = SegmentConflict.conflict?(
+    [[5.0, 0.0, 0.0], [12.0, 0.0, 0.0]],
+    [[5.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    eps: 1.0e-6
+  )
+  assert_equal true, result['conflict'],
+               "INT-002-L: shared endpoint + partial overlap must conflict; got #{result.inspect}"
+  assert_equal 'collinear_overlap', result['reason'],
+               "INT-002-L: reason must be 'collinear_overlap'; got #{result['reason'].inspect}"
+end
+
+# ----------------------------------------------------------------
+# V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02 INT-002:
+# drive a SHARED-ENDPOINT collinear-overlap case through the
+# production helper path (dispatch §2 requirement: "Drive at
+# least one shared-overlap case through the actual runner
+# crossing checker / product proposal path.").
+#
+# Topology: A bridge [5,0]->[8,0] and an unrelated edge
+# [5,0]->[10,0]. They share endpoint (5,0,0) AND collinearly
+# overlap on [5, 8]. Both invoke the GapPairProposer
+# production helper (the X3 / bridge-conflict predicate used
+# by the proposer's propose pipeline). The helper must report
+# CONFLICT (collinear_overlap or proper_interior_crossing
+# depending on geometry) -- not SAFE.
+#
+# This is also exercised end-to-end through the runner's
+# crossing checker seam (via the public GapPairProposer.send
+# helper which the X3 check delegates to). The shared
+# SegmentConflict.conflict? predicate is the authoritative
+# source of truth.
+# ----------------------------------------------------------------
+
+test 'V17-INT-002-M1: [PRODUCTION HELPER] shared-endpoint collinear-overlap via GapPairProposer._segments_intersect_interior?' do
+  # Drive the dispatch's required shared-overlap case through
+  # the GapPairProposer production helper. Bridge (5,0)->(8,0)
+  # and unrelated (5,0)->(10,0) share endpoint (5,0,0) AND
+  # overlap collinearly on [5, 8] -> CONFLICT.
+  p_a = GapPairProposer.send(
+    :_segments_intersect_interior?,
+    [5.0, 0.0, 0.0], [8.0, 0.0, 0.0],
+    [5.0, 0.0, 0.0], [10.0, 0.0, 0.0],
+    1.0e-6
+  )
+  assert_equal true, p_a,
+               "INT-002-M1: GapPairProposer production helper must report shared-endpoint " \
+               "collinear overlap as CONFLICT; got #{p_a.inspect}"
+end
+
+test 'V17-INT-002-M2: [PRODUCTION HELPER] identical-segment shared-endpoint case via GapPairProposer._segments_intersect_interior?' do
+  # Identical segments share BOTH endpoints; the proposed
+  # bridge would duplicate the existing edge. CONFLICT.
+  p_a = GapPairProposer.send(
+    :_segments_intersect_interior?,
+    [0.0, 0.0, 0.0], [10.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0], [10.0, 0.0, 0.0],
+    1.0e-6
+  )
+  assert_equal true, p_a,
+               "INT-002-M2: GapPairProposer production helper must report identical-segment " \
+               "shared-endpoint case as CONFLICT; got #{p_a.inspect}"
+end
+
+test 'V17-INT-002-M3: [PRODUCTION HELPER] shared-endpoint + partial overlap via GapPairProposer._segments_intersect_interior?' do
+  # Bridge (5,0)->(12,0) and unrelated (5,0)->(10,0). They
+  # share endpoint (5,0,0) and overlap on [5,10] (interior of
+  # bridge). The unrelated endpoint (10,0,0) lies STRICTLY
+  # INSIDE the bridge interior (point-on-segment-interior
+  # case). CONFLICT.
+  p_a = GapPairProposer.send(
+    :_segments_intersect_interior?,
+    [5.0, 0.0, 0.0], [12.0, 0.0, 0.0],
+    [5.0, 0.0, 0.0], [10.0, 0.0, 0.0],
+    1.0e-6
+  )
+  assert_equal true, p_a,
+               "INT-002-M3: GapPairProposer production helper must report shared-endpoint + " \
+               "partial overlap as CONFLICT; got #{p_a.inspect}"
 end
 
 # =================================================================

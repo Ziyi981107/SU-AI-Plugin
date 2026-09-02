@@ -70,28 +70,62 @@ module SUAnalysis
         q1, q2 = segment_b
         return _safe unless _valid_inputs?(p1, p2, q1, q2, eps)
 
-        # Shared endpoint (Blueprint §10.3): legitimately the
-        # two target canonical endpoints -> not a conflict.
-        if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
-           _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
-          return { 'conflict' => false, 'reason' => 'shared_endpoint' }
-        end
-
         # Bounding-box quick reject (XY plane -- Z compat is
         # checked upstream by GapPairProposer and the
         # WorkingModeRunner crossing checker).
         return _safe unless _bbox_overlap_xy?(p1, p2, q1, q2, eps)
 
-        # ----- Collinear case -----
-        # When ALL FOUR points are collinear, we must detect
-        # containment / partial overlap (and accept disjoint
-        # collinear as safe per dispatch).
+        # ----- Collinear case FIRST -----
+        #
+        # V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-2026-09-02
+        # INT-002: a SHARED ENDPOINT must NOT mask genuine
+        # collinear interior overlap. The pre-residual code
+        # returned `{ conflict: false, reason:
+        # 'shared_endpoint' }` whenever ANY endpoint was
+        # shared, BEFORE checking whether the two collinear
+        # segments actually overlap through their interiors.
+        # That wrongly classified [5,0]->[8,0] vs
+        # [5,0]->[10,0] as SAFE -- they share endpoint
+        # (5,0,0) AND overlap on [5,8] which is interior
+        # overlap.
+        #
+        # New decision order:
+        #   1. validate + bbox reject
+        #   2. collinear classification + collinear overlap
+        #      -> genuine interior overlap = CONFLICT even
+        #         when an endpoint is shared
+        #      -> pure endpoint-only touch = SAFE
+        #      -> disjoint = SAFE
+        #   3. for non-collinear geometry: shared-endpoint-
+        #      only meeting = SAFE
+        #   4. proper crossing / T-junction checks.
         if _collinear?(p1, p2, q1, eps) && _collinear?(p1, p2, q2, eps)
           if _collinear_overlap?(p1, p2, q1, q2, eps)
+            # Genuine collinear interior overlap (full or
+            # partial) -- CONFLICT even if endpoint(s) are
+            # shared. This is the residual fix.
             return { 'conflict' => true, 'reason' => 'collinear_overlap' }
+          end
+          # Disjoint collinear, or collinear endpoint-only
+          # touch (one segment terminates at an endpoint of
+          # the other with zero interior overlap). Both are
+          # SAFE per Blueprint §10.3. Distinguish the two
+          # reasons for caller clarity:
+          if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
+             _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
+            return { 'conflict' => false, 'reason' => 'shared_endpoint' }
           else
             return _safe
           end
+        end
+
+        # Non-collinear geometry: a single shared endpoint
+        # is allowed (legitimate corner meeting -- Blueprint
+        # §10.3). Only the meeting point is shared, no
+        # interior intersection.
+        if _shared_endpoint?(p1, q1, eps) || _shared_endpoint?(p1, q2, eps) ||
+           _shared_endpoint?(p2, q1, eps) || _shared_endpoint?(p2, q2, eps)
+          return { 'conflict' => false, 'reason' => 'shared_endpoint' }
         end
 
         # ----- Proper strict crossing -----

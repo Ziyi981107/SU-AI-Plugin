@@ -1,6 +1,158 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.7 CODEX-XHIGH-BLOCK-FIX (THIS UPDATE)
+## V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX (THIS UPDATE)
+
+Updated: 2026-09-02 (V17-CODEX-BLOCK-FINAL-RESIDUAL-FIX-
+2026-09-02 dispatch EXECUTION on assigned `dev/v1.7` per
+dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the frozen
+V1.7 Stage Technical Blueprint
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`.)
+
+Status (this dispatch):
+
+- **V1.6: CLOSED** (per
+  `Prompt/AIPM_V1_6_CLOSURE_2026-09-01.md`).
+- **V1.6 Owner SU2020 PASS** (Final Product Owner
+  confirmation recorded by AIPM).
+- **V1.7: ACTIVE** (per dispatch §0).
+- **Frozen V1.7 Blueprint**: ACTIVE (unchanged).
+- **AIPM narrow two-delta review of INT-001 + INT-002**:
+  pending.
+- **Codex xHigh NARROW recheck of INT-001 + INT-002
+  only**: pending after AIPM PASS. Pi does NOT invoke
+  Codex.
+- **INT-003 / INT-004 / INT-005**: AIPM narrow PASS
+  from the prior correction; preserved unchanged.
+- **V1.8 NOT STARTED**.
+- **V2 / MCP OUT OF SCOPE**.
+
+This dispatch corrected exactly TWO residuals inside
+the already-accepted Codex xHigh BLOCK findings:
+
+- **INT-001 residual (output-order / digest
+  determinism):**
+  `canonical_topology_builder.rb` — component iteration
+  key now derives from ALL sorted endpoint_keys of every
+  member (`comp.map { |i| epss[i].endpoint_key.to_s
+  }.sort.join('|')`) instead of `comp.first`. The
+  published payload is defensively re-sorted by stable
+  keys before freezing: `canonical_nodes` by
+  `(canonical_node_id, endpoint_key)`,
+  `non_transitive_clusters` by `cluster_id`,
+  `canonical_node_clusters` rebuilt in `cluster_id`-
+  sorted insertion order. `canonical_geometry_graph.rb`
+  — `_compute_digest` now sorts `non_transitive_clusters`
+  by `cluster_id` and sorts the endpoint_keys within
+  each serialization line before joining.
+  Safe-clique collapse / non-transitive separation /
+  coordinate_epsilon semantics UNCHANGED.
+- **INT-002 residual (shared-endpoint collinear-overlap
+  safety):** `segment_conflict.rb` — the shared pure
+  predicate's decision order is now strictly: validate +
+  bbox reject → COLLINEAR classification + overlap
+  FIRST (genuine interior overlap = CONFLICT even when
+  endpoint(s) shared; collinear endpoint-only touch =
+  SAFE; disjoint collinear = SAFE) → non-collinear
+  shared-endpoint-only meeting SAFE → proper crossing /
+  bridge-endpoint-on-unrelated / unrelated-endpoint-on-
+  bridge checks remain. Stable reason codes emitted:
+  `'collinear_overlap'`, `'proper_interior_crossing'`,
+  `'bridge_endpoint_on_unrelated'`,
+  `'unrelated_endpoint_on_bridge'`, `'shared_endpoint'`
+  (SAFE marker). One shared pure predicate is used by
+  the runner + the proposer.
+
+V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX PACKET — 2026-09-02.
+
+- Starting HEAD: `40277b0` (the prior
+  V17-CODEX-XHIGH-BLOCK-FIX doc-stamp; substantive INT
+  fix commit was `9a81585`).
+- Implementation SHA: produced by this dispatch (see
+  `git log -1` after commit).
+- Final HEAD on `dev/v1.7`: see `git rev-parse HEAD`
+  after push.
+- V1.7 RBZ candidate: size **984,319 bytes**; entries
+  **68**; SHA-256
+  **`9A320BD0c64bf5117a57813263d23043b8c2b0057c5c87121ff81585d13c38c7`**.
+- Full Ruby suite: **977 / 977 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 89 prior V1.7 tests + 33
+  INT-block-fix regressions including the 4 new tests
+  added by this dispatch: `V17-INT-001-E`,
+  `V17-INT-002-M1`, `V17-INT-002-M2`, `V17-INT-002-M3`).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS; final line `PASS`.
+- `git diff --check`: clean.
+- per dispatch §8 + §9: STOPPED awaiting AIPM narrow
+  two-delta source review of the INT-001 + INT-002
+  delta only; Codex xHigh NARROW recheck of these two
+  findings NOT invoked by Pi; V1.8 NOT STARTED; final
+  Owner SU2020 real-host verification gate Scenarios
+  A–G NOT YET RUN.
+
+Frozen V1.7 Blueprint preserved unchanged on the
+assigned `dev/v1.7`. Pi did NOT rewrite any frozen
+design authority.
+
+Corrections by this dispatch (each regression-locked
+in `tests/test_v17_int_block_fix.rb`):
+
+- **INT-001 (DETERMINISTIC NON-TRANSITIVE IDENTITY +
+  RESIDUAL OUTPUT-ORDER / DIGEST DETERMINISM)**:
+  `CanonicalTopologyBuilder.build` emits a cluster_id of
+  the form `ntc-{digest}` where the digest is computed
+  from the SORTED endpoint_keys of the cluster. No
+  discovery ordinal is included. The per-member
+  `canonical_node_id` `"#{cluster_id}.n#{position}"` is
+  also stable because its `position` is the position in
+  `sorted_indices` (sorted by endpoint_key). The
+  published payload is defensively re-sorted before
+  freezing (`canonical_nodes` by
+  `(canonical_node_id, endpoint_key)`,
+  `non_transitive_clusters` by `cluster_id`,
+  `canonical_node_clusters` in `cluster_id`-sorted
+  insertion order). `CanonicalGeometryGraph
+  ._compute_digest` sorts `non_transitive_clusters` by
+  `cluster_id` and sorts endpoint_keys within each line
+  before joining. Two non-transitive components,
+  forward / reverse / shuffled endpoint enumeration →
+  identical cluster_id sets, identical
+  canonical_node_id sets, identical graph digest.
+- **INT-002 (CONSERVATIVE SEGMENT OVERLAP /
+  T-JUNCTION SAFETY + SHARED-ENDPOINT COLLINEAR
+  RESIDUAL)**: the shared module
+  `core/segment_conflict.rb` exposes
+  `SegmentConflict.conflict?(segment_a, segment_b,
+  eps:)` and
+  `SegmentConflict.point_in_segment_interior?`. The
+  runner's `_crossing_checker_proc` and the proposer's
+  X3 pairwise check both delegate to this single shared
+  pure predicate. The decision order is: validate +
+  bbox reject → collinear classification + overlap
+  first (genuine interior overlap = CONFLICT even when
+  endpoint(s) shared; collinear endpoint-only touch =
+  SAFE; disjoint collinear = SAFE) → non-collinear
+  shared-endpoint-only meeting SAFE → proper crossing /
+  bridge-endpoint-on-unrelated /
+  unrelated-endpoint-on-bridge checks remain. Disjoint
+  collinear segments remain SAFE (the predicate
+  explicitly checks `_collinear_overlap?` with
+  endpoint-exclusion).
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected AIPM action: AIPM narrow source review
+of the INT-001 + INT-002 delta only. On AIPM PASS:
+mandatory Codex xHigh NARROW recheck of these two
+findings only. On Codex PASS: final Owner SU2020
+real-host verification gate Scenarios A–G.
+
+CODEX_RECHECK: PENDING — DO NOT INVOKE.
+OWNER_GATE: NOT YET RUN.
+
+## V1.7 CODEX-XHIGH-BLOCK-FIX (HISTORICAL)
 
 Updated: 2026-09-02 (V17-CODEX-XHIGH-BLOCK-FIX-2026-09-02
 dispatch EXECUTION on assigned `dev/v1.7` per dispatch
