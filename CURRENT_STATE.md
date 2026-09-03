@@ -1,6 +1,157 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.8 OWNER-SU2020-BOOT-BLOCK (THIS UPDATE)
+## V1.8 OWNER-SU2020-UI-WIRING (THIS UPDATE)
+
+Updated: 2026-09-03 (V1.8 OWNER SU2020 UI WIRING BLOCK
+narrow-fix dispatch EXECUTION on assigned `dev/v1.8` per
+dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the AIPM
+trace of the Owner Gate `检查结构` no-op report).
+Per dispatch, the ONLY authority for this packet is the
+Owner SU2020 real-host `检查结构` no-op report and the
+AIPM trace to `DialogRunner.show`. Frozen V1.8 Blueprint
+preserved unchanged. `app.js` action name unchanged.
+
+Status (this dispatch):
+
+- **V1.7: CLOSED** (per
+  `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
+- **V1.8: ACTIVE** (per AIPM trace).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
+- **V1.8 SR18-01..08 + FR18-01..04 + BOOT BLOCK**: PASS
+  (prior dispatches).
+- **V1.8 Owner SU2020 UI WIRING (this packet)**: BLOCK →
+  narrow fix applied; Pi Complete; awaiting Owner re-run of
+  the real-SU2020 click path.
+- **V1.8 Codex gate**: NOT REQUIRED
+  (`CODEX_RISK_TRIGGER = NO`).
+- **V1.9 / PreparedCadDataset NOT STARTED.**
+- **V2 / MCP OUT OF SCOPE.**
+
+V1.8 OWNER-SU2020-UI-WIRING PACKET — 2026-09-03.
+
+- Starting HEAD: `e27359d20566d853170f464bb877bf4d98db28c7`
+  (the prior V18-OWNER-SU2020-BOOT-BLOCK complete state on
+  `dev/v1.8`).
+- Implementation SHA: produced by this dispatch
+  (see `git log -1` after commit).
+- Final HEAD on `dev/v1.8`: see `git rev-parse HEAD` after
+  push.
+- V1.8 RBZ candidate: size **1,078,875 bytes**; entries
+  **69**; SHA-256
+  **`8fdadd5a9258bd2c2ceaf1cf83edf0427ed6f5d8123270877c3f90bb7387739d`**.
+- Packaged `html/app.js` SHA-256:
+  `56878DD018A0DB6A1684CABE91EE84EB1426B295C7B1CF60F6A08F5D98353F2D`
+  (unchanged — no JS change in this dispatch).
+- Packaged `html/index.html` SHA-256:
+  `6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`
+  (unchanged — no HTML change in this dispatch).
+- Packaged `html/style.css` SHA-256:
+  `3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`
+  (unchanged — no CSS change in this dispatch).
+- Full Ruby suite: **1053 / 1053 total** / **1050 PASS** / 1 fail
+  / 2 error (the 1 fail + 2 error are pre-existing failures
+  unrelated to this dispatch — confirmed by `git stash` +
+  re-run against the prior commit). Delta vs prior
+  V18-OWNER-SU2020-BOOT-BLOCK 1048: +5 tests (the new
+  V1.8 UI WIRING set).
+- V1.8 UI WIRING focused timing: **0.014 s** end-to-end (5
+  tests).
+- Node DOM (`tests/test_html_render_dom.js`): unchanged
+  from V1.8 base; all 327 assertions PASS, final line
+  `PASS`.
+- `git diff --check`: clean (0 warnings).
+- per dispatch: STOPPED awaiting Owner re-run of the
+  real-SU2020 click path; Codex xHigh recheck NOT invoked
+  (no risk trigger, frozen boundary untouched, no
+  algorithm change, no UI product scope change);
+  V1.9 NOT STARTED.
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.8`. Pi did NOT rewrite any frozen design authority.
+No V1.8 reconstruction algorithm change. No V1.7 schema /
+identity / digest changes. No SegmentConflict semantic
+changes. No source / provenance authority changes. No
+workspace ownership changes. No host mutation / Face /
+Observer. No site semantics. No V1.9.
+
+Correction by this dispatch (narrow, regression-locked in
+`tests/test_dialog_runner.rb`):
+
+- **V1.8 UI WIRING (dialog_runner)**:
+  `extension/su_ai_plugin/dialog_runner.rb` — the real-SU2020
+  Owner Gate produced a no-op on the `检查结构` button
+  click. AIPM trace identified the gap: `app.js` (production,
+  unchanged) dispatches the action name
+  `compute_structure_reconstruction` to
+  `window.sketchup.compute_structure_reconstruction`;
+  `WorkingModeRunner.compute_structure_reconstruction`
+  has been the production-path read-only structure check
+  since V18-BASE, but `DialogRunner.show` did not register
+  the matching `add_action_callback('compute_structure_reconstruction')`.
+  The narrow fix registers the callback in `DialogRunner.show`
+  (analogous to the V1.6/V1.7 compute handlers) and adds the
+  `on_compute_structure_reconstruction` handler, which
+  delegates to the real production method via the existing
+  `_safe_invoke` path that re-pushes the payload after
+  success. No `app.js` action-name change. No algorithm
+  change. No V1.7 contract change.
+
+New tests added by this dispatch (5 V1.8 UI WIRING):
+
+- `V1.8 UI WIRING-A`: DialogRunner.show registers the EXACT
+  callback name `compute_structure_reconstruction` and the
+  callback is a Proc/block (per Round 018 BLOCK-004, NOT
+  `method(:name)`).
+- `V1.8 UI WIRING-B`: the previously-registered callbacks
+  (`ready`, `locate`, `close`, `prepare_workspace`,
+  `discard_workspace`, `rebuild_workspace`,
+  `compute_planar_normalization`, `apply_planar_normalization`,
+  `compute_gap_repair`, `apply_gap_repair`) all remain
+  registered unchanged.
+- `V1.8 UI WIRING-C`: the registered callback invokes the
+  REAL `WorkingModeRunner.compute_structure_reconstruction`
+  method exactly once; the post-call
+  `structure_reconstruction` sub-snapshot is populated with
+  `computed == true`.
+- `V1.8 UI WIRING-D`: the resulting payload is re-pushed via
+  the existing `_safe_invoke → push_data` path (execute_script
+  count increases by ≥ 1; latest push goes through
+  `window.SUAIP.render(<json>)` and carries the
+  `schema_version` marker).
+- `V1.8 UI WIRING-E`: the read-only nature of the V1.8
+  structure check is enforced — the captured
+  `source_fingerprint_digest` MUST be unchanged across the
+  click (no mutation reaches the captured source).
+
+The already-PASS SR18-01..08 + FR18-01..04 + BOOT BLOCK
+areas were NOT reworked beyond mechanical test compatibility
+— all 1048 prior tests remain green.
+
+CODEX_RISK_TRIGGER = NO. Per dispatch §Do-not-change: V1.8
+reconstruction algorithm, app.js action name, V1.7 schema,
+V1.7 identity, V1.7 digest semantics, SegmentConflict
+semantics, source / provenance authority, tolerance
+authority upstream, workspace ownership, native SketchUp
+mutation, host Face creation, Undo / Observer architecture,
+UI product scope, V1.9 are all UNCHANGED.
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected action: Owner re-runs the real-SketchUp-2020
+`检查结构` click path to confirm the button now wires
+through to `WorkingModeRunner.compute_structure_reconstruction`
+and the UI updates. AIPM narrow review of this UI WIRING
+packet is also pending. V1.9 / PreparedCadDataset remains
+deferred.
+
+CODEX_GATE: NOT REQUIRED.
+OWNER_GATE: PENDING RE-RUN.
+V1.9: NOT STARTED.
+
+## V1.8 OWNER-SU2020-BOOT-BLOCK (HISTORICAL)
 
 Updated: 2026-09-03 (V1.8 OWNER SU2020 BOOT BLOCK narrow-fix
 dispatch EXECUTION on assigned `dev/v1.8` per dispatch

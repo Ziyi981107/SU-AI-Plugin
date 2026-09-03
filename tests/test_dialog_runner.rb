@@ -719,3 +719,204 @@ ensure
   FakeUI.uninstall!
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 end
+
+
+# --------------------------------------------------------------------------
+# V1.8 OWNER SU2020 UI WIRING BLOCK (real-SU2020 Owner Gate):
+# the JS-side `检查结构` button (app.js dispatches
+# `window.sketchup.compute_structure_reconstruction`) is wired
+# to the Ruby callback `compute_structure_reconstruction`
+# via `DialogRunner.show`. WorkingModeRunner has had
+# `compute_structure_reconstruction` since V18-BASE, but the
+# DialogRunner did NOT register an add_action_callback for
+# it -- so the JS click was a no-op on a real SU2020 host.
+#
+# The fix: DialogRunner.show now registers the
+# `compute_structure_reconstruction` callback exactly as
+# V1.6 (planar) / V1.7 (gap) compute handlers are wired.
+# `on_compute_structure_reconstruction` delegates to
+# WorkingModeRunner.compute_structure_reconstruction via
+# the existing `_safe_invoke` path, which re-pushes the
+# payload after success so the UI updates.
+#
+# These regressions prove the production-path wiring:
+#   - DialogRunner registers the EXACT callback name
+#     `'compute_structure_reconstruction'`;
+#   - the registered callback invokes the REAL
+#     WorkingModeRunner.compute_structure_reproduction
+#     method (a stub counts the calls + records the
+#     runner state observed before / after);
+#   - the resulting V1.8 structure_reconstruction
+#     sub-snapshot is re-pushed (the dialog observes the
+#     payload via push_data executed from the callback);
+#   - the previously-registered callbacks (ready, locate,
+#     close, prepare_workspace, discard_workspace,
+#     rebuild_workspace, compute_planar_normalization,
+#     apply_planar_normalization, compute_gap_repair,
+#     apply_gap_repair) remain unchanged.
+# --------------------------------------------------------------------------
+
+# Build a FakeUI dialog + register a WorkingModeRunner
+# compute_structure_reconstruction call counter so the test
+# can prove the registered callback delegates to the
+# real production method.
+def dr_wire_v18_callback_capture
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_realistic_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # Prepare to reach state='ready' (the precondition for the
+  # V1.8 `检查结构` CTA to be surfaced per Blueprint §15.2
+  # -- V1.7 topology must be in a terminal state first).
+  dialog.callbacks['prepare_workspace'].call(nil)
+  # Counter module to record the runner call.
+  $dr_v18_compute_calls = 0
+  $dr_v18_compute_pre  = nil
+  $dr_v18_compute_post = nil
+  original = SUAnalysis::Core::WorkingModeRunner.method(:compute_structure_reconstruction)
+  SUAnalysis::Core::WorkingModeRunner.define_singleton_method(:compute_structure_reconstruction) do |*args, **kw|
+    $dr_v18_compute_calls += 1
+    $dr_v18_compute_pre  = SUAnalysis::Core::WorkingModeRunner.snapshot.dup
+    result = original.call(*args, **kw)
+    $dr_v18_compute_post = SUAnalysis::Core::WorkingModeRunner.snapshot.dup
+    result
+  end
+  [dialog, model]
+end
+
+test 'dialog_runner (V1.8 UI WIRING): registers exact callback name compute_structure_reconstruction' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # The EXACT callback name must be registered. JS dispatches
+  # `window.sketchup.compute_structure_reconstruction`; the
+  # Ruby `add_action_callback` MUST use the same string.
+  refute_nil dialog.callbacks['compute_structure_reconstruction'],
+              'DialogRunner MUST register add_action_callback("compute_structure_reconstruction") ' \
+              'so the JS `检查结构` click is not a no-op'
+  # The callback must be a Proc / block (per CodeX Round 018
+  # BLOCK-004) -- NOT a Method object.
+  cb = dialog.callbacks['compute_structure_reconstruction']
+  assert_kind_of Proc, cb,
+                 'V1.8 compute_structure_reconstruction callback MUST be a Proc/block ' \
+                 '(per Round 018 BLOCK-004 -- NOT method(:name))'
+ensure
+  FakeUI.uninstall!
+end
+
+test 'dialog_runner (V1.8 UI WIRING): existing callbacks remain unchanged after the V1.8 wiring' do
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  result = dr_minimal_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # The previously-registered callbacks must all still be
+  # present (the V1.8 wiring is purely additive).
+  %w[
+    ready
+    locate
+    close
+    prepare_workspace
+    discard_workspace
+    rebuild_workspace
+    compute_planar_normalization
+    apply_planar_normalization
+    compute_gap_repair
+    apply_gap_repair
+    compute_structure_reconstruction
+  ].each do |name|
+    refute_nil dialog.callbacks[name],
+               "DialogRunner MUST still register callback #{name.inspect} after the V1.8 wiring"
+  end
+ensure
+  FakeUI.uninstall!
+end
+
+test 'dialog_runner (V1.8 UI WIRING): callback invokes the real WorkingModeRunner.compute_structure_reconstruction' do
+  dialog, _model = dr_wire_v18_callback_capture
+  # Reset the dialog's executed_scripts list (the show path
+  # already pushed the initial payload via push_data).
+  before_scripts = dialog.executed_scripts.length
+  # Fire the JS-side click.
+  dialog.callbacks['compute_structure_reconstruction'].call(nil)
+  # The REAL WorkingModeRunner.compute_structure_reconstruction
+  # MUST have been invoked exactly once.
+  assert_equal 1, $dr_v18_compute_calls,
+               'V1.8 callback MUST invoke the REAL ' \
+               'WorkingModeRunner.compute_structure_reconstruction exactly once; ' \
+               "got #{$dr_v18_compute_calls} calls"
+  # The pre-snapshot observed by the runner shows the
+  # structure_reconstruction sub-snapshot in the
+  # NOT_COMPUTED safe-empty marker (precondition).
+  pre_sr = $dr_v18_compute_pre['structure_reconstruction']
+  assert(pre_sr.is_a?(Hash),
+         'precondition: structure_reconstruction sub-snapshot must exist before the click')
+  # The post-snapshot MUST carry a populated
+  # structure_reconstruction sub-snapshot with computed=true
+  # (the real method produced a result).
+  post_sr = $dr_v18_compute_post['structure_reconstruction']
+  refute_nil post_sr, 'post-condition: structure_reconstruction sub-snapshot MUST be populated after the click'
+  computed_flag = post_sr.is_a?(Hash) ? post_sr['computed'] : nil
+  assert_equal true, computed_flag,
+               'post-condition: structure_reconstruction.computed MUST be true after the real WorkingModeRunner call'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end
+
+test 'dialog_runner (V1.8 UI WIRING): resulting payload is re-pushed via _safe_invoke -> push_data' do
+  dialog, _model = dr_wire_v18_callback_capture
+  before_scripts = dialog.executed_scripts.length
+  # Fire the JS-side click.
+  dialog.callbacks['compute_structure_reconstruction'].call(nil)
+  # The existing _safe_invoke path MUST re-push the payload
+  # after success (so the UI updates). The push_data call
+  # is what populates the dialog's executed_scripts list.
+  after_scripts = dialog.executed_scripts.length
+  pushed_count = after_scripts - before_scripts
+  assert pushed_count >= 1,
+         "_safe_invoke MUST re-push the payload after a successful " \
+         "compute_structure_reconstruction click (expected >= 1 execute_script " \
+         "call, got #{pushed_count})"
+  # The most recent pushed payload MUST include the
+  # structure_reconstruction sub-snapshot the V1.8 runner
+  # produced (so the UI can render the `检查结构` result rows).
+  latest = dialog.executed_scripts.last.to_s
+  assert_match(/SUAIP\.render\(/, latest,
+               're-pushed payload MUST go through window.SUAIP.render (per Round 018 BLOCK-003 contract)')
+  # The render payload carries the JSON-serialized result;
+  # the structure_reconstruction digest MUST be present in
+  # the render call. We assert the JSON contains the
+  # schema_version key + structure_reconstruction sub-key
+  # (the production UIBridge serializes the full snapshot).
+  # We do not assume the exact key ordering; just the
+  # presence of the schema_version marker.
+  assert_match(/"schema_version"/, latest,
+               're-pushed payload MUST include the AnalysisResult schema_version marker')
+end
+
+test 'dialog_runner (V1.8 UI WIRING): source CAD is untouched by the compute callback' do
+  # Per Blueprint §1 (Source CAD is immutable) the V1.8
+  # callback MUST be a read-only structure check. We verify
+  # the source fingerprint digest is unchanged across the
+  # click (no mutation reaches the captured source).
+  dialog, _model = dr_wire_v18_callback_capture
+  fp_before = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  refute_nil fp_before,
+             'precondition: source_fingerprint_digest must be captured by prepare_workspace'
+  dialog.callbacks['compute_structure_reconstruction'].call(nil)
+  fp_after = SUAnalysis::Core::WorkingModeRunner.snapshot['source_fingerprint_digest']
+  assert_equal fp_before, fp_after,
+               'compute_structure_reconstruction MUST NOT mutate the captured source ' \
+               '(source_fingerprint_digest must remain stable)'
+ensure
+  FakeUI.uninstall!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+end

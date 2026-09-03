@@ -128,6 +128,16 @@ module SUAnalysis
         dialog.add_action_callback('apply_gap_repair') do |_ctx|
           on_apply_gap_repair(dialog, controller)
         end
+        # V1.8 Canonical Structure Reconstruction: callback for
+        # the `检查结构` primary CTA surfaced after a terminal
+        # V1.7 topology_repair state. The handler delegates to
+        # WorkingModeRunner.compute_structure_reconstruction and
+        # re-pushes the payload so the UI updates after the
+        # read-only structure check completes. Source CAD is
+        # NEVER touched.
+        dialog.add_action_callback('compute_structure_reconstruction') do |_ctx|
+          on_compute_structure_reconstruction(dialog, controller)
+        end
         # set_on_closed releases the Loader-side cache so the window
         # can be GC'd after the user closes it.
         dialog.set_on_closed do
@@ -295,6 +305,22 @@ module SUAnalysis
       def on_apply_gap_repair(dialog, controller)
         _safe_invoke(dialog, controller, 'apply_gap_repair') do
           SUAnalysis::Core::WorkingModeRunner.apply_gap_repair
+        end
+      end
+
+      # V1.8 Canonical Structure Reconstruction: handler for
+      # `compute_structure_reconstruction`. The app.js side
+      # surfaces `检查结构` as the primary CTA after a
+      # terminal V1.7 topology_repair state (Blueprint §15.2).
+      # The handler is read-only: it asks
+      # WorkingModeRunner.compute_structure_reconstruction to
+      # build / refresh the V1.8 structure_reconstruction
+      # sub-snapshot, then the existing _safe_invoke path
+      # re-pushes the payload so the UI updates with the new
+      # state / metric rows. Source CAD is NEVER touched.
+      def on_compute_structure_reconstruction(dialog, controller)
+        _safe_invoke(dialog, controller, 'compute_structure_reconstruction') do
+          SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
         end
       end
 
