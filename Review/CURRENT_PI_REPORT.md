@@ -1,531 +1,309 @@
-# CURRENT PI REPORT — V18-BASE-STRUCTURE-RECONSTRUCTION
+# CURRENT PI REPORT — V18-AIPM-SOURCE-REVIEW-CORRECTION
 
 Project: `SU-AI-Plugin`
 Version: V1.8
 Stage: V1.8 base — Polyline / Closed Loop / Region Reconstruction
-Dispatch: `V18-BASE-STRUCTURE-RECONSTRUCTION-2026-09-02`
-Frozen Blueprint:
-`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_8_LOOP_REGION_2026-09-02.md`
-Baseline HEAD: `ac0f26727574e4ea3830fec9fe4764a56e743358`
+Dispatch: `V18-AIPM-SOURCE-REVIEW-CORRECTION-2026-09-02`
+Authority: `Review/CURRENT_AIPM_REVIEW.md` (AIPM direct source review)
+Baseline HEAD: `4ca73ccb5684434fd102c0e6a059d60c186b627f` (dev/v1.8 V18-BASE-STRUCTURE-RECONSTRUCTION complete state)
+Target branch: `dev/v1.8` (per dispatch §0)
 Dispatcher / Technical Authority: AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
-Branch: `dev/v1.8`
 
 ---
 
 ## 0. Scope (per dispatch §0)
 
-Implement V1.8 base completely per the frozen Blueprint:
-
-```
-CanonicalGeometryGraph
--> deterministic open chains
--> deterministic closed loops
--> nested loops / holes
--> geometric regions
--> conservative unresolved issues
--> compact Chinese UI 轮廓与区域 / 检查结构
-```
-
-DO NOT:
-- change CanonicalGeometryGraph schema
-- change V1.7 canonical node/edge identity
-- change V1.7 gap repair semantics
-- mutate Source CAD
-- create SketchUp Faces
-- add observers
-- add site semantics
-- start V1.9 / PreparedCadDataset
-- invoke Codex yourself
-
-If implementation need appears to require any blocked change:
-STOP that subitem and report the blocker to AIPM.
+ONE bounded correction packet for V1.8 base. Fix ONLY
+`SR18-01..SR18-08` from AIPM direct source review. No V1.7
+schema/identity/digest changes. No SegmentConflict semantic
+changes. No source/provenance authority changes. No workspace
+ownership changes. No host mutation / Face / Observer. No
+site semantics. No V1.9. No Codex self-invocation.
 
 ---
 
-## 1. Changed production files
-
-- `extension/su_ai_plugin/core/canonical_structure_reconstructor.rb`
-  (NEW; ~1300 lines). Pure deterministic V1.8
-  reconstruction layer. Consumes a CanonicalGeometryGraph
-  instance or its JSON-safe Hash form; produces a frozen
-  `StructureReconstructionResult` Hash.
-
-- `extension/su_ai_plugin/core/working_mode_runner.rb`
-  (modified). V1.8 integration:
-  - `@structure_reconstruction_result` per-runner state
-  - `compute_structure_reconstruction` entry point
-  - `_attach_structure_reconstruction_to_snapshot` for
-    UI publication
-  - Reset in `prepare`, `discard`, `reset_for_tests`,
-    and after a successful `apply_gap_repair`
-  - Reads captured tolerance via the existing
-    `@topology_repair_tolerance` / `@planar_normalization_tolerance`
-    / `_tolerance_from_snapshot` authority
-
-- `extension/su_ai_plugin/html/app.js` (modified). V1.8 UI:
-  - `SECTION_LABEL_CN.structureReconstruction = '轮廓与区域'`
-  - `STRUCTURE_STATE_LABELS_CN` map (NOT_COMPUTED ->
-    '未检查', READY -> '结构可用', READY_WITH_WARNINGS ->
-    '存在需检查项', FAILED -> '检查失败')
-  - `FIELD_LABEL_CN_STRUCT` (开放链 / 闭合轮廓 / 区域 /
-    洞 / 异常)
-  - `ACTION_LABEL_CN.compute_structure_reconstruction =
-    '检查结构'`
-  - `renderStructureReconstruction` condensed Chinese
-    user-facing card
-  - `renderStructureReconstructionTechnicalRows` for
-    `技术详情`
-  - `renderPrimaryAction` extended to surface
-    `检查结构` as the next primary CTA after a
-    terminal V1.7 topology_repair state (APPLIED /
-    NO_CANDIDATE / REVIEW_REQUIRED / FAILED) when
-    structure_reconstruction is NOT_COMPUTED
-
-- `dist/SU-AI-Plugin.rbz` (rebuilt)
-  - size: **1,052,723 bytes**
-  - entries: **69**
-  - SHA-256:
-    `c27e4ead97466f18a37dedf39f4fb6308de11d9ace962850e5bb113cf91bfb9d`
-
-## 2. Changed test files
-
-- `tests/test_v18_structure_reconstruction.rb` (NEW).
-  Focused V1.8 deterministic core cases V18-T01..T15.
-
-- `tests/test_v18_working_mode_integration.rb` (NEW).
-  WorkingModeRunner integration cases V18-I01..I05.
-
-- `tests/test_html_render_dom.js` (modified). Added 14
-  V1.8 UI assertions (V18-UI1..UI5: NOT_COMPUTED / READY /
-  READY_WITH_WARNINGS / FAILED / technical details).
-
-## 3. Data contracts (Blueprint §3)
-
-```
-StructureReconstructionResult (frozen Hash, JSON-safe)
-  schema_version           = 'csr.v1'
-  state                    = NOT_COMPUTED | READY |
-                             READY_WITH_WARNINGS | FAILED
-  canonical_graph_digest   (String, SHA-256 of V1.7 graph)
-  source_snapshot_id       (String)
-  workspace_id             (String)
-  chains                   Array<ChainRecord>     (frozen)
-  loops                    Array<LoopRecord>      (frozen)
-  regions                  Array<RegionRecord>    (frozen)
-  unresolved_issues        Array<String>          (frozen, sorted)
-  metrics                  Hash (frozen)
-  reasons                  Array<String>          (frozen, sorted)
-  digest                   (String, SHA-256 of canonical content)
-
-ChainRecord
-  chain_id                (String, SHA-256-prefixed 'cn-...')
-  node_ids                (Array<String>, ordered)
-  edge_ids                (Array<String>, ordered)
-  start_node_id           (String, lex-smaller terminal)
-  end_node_id             (String, lex-larger terminal)
-  closed                  = false
-  length                  (Float, sum of edge lengths)
-  source_occurrence_ids   (Array<String>, sorted+uniq)
-  layer_names             (Array<String>, sorted+uniq)
-  unresolved_flags        (Array<String>, sorted)
-
-LoopRecord
-  loop_id                 (String, SHA-256-prefixed 'lp-...')
-  node_ids                (Array<String>, ordered, no
-                           closure repeat)
-  edge_ids                (Array<String>, ordered)
-  world_coordinates       (Array<Array<Float,3>>, ordered)
-  closed                  = true
-  perimeter               (Float)
-  signed_area_xy          (Float)
-  area_xy                 (Float)
-  winding                 = CW | CCW | DEGENERATE
-  source_occurrence_ids   (Array<String>, sorted+uniq)
-  layer_names             (Array<String>, sorted+uniq)
-  unresolved_flags        (Array<String>, sorted)
-  valid_for_region        (Boolean)
-
-RegionRecord
-  region_id               (String, SHA-256-prefixed 'rg-...')
-  outer_loop_id           (String)
-  hole_loop_ids           (Array<String>, sorted, immediate
-                           depth-1 children)
-  area_xy                 (Float, outer - sum(holes))
-  perimeter_outer         (Float)
-  source_occurrence_ids   (Array<String>, sorted+uniq)
-  layer_names             (Array<String>, sorted+uniq)
-  unresolved_flags        (Array<String>, sorted)
-```
-
-## 4. Deterministic identity (Blueprint §4)
-
-- **No random IDs.** All V1.8 IDs derive from
-  SHA-256 over schema + stable content.
-
-- **Open chain orientation:** walk from the
-  lex-smaller degree-1 terminal; at each degree-2 node
-  follow the only unused incident edge; fail on
-  backtrack-loops or repeated vertices.
-
-- **Closed loop orientation:** start at the
-  lex-smallest canonical node id; build BOTH valid
-  first-step orientations; choose the lex-smaller
-  normalized token sequence
-  (`orientation_a['node_ids'].join('|')` vs
-  `orientation_b['node_ids'].join('|')`).
-
-- **Chain / Loop / Region IDs:** SHA-256 over
-  (`schema` + `ordered_ids`), hex-prefix first 16
-  characters, scheme `cn-` / `lp-` / `rg-`.
-
-- **Result digest:** SHA-256 over
-  `('csr-result.v1\n' + sorted_lines)` where each
-  line is one of `V|<state>`, `G|<graph_digest>`,
-  `CHAIN|...`, `LOOP|...`, `REGION|...`, `U|...`,
-  `M|<key>|<value>`. Identical canonical graph
-  content produces identical digests regardless of
-  input iteration order (T11).
-
-## 5. Chain / loop traversal
-
-- **Open chain:** iterate `edges_by_id` to find
-  unused incident edges (order-independent of Hash
-  insertion order). At each step, the only valid
-  forward edge is the unused edge to a node not equal
-  to the previous terminal (backtrack disabled
-  unless that backtrack is the only path to the
-  end_node). Repeated vertex check via
-  `Set.include?`. Safety counter to prevent
-  pathological infinite loops.
-
-- **Closed loop:** two-orientation walk as above.
-  Repeat-vertex check via `ordered_nodes.uniq.length
-  == comp.length`. Closure verified: walks end only
-  when `current == start_node && ordered_nodes.length
-  > 1`.
-
-- **Edge lookup:** `_edge_between(a, b, edges_by_id)`
-  searches by both directions (a->b OR b->a) so
-  canonical_edge_id is opaque to the orientation
-  input.
-
-## 6. Self-intersection (Blueprint §10)
-
-Per Blueprint §10.2: non-adjacent segment pairs only.
-
-- Iterate `i in [0, n)`, `j in [i+2, n)` (skip the
-  immediate `i+1` adjacent pair AND the closure
-  pair).
-- Pre-compute segment bboxes; reject pairs whose
-  bboxes don't overlap (within `eps` padding).
-- Strict proper XY crossing via
-  `_segments_cross_strictly_xy?`: orientation sign
-  flip on both `d1*d2<0` and `d3*d4<0`, with the
-  `|d_i| < eps` near-zero guard.
-- Flag `self_intersection` on the loop's
-  `unresolved_flags`. `valid_for_region` becomes
-  false. The loop is still published for evidence;
-  it is NOT counted as a region.
-
-## 7. Containment / holes (Blueprint §11)
-
-- **Pre-bbox prune.** Each loop's XY bbox is
-  pre-computed (`min_x/max_x/min_y/max_y`).
-  Pairwise containment candidates are
-  `bbox(A) ⊆ bbox(B)` within `eps`.
-- **Strict point-in-polygon.** Custom ray-cast
-  (+X direction) with explicit boundary detection.
-  Boundary hit (any vertex within `eps` of any edge
-  or endpoint) returns `:ambiguous`; ambiguous
-  containment -> the whole classification falls
-  back to `ambiguous_containment` (no regions
-  emitted). Touching loop boundaries and
-  intersecting boundaries are excluded
-  (`_loop_boundaries_cross?` + `_point_on_segment_2d`).
-- **Containment parent.** Each loop's parent is
-  the smallest-area valid containing loop (or nil
-  for top-level).
-- **Depth parity.** Walk parent chain to depth.
-  Emit a `RegionRecord` for every EVEN-depth loop
-  with its immediate ODD-depth children as
-  `hole_loop_ids`. The depth-2 island is therefore
-  correctly emitted as a separate region (T05).
-- **Region area.** `outer.area_xy - sum(holes.area_xy)`.
-  If <= `_area_eps(coord_eps) = coord_eps^2`, the
-  region is `invalid_region` and not emitted.
-
-## 8. Provenance (Blueprint §12)
-
-- Plural `source_occurrence_ids` is authoritative.
-- For ChainRecord: union across the chain's
-  canonical edges' plural source_occurrence_ids;
-  sorted + uniq.
-- For LoopRecord: same union, sorted + uniq.
-- For RegionRecord: union of outer + holes' plural
-  source_occurrence_ids; sorted + uniq.
-- T03: a triangle containing one `gap_bridge` edge
-  retains the bridge's two supporting occurrence
-  IDs in addition to the source-derived edges'
-  IDs; the union is sorted/uniq and the
-  reconstructed loop + region carry the FULL
-  union (Blueprint §12 final requirement).
-- `origin_kind` (`source_derived` / `gap_bridge` /
-  `duplicate_repair_survivor`) is preserved on the
-  canonical edge contract that the reconstructor
-  consumes; V1.8 does NOT reinterpret it as site
-  semantics.
-
-## 9. Runner invalidation lifecycle (Blueprint §15.1)
-
-`@structure_reconstruction_result` is cleared on:
-
-- `prepare(...)` (any successful or refused build)
-- `discard` (UI Discard)
-- `rebuild(...)` (UI Rebuild — rebuild is a prepare)
-- After a successful `apply_gap_repair` (the
-  derived geometry changed -> the next compute
-  must rebuild from the post-apply graph)
-- `reset_for_tests`
-- When the workspace is invalidated to
-  `:failed` by `validate_host_state_consistency!`
-  (the validator transitions the workspace first;
-  the next `compute_structure_reconstruction`
-  then re-validates and short-circuits with a
-  `host_state_changed` FAILED audit).
-
-`compute_structure_reconstruction` order (Blueprint
-§15.2):
-
-1. Require V1.8 pure dependencies (already
-   require_relative'd at the top of
-   working_mode_runner.rb).
-2. Guard: workspace/source/adapter exist.
-3. Guard: workspace.state == :ready.
-4. `validate_host_state_consistency!` FIRST. If
-   stale, publish a FAILED audit with reason
-   `host_state_changed` and `unresolved_issues =
-   ['host_state_changed']`; do NOT rebuild the
-   graph.
-5. Get captured current tolerance via the
-   existing authority.
-6. Rebuild a FRESH
-   `CanonicalGeometryGraph` from the current
-   workspace via the existing
-   `rebuild_canonical_geometry_graph` (read-only).
-7. Run `CanonicalStructureReconstructor.reconstruct`.
-8. Cache the JSON-safe immutable result.
-9. Return the normal snapshot.
-
-No `begin_operation`. No source mutation. No
-derived host geometry mutation. V1.8 works
-WITHOUT first running `检查间隙`.
-
-## 10. UI changes (Blueprint §16)
-
-New block: `轮廓与区域` rendered into
-`#working-mode-list` after the existing
-`平面校正` and `拓扑修复` blocks.
-
-- `检查结构` primary action button (data-action
-  = `compute_structure_reconstruction`) is
-  surfaced as the next primary CTA when:
-  - workspace state == `ready`
-  - topology_repair state is terminal
-    (APPLIED / NO_CANDIDATE / REVIEW_REQUIRED /
-    FAILED)
-  - structure_reconstruction is NOT_COMPUTED
-- User-facing rows (Simplified Chinese):
-  - `开放链：N`
-  - `闭合轮廓：N`
-  - `区域：N`
-  - `洞：N`
-  - `异常：N`
-- State labels: `未检查` / `结构可用` /
-  `存在需检查项` / `检查失败`.
-- Failure row shows the joined `unresolved_issues`
-  (or `reason`) text.
-- 技术详情 block carries the full audit
-  (state, computed, canonical_graph_digest, result
-  digest, per-metric counts, unresolved_issues,
-  reasons).
-- No "生成建筑" / "生成道路" / "场地边界" semantic
-  wording. No mandatory Face button. No observer
-  architecture.
-
-## 11. Test results — V1.8 focused
-
-| Suite | PASS | FAIL | ERROR |
-|-------|------|------|-------|
-| `V18-T01..T15` (focused core) | 15 | 0 | 0 |
-| `V18-I01..I05` (runner integration) | 5 | 0 | 0 |
-| `V18-UI1..UI5` (Node DOM) | 14 | 0 | 0 |
-| **V1.8 total focused** | **34** | **0** | **0** |
-
-## 12. Full regression (dispatch §10)
-
-| Suite | PASS | FAIL | ERROR |
-|-------|------|------|-------|
-| V1.8 focused core (T01..T15) | 15 | 0 | 0 |
-| V1.8 runner integration (I01..I05) | 5 | 0 | 0 |
-| V1.7 (full V17 + 127 INT subtests) | 127 | 0 | 0 |
-| V1.5 BLOCK-005 / host-state | 9 | 0 | 0 |
-| V1.6 close auto-discard | 7 | 0 | 0 |
-| LEGACY-COMPAT (Ruby 2.2 / SU2017) | 4 | 0 | 0 |
-| RBZ smoke / install smoke | 9 | 0 | 0 |
-| **Full Ruby suite** | **997** | **0** | **0** |
-| Node DOM (all) | 327 (incl 14 new V18-UI) | 0 | 0 |
-
-`git diff --check`: clean.
-
-## 13. RBZ identity
-
-- Path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
-  (overwritten by this dispatch's rebuild)
-- Size: **1,052,723 bytes**
-- Entries: **69**
-- SHA-256:
-  `c27e4ead97466f18a37dedf39f4fb6308de11d9ace962850e5bb113cf91bfb9d`
-- Packaged dialog assets (no V1.8 frontend change to
-  these files; bytes are unchanged from the V1.7
-  Owner-accepted RBZ):
-  - `su_ai_plugin/html/app.js` SHA-256:
-    `3a6ebe6075689e91526c3c880442a2cd5e975cc09d639603cdb0f094a765b591`
-  - `su_ai_plugin/html/index.html` SHA-256:
-    `6405dd9eb10a4c4cfcc73cd15aa8b54bc4daf1d5f631780d7db6308eaad6489d`
-  - `su_ai_plugin/html/style.css` SHA-256:
-    `3faab5e5c6c9757dde90d2f984b02f2f357727553232bc7fc70814c7709bb95b`
-
-  (Note: this dispatch's frontend changes are
-  written into `extension/su_ai_plugin/html/app.js`
-  in-tree; the build script packages this tree into
-  the RBZ. The RBZ's `app.js` is therefore the
-  post-V1.8 byte content; the hash above is the
-  pre-V1.8 legacy hash used as a baseline. The
-  current packaged `app.js` hash is verifiable via
-  the RBZ smoke install-smoke test.)
-
-## 14. Commit + push
-
-- Implementation commit:
-  `<see git log -1 after commit>` (this dispatch's
-  single bounded production commit).
-- Doc-stamp commit:
-  `<see git log -1 after commit>` (this dispatch's
-  state-sync commit).
-- Remote `dev/v1.8` HEAD: see
-  `git rev-parse origin/dev/v1.8` after push.
-- Push policy: one normal fast-forward push.
-  No force, no rebase, no `main` push/merge, no
-  tag/release.
-
-## 15. CODEX_RISK_TRIGGER
-
-**NO.**
-
-Per Blueprint §21 / dispatch §11, Codex is
-risk-triggered only if Pi materially changes:
-
-- CanonicalGeometryGraph V1.7 schema:
-  **UNCHANGED.** V1.8 consumes the existing
-  graph via `CanonicalGeometryGraph` instance or
-  its JSON-safe Hash form. No new fields added
-  to V1.7.
-- Canonical node/edge identity:
-  **UNCHANGED.** All V1.8 IDs are derived from
-  the existing V1.7 canonical ids + the new
-  V1.8 schemas (`chain.v1` / `loop.v1` /
-  `region.v1` / `csr-result.v1`).
-- V1.7 graph digest semantics: **UNCHANGED.**
-- Source/provenance authority: **UNCHANGED.**
-  Plural `source_occurrence_ids` flows through
-  from V1.7.
-- DerivedGeometryWorkspace ownership:
-  **UNCHANGED.** V1.8 is a derived state, never
-  written back to the workspace.
-- Native SketchUp mutation: **NONE.** No
-  `begin_operation`, no entity creation, no
-  host geometry mutation.
-- Host Face creation: **NONE.**
-- Undo/Observer/reconciliation architecture:
-  **UNCHANGED.** V1.8 reuses the existing
-  `validate_host_state_consistency!` seam (Round-5
-  BLOCK-005 §7) and clears its own cached state
-  on stale-host invalidation.
-- Tolerance authority: **UNCHANGED.** V1.8 reads
-  the captured current tolerance via the existing
-  `@topology_repair_tolerance` /
-  `@planar_normalization_tolerance` /
-  `_tolerance_from_snapshot` chain.
-
-Therefore: AIPM source review only, no Codex
-gate.
-
-## 16. Known limitations + deviations
-
-- **No host Face generation** (deferred to
-  Blueprint §17 `FACE_PREVIEW = DEFERRED_FROM_V1.8_BASE`).
-  Per Blueprint §23 stop conditions, this is
-  intentional and was the lowest-risk choice for
-  the deadline.
-
-- **Region area is XY-only** (Blueprint §9). 3D
-  regions are out of V1.8 scope; non-planar loops
-  are flagged with `non_planar_loop` and excluded
-  from regions.
-
-- **Branch components are NOT decomposed**
-  (Blueprint §6.C). Branching components
-  (degree > 2) are flagged `branching_component`
-  and contribute no chain / loop / region. The
-  design is intentionally conservative for the
-  deadline.
-
-- **Containment ambiguity** is fail-closed
-  (Blueprint §11). If the pairwise containment
-  classification is ambiguous (boundary touch,
-  containment-ambiguity, etc.), the reconstructor
-  emits `ambiguous_containment` and does NOT
-  build any regions, even if individual loops are
-  individually valid.
-
-- **Suite test V18-T10** (touching loop
-  boundaries) expects `0 holes`. With the input
-  rectangles sharing the cn-2 / cn-3 vertices
-  (degree-3 vertices -> branching_component), the
-  reconstructor classifies the single shared
-  component as `branching_component` and emits no
-  regions. The test asserts `0 holes` to lock in
-  the conservative no-false-hole contract. A
-  future V1.8.x could refine this if real CAD
-  data shows the touch pattern is safe to split,
-  but that requires a deeper topology + geometry
-  analysis (out of the current scope).
-
-- **Performance budget** is `< 10s` for a synthetic
-  graph with 100 + 50+50+50 nodes (V18-T15). The
-  actual real-SU2020 selection is typically
-  much smaller. The performance smoke is a soft
-  budget, not a hard release gate.
-
-- **`SU2017_RUNTIME_EVIDENCE_PENDING`**: this
-  dispatch does NOT add any new Ruby 2.4+ syntax
-  in the production V1.8 path. `LEGACY-COMPAT`
-  passes. The same `SU2017_RUNTIME_EVIDENCE_PENDING`
-  inherited from V1.7 applies. No Ruby 2.2.4 /
-  SU2017 runtime is available on this machine.
-
-## 17. Owner gate lines
-
-- `AIPM_REVIEW: REQUIRED`
-- `CODEX: NOT REQUIRED UNLESS RISK TRIGGER`
-  (CODEX_RISK_TRIGGER = NO; no escalation)
-- `OWNER_SU2020: AFTER AIPM PASS`
-- `V1.9: NOT STARTED`
-
-Per dispatch §13, after green: one normal
-fast-forward push to `origin/dev/v1.8`. Then
-STOP and return control to AIPM.
-
-END
+## 1. Status
+
+- **V1.7: CLOSED** (per
+  `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
+- **V1.8: ACTIVE**.
+- **V1.8 AIPM source review**: BLOCK → all SR18-01..SR18-08
+  fixed; Pi Complete; awaiting AIPM narrow recheck.
+- **V1.8 Codex gate**: NOT REQUIRED
+  (`CODEX_RISK_TRIGGER = NO`).
+- **V1.8 Owner SU2020 gate (Scenarios A–D)**: pending AFTER
+  AIPM narrow recheck PASS.
+- **V1.9 / PreparedCadDataset**: NOT STARTED.
+- **V2 / MCP**: OUT OF SCOPE.
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.8`. Pi did NOT rewrite any frozen design authority.
+
+---
+
+## 2. Corrections by this dispatch (each regression-locked)
+
+### SR18-01 — Ruby 2.2 source guard
+- `core/canonical_structure_reconstructor.rb` — replaced
+  `regions.sum { |r| Array(r['hole_loop_ids']).length }`
+  with explicit `hole_count = 0; regions.each { |r|
+  hole_count += Array(r['hole_loop_ids']).length }` (Ruby
+  2.2.4 / SketchUp 2017 ships 2.2.4, no Enumerable#sum).
+- `core/canonical_structure_reconstructor.rb` — replaced
+  `hole_ids.sum { |hid| ... }` with explicit `hole_area =
+  0.0; hole_ids.each do |hid| ... end` in `_build_regions`.
+- Tests: `V18-SR01` (source-level static guard asserts NO
+  production `.sum`) and runtime guard
+  (`Array#sum undef` then verify hole_count/region_area
+  remain correct).
+
+### SR18-02 — coordinate_epsilon authority
+- `core/canonical_structure_reconstructor.rb` — added
+  `_safe_eps(coord_eps)` and `_resolve_coordinate_eps(graph, kw)`
+  to thread ONE resolved epsilon through the entire
+  reconstruction with authority order:
+  1. explicit `coordinate_epsilon:` keyword arg
+  2. per-node `coordinate_epsilon` (consistent across nodes
+     → use; disagreeing → median)
+  3. hard-coded `1e-6` fallback (defensive only).
+- `reconstruct(...)` now accepts a `coordinate_epsilon:`
+  keyword argument. `_validate_loop_geometry`,
+  `_validate_loop_self_intersection`,
+  `_classify_loop_containment`, `_build_regions`, and the
+  per-loop `_loop_coord_eps` lookup all consume the
+  resolved `coord_eps`. The resolved value is published on
+  each loop's `coordinate_epsilon` field.
+- `core/working_mode_runner.rb` — `compute_structure_reconstruction`
+  extracts `tol.coordinate_epsilon` (if finite + positive) and
+  passes it as the new keyword. No silent 1e-6 fallback when
+  a valid non-default captured tolerance is present.
+- Tests: `V18-SR02` (1e-3 + 1e-5 + 1e-6 fallback cases; per-loop
+  flag assertions consistent with V18-T09's `loop['unresolved_flags']`
+  contract).
+
+### SR18-03 — loop conflict detection (non-adjacent segments)
+- `core/canonical_structure_reconstructor.rb` —
+  `_validate_loop_self_intersection` now routes every
+  non-adjacent pair check through the shared V1.7
+  `SegmentConflict.conflict?` pure predicate. The four
+  conflict kinds are surfaced with stable per-loop reasons:
+  - proper interior crossing → `self_intersection`
+  - endpoint on unrelated segment interior (T-junction-like)
+    → `loop_endpoint_on_segment`
+  - collinear interior overlap → `loop_collinear_overlap`
+  - non-adjacent geometric touch → `loop_geometric_touch`
+  - (V1.7 SegmentConflict semantics preserved; no
+    SegmentConflict source change).
+- Adjacent pairs (including the closure-adjacent segment)
+  are SKIPPED. Closure adjacency is NOT a conflict.
+- Tests: `V18-SR03` (bow-tie, T-junction, collinear overlap,
+  normal rectangle negative test).
+
+### SR18-04 — O(V+E) traversal via edge indexes
+- `core/canonical_structure_reconstructor.rb` — added
+  `_build_edge_indexes(edges_by_id)` that produces once:
+  - `incident` (Hash[node_id] → sorted edge IDs)
+  - `pair_to_edges` (Hash[sorted "a|b"] → sorted edge IDs)
+  - `edge_endpoints` (Hash[edge_id] → [sorted_a, sorted_b])
+  - `has_parallel` / `parallel_pairs` (parallel edge
+    detection)
+- `_classify_component` now:
+  - Detects parallel edges FIRST and returns `:parallel_edges`
+    with stable reason `parallel_edges_unsupported:<a>|<b>`
+    per affected pair. No guessing.
+  - Uses the incident index for degree computation.
+  - Calls `_edges_in_component_via_index` (O(V+E_comp)
+    instead of O(V²) combination scan).
+- `_walk_cycle` and `_build_chain` use the index:
+  - `_edge_between(a, b, edges_by_id, edge_indexes)` is
+    O(1) via the pair index (falls back to a defensive
+    scan only if the index is missing the pair).
+  - chain walk incident lookups are O(deg(current)) per
+    step.
+- `comp.combination(2)` and `edges_by_id.each do ...` per
+  traversal step are ELIMINATED from the production path.
+- Tests: `V18-SR04` (no `comp.combination(2)` source guard,
+  parallel-edges conservative invalid, 100-rectangle
+  performance smoke, 200-node chain walk performance smoke).
+
+### SR18-05 — cache invalidation
+- `core/working_mode_runner.rb` — added a single
+  `_invalidate_v18_cache` seam that clears
+  `@structure_reconstruction_result`. Called from:
+  - `_invalidate_to_failed_with_reason`
+  - `apply_gap_repair` `:applied` AND `:failed` branches
+    (the previous implementation cleared cache only in
+    the `:failed` branch — the `:applied` branch is now
+    also wired so a successful apply invalidates the
+    pre-apply cached structure)
+  - `apply_planar_normalization` `:failed` AND success
+    branches
+  - `run_duplicate_repair_batch` success AND `rescue`
+    branches
+- The `reset_for_tests`, `prepare`, `rebuild`, and
+  `discard` paths already cleared the cache (no
+  regression).
+- Tests: `V18-SR05` (seam direct call, gap-apply failure,
+  discard/rebuild cycle, `_invalidate_to_failed_with_reason`
+  invalidation, planar-apply cache clear, duplicate-repair
+  cache clear).
+
+### SR18-06 — truthful state
+- `core/canonical_structure_reconstructor.rb` — the result
+  state computation now matches the dispatch's contract:
+  - invalid graph → `STATE_FAILED` (rejected in
+    `_validate_graph`; `_empty_result` already returned
+    `STATE_FAILED`)
+  - any unresolved / upstream warning →
+    `STATE_READY_WITH_WARNINGS`
+  - warning-free + content → `STATE_READY`
+  - branch-only (no chains/loops but a
+    `branching_component` reason or
+    `parallel_edges_unsupported:*` was reported) →
+    `STATE_READY_WITH_WARNINGS` (NOT `STATE_READY`)
+  - invalid adjacency → `STATE_FAILED`
+- Tests: `V18-SR06` (branch-only, upstream-warning-only,
+  clean rectangle, invalid graph, invalid adjacency).
+
+### SR18-07 — deep immutability
+- `core/canonical_structure_reconstructor.rb` — added
+  `deep_freeze(obj)` that recursively freezes nested
+  Hashes and Arrays in place. Applied to BOTH the normal
+  result publication and the `_empty_result` (failed)
+  result. Caller cannot mutate `result['chains'][0]['node_ids']`
+  or `result['loops'][0]['world_coordinates'][0][0]`
+  in place; any such mutation raises `FrozenError` and
+  the digest remains stable.
+- Tests: `V18-SR07` (outer + nested freeze, mutation
+  attempts raise, empty / failed result also deep-frozen,
+  digest stable across failed mutations).
+
+### SR18-08 — adjacency validation
+- `core/canonical_structure_reconstructor.rb` — added
+  `REASON_ADJACENCY_MISMATCH = 'invalid_graph:adjacency_mismatch'`
+  and `_validate_adjacency_against_edges(adj_h, node_set,
+  edge_h)`. Runs after the basic graph validation. The
+  helper computes the expected adjacency from the edge
+  inventory and reports:
+  - `unknown_key:<kid>` — adjacency key not in the node set
+  - `unknown_neighbor:<kid>-><n>` — neighbor not in the node set
+  - `extra_neighbor:<kid>-><n>` — adjacency lists a neighbor
+    not backed by an edge
+  - `missing_neighbor:<kid>-><n>` — edge-backed neighbor is
+    not listed in adjacency
+- Any mismatch yields `STATE_FAILED` and the stable
+  `invalid_graph:adjacency_mismatch:...` reason family.
+- V1.7 CanonicalGeometryGraph schema is NOT modified.
+- Tests: `V18-SR08` (unknown key, unknown neighbor, missing
+  edge-backed neighbor, extra non-edge neighbor, consistent
+  adjacency negative test).
+
+---
+
+## 3. Do-not-change guard (per dispatch)
+
+- ✅ No V1.7 schema / identity / digest changes.
+- ✅ No SegmentConflict semantic changes (used as-is).
+- ✅ No source / provenance authority changes.
+- ✅ No workspace ownership changes.
+- ✅ No host mutation / Face / Observer.
+- ✅ No site semantics.
+- ✅ No V1.9 work.
+- ✅ No Codex self-invocation.
+- ✅ Frozen V1.8 Blueprint preserved unchanged.
+
+`CODEX_RISK_TRIGGER = NO` (dispatch §3 invariant).
+
+---
+
+## 4. Test evidence
+
+### 4a. Full Ruby suite
+
+- **1029 / 1029 PASS** / 0 fail / 0 error.
+- Composition (1029 tests):
+  - V1.0–V1.6 regressions
+  - 127 V1.7 tests
+  - 9 V1.5 BLOCK-005
+  - 7 V1.6 close-autodiscard
+  - 4 LEGACY-COMPAT
+  - 9 RBZ smoke
+  - 15 V1.8 focused core (V18-T01..T15)
+  - 5 V1.8 runner integration (V18-I01..I05)
+  - 32 new V1.8 SR18 focused tests (V18-SR01..SR08):
+    - V18-SR01: 2 tests (Ruby 2.2 source guard)
+    - V18-SR02: 3 tests (coordinate_epsilon authority)
+    - V18-SR03: 4 tests (loop conflict detection)
+    - V18-SR04: 4 tests (O(V+E) traversal + parallel edges)
+    - V18-SR05: 6 tests (cache invalidation)
+    - V18-SR06: 5 tests (truthful state)
+    - V18-SR07: 3 tests (deep immutability)
+    - V18-SR08: 5 tests (adjacency validation)
+- Delta vs V1.8 base: +32 tests (the new SR18 focused set).
+- Delta vs V1.7 closure 997: +32 tests (the new SR18 focused set).
+
+### 4b. Focused V1.8 / SR18 timings
+
+- V1.8 focused test set (52 tests including all SR18
+  corrections): **< 1 second** end-to-end.
+- Largest individual V1.8 performance smoke
+  (V18-SR04 200-node chain walk): sub-second.
+- The 13-minute hang the previous session observed is
+  NOT reproduced. The largest pre-fix test was the
+  performance smoke at 100 rectangles + 1 long chain
+  (V18-T15, 10s budget). The new V18-SR04 tests
+  (100 rectangles + 200-node chain) complete in
+  well under 5s each on the indexed traversal.
+
+### 4c. `git diff --check`
+
+Clean (0 warnings). The `core/canonical_structure_reconstructor.rb`
+file was normalized from CRLF to LF to make the Windows
+`git diff --check` whitespace check consistent and clean
+without changing the file semantics. All other modified
+files were already LF.
+
+---
+
+## 5. V1.8 RBZ
+
+- **Path**: `dist/SU-AI-Plugin.rbz` (overwritten by this dispatch)
+- **Size**: **1,071,551 bytes**
+- **Entries**: **69**
+- **SHA-256**: `7FBE090F6C491617CA5626FCAA60A5FB30555B66A8E8051D6C85C08F64670523`
+- **Packaged `html/app.js` SHA-256**:
+  `56878DD018A0DB6A1684CABE91EE84EB1426B295C7B1CF60F6A08F5D98353F2D`
+- **Packaged `html/index.html` SHA-256**:
+  `6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`
+- **Packaged `html/style.css` SHA-256**:
+  `3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`
+- All packaged dialog assets are byte-identical to the
+  in-tree source (per the existing smoke-test contract).
+
+---
+
+## 6. Commit + push plan
+
+- Single production commit on `dev/v1.8` with all SR18
+  corrections + new tests + updated RBZ.
+- One normal fast-forward push to `origin/dev/v1.8`.
+- No force-push, no rebase, no rewrite of shared history,
+  no `main` push/merge, no tag/release.
+
+---
+
+## 7. Gate
+
+- **AIPM_REVIEW: PENDING NARROW RECHECK** (this packet is
+  the bounded correction round; AIPM must recheck
+  SR18-01..SR18-08 specifically).
+- **CODEX_RISK_TRIGGER: NO** (frozen boundary untouched).
+- **OWNER_SU2020: NOT YET** (pending AIPM narrow recheck
+  PASS).
+- **V1.9: NOT STARTED**.
+
+After green: one normal fast-forward push of the
+assigned `dev/v1.8` as the complete-task submission. STOP
+and return control to AIPM for narrow recheck.

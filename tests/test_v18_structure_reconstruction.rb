@@ -884,3 +884,1190 @@ test 'V18-T15: long chain + many loops performance smoke' do
   assert elapsed < 10.0,
          "V18-T15: performance smoke budget 10s; got #{elapsed}s"
 end
+
+
+# ================================================================= = #
+# V18-SR01 — Ruby 2.2 source guard: Array#sum / Enumerable#sum
+# is Ruby 2.4+. SketchUp 2017 embeds Ruby 2.2.4. The V1.8
+# production code MUST NOT use Array#sum / Enumerable#sum.
+# Source-level static guard: scan the V1.8 production file
+# and assert NO call to `.sum` (with optional whitespace +
+# block/brace) is present in PRODUCTION paths.
+# ================================================================= = #
+
+test 'V18-SR01: V1.8 production has NO Array#sum / Enumerable#sum call' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  offenders = []
+  src.each_line do |line|
+    stripped = line.sub(/#.*$/, '')
+    cleaned = stripped.gsub(/"[^"]*"/, '').gsub(/'[^']*'/, '')
+    if cleaned =~ /\.sum\b/
+      offenders << line.strip
+    end
+  end
+  assert_equal [], offenders,
+               "V18-SR01: V1.8 production MUST NOT use .sum (Ruby 2.2 SU2017 compat); " \
+               "offenders: #{offenders.inspect}"
+end
+
+test 'V18-SR01: Array#sum undef still produces hole_count + region_area correctly' do
+  Array.send(:remove_method, :sum) if Array.method_defined?(:sum)
+  begin
+    result = v18_reconstruct([
+      [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+      [[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]]
+    ])
+    assert_equal 1, result['metrics']['hole_count'],
+                 "V18-SR01: hole_count must be 1 even with Array#sum removed"
+    assert_equal 1, result['metrics']['region_count'],
+                 "V18-SR01: region_count must be 1"
+    region = result['regions'].first
+    refute_nil region
+    expected_area = 100.0 - 16.0
+    assert (region['area_xy'] - expected_area).abs < 1.0e-6,
+           "V18-SR01: region_area must be outer - sum(holes)"
+  ensure
+    unless Array.method_defined?(:sum)
+      Array.send(:define_method, :sum) do |*args, &block|
+        acc = args[0] || 0
+        if block
+          each { |x| acc += block.call(x) }
+        else
+          each { |x| acc += x }
+        end
+        acc
+      end
+    end
+  end
+end
+
+# ================================================================= = #
+# V18-SR02 — coordinate_epsilon authority.
+# Per-loop flags live on loop['unresolved_flags'] (consistent
+# with V18-T09).
+# ================================================================= = #
+
+test 'V18-SR02: explicit coordinate_epsilon (1e-3) is used verbatim (no silent 1e-6)' do
+  graph = v18_build_graph(
+    [[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]],
+    coord_eps: 1.0e-6
+  )
+  graph['nodes'].first['world_coordinate'] = [0.0, 0.0, 5.0e-4]
+  result_default = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop_default = result_default['loops'].first
+  refute_nil loop_default
+  assert_includes Array(loop_default['unresolved_flags']),
+                  'non_planar_loop',
+                  "V18-SR02: default eps (1e-6) must flag z=5e-4 as non-planar"
+  assert_equal false, loop_default['valid_for_region'],
+               "V18-SR02: non_planar loop must NOT be valid_for_region"
+  graph2 = Marshal.load(Marshal.dump(graph))
+  graph2['nodes'].first['world_coordinate'] = [0.0, 0.0, 5.0e-4]
+  result_eps3 = CanonicalStructureReconstructor.reconstruct(
+    graph2, source_snapshot_id: 's', workspace_id: 'w',
+    coordinate_epsilon: 1.0e-3
+  )
+  loop_eps3 = result_eps3['loops'].first
+  refute_nil loop_eps3
+  refute_includes Array(loop_eps3['unresolved_flags']),
+                  'non_planar_loop',
+                  "V18-SR02: 1e-3 eps MUST honor captured non-default tolerance"
+  assert_equal true, loop_eps3['valid_for_region'],
+               "V18-SR02: planar loop under 1e-3 must be valid_for_region"
+  assert_equal 1.0e-3, loop_eps3['coordinate_epsilon'],
+               "V18-SR02: loop.coordinate_epsilon must equal the explicit 1e-3"
+  assert_equal 1.0e-6, loop_default['coordinate_epsilon'],
+               "V18-SR02: default loop.coordinate_epsilon must equal the per-node 1e-6"
+end
+
+test 'V18-SR02: explicit coordinate_epsilon (1e-5) tightens degenerate-loop detection' do
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => [
+      {'canonical_node_id' => 'cn-a', 'world_coordinate' => [0.0, 0.0, 0.0],
+       'endpoint_keys' => [], 'derived_edge_ids' => [],
+       'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+       'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+       'membership_count' => 1},
+      {'canonical_node_id' => 'cn-b', 'world_coordinate' => [1.0e-5, 0.0, 0.0],
+       'endpoint_keys' => [], 'derived_edge_ids' => [],
+       'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+       'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+       'membership_count' => 1},
+      {'canonical_node_id' => 'cn-c', 'world_coordinate' => [0.0, 2.0e-6, 0.0],
+       'endpoint_keys' => [], 'derived_edge_ids' => [],
+       'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+       'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+       'membership_count' => 1}
+    ],
+    'edges' => [
+      {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-a', 'node_b_id' => 'cn-b',
+       'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+       'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+       'repair_action_id' => '',
+       'world_endpoints' => [[0.0, 0.0, 0.0], [1.0e-5, 0.0, 0.0]],
+       'layer_name' => 'L0', 'unresolved_flags' => []},
+      {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-b', 'node_b_id' => 'cn-c',
+       'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+       'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+       'repair_action_id' => '',
+       'world_endpoints' => [[1.0e-5, 0.0, 0.0], [0.0, 2.0e-6, 0.0]],
+       'layer_name' => 'L0', 'unresolved_flags' => []},
+      {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-a',
+       'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+       'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+       'repair_action_id' => '',
+       'world_endpoints' => [[0.0, 2.0e-6, 0.0], [0.0, 0.0, 0.0]],
+       'layer_name' => 'L0', 'unresolved_flags' => []}
+    ],
+    'adjacency' => {'cn-a' => ['cn-b', 'cn-c'], 'cn-b' => ['cn-a', 'cn-c'],
+                    'cn-c' => ['cn-b', 'cn-a']},
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr02-tiny'
+  }
+  result_default = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop_default = result_default['loops'].first
+  refute_nil loop_default
+  refute_includes Array(loop_default['unresolved_flags']),
+                  'degenerate_loop',
+                  "V18-SR02: under default 1e-6 the tiny area 1e-11 must NOT be flagged"
+  result_eps5 = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w',
+    coordinate_epsilon: 1.0e-5
+  )
+  loop_eps5 = result_eps5['loops'].first
+  refute_nil loop_eps5
+  assert_includes Array(loop_eps5['unresolved_flags']),
+                  'degenerate_loop',
+                  "V18-SR02: under 1e-5 the tiny area 1e-11 must be flagged degenerate"
+  assert_equal 1.0e-5, loop_eps5['coordinate_epsilon'],
+               "V18-SR02: loop.coordinate_epsilon must equal the explicit 1e-5"
+  assert_equal 1.0e-6, loop_default['coordinate_epsilon'],
+               "V18-SR02: default loop.coordinate_epsilon must equal the per-node 1e-6"
+end
+
+test 'V18-SR02: silent 1e-6 fallback ONLY when no captured non-default eps is available' do
+  graph = v18_build_graph(
+    [[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]]
+  )
+  graph['nodes'].each { |n| n['coordinate_epsilon'] = nil }
+  graph['nodes'].first['world_coordinate'] = [0.0, 0.0, 5.0e-7]
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop = result['loops'].first
+  refute_nil loop
+  refute_includes Array(loop['unresolved_flags']),
+                  'non_planar_loop',
+                  "V18-SR02: fallback 1e-6 must permit Z range 5e-7"
+  assert_equal 1.0e-6, loop['coordinate_epsilon'],
+               "V18-SR02: fallback path MUST emit 1e-6 when no eps authority is available"
+end
+
+
+# ================================================================= = #
+# V18-SR04 — O(V + E) traversal via deterministic edge indexes.
+# ================================================================= = #
+
+test 'V18-SR04: no comp.combination(2) in V1.8 production traversal' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  offenders = []
+  src.each_line.with_index(1) do |line, lineno|
+    stripped = line.sub(/#.*$/, '')
+    cleaned = stripped.gsub(/"[^"]*"/, '').gsub(/'[^']*'/, '')
+    if cleaned =~ /comp\.combination\(2\)/
+      offenders << "#{lineno}: #{line.strip}"
+    end
+  end
+  assert_equal [], offenders,
+               "V18-SR04: V1.8 production MUST NOT use comp.combination(2); " \
+               "offenders: #{offenders.inspect}"
+end
+
+test 'V18-SR04: parallel edges between the same node pair -> conservative invalid' do
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [1.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [0.5, 1.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-1b', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1b',
+     'source_occurrence_id' => 'o-1b', 'source_occurrence_ids' => ['o-1b'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[1.0, 0.0, 0.0], [0.5, 1.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.5, 1.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => {'cn-1' => ['cn-2', 'cn-3'], 'cn-2' => ['cn-1', 'cn-3'],
+                    'cn-3' => ['cn-2', 'cn-1']},
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr04-parallel'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal 0, result['metrics']['closed_loop_count'],
+               "V18-SR04: parallel edges MUST NOT mint a loop"
+  assert_equal 0, result['metrics']['open_chain_count'],
+               "V18-SR04: parallel edges MUST NOT mint a chain"
+  parallel_present = result['unresolved_issues'].any? { |r|
+    r.to_s.start_with?('parallel_edges_unsupported:')
+  }
+  assert parallel_present,
+         "V18-SR04: must report parallel_edges_unsupported; " \
+         "got #{result['unresolved_issues'].inspect}"
+end
+
+test 'V18-SR04: indexed traversal correctness -- 100 isolated rectangles' do
+  loops = (0...100).map do |i|
+    bx = (i % 10) * 200.0
+    by = (i / 10) * 200.0
+    [
+      [bx + 0.0, by + 0.0],
+      [bx + 10.0, by + 0.0],
+      [bx + 10.0, by + 10.0],
+      [bx + 0.0, by + 10.0]
+    ]
+  end
+  graph = v18_build_graph(loops, coord_eps: 1.0e-6)
+  started_at = Time.now
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  elapsed = Time.now - started_at
+  assert_equal 100, result['metrics']['component_count']
+  assert_equal 100, result['metrics']['closed_loop_count']
+  assert_equal 100, result['metrics']['region_count']
+  refute result['unresolved_issues'].any? { |r|
+    r.to_s.start_with?('parallel_edges_unsupported:')
+  }, "V18-SR04: isolated rectangles must NOT report parallel_edges"
+  assert elapsed < 5.0,
+         "V18-SR04: 100-rectangle traversal must finish in <5s; " \
+         "got #{elapsed}s"
+end
+
+test 'V18-SR04: chain walk uses incident index (200-node chain)' do
+  nodes = (1..200).map do |i|
+    {'canonical_node_id' => "cn-#{i}",
+     'world_coordinate' => [i.to_f, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  end
+  edges = (1...200).map do |i|
+    {'canonical_edge_id' => "ce-#{i}",
+     'node_a_id' => "cn-#{i}", 'node_b_id' => "cn-#{i + 1}",
+     'origin_kind' => 'source_derived', 'derived_edge_id' => "d-#{i}",
+     'source_occurrence_id' => "o-#{i}",
+     'source_occurrence_ids' => ["o-#{i}"],
+     'repair_action_id' => '',
+     'world_endpoints' => [[i.to_f, 0.0, 0.0], [(i + 1).to_f, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  end
+  adj = {}
+  nodes.each { |n| adj[n['canonical_node_id']] = [] }
+  edges.each do |e|
+    (adj[e['node_a_id']] ||= []) << e['node_b_id']
+    (adj[e['node_b_id']] ||= []) << e['node_a_id']
+  end
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adj,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr04-long-chain'
+  }
+  started_at = Time.now
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  elapsed = Time.now - started_at
+  assert_equal 1, result['metrics']['component_count']
+  assert_equal 1, result['metrics']['open_chain_count']
+  assert_equal 200, result['chains'].first['node_ids'].length
+  assert_equal 199, result['chains'].first['edge_ids'].length
+  assert elapsed < 5.0,
+         "V18-SR04: 200-node chain walk must finish in <5s; " \
+         "got #{elapsed}s"
+end
+
+
+# ================================================================= = #
+# V18-SR03 — loop conflict detection for NON-ADJACENT loop
+# segments. Four kinds:
+#   1. proper interior crossing  -> self_intersection
+#   2. endpoint on unrelated segment interior (T-junction-like)
+#      -> loop_endpoint_on_segment
+#   3. collinear interior overlap -> loop_collinear_overlap
+# Adjacent pairs (including closure adjacency) MUST be skipped.
+# ================================================================= = #
+
+test 'V18-SR03: bow-tie proper crossing -> self_intersection' do
+  # X-shaped bow-tie: (0,0)->(10,10)->(10,0)->(0,10)->(0,0).
+  # Non-adjacent segments (s0=AB diagonal, s2=CD opposite
+  # diagonal) cross at (5,5).
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 10.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 10.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 10.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 10.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 10.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => {'cn-1' => ['cn-2', 'cn-4'], 'cn-2' => ['cn-1', 'cn-3'],
+                    'cn-3' => ['cn-2', 'cn-4'], 'cn-4' => ['cn-3', 'cn-1']},
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr03-bowtie'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop = result['loops'].first
+  refute_nil loop
+  assert_includes Array(loop['unresolved_flags']),
+                  'self_intersection',
+                  "V18-SR03: bow-tie must flag self_intersection; " \
+                  "got #{loop['unresolved_flags']}"
+  assert_equal false, loop['valid_for_region'],
+               "V18-SR03: self-intersecting loop must NOT be valid_for_region"
+end
+
+test 'V18-SR03: endpoint on segment interior (T-junction-like) -> loop_endpoint_on_segment' do
+  # 6-vertex polygon A=(0,0) B=(10,0) X=(5,0) Y=(5,5)
+  # C=(10,10) D=(0,10). Loop: A-B-X-Y-C-D-A.
+  # Segment XY has endpoint X=(5,0) which lies on AB's
+  # interior (a T-junction-like touch).
+  nodes = [
+    {'canonical_node_id' => 'cn-a', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-b', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-x', 'world_coordinate' => [5.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-y', 'world_coordinate' => [5.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-c', 'world_coordinate' => [10.0, 10.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-d', 'world_coordinate' => [0.0, 10.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-a', 'node_b_id' => 'cn-b',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-b', 'node_b_id' => 'cn-x',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-x', 'node_b_id' => 'cn-y',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[5.0, 0.0, 0.0], [5.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-y', 'node_b_id' => 'cn-c',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[5.0, 5.0, 0.0], [10.0, 10.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-5', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-d',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-5',
+     'source_occurrence_id' => 'o-5', 'source_occurrence_ids' => ['o-5'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 10.0, 0.0], [0.0, 10.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-6', 'node_a_id' => 'cn-d', 'node_b_id' => 'cn-a',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-6',
+     'source_occurrence_id' => 'o-6', 'source_occurrence_ids' => ['o-6'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 10.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => {
+      'cn-a' => ['cn-b', 'cn-d'], 'cn-b' => ['cn-a', 'cn-x'],
+      'cn-x' => ['cn-b', 'cn-y'], 'cn-y' => ['cn-x', 'cn-c'],
+      'cn-c' => ['cn-y', 'cn-d'], 'cn-d' => ['cn-c', 'cn-a']
+    },
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr03-tjunction'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop = result['loops'].first
+  refute_nil loop
+  assert_includes Array(loop['unresolved_flags']),
+                  'loop_endpoint_on_segment',
+                  "V18-SR03: T-junction-like must flag loop_endpoint_on_segment; " \
+                  "got #{loop['unresolved_flags']}"
+end
+
+test 'V18-SR03: collinear interior overlap -> loop_collinear_overlap' do
+  # 6-vertex polygon where two NON-ADJACENT edges are collinear
+  # and overlap on their interiors.
+  # A=(0,0) B=(10,0) C=(10,5) D=(3,5) E=(3,0) F=(-1,0).
+  # Loop: A-B-C-D-E-F-A.
+  # AB=(0,0)-(10,0) y=0 x=[0,10]. EF=(3,0)-(-1,0) y=0 x=[-1,3].
+  # Both collinear (y=0); overlap on x=[0,3] = interior of
+  # both. FA-AB is closure-adjacent (share A). Skipped.
+  nodes = [
+    {'canonical_node_id' => 'cn-a', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-b', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-c', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-d', 'world_coordinate' => [3.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-e', 'world_coordinate' => [3.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-f', 'world_coordinate' => [-1.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-a', 'node_b_id' => 'cn-b',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-b', 'node_b_id' => 'cn-c',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-d',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [3.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-d', 'node_b_id' => 'cn-e',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[3.0, 5.0, 0.0], [3.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-5', 'node_a_id' => 'cn-e', 'node_b_id' => 'cn-f',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-5',
+     'source_occurrence_id' => 'o-5', 'source_occurrence_ids' => ['o-5'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[3.0, 0.0, 0.0], [-1.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-6', 'node_a_id' => 'cn-f', 'node_b_id' => 'cn-a',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-6',
+     'source_occurrence_id' => 'o-6', 'source_occurrence_ids' => ['o-6'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => {
+      'cn-a' => ['cn-b', 'cn-f'], 'cn-b' => ['cn-a', 'cn-c'],
+      'cn-c' => ['cn-b', 'cn-d'], 'cn-d' => ['cn-c', 'cn-e'],
+      'cn-e' => ['cn-d', 'cn-f'], 'cn-f' => ['cn-e', 'cn-a']
+    },
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr03-collinear'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop = result['loops'].first
+  refute_nil loop
+  assert_includes Array(loop['unresolved_flags']),
+                  'loop_collinear_overlap',
+                  "V18-SR03: collinear interior overlap must flag loop_collinear_overlap; " \
+                  "got #{loop['unresolved_flags']}"
+end
+
+test 'V18-SR03: normal rectangle -> no false positives' do
+  graph = v18_build_graph([[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]]])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  loop = result['loops'].first
+  refute_nil loop
+  refute_includes Array(loop['unresolved_flags']), 'self_intersection',
+                  "V18-SR03: normal rectangle MUST NOT flag self_intersection"
+  refute_includes Array(loop['unresolved_flags']), 'loop_endpoint_on_segment',
+                  "V18-SR03: normal rectangle MUST NOT flag loop_endpoint_on_segment"
+  refute_includes Array(loop['unresolved_flags']), 'loop_collinear_overlap',
+                  "V18-SR03: normal rectangle MUST NOT flag loop_collinear_overlap"
+  refute_includes Array(loop['unresolved_flags']), 'loop_geometric_touch',
+                  "V18-SR03: normal rectangle MUST NOT flag loop_geometric_touch"
+  assert_equal true, loop['valid_for_region'],
+               "V18-SR03: normal rectangle MUST be valid_for_region"
+end
+
+
+# ================================================================= = #
+# V18-SR08 — adjacency validation.
+# ================================================================= = #
+
+def v18_sr08_graph_with_adj(adjacency_override)
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => adjacency_override,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr08'
+  }
+end
+
+test 'V18-SR08: unknown adjacency key -> adjacency_mismatch:unknown_key' do
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1'],
+    'cn-ghost' => ['cn-1']
+  }
+  graph = v18_sr08_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-SR08: unknown adjacency key MUST yield FAILED state"
+  assert result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch:unknown_key:cn-ghost')
+  }, "V18-SR08: must report invalid_graph:adjacency_mismatch:unknown_key:cn-ghost"
+end
+
+test 'V18-SR08: unknown neighbor -> adjacency_mismatch:unknown_neighbor' do
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4', 'cn-phantom'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  graph = v18_sr08_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state']
+  assert result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch:unknown_neighbor:cn-1->cn-phantom')
+  }, "V18-SR08: must report unknown_neighbor"
+end
+
+test 'V18-SR08: missing edge-backed neighbor -> adjacency_mismatch:missing_neighbor' do
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1'],
+    'cn-3' => ['cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  graph = v18_sr08_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state']
+  assert result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch:missing_neighbor:')
+  }, "V18-SR08: must report missing_neighbor"
+end
+
+test 'V18-SR08: extra neighbor not backed by edge -> adjacency_mismatch:extra_neighbor' do
+  adj = {
+    'cn-1' => ['cn-2', 'cn-3', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-1', 'cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  graph = v18_sr08_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state']
+  assert result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch:extra_neighbor:')
+  }, "V18-SR08: must report extra_neighbor"
+end
+
+test 'V18-SR08: consistent adjacency -> no mismatch reason' do
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  graph = v18_sr08_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-SR08: consistent adjacency MUST NOT be FAILED"
+  refute result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch')
+  }, "V18-SR08: consistent adjacency MUST NOT report mismatch"
+  assert_equal 1, result['metrics']['closed_loop_count']
+end
+
+
+# ================================================================= = #
+# V18-SR07 — deep immutability of published normal
+# StructureReconstructionResult.
+# ================================================================= = #
+
+test 'V18-SR07: published normal result is fully deep-frozen (outer + nested)' do
+  graph = v18_build_graph([
+    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+    [[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]]
+  ])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  # Outer hash is frozen.
+  assert result.frozen?, "V18-SR07: outer result hash MUST be frozen"
+  # Top-level collection fields are frozen Arrays.
+  assert result['chains'].frozen?, "V18-SR07: result['chains'] MUST be frozen"
+  assert result['loops'].frozen?, "V18-SR07: result['loops'] MUST be frozen"
+  assert result['regions'].frozen?, "V18-SR07: result['regions'] MUST be frozen"
+  assert result['unresolved_issues'].frozen?,
+         "V18-SR07: result['unresolved_issues'] MUST be frozen"
+  assert result['reasons'].frozen?, "V18-SR07: result['reasons'] MUST be frozen"
+  assert result['metrics'].frozen?, "V18-SR07: result['metrics'] MUST be frozen"
+  # Each chain / loop / region hash is itself frozen.
+  result['chains'].each do |c|
+    assert c.frozen?, "V18-SR07: each chain hash MUST be frozen"
+    assert c['node_ids'].frozen?, "V18-SR07: chain['node_ids'] MUST be frozen"
+    assert c['edge_ids'].frozen?, "V18-SR07: chain['edge_ids'] MUST be frozen"
+    assert Array(c['source_occurrence_ids']).frozen?,
+           "V18-SR07: chain['source_occurrence_ids'] MUST be frozen"
+    assert Array(c['layer_names']).frozen?,
+           "V18-SR07: chain['layer_names'] MUST be frozen"
+    assert Array(c['unresolved_flags']).frozen?,
+           "V18-SR07: chain['unresolved_flags'] MUST be frozen"
+  end
+  result['loops'].each do |l|
+    assert l.frozen?, "V18-SR07: each loop hash MUST be frozen"
+    assert l['node_ids'].frozen?, "V18-SR07: loop['node_ids'] MUST be frozen"
+    assert l['edge_ids'].frozen?, "V18-SR07: loop['edge_ids'] MUST be frozen"
+    assert l['world_coordinates'].frozen?,
+           "V18-SR07: loop['world_coordinates'] MUST be frozen"
+    # Each coordinate tuple itself is a frozen Array.
+    Array(l['world_coordinates']).each do |coord|
+      assert coord.frozen?,
+             "V18-SR07: each loop world_coordinate tuple MUST be frozen"
+    end
+    assert l['source_occurrence_ids'].frozen?,
+           "V18-SR07: loop['source_occurrence_ids'] MUST be frozen"
+    assert l['layer_names'].frozen?,
+           "V18-SR07: loop['layer_names'] MUST be frozen"
+    assert l['unresolved_flags'].frozen?,
+           "V18-SR07: loop['unresolved_flags'] MUST be frozen"
+  end
+  result['regions'].each do |r|
+    assert r.frozen?, "V18-SR07: each region hash MUST be frozen"
+    assert r['hole_loop_ids'].frozen?,
+           "V18-SR07: region['hole_loop_ids'] MUST be frozen"
+  end
+end
+
+test 'V18-SR07: nested mutation attempts raise FrozenError and do not change digest' do
+  graph = v18_build_graph([
+    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+  ])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  digest_before = result['digest'].to_s
+  # Try mutating outer hash.
+  raised = false
+  begin
+    result['state'] = 'HACKED'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised, "V18-SR07: outer hash mutation MUST raise"
+  # Try mutating inner loop['node_ids'].
+  loop = result['loops'].first
+  refute_nil loop
+  raised = false
+  begin
+    loop['node_ids'] << 'hacked'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised, "V18-SR07: loop['node_ids'] mutation MUST raise"
+  # Try mutating loop['world_coordinates'][0].
+  raised = false
+  begin
+    loop['world_coordinates'][0][0] = 999.0
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised, "V18-SR07: world_coordinates[0] mutation MUST raise"
+  # Try mutating result['unresolved_issues'].
+  raised = false
+  begin
+    result['unresolved_issues'] << 'hacked_reason'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised, "V18-SR07: result['unresolved_issues'] mutation MUST raise"
+  # Digest must NOT have changed.
+  assert_equal digest_before, result['digest'],
+               "V18-SR07: digest MUST NOT change after failed mutations"
+end
+
+test 'V18-SR07: empty / failed result is also fully deep-frozen' do
+  # Invalid graph (missing node ref) -> _empty_result.
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => [
+      {'canonical_node_id' => 'cn-a', 'world_coordinate' => [0.0, 0.0, 0.0],
+       'endpoint_keys' => [], 'derived_edge_ids' => [],
+       'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+       'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+       'membership_count' => 1}
+    ],
+    'edges' => [
+      {'canonical_edge_id' => 'ce-bad', 'node_a_id' => 'cn-a',
+       'node_b_id' => 'cn-missing',
+       'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-bad',
+       'source_occurrence_id' => 'o-bad',
+       'source_occurrence_ids' => ['o-bad'],
+       'repair_action_id' => '',
+       'world_endpoints' => [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+       'layer_name' => 'L0', 'unresolved_flags' => []}
+    ],
+    'adjacency' => {'cn-a' => ['cn-missing']},
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr07-failed'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert result.frozen?, "V18-SR07: failed result outer hash MUST be frozen"
+  assert result['chains'].frozen?, "V18-SR07: failed result chains MUST be frozen"
+  assert result['loops'].frozen?, "V18-SR07: failed result loops MUST be frozen"
+  assert result['regions'].frozen?, "V18-SR07: failed result regions MUST be frozen"
+  assert result['metrics'].frozen?,
+         "V18-SR07: failed result metrics MUST be frozen"
+  assert result['unresolved_issues'].frozen?,
+         "V18-SR07: failed result unresolved_issues MUST be frozen"
+end
+
+
+# ================================================================= = #
+# V18-SR06 — truthful state.
+#   - invalid graph => FAILED
+#   - any unresolved/upstream warning => READY_WITH_WARNINGS
+#   - warning-free + content => READY
+#   - branch-only => READY_WITH_WARNINGS (NOT READY)
+# ================================================================= = #
+
+test 'V18-SR06: branch-only component -> READY_WITH_WARNINGS (NOT READY)' do
+  # A Y-shape: 3 edges meeting at one center vertex. This
+  # is a branching component (no simple chain / no simple
+  # loop). The component must NOT be classified as a chain
+  # or loop.
+  nodes = [
+    {'canonical_node_id' => 'cn-c', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-a', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-b', 'world_coordinate' => [-10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-d', 'world_coordinate' => [0.0, 10.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-ca', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-a',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-ca',
+     'source_occurrence_id' => 'o-ca', 'source_occurrence_ids' => ['o-ca'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-cb', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-b',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-cb',
+     'source_occurrence_id' => 'o-cb', 'source_occurrence_ids' => ['o-cb'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [-10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-cd', 'node_a_id' => 'cn-c', 'node_b_id' => 'cn-d',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-cd',
+     'source_occurrence_id' => 'o-cd', 'source_occurrence_ids' => ['o-cd'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => {
+      'cn-c' => ['cn-a', 'cn-b', 'cn-d'],
+      'cn-a' => ['cn-c'], 'cn-b' => ['cn-c'], 'cn-d' => ['cn-c']
+    },
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr06-branch-only'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_READY, result['state'],
+               "V18-SR06: branch-only component MUST NOT be READY; got #{result['state']}"
+  assert_equal CanonicalStructureReconstructor::STATE_READY_WITH_WARNINGS, result['state'],
+               "V18-SR06: branch-only MUST be READY_WITH_WARNINGS; got #{result['state']}"
+  assert result['unresolved_issues'].include?('branching_component'),
+         "V18-SR06: branch-only MUST carry branching_component reason; " \
+         "got #{result['unresolved_issues'].inspect}"
+end
+
+test 'V18-SR06: upstream-warning-only -> READY_WITH_WARNINGS (NOT READY)' do
+  # A clean simple rectangle PLUS an upstream topology issue
+  # propagated from V1.7. The result must surface the
+  # upstream warning even though the geometry is clean.
+  graph = v18_build_graph([[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]])
+  graph['unresolved_topology_issues'] = ['v17_synthetic_propagated_issue']
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_READY, result['state'],
+               "V18-SR06: upstream-warning-only MUST NOT be READY; got #{result['state']}"
+  assert_equal CanonicalStructureReconstructor::STATE_READY_WITH_WARNINGS, result['state'],
+               "V18-SR06: upstream-warning-only MUST be READY_WITH_WARNINGS; got #{result['state']}"
+  upstream_present = result['unresolved_issues'].any? { |u|
+    u.to_s.start_with?('upstream_topology_issue:')
+  }
+  assert upstream_present,
+         "V18-SR06: upstream warning MUST be propagated; got #{result['unresolved_issues'].inspect}"
+end
+
+test 'V18-SR06: clean rectangle (no warnings) -> READY' do
+  graph = v18_build_graph([[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_READY, result['state'],
+               "V18-SR06: clean rectangle MUST be READY; got #{result['state']}"
+  assert_empty result['unresolved_issues'],
+               "V18-SR06: clean rectangle MUST have empty unresolved_issues; " \
+               "got #{result['unresolved_issues'].inspect}"
+end
+
+test 'V18-SR06: invalid graph -> FAILED' do
+  # Missing node reference -> validation fail.
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => [
+      {'canonical_node_id' => 'cn-a', 'world_coordinate' => [0.0, 0.0, 0.0],
+       'endpoint_keys' => [], 'derived_edge_ids' => [],
+       'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+       'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+       'membership_count' => 1}
+    ],
+    'edges' => [
+      {'canonical_edge_id' => 'ce-bad', 'node_a_id' => 'cn-a',
+       'node_b_id' => 'cn-missing',
+       'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-bad',
+       'source_occurrence_id' => 'o-bad',
+       'source_occurrence_ids' => ['o-bad'],
+       'repair_action_id' => '',
+       'world_endpoints' => [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+       'layer_name' => 'L0', 'unresolved_flags' => []}
+    ],
+    'adjacency' => {'cn-a' => ['cn-missing']},
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr06-invalid'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-SR06: invalid graph MUST be FAILED; got #{result['state']}"
+end
+
+test 'V18-SR06: invalid adjacency (adjacency_mismatch) -> FAILED' do
+  # SR18-08 produces STATE_FAILED when adjacency mismatches
+  # edge inventory. SR18-06 truthful state must reflect
+  # this as FAILED, not READY_WITH_WARNINGS.
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1'],
+    'cn-ghost' => ['cn-1']
+  }
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adj,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-sr06-failed'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-SR06: adjacency_mismatch MUST be FAILED; got #{result['state']}"
+end

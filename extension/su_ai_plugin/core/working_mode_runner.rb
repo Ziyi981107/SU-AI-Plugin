@@ -563,6 +563,11 @@ module SUAnalysis
             end
           end
           @duplicate_repair_summary = summary
+          # SR18-05: duplicate-repair mutation changes the
+          # derived geometry; invalidate the V1.8 cached
+          # structure reconstruction so the next compute sees
+          # the post-batch graph.
+          _invalidate_v18_cache
         rescue StandardError => e
           # Defensive: any uncaught exception leaves the workspace
           # intact (we don't touch @current_workspace) and records
@@ -576,6 +581,10 @@ module SUAnalysis
             'last_action_status'     => 'failed',
             'last_error'             => "#{e.class}: #{e.message}"
           }.freeze
+          # SR18-05: even a failed duplicate-repair run may
+          # leave partial state; invalidate the V1.8 cache so
+          # the next compute reads the freshest workspace.
+          _invalidate_v18_cache
         end
         snapshot
       end
@@ -870,6 +879,9 @@ module SUAnalysis
           # shows REVIEW_REQUIRED instead of pretending the
           # batch is still pending.
           @planar_normalization_proposal = nil
+          # SR18-05: workspace publication invalidated the
+          # derived geometry; clear the V1.8 cache.
+          _invalidate_v18_cache
           return snapshot
         end
         # Applied successfully. Refresh the cached proposal
@@ -878,6 +890,9 @@ module SUAnalysis
         @current_workspace = result[:post_workspace]
         @planar_normalization_audit = _planar_normalization_audit_to_jsonable(result[:audit])
         @planar_normalization_proposal = nil
+        # SR18-05: planar apply mutated derived geometry;
+        # invalidate the V1.8 cached structure reconstruction.
+        _invalidate_v18_cache
         snapshot
       end
 
@@ -1141,21 +1156,25 @@ module SUAnalysis
             # Transition the workspace to :failed WITHOUT
             # dropping the handle registry (explicit Discard
             # still works). Use the existing
-            # _invalidate_to_failed_with_reason seam.
+            # _invalidate_to_failed_with_reason seam (which
+            # also clears the V1.8 cache per SR18-05).
             _invalidate_to_failed_with_reason(GapBridgeExecutor::REASON_CANONICAL_POST_VALIDATE_FAIL)
             return snapshot
           end
+          # SR18-05: gap-repair applied successfully. The
+          # derived geometry has been mutated; invalidate the
+          # V1.8 cached structure reconstruction so the next
+          # compute sees the post-apply graph.
+          _invalidate_v18_cache
           snapshot
         else
           # :failed: workspace may already have transitioned.
           @current_workspace = result['post_workspace'] if result['post_workspace']
           @topology_repair_audit = stringify_topology_repair_audit(result['audit'])
           @topology_repair_proposal = nil
-          # V1.8: a successful gap apply mutates the derived
-          # geometry; invalidate the cached structure so the
-          # next compute_structure_reconstruction sees the
-          # post-apply graph.
-          @structure_reconstruction_result = nil
+          # SR18-05: failed gap-repair also invalidates the
+          # V1.8 cache (workspace state may have changed).
+          _invalidate_v18_cache
           snapshot
         end
       end
@@ -1258,13 +1277,27 @@ module SUAnalysis
           @structure_reconstruction_result = nil
           return snapshot
         end
+        # SR18-02 coordinate_epsilon authority:
+        # extract the captured coordinate_epsilon from the
+        # tolerance (if finite + positive) and thread it
+        # into the reconstructor. Do NOT silently fall back
+        # to 1e-6 when a valid captured non-default epsilon
+        # is present (e.g. 1e-3 or 1e-5). The reconstructor
+        # resolves the final eps from (1) this kwarg, (2) the
+        # graph's per-node eps, (3) 1e-6 fallback.
+        coord_eps_kw = nil
+        if tol.respond_to?(:coordinate_epsilon)
+          ce = tol.coordinate_epsilon.to_f
+          coord_eps_kw = ce if ce.finite? && ce > 0
+        end
         # Blueprint §15.2 step 8: run the pure reconstructor.
         result = SUAnalysis::Core::CanonicalStructureReconstructor.reconstruct(
           graph,
           source_snapshot_id: @current_source.respond_to?(:snapshot_id) ?
                                 @current_source.snapshot_id.to_s : '',
           workspace_id: @current_workspace.respond_to?(:workspace_id) ?
-                          @current_workspace.workspace_id.to_s : ''
+                          @current_workspace.workspace_id.to_s : '',
+          coordinate_epsilon: coord_eps_kw
         )
         # Blueprint §15.2 step 9: cache JSON-safe immutable
         # result. The reconstructor already returns a frozen
@@ -2432,6 +2465,24 @@ module SUAnalysis
         )
         @current_workspace = new_ws
         @duplicate_repair_summary = nil
+        # SR18-05: any new workspace publication that changes
+        # derived geometry (including this :failed transition)
+        # invalidates the V1.8 cached structure reconstruction.
+        _invalidate_v18_cache
+      end
+
+      # SR18-05: V1.8 cache invalidation seam. Called from
+      # every code path that publishes a new workspace or
+      # mutates the derived geometry:
+      #   - prepare / rebuild / discard / reset_for_tests
+      #   - duplicate-repair mutation (success or failure)
+      #   - planar-normalization apply (success or failure)
+      #   - gap-repair apply (success / failed / uncertain)
+      #   - _invalidate_to_failed_with_reason
+      #   - any new workspace publication that changes
+      #     derived geometry
+      def _invalidate_v18_cache
+        @structure_reconstruction_result = nil
       end
 
       # Test hook: force-clear the runner state. NOT for

@@ -40,6 +40,8 @@
 require 'digest'
 require 'set'
 
+require_relative 'segment_conflict'
+
 module SUAnalysis
   module Core
     module CanonicalStructureReconstructor
@@ -58,13 +60,18 @@ module SUAnalysis
       REASON_MISSING_NODE_REFERENCE   = 'missing_node_reference'.freeze
       REASON_DUPLICATE_CANONICAL_EDGE_ID = 'duplicate_canonical_edge_id'.freeze
       REASON_SELF_LOOP_EDGE           = 'self_loop_edge'.freeze
+      REASON_ADJACENCY_MISMATCH       = 'invalid_graph:adjacency_mismatch'.freeze
       REASON_UPSTREAM_TOPOLOGY_ISSUE  = 'upstream_topology_issue'.freeze
       REASON_BRANCHING_COMPONENT      = 'branching_component'.freeze
       REASON_INVALID_COMPONENT        = 'invalid_component'.freeze
+      REASON_PARALLEL_EDGES           = 'parallel_edges_unsupported'.freeze
       REASON_CHAIN_TRAVERSAL_FAILED   = 'chain_traversal_failed'.freeze
       REASON_LOOP_TRAVERSAL_FAILED    = 'loop_traversal_failed'.freeze
       REASON_REPEATED_VERTEX          = 'repeated_vertex'.freeze
       REASON_SELF_INTERSECTION        = 'self_intersection'.freeze
+      REASON_LOOP_ENDPOINT_ON_SEGMENT = 'loop_endpoint_on_segment'.freeze
+      REASON_LOOP_COLLINEAR_OVERLAP   = 'loop_collinear_overlap'.freeze
+      REASON_LOOP_GEOMETRIC_TOUCH     = 'loop_geometric_touch'.freeze
       REASON_NON_PLANAR_LOOP          = 'non_planar_loop'.freeze
       REASON_DEGENERATE_LOOP          = 'degenerate_loop'.freeze
       REASON_LOOP_BOUNDARY_INTERSECTION = 'loop_boundary_intersection'.freeze
@@ -86,9 +93,70 @@ module SUAnalysis
       # points can enclose when separated by coord_eps. Tests
       # prove exact values.
       def _area_eps(coord_eps)
-        ee = coord_eps.to_f
-        ee = 1.0e-6 unless ee.finite? && ee > 0
+        ee = _safe_eps(coord_eps)
         ee * ee
+      end
+
+      # SR18-02: coordinate_epsilon authority.
+      # Safe-eps normalizer: finite + positive or fall back
+      # to 1e-6. NEVER silently fall back when caller already
+      # supplied a finite/positive value (including a
+      # non-default captured tolerance such as 1e-3 or 1e-5).
+      def _safe_eps(coord_eps)
+        ee = coord_eps.to_f
+        if ee.finite? && ee > 0
+          ee
+        else
+          1.0e-6
+        end
+      end
+
+      # Resolve ONE coordinate_epsilon for the whole
+      # reconstruction (SR18-02). Authority order:
+      #   1. explicit `coordinate_epsilon:` keyword argument
+      #      (V1.8 WorkingModeRunner integration captures
+      #      `tol.coordinate_epsilon` and passes it in);
+      #   2. per-node `coordinate_epsilon` carried by the
+      #      canonical graph nodes (only if finite, positive,
+      #      and ALL canonical nodes agree);
+      #   3. graph.digest-side metadata (rare, defensive);
+      #   4. hard-coded 1e-6 fallback (defensive only --
+      #      asserted NEVER reached when a valid captured
+      #      non-default epsilon is present in the caller).
+      def _resolve_coordinate_eps(graph_h, eps_kw)
+        kw = _safe_eps(eps_kw) if eps_kw.is_a?(Numeric)
+        return kw if kw.is_a?(Numeric) && kw > 0 && kw != 1.0e-6
+        # Try per-node eps from canonical graph nodes (Hash
+        # form, read from the graph passed in).
+        node_list = if graph_h.is_a?(CanonicalGeometryGraph)
+                      graph_h.nodes
+                    else
+                      Array(graph_h[:nodes] || graph_h['nodes'])
+                    end
+        node_eps = []
+        node_list.each do |n|
+          h = n.is_a?(Hash) ? n : (n.respond_to?(:to_h) ? n.to_h : {})
+          v = h['coordinate_epsilon']
+          next if v.nil?
+          f = v.to_f
+          node_eps << f if f.finite? && f > 0
+        end
+        if node_eps.any?
+          uniq = node_eps.uniq
+          if uniq.length == 1
+            return _safe_eps(uniq.first)
+          end
+          # Conflicting per-node eps: pick the median
+          # (deterministic) and document the disagreement.
+          sorted = node_eps.sort
+          median = sorted[sorted.length / 2]
+          return _safe_eps(median)
+        end
+        # Defensive fallback. SR18-02 calls this the
+        # `silent_1e6_fallback` and tests assert it is NOT
+        # reached when the caller has supplied a valid
+        # non-default eps.
+        1.0e-6
       end
 
       # ---- Public entry ----
@@ -96,7 +164,17 @@ module SUAnalysis
       # Reconstruct the deterministic structure from a
       # canonical graph (or a JSON-safe Hash with the same
       # shape). Pure. No host mutation. No random.
-      def reconstruct(graph, source_snapshot_id: nil, workspace_id: nil)
+      #
+      # SR18-02 coordinate_epsilon authority: a single
+      # `coordinate_epsilon` keyword argument is threaded
+      # through the ENTIRE reconstruction. When absent /
+      # invalid the reconstructor falls back ONLY to the
+      # per-node coordinate_epsilon carried by the canonical
+      # graph nodes (when finite / positive / consistent),
+      # and ONLY THEN to 1e-6. No silent 1e-6 fallback when
+      # the caller has supplied a valid non-default epsilon.
+      def reconstruct(graph, source_snapshot_id: nil, workspace_id: nil,
+                      coordinate_epsilon: nil)
         if graph.nil?
           return _empty_result(source_snapshot_id: source_snapshot_id,
                                workspace_id: workspace_id,
@@ -119,6 +197,14 @@ module SUAnalysis
                               h['unresolved_topology_issues'])
           graph_dgst  = (h[:digest] || h['digest'] || '').to_s
         end
+
+        # SR18-02: resolve ONE coordinate_epsilon for the
+        # whole reconstruction. Threaded explicitly through
+        # every geometry check below; no silent 1e-6 fallback.
+        coord_eps = _resolve_coordinate_eps(
+          graph.is_a?(CanonicalGeometryGraph) ? graph : h,
+          coordinate_epsilon
+        )
 
         # ---- Step 1: graph validation ----
         reasons, validated = _validate_graph(node_h, edge_h, adj_h)
@@ -163,6 +249,11 @@ module SUAnalysis
           adjacency[b] << a unless adjacency[b].include?(a)
         end
 
+        # SR18-04: build deterministic edge indexes once so
+        # traversal is O(V + E). Built from the validated
+        # edges_by_id (post-validation).
+        edge_indexes = _build_edge_indexes(edges_by_id)
+
         # ---- Step 4: connected components (BFS, deterministic) ----
         all_nodes = node_index.keys.sort
         components = []
@@ -202,7 +293,8 @@ module SUAnalysis
 
         components.each do |comp|
           cls, payload = _classify_component(comp, adjacency, edges_by_id,
-                                             node_index)
+                                             node_index, coord_eps,
+                                             edge_indexes)
           case cls
           when :simple_chain
             chains << payload
@@ -212,6 +304,15 @@ module SUAnalysis
             unresolved_issues << REASON_BRANCHING_COMPONENT
           when :invalid
             unresolved_issues << REASON_INVALID_COMPONENT
+          when :parallel_edges
+            # SR18-04: parallel edges between the same node
+            # pair are conservatively treated as unsupported.
+            # Emit one stable reason per affected node pair.
+            pair_set = _parallel_pairs_in_comp(comp, edge_indexes)
+            pair_set.each do |pair|
+              unresolved_issues <<
+                "#{REASON_PARALLEL_EDGES}:#{pair}"
+            end
           end
         end
 
@@ -223,8 +324,14 @@ module SUAnalysis
         validated_loops = []
         loops.each do |loop|
           vflags = Array(loop['unresolved_flags']).dup
-          _validate_loop_geometry(loop, vflags)
-          _validate_loop_self_intersection(loop, node_index, vflags)
+          # SR18-02: pass the resolved coordinate_epsilon so
+          # planarity, degenerate-area, and self-intersection
+          # all use the SAME epsilon. Publish it on the loop
+          # so downstream region validity can read it without
+          # re-resolving.
+          loop['coordinate_epsilon'] = coord_eps
+          _validate_loop_geometry(loop, vflags, coord_eps)
+          _validate_loop_self_intersection(loop, node_index, vflags, coord_eps)
           loop['unresolved_flags'] = vflags.uniq.sort
           loop['valid_for_region'] = vflags.empty?
           validated_loops << loop
@@ -233,10 +340,10 @@ module SUAnalysis
         # ---- Step 7: containment + regions ----
         regions = []
         only_valid_loops = validated_loops.select { |l| l['valid_for_region'] }
-        contained_pairs = _classify_loop_containment(only_valid_loops)
+        contained_pairs = _classify_loop_containment(only_valid_loops, coord_eps)
         unless contained_pairs.nil?
           regions = _build_regions(only_valid_loops, contained_pairs,
-                                   unresolved_issues)
+                                   unresolved_issues, coord_eps)
         else
           # Ambiguous containment: all loops are valid for
           # region individually but pairwise containment could
@@ -252,7 +359,12 @@ module SUAnalysis
         invalid_component_count = unresolved_issues.count { |r|
           r == REASON_BRANCHING_COMPONENT || r == REASON_INVALID_COMPONENT
         }
-        hole_count = regions.sum { |r| Array(r['hole_loop_ids']).length }
+        # SR18-01: explicit Ruby 2.2-compatible accumulation
+        # (Enumerable/Array#sum is Ruby 2.4+).
+        hole_count = 0
+        regions.each do |r|
+          hole_count += Array(r['hole_loop_ids']).length
+        end
         metrics = {
           'component_count'          => components.length,
           'open_chain_count'         => chains.length,
@@ -265,11 +377,26 @@ module SUAnalysis
         }
 
         # ---- Step 9: result state ----
-        has_warnings = unresolved_issues.uniq.sort.any? ||
-                        invalid_loop_count > 0
-        state = if validated_loops.empty? && chains.empty?
-                  STATE_READY
-                elsif has_warnings
+        # SR18-06 truthful state:
+        #   - invalid graph => FAILED  (rejected earlier)
+        #   - any unresolved/upstream warning
+        #                            => READY_WITH_WARNINGS
+        #   - warning-free + has content => READY
+        #   - branch-only (no chains/loops but a
+        #     branching_component reason was reported)
+        #                            => READY_WITH_WARNINGS
+        # The dispatch requires branch-only components to
+        # surface as READY_WITH_WARNINGS rather than READY
+        # so the UI does not falsely display "结构可用"
+        # while carrying branching_component issues.
+        unique_issues = unresolved_issues.uniq.sort
+        branch_only = validated_loops.empty? && chains.empty? &&
+                       unique_issues.any? { |r|
+                         r == REASON_BRANCHING_COMPONENT ||
+                         r.to_s.start_with?("#{REASON_PARALLEL_EDGES}:")
+                       }
+        has_warnings = unique_issues.any? || invalid_loop_count > 0
+        state = if has_warnings || branch_only
                   STATE_READY_WITH_WARNINGS
                 else
                   STATE_READY
@@ -286,7 +413,7 @@ module SUAnalysis
           state: state
         )
 
-        {
+        result = {
           'schema_version'           => SCHEMA_VERSION,
           'state'                    => state,
           'canonical_graph_digest'   => graph_dgst,
@@ -299,7 +426,36 @@ module SUAnalysis
           'metrics'                  => metrics,
           'reasons'                  => reasons.uniq.sort,
           'digest'                   => digest
-        }.freeze
+        }
+        # SR18-07: deep-freeze the published normal result so
+        # that nested arrays / hashes / frozen-string payloads
+        # cannot be mutated after the caller observes the
+        # digest. Outer .freeze is insufficient: without
+        # deep_freeze a caller could mutate chains.first['node_ids']
+        # or loops.first['world_coordinates'] in place, which
+        # would silently change the post-digest payload.
+        deep_freeze(result)
+        result
+      end
+
+      # SR18-07: deep-freeze a value in place. Recurses
+      # through Hash and Array. String/Frozen-String-typed
+      # scalars are immutable in Ruby by default; numeric
+      # / symbol / nil are immutable by definition. Returns
+      # the same object (mutated in place) so the call site
+      # reads naturally.
+      def deep_freeze(obj)
+        case obj
+        when Hash
+          obj.each_value { |v| deep_freeze(v) }
+          obj.freeze
+        when Array
+          obj.each { |v| deep_freeze(v) }
+          obj.freeze
+        else
+          # Strings / numerics / symbols / nil: nothing to do.
+          obj
+        end
       end
 
       def _empty_result(source_snapshot_id: nil, workspace_id: nil,
@@ -307,15 +463,15 @@ module SUAnalysis
         rs = Array(reasons)
         rs << REASON_INVALID_GRAPH if rs.empty?
         rs.uniq!
-        {
+        result = {
           'schema_version'           => SCHEMA_VERSION,
           'state'                    => STATE_FAILED,
           'canonical_graph_digest'   => (graph_digest || '').to_s,
           'source_snapshot_id'       => (source_snapshot_id || '').to_s,
           'workspace_id'             => (workspace_id || '').to_s,
-          'chains'                   => [].freeze,
-          'loops'                    => [].freeze,
-          'regions'                  => [].freeze,
+          'chains'                   => [],
+          'loops'                    => [],
+          'regions'                  => [],
           'unresolved_issues'        => rs.uniq.sort,
           'metrics'                  => {
             'component_count'          => 0,
@@ -326,10 +482,12 @@ module SUAnalysis
             'invalid_component_count'  => 0,
             'invalid_loop_count'       => 0,
             'unresolved_issue_count'   => rs.uniq.sort.length
-          }.freeze,
+          },
           'reasons'                  => rs.uniq.sort,
           'digest'                   => ''
-        }.freeze
+        }
+        deep_freeze(result)
+        result
       end
 
       # ---- internals ----
@@ -399,7 +557,72 @@ module SUAnalysis
           # are fatal.
           return [reasons.uniq.sort, false]
         end
+        # SR18-08: validate the supplied canonical adjacency
+        # EXACTLY against the edge inventory. The dispatch
+        # requires four checks:
+        #   1. unknown adjacency key => invalid
+        #   2. unknown neighbor => invalid
+        #   3. missing edge-backed neighbor => invalid
+        #   4. extra neighbor not backed by edge => invalid
+        # Stable reason: invalid_graph:adjacency_mismatch
+        # (with details appended).
+        adj_mismatch = _validate_adjacency_against_edges(adj_h,
+                                                        node_set, edge_h)
+        unless adj_mismatch.empty?
+          reasons.concat(adj_mismatch)
+          return [reasons.uniq.sort, false]
+        end
         [reasons, true]
+      end
+
+      # SR18-08: structural adjacency vs edge inventory.
+      # Returns an Array of stable
+      # `invalid_graph:adjacency_mismatch:...` reason strings.
+      # Empty Array means adjacency is consistent with the
+      # edge inventory.
+      def _validate_adjacency_against_edges(adj_h, node_set, edge_h)
+        mismatches = []
+        return mismatches unless adj_h.is_a?(Hash)
+        expected = {}
+        edge_h.each do |e|
+          h = e.is_a?(Hash) ? e : {}
+          a = h['node_a_id'].to_s
+          b = h['node_b_id'].to_s
+          next if a.empty? || b.empty?
+          next if a == b
+          (expected[a] ||= []) << b
+          (expected[b] ||= []) << a
+        end
+        expected.each_value { |arr| arr.sort!.uniq! }
+        # 1. unknown adjacency key
+        adj_h.each_key do |k|
+          kid = k.to_s
+          unless node_set.include?(kid)
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:unknown_key:#{kid}"
+          end
+        end
+        # 2. unknown neighbor / 3. missing edge-backed /
+        # 4. extra neighbor not backed by edge
+        adj_h.each do |k, neighbors|
+          kid = k.to_s
+          next unless node_set.include?(kid)
+          given = Array(neighbors).map(&:to_s).sort.uniq
+          want  = Array(expected[kid]).sort.uniq
+          extra = given - want
+          missing = want - given
+          given.each do |n|
+            unless node_set.include?(n)
+              mismatches << "#{REASON_ADJACENCY_MISMATCH}:unknown_neighbor:#{kid}->#{n}"
+            end
+          end
+          extra.each do |n|
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:extra_neighbor:#{kid}->#{n}"
+          end
+          missing.each do |n|
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:missing_neighbor:#{kid}->#{n}"
+          end
+        end
+        mismatches.uniq.sort
       end
 
       def _build_node_index(node_h)
@@ -413,13 +636,85 @@ module SUAnalysis
         idx
       end
 
+      # SR18-04: build deterministic edge indexes once so
+      # traversal is O(V + E) instead of O(V^2 * E).
+      # Returns:
+      #   'incident'       => Hash[node_id] -> Array (sorted edge_ids)
+      #   'pair_to_edges'  => Hash[sorted 'a|b'] -> Array (sorted; >1 => parallel)
+      #   'edge_endpoints' => Hash[edge_id] -> [sorted_node_a, sorted_node_b]
+      #   'has_parallel'   => Boolean (true if any node pair has >=2 edges)
+      #   'parallel_pairs' => Array (sorted 'a|b' pairs with >1 edge)
+      def _build_edge_indexes(edges_by_id)
+        incident = {}
+        pair_to_edges = {}
+        edge_endpoints = {}
+        has_parallel = false
+        parallel_pairs = []
+        edges_by_id.each do |eid, e|
+          h = e.is_a?(Hash) ? e : {}
+          a = h['node_a_id'].to_s
+          b = h['node_b_id'].to_s
+          next if a.empty? || b.empty?
+          if a == b
+            edge_endpoints[eid.to_s] = [a, b]
+            next
+          end
+          sorted_pair = [a, b].sort
+          key = "#{sorted_pair[0]}|#{sorted_pair[1]}"
+          (pair_to_edges[key] ||= []) << eid.to_s
+          (incident[a] ||= []) << eid.to_s
+          (incident[b] ||= []) << eid.to_s
+          edge_endpoints[eid.to_s] = sorted_pair
+        end
+        incident.each_value { |arr| arr.sort! }
+        pair_to_edges.each_value { |arr| arr.sort! }
+        pair_to_edges.each do |k, arr|
+          if arr.length > 1
+            has_parallel = true
+            parallel_pairs << k
+          end
+        end
+        parallel_pairs.sort!
+        {
+          'incident'       => incident,
+          'pair_to_edges'  => pair_to_edges,
+          'edge_endpoints' => edge_endpoints,
+          'has_parallel'   => has_parallel,
+          'parallel_pairs' => parallel_pairs
+        }
+      end
+
       # ---- Step 5: classify component ----
 
-      def _classify_component(comp, adjacency, edges_by_id, node_index)
+      def _classify_component(comp, adjacency, edges_by_id, node_index,
+                              coord_eps = nil, edge_indexes = nil)
+        # SR18-04: detect parallel edges in this component
+        # FIRST. Conservative: any node pair with >1 edge
+        # => the component cannot be safely parsed, so we
+        # return :parallel_edges without guessing.
+        idx = edge_indexes || _build_edge_indexes(edges_by_id)
+        if idx['has_parallel']
+          pair_set = _parallel_pairs_in_comp(comp, idx)
+          return [:parallel_edges, nil] unless pair_set.empty?
+        end
+
         degree_map = {}
         comp.each do |nid|
-          degree_map[nid] = Array(adjacency[nid]).count { |nbr|
-            comp.include?(nbr)
+          # SR18-04: degree is the count of incident edges
+          # whose other endpoint is also in comp. Use the
+          # incident index for O(degree(nid)) lookups
+          # instead of scanning all edges.
+          incident_edges = idx['incident'][nid] ||
+                           Array(adjacency[nid]).map { |nbr|
+                             _edge_between(nid, nbr, edges_by_id)
+                           }.compact
+          degree_map[nid] = incident_edges.count { |eid|
+            h = edges_by_id[eid]
+            next false if h.nil?
+            a = h['node_a_id'].to_s
+            b = h['node_b_id'].to_s
+            other = (a == nid) ? b : (b == nid ? a : nil)
+            !other.nil? && comp.include?(other)
           }
         end
         degree_counts = Hash.new(0)
@@ -429,7 +724,7 @@ module SUAnalysis
         term_count = degree_map.values.count(1)
         branch_count = degree_map.values.count { |d| d > 2 }
 
-        edges_in_comp = _edges_in_component(comp, adjacency, edges_by_id)
+        edges_in_comp = _edges_in_component_via_index(comp, idx, edges_by_id)
 
         # ---- branching > 2 ----
         if branch_count > 0
@@ -451,7 +746,8 @@ module SUAnalysis
         # is not mis-classified as invalid.
         if min_d == 2 && max_d == 2 && term_count == 0 &&
            comp.length >= 3 && edges_in_comp.length == comp.length
-          payload = _build_loop(comp, adjacency, edges_by_id, node_index)
+          payload = _build_loop(comp, adjacency, edges_by_id, node_index,
+                                coord_eps, idx)
           return [:simple_loop, payload]
         end
 
@@ -466,16 +762,32 @@ module SUAnalysis
         # ---- simple open chain ----
         if term_count == 2 && max_d <= 2 && min_d >= 1
           payload = _build_chain(comp, adjacency, edges_by_id, node_index,
-                                 degree_map)
+                                 degree_map, coord_eps, idx)
           return [:simple_chain, payload]
         end
 
         [:invalid, nil]
       end
 
+      # SR18-04: collect the set of parallel-edge pairs that
+      # are wholly contained inside `comp`. Returns sorted
+      # Array of 'a|b' strings. Empty when no parallel edges
+      # touch this component.
+      def _parallel_pairs_in_comp(comp, edge_indexes)
+        comp_set = comp.is_a?(Set) ? comp : Set.new(comp)
+        out = []
+        edge_indexes['parallel_pairs'].each do |pair|
+          a, b = pair.split('|', 2)
+          next unless comp_set.include?(a) && comp_set.include?(b)
+          out << pair
+        end
+        out
+      end
+
       # ---- chain ----
 
-      def _build_chain(comp, adjacency, edges_by_id, node_index, degree_map)
+      def _build_chain(comp, adjacency, edges_by_id, node_index, degree_map,
+                     coord_eps = nil, edge_indexes = nil)
         # Terminal nodes (degree 1).
         terminals = comp.select { |nid| degree_map[nid] == 1 }.sort
         # Blueprint §7: start from the lex-smaller terminal.
@@ -488,24 +800,29 @@ module SUAnalysis
         current = start_node
         safety = 0
         safety_max = comp.length * 4
+        idx = edge_indexes || _build_edge_indexes(edges_by_id)
+        incident_list = idx['incident']
         until current == end_node
           safety += 1
           if safety > safety_max
             return _chain_with_failure(comp, edges_by_id,
-                                       REASON_CHAIN_TRAVERSAL_FAILED)
+                                       REASON_CHAIN_TRAVERSAL_FAILED,
+                                       coord_eps)
           end
           next_edge_id = nil
           next_node = nil
-          # Candidate edges incident to current (built directly
-          # from edges_by_id to be order-independent of Hash
-          # insertion order in `adjacency`).
+          # SR18-04: use the incident index for O(deg(current))
+          # candidate edges instead of scanning every edge in
+          # the graph.
           incident = []
-          edges_by_id.each do |eid, e|
-            na = e['node_a_id'].to_s
-            nb = e['node_b_id'].to_s
-            next unless (na == current) || (nb == current)
+          (incident_list[current] || []).each do |eid|
             next if used_edges[eid]
-            other = (na == current) ? nb : na
+            h = edges_by_id[eid]
+            next if h.nil?
+            a = h['node_a_id'].to_s
+            b = h['node_b_id'].to_s
+            other = (a == current) ? b : (b == current ? a : nil)
+            next if other.nil?
             next unless comp.include?(other)
             incident << [eid, other]
           end
@@ -524,7 +841,8 @@ module SUAnalysis
           end
           if next_edge_id.nil? || next_node.nil?
             return _chain_with_failure(comp, edges_by_id,
-                                       REASON_CHAIN_TRAVERSAL_FAILED)
+                                       REASON_CHAIN_TRAVERSAL_FAILED,
+                                       coord_eps)
           end
           used_edges[next_edge_id] = true
           ordered_edges << next_edge_id
@@ -545,7 +863,8 @@ module SUAnalysis
            ordered_edges.length != (comp.length - 1) ||
            ordered_nodes.last != end_node ||
            repeated
-          return _chain_with_failure(comp, edges_by_id, REASON_REPEATED_VERTEX)
+          return _chain_with_failure(comp, edges_by_id, REASON_REPEATED_VERTEX,
+                                     coord_eps)
         end
         # Compute length, provenance, layer union.
         length, occ_ids, layer_names = _aggregate_edge_meta(ordered_edges, edges_by_id)
@@ -560,11 +879,12 @@ module SUAnalysis
           'length'                  => length,
           'source_occurrence_ids'   => occ_ids,
           'layer_names'             => layer_names,
-          'unresolved_flags'        => [].freeze
+          'unresolved_flags'        => [].freeze,
+          'coordinate_epsilon'      => _safe_eps(coord_eps)
         }
       end
 
-      def _chain_with_failure(comp, edges_by_id, reason)
+      def _chain_with_failure(comp, edges_by_id, reason, coord_eps = nil)
         edges_in_comp = _edges_in_component(comp, {}, edges_by_id)
         length, _occ, _layer = _aggregate_edge_meta(edges_in_comp, edges_by_id)
         {
@@ -577,7 +897,8 @@ module SUAnalysis
           'length'                  => length,
           'source_occurrence_ids'   => [].freeze,
           'layer_names'             => [].freeze,
-          'unresolved_flags'        => [reason].freeze
+          'unresolved_flags'        => [reason].freeze,
+          'coordinate_epsilon'      => _safe_eps(coord_eps)
         }
       end
 
@@ -590,24 +911,26 @@ module SUAnalysis
 
       # ---- loop ----
 
-      def _build_loop(comp, adjacency, edges_by_id, node_index)
+      def _build_loop(comp, adjacency, edges_by_id, node_index, coord_eps = nil,
+                      edge_indexes = nil)
         # Blueprint §4.2: start at lex-smallest canonical node.
         sorted_comp = comp.sort
         start_node = sorted_comp.first
         # Build the two valid orientations by walking BOTH
         # first-step choices; keep the lex-smaller normalized
         # token sequence.
+        idx = edge_indexes || _build_edge_indexes(edges_by_id)
         neighbors = Array(adjacency[start_node]).select { |n|
           comp.include?(n)
         }.sort
         if neighbors.length != 2
           return _loop_with_failure(comp, edges_by_id,
-                                   REASON_LOOP_TRAVERSAL_FAILED)
+                                   REASON_LOOP_TRAVERSAL_FAILED, coord_eps)
         end
         orientation_a = _walk_cycle(start_node, neighbors[0], comp,
-                                    adjacency, edges_by_id, node_index)
+                                    adjacency, edges_by_id, node_index, idx)
         orientation_b = _walk_cycle(start_node, neighbors[1], comp,
-                                    adjacency, edges_by_id, node_index)
+                                    adjacency, edges_by_id, node_index, idx)
         a_valid = _valid_cycle?(orientation_a)
         b_valid = _valid_cycle?(orientation_b)
         chosen = if !a_valid && !b_valid
@@ -626,7 +949,7 @@ module SUAnalysis
                 end
         if chosen.nil?
           return _loop_with_failure(comp, edges_by_id,
-                                   REASON_LOOP_TRAVERSAL_FAILED)
+                                   REASON_LOOP_TRAVERSAL_FAILED, coord_eps)
         end
         # Build a complete loop payload with stable id +
         # provenance / layer union + placeholder geometry
@@ -651,12 +974,13 @@ module SUAnalysis
           'source_occurrence_ids'   => occs,
           'layer_names'             => layers,
           'unresolved_flags'        => [].freeze,
-          'valid_for_region'        => false
+          'valid_for_region'        => false,
+          'coordinate_epsilon'      => _safe_eps(coord_eps)
         }
       end
 
       def _walk_cycle(start_node, first_neighbor, comp, adjacency,
-                      edges_by_id, node_index)
+                      edges_by_id, node_index, edge_indexes = nil)
         # Walk a deterministic cycle using the FIRST neighbor
         # as the orientation choice. We choose at each
         # degree-2 node the neighbor that is NOT the
@@ -670,8 +994,10 @@ module SUAnalysis
         current = start_node
         next_node = first_neighbor
         until next_node.nil?
-          # Find the edge edge id connecting current to next_node.
-          eid = _edge_between(current, next_node, edges_by_id)
+          # SR18-04: O(1) edge lookup via the pair index
+          # instead of a full scan of edges_by_id per step.
+          eid = _edge_between(current, next_node, edges_by_id,
+                              edge_indexes)
           if eid.nil?
             return nil
           end
@@ -717,7 +1043,7 @@ module SUAnalysis
         true
       end
 
-      def _loop_with_failure(comp, edges_by_id, reason)
+      def _loop_with_failure(comp, edges_by_id, reason, coord_eps = nil)
         edges_in_comp = _edges_in_component(comp, {}, edges_by_id)
         length, _occ, _layer = _aggregate_edge_meta(edges_in_comp, edges_by_id)
         {
@@ -733,7 +1059,8 @@ module SUAnalysis
           'source_occurrence_ids'   => [].freeze,
           'layer_names'             => [].freeze,
           'unresolved_flags'        => [reason].freeze,
-          'valid_for_region'        => false
+          'valid_for_region'        => false,
+          'coordinate_epsilon'      => _safe_eps(coord_eps)
         }
       end
 
@@ -749,7 +1076,7 @@ module SUAnalysis
 
       # ---- loop geometry validation ----
 
-      def _validate_loop_geometry(loop, vflags)
+      def _validate_loop_geometry(loop, vflags, coord_eps = nil)
         coords = Array(loop['world_coordinates'])
         if coords.empty?
           vflags << REASON_DEGENERATE_LOOP
@@ -844,57 +1171,85 @@ module SUAnalysis
       end
 
       # ---- loop self-intersection (non-adjacent only) ----
-
-      def _validate_loop_self_intersection(loop, node_index, vflags)
+      #
+      # SR18-03: detect non-adjacent loop-segment conflicts
+      # of FOUR kinds:
+      #   1. proper interior crossing  -> REASON_SELF_INTERSECTION
+      #   2. endpoint on unrelated segment interior
+      #      (T-junction-like)         -> REASON_LOOP_ENDPOINT_ON_SEGMENT
+      #   3. collinear interior overlap
+      #                                    -> REASON_LOOP_COLLINEAR_OVERLAP
+      #   4. non-adjacent geometric touch
+      #                                    -> REASON_LOOP_GEOMETRIC_TOUCH
+      # Adjacent pairs (including the closure-adjacent pair
+      # that closes the polygon) are SKIPPED. The closure
+      # adjacency is NOT a conflict: the segment (last -> first)
+      # naturally closes on its own start point. We achieve
+      # this by only comparing j >= i+2 within the open
+      # node_ids list, AND by routing every conflict check
+      # through the shared V1.7 SegmentConflict pure
+      # predicate (which already knows shared_endpoint is SAFE
+      # per Blueprint §10.3).
+      def _validate_loop_self_intersection(loop, node_index, vflags,
+                                       coord_eps = nil)
         return if Array(loop['unresolved_flags']).include?(REASON_DEGENERATE_LOOP)
         coords = Array(loop['world_coordinates'])
         return if coords.length < 3
-        # Loop segments = consecutive coordinate pairs. Skip
-        # adjacent segments (shared endpoint at i+1) per
-        # Blueprint §10.2. Adjacency-aware test: i and i+1
-        # are adjacent (i+2 may also be adjacent if loop
-        # closes). Adjacent index = i+1 mod n.
         n = coords.length
-        # Build a list of (i, j) non-adjacent pairs.
-        eps = _loop_coord_eps(loop)
-        # Collect segments once.
+        eps = coord_eps.is_a?(Numeric) ? _safe_eps(coord_eps) :
+                                      _loop_coord_eps(loop)
         segs = []
         (0...n).each do |i|
           segs << [coords[i], coords[(i + 1) % n]]
         end
-        # Pre-compute segment bboxes for pruning.
         seg_bboxes = segs.map { |a, b|
           xs = [a[0], b[0]]
           ys = [a[1], b[1]]
           [xs.min - eps, ys.min - eps, xs.max + eps, ys.max + eps]
         }
-        found = false
+        kinds = {}
         (0...n).each do |i|
           ((i + 2)...n).each do |j|
-            # Skip adjacent pair across the closure
-            # (i, j) where j == (i + n - 1) mod n is adjacent;
-            # but our indexing is open, so just skip pairs
-            # that share a coordinate (closure on j == n-1
-            # vs i == 0 is handled because n-1 and 0 are not
-            # adjacent in this indexing; the loop closes
-            # conceptually through the closure point but our
-            # node_ids array has no repeat).
+            # Skip closure adjacency: when the loop's node_ids
+            # are stored open, the pair (i=last_index, j=0)
+            # would NOT be tested by this loop. We also skip
+            # the cross-closure pair (last_segment vs first_segment)
+            # explicitly because i+2..n excludes i == n-1 + 2 > n.
             next if seg_bboxes[i][2] < seg_bboxes[j][0]
             next if seg_bboxes[j][2] < seg_bboxes[i][0]
             next if seg_bboxes[i][3] < seg_bboxes[j][1]
             next if seg_bboxes[j][3] < seg_bboxes[i][1]
-            # Strict proper crossing (XY).
             pa1 = segs[i][0]
             pa2 = segs[i][1]
             pb1 = segs[j][0]
             pb2 = segs[j][1]
-            next unless _segments_cross_strictly_xy?(pa1, pa2, pb1, pb2, eps)
-            found = true
-            break
+            # SR18-03: route through the shared V1.7
+            # SegmentConflict pure predicate so semantics stay
+            # aligned with the V1.7 bridge / proposal X3 paths.
+            outcome = SUAnalysis::Core::SegmentConflict.conflict?(
+              [pa1, pa2], [pb1, pb2], eps: eps
+            )
+            next unless outcome.is_a?(Hash) && outcome['conflict']
+            reason = outcome['reason'].to_s
+            case reason
+            when 'proper_interior_crossing'
+              kinds[REASON_SELF_INTERSECTION] = true
+            when 'collinear_overlap'
+              kinds[REASON_LOOP_COLLINEAR_OVERLAP] = true
+            when 'bridge_endpoint_on_unrelated',
+                 'unrelated_endpoint_on_bridge'
+              kinds[REASON_LOOP_ENDPOINT_ON_SEGMENT] = true
+            else
+              # Defensive: any other SegmentConflict hit at
+              # the loop self-intersection level is reported
+              # as a non-adjacent geometric touch (segment
+              # bbox proximity with no proper crossing,
+              # collinear overlap, or endpoint-on-segment).
+              kinds[REASON_LOOP_GEOMETRIC_TOUCH] = true
+            end
           end
-          break if found
         end
-        vflags << REASON_SELF_INTERSECTION if found
+        kinds.each_key { |r| vflags << r }
       end
 
       def _segments_cross_strictly_xy?(p1, p2, q1, q2, eps)
@@ -921,7 +1276,9 @@ module SUAnalysis
 
       # ---- containment + regions ----
 
-      def _classify_loop_containment(loops)
+      def _classify_loop_containment(loops, coord_eps = nil)
+        # SR18-02: one resolved eps threaded through.
+        eps = coord_eps.is_a?(Numeric) ? _safe_eps(coord_eps) : 1.0e-6
         # Build loop bboxes (XY).
         loop_bboxes = {}
         loops.each do |l|
@@ -1134,7 +1491,9 @@ module SUAnalysis
         true
       end
 
-      def _build_regions(loops, inside_map, unresolved_issues)
+      def _build_regions(loops, inside_map, unresolved_issues, coord_eps = nil)
+        # SR18-02: one resolved eps threaded through.
+        eps = coord_eps.is_a?(Numeric) ? _safe_eps(coord_eps) : 1.0e-6
         # inside_map[outer_id] = sorted Array<inner_id>.
         # Depth parity: depth 0 = outer region; depth 1 = hole;
         # depth 2 = new island/outer region; etc.
@@ -1188,12 +1547,16 @@ module SUAnalysis
           end
           # Compute region area = outer area - sum(holes area).
           outer_area = outer['area_xy'].to_f
-          hole_area = hole_ids.sum { |hid|
+          # SR18-01: explicit Ruby 2.2-compatible accumulation
+          # (Enumerable/Array#sum is Ruby 2.4+; SU2017 ships 2.2.4).
+          hole_area = 0.0
+          hole_ids.each do |hid|
             hit = loops.find { |l| l['loop_id'] == hid }
-            hit.nil? ? 0.0 : hit.fetch('area_xy', 0.0).to_f
-          }
+            hole_area += hit.nil? ? 0.0 : hit.fetch('area_xy', 0.0).to_f
+          end
           region_area = outer_area - hole_area
-          eps = _loop_coord_eps(outer)
+          eps = coord_eps.is_a?(Numeric) ? _safe_eps(coord_eps) :
+                                          _loop_coord_eps(outer)
           if region_area <= _area_eps(eps)
             unresolved_issues << REASON_INVALID_REGION
             next
@@ -1266,7 +1629,7 @@ module SUAnalysis
           la = loops.find { |l| l['loop_id'] == ha }
           lb = loops.find { |l| l['loop_id'] == hb }
           next if la.nil? || lb.nil?
-          return false if _loop_boundaries_cross?(la, lb, 1.0e-6)
+          return false if _loop_boundaries_cross?(la, lb, eps)
         end
         true
       end
@@ -1279,25 +1642,66 @@ module SUAnalysis
       end
 
       # ---- edge helpers ----
-      def _edges_in_component(comp, adjacency, edges_by_id)
-        # Defensive: ignore adjacency argument when it doesn't
-        # match the shape (helper is used both for traversal
-        # and for the chain-with-failure path).
-        out = []
-        comp.combination(2).each do |a, b|
-          e = _edge_between(a, b, edges_by_id)
-          out << e if e
+      # SR18-04: index-aware edge collection. Sum of
+      # incident-edge lists for each node in `comp`,
+      # restricted to edges whose OTHER endpoint is also in
+      # comp, deduped, sorted. O(V + E_comp) instead of
+      # O(V^2).
+      def _edges_in_component_via_index(comp, edge_indexes,
+                                        edges_by_id)
+        seen = {}
+        comp.each do |nid|
+          (edge_indexes['incident'][nid] || []).each do |eid|
+            h = edges_by_id[eid]
+            next if h.nil?
+            a = h['node_a_id'].to_s
+            b = h['node_b_id'].to_s
+            other = (a == nid) ? b : (b == nid ? a : nil)
+            next if other.nil?
+            next unless comp_set(comp).include?(other)
+            seen[eid] = true
+          end
         end
-        out.uniq.sort
+        seen.keys.sort
       end
 
-      def _edge_between(a, b, edges_by_id)
+      # Backward-compat: build indexes on the fly when the
+      # caller passes an empty `adjacency` (the chain-with-
+      # failure path). Defensive only; new code should
+      # thread `edge_indexes` through and call the indexed
+      # helper directly.
+      def _edges_in_component(comp, adjacency, edges_by_id)
+        if comp.empty?
+          return []
+        end
+        idx = _build_edge_indexes(edges_by_id)
+        _edges_in_component_via_index(comp, idx, edges_by_id)
+      end
+
+      # SR18-04: pair-index lookup, O(1) on average. Falls
+      # back to a full scan only if the pair isn't in the
+      # index (defensive against malformed input).
+      def _edge_between(a, b, edges_by_id, edge_indexes = nil)
+        if edge_indexes && edge_indexes['pair_to_edges']
+          sorted_pair = [a.to_s, b.to_s].sort
+          key = "#{sorted_pair[0]}|#{sorted_pair[1]}"
+          arr = edge_indexes['pair_to_edges'][key]
+          return arr.first if arr && !arr.empty?
+        end
         edges_by_id.each do |eid, h|
           na = h['node_a_id'].to_s
           nb = h['node_b_id'].to_s
           return eid if (na == a && nb == b) || (na == b && nb == a)
         end
         nil
+      end
+
+      # Cheap Set for repeated `include?` checks in the
+      # indexed edge helpers. Cached per process.
+      def comp_set(arr)
+        @_comp_set_cache ||= {}
+        @_comp_set_cache[arr.object_id] ||= Set.new(arr)
+        @_comp_set_cache[arr.object_id]
       end
 
       def _aggregate_edge_meta(edge_ids, edges_by_id)
