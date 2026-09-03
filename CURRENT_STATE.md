@@ -1,6 +1,148 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.8 FINAL-FOUR-RESIDUALS (THIS UPDATE)
+## V1.8 OWNER-SU2020-BOOT-BLOCK (THIS UPDATE)
+
+Updated: 2026-09-03 (V1.8 OWNER SU2020 BOOT BLOCK narrow-fix
+dispatch EXECUTION on assigned `dev/v1.8` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the AIPM trace of the
+Owner Gate report).
+Per dispatch, the ONLY authority for this packet is the
+Owner SU2020 real-host `SyntaxError` report and the AIPM
+trace to `_validate_adjacency_against_edges`. Frozen V1.8
+Blueprint preserved unchanged.
+
+Status (this dispatch):
+
+- **V1.7: CLOSED** (per
+  `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
+- **V1.8: ACTIVE** (per AIPM trace).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
+- **V1.8 SR18-01..08 + FR18-01..04**: PASS (prior dispatches).
+- **V1.8 Owner SU2020 Gate**: BOOT BLOCK → narrow fix
+  applied; Pi Complete; awaiting Owner re-run of the
+  real-SU2020 boot path.
+- **V1.8 Codex gate**: NOT REQUIRED
+  (`CODEX_RISK_TRIGGER = NO`).
+- **V1.9 / PreparedCadDataset NOT STARTED.**
+- **V2 / MCP OUT OF SCOPE.**
+
+V1.8 OWNER-SU2020-BOOT-BLOCK PACKET — 2026-09-03.
+
+- Starting HEAD: `436b71a19da6ec09c88a5983d59063c44ae673c1`
+  (the prior V18-FINAL-FOUR-RESIDUALS complete state on
+  `dev/v1.8`).
+- Implementation SHA: produced by this dispatch
+  (see `git log -1` after commit).
+- Final HEAD on `dev/v1.8`: see `git rev-parse HEAD` after
+  push.
+- V1.8 RBZ candidate: size **1,077,480 bytes**; entries
+  **69**; SHA-256
+  **`b58b412523c8a2ad3560eeef714321910d4fb695b3956dbb726df54ff3239497`**.
+- Packaged `html/app.js` SHA-256:
+  `56878DD018A0DB6A1684CABE91EE84EB1426B295C7B1CF60F6A08F5D98353F2D`
+  (unchanged from prior dispatch).
+- Packaged `html/index.html` SHA-256:
+  `6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`
+  (unchanged from prior dispatch).
+- Packaged `html/style.css` SHA-256:
+  `3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`
+  (unchanged from prior dispatch).
+- Full Ruby suite: **1048 / 1048 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 127 V1.7 tests + 9 V1.5
+  BLOCK-005 + 7 V1.6 close-autodiscard + 4 LEGACY-COMPAT +
+  9 RBZ smoke + 15 V1.8 focused core (V18-T01..T15) + 5
+  V1.8 runner integration (V18-I01..I05) + 32 V1.8 SR18
+  focused + 16 V1.8 FR18 focused + 3 new V1.8 BOOT
+  focused (V18-BOOT-A..C)). Delta vs prior V18-FINAL-FOUR-
+  RESIDUALS 1045: +3 tests (the new V18-BOOT set).
+- V18-BOOT focused timing: **0.024 s** end-to-end (3 tests).
+- Node DOM (`tests/test_html_render_dom.js`): unchanged
+  from V1.8 base; all 327 assertions PASS, final line
+  `PASS`.
+- `git diff --check`: clean (0 warnings).
+- per dispatch: STOPPED awaiting Owner re-run of the
+  real-SU2020 boot path; Codex xHigh recheck NOT invoked
+  (no risk trigger, frozen boundary untouched, no
+  algorithm change); V1.9 NOT STARTED.
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.8`. Pi did NOT rewrite any frozen design authority.
+No V1.7 schema / identity / digest changes. No
+SegmentConflict semantic changes. No source / provenance
+authority changes. No workspace ownership changes. No host
+mutation / Face / Observer. No site semantics. No V1.9.
+
+Correction by this dispatch (narrow, regression-locked in
+`tests/test_v18_structure_reconstruction.rb`):
+
+- **OWNER SU2020 BOOT BLOCK (void-value expression)**:
+  `core/canonical_structure_reconstructor.rb` — the
+  `_validate_adjacency_against_edges` non-array branch
+  used `next` as the value of the `else` branch of an
+  `if` expression assigned to `supplied`. Modern Ruby
+  (2.3+) evaluates `next` as `nil` and accepts the
+  construct; the SketchUp 2020 embedded Ruby parser
+  rejects it with
+  `SyntaxError: canonical_structure_reconstructor.rb:680:
+  void value expression`. The control flow is restructured
+  so `next` is a standalone block control statement
+  (handled FIRST in the loop body) and `supplied` is
+  assigned only from the `nil` / `Array` cases via a
+  pure value-returning `if` expression. Behaviour is
+  byte-equivalent: the `non_array_value:<kid>` mismatch
+  family continues to fire on a scalar supplied value
+  (regression-locked by `V18-BOOT-C`).
+
+Source-level regression (new) added by this dispatch (3
+tests):
+
+- `V18-BOOT-A`: production source has NO
+  `next` / `break` / `return` used as assignment RHS value.
+  Uses a heuristic that tracks `pending_assign` (previous
+  non-empty line ended with `=`) and `open_rhs` (stack of
+  in-progress `if` / `case` / `do` RHS blocks) to detect
+  standalone control-flow keywords appearing as values.
+  Verified to catch the BAD pattern (both split and
+  same-line opener forms) and not to false-positive on
+  six GOOD patterns (standalone `next` in plain `if`,
+  all-values if-assignment, all-values case-assignment,
+  array-method assignment, etc.).
+- `V18-BOOT-B`: V1.8 production file parses cleanly under
+  the local vendored Ruby (sanity check; the actual
+  host-side compatibility is the SU2020 real-host
+  verifier's job).
+- `V18-BOOT-C`: `_validate_adjacency_against_edges` still
+  emits `non_array_value:<kid>` for a scalar supplied value
+  after the restructure.
+
+The already-PASS SR18-01..08 + FR18-01..04 areas were NOT
+reworked beyond mechanical test compatibility — all 1029
+baseline tests + 16 V18-FR tests + 32 V18-SR tests remain
+PASS unchanged.
+
+CODEX_RISK_TRIGGER = NO. Per dispatch §Do-not-change: V1.7
+schema, V1.7 identity, V1.7 digest semantics,
+SegmentConflict semantics, source / provenance authority,
+tolerance authority upstream, workspace ownership, native
+SketchUp mutation, host Face creation, Undo / Observer
+architecture, UI product scope, V1.9 are all UNCHANGED.
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected action: Owner re-runs the real-SketchUp-2020
+boot path to confirm the `SyntaxError` is gone and the
+extension loads. On Owner PASS: V1.8 Owner Gate A–D can
+proceed. AIPM narrow review of this BOOT BLOCK packet is
+also pending. V1.9 / PreparedCadDataset remains deferred.
+
+CODEX_GATE: NOT REQUIRED.
+OWNER_GATE: PENDING RE-RUN.
+V1.9: NOT STARTED.
+
+## V1.8 FINAL-FOUR-RESIDUALS (HISTORICAL)
 
 Updated: 2026-09-03 (V18-FINAL-FOUR-RESIDUALS-2026-09-03
 dispatch EXECUTION on assigned `dev/v1.8` per dispatch

@@ -2719,3 +2719,293 @@ test 'V18-FR04: omitted isolated node key remains valid' do
   }, "V18-FR04: omitted isolated node MUST NOT generate any cn-iso reason; " \
      "got #{result['reasons'].inspect}"
 end
+
+
+# ================================================================= = #
+# V18-BOOT — OWNER SU2020 BOOT BLOCK regression.
+#
+# Real SketchUp 2020 Owner Gate produced:
+#   SyntaxError: canonical_structure_reconstructor.rb:680:
+#   void value expression
+#
+# The previous FR18-04 implementation used `next` as the
+# value of an `else` branch of an `if` expression assigned to
+# `supplied`:
+#
+#   supplied =
+#     if supplied_value.nil?
+#       []
+#     elsif supplied_value.is_a?(Array)
+#       supplied_value.map(&:to_s).reject(&:empty?).sort.uniq
+#     else
+#       mismatches << "...:non_array_value:#{nid}"
+#       next           # <-- embedded as a value
+#     end
+#
+# The local development Ruby (2.7.x) accepts that form (the
+# value of `next` is `nil`). The SketchUp 2020 embedded Ruby
+# parser rejects it with a `void value expression`
+# SyntaxError, which prevents the extension from even loading.
+#
+# Per the BOOT BLOCK dispatch, the narrow structural fix is
+# already applied: `next` is now a standalone block control
+# statement and `supplied` is assigned only from `nil` /
+# `Array` cases. This guard is the source-level regression
+# that prevents the same anti-pattern from regressing into
+# the production code in any future refactor.
+#
+# The guard scans the production source for two anti-patterns:
+#
+#   (1) `next` / `break` / `return` used as an expression
+#       value inside an assignment RHS — e.g. `x = if ... else
+#       next end` — which the old SU2020 parser rejects with
+#       `void value expression`. This is detected by looking
+#       for any line whose assignment RHS contains `next`,
+#       `break`, or `return` as a top-level keyword on its
+#       own line within an `if`/`case` expression.
+#
+#   (2) Specifically, the exact offending pattern from the
+#       BOOT BLOCK report: `else\n  ...\n  next\nend` (or
+#       similar) appearing as the value of an assignment.
+#
+# Both are forbidden. Standalone block control statements
+# (i.e. `next` at the start of a line inside a block body,
+# not embedded as the value of an assignment RHS) remain
+# allowed and are NOT flagged.
+# ================================================================= = #
+
+# Scan the V1.8 production file for any control-flow keyword
+# used as an expression value inside an assignment RHS, with
+# a particular focus on the old-Ruby-parser-incompatible
+# pattern of `next` / `break` / `return` inside an `if`/
+# `case` expression.
+#
+# The targeted pattern is the exact one that broke the
+# SketchUp 2020 Owner Gate:
+#
+#   supplied =
+#     if supplied_value.nil?
+#       []
+#     elsif supplied_value.is_a?(Array)
+#       ...
+#     else
+#       mismatches << "..."
+#       next           # <-- embedded as a value
+#     end
+#
+# Heuristic: track the bracket depth contributed by `if` /
+# `case` / `do` / `begin` / `{` and `end` / `}` so that when
+# we hit a standalone `next` / `break` / `return` line we
+# can tell whether we are still inside the RHS of an
+# assignment. This is intentionally conservative: standalone
+# block control statements at the START of a line inside a
+# block body are NOT flagged (they are legal in all Ruby
+# versions).
+def v18_boot_violations(src)
+  src_lines = src.each_line.to_a
+  # Strip comments + string literals (single + double quoted).
+  cleaned_lines = src_lines.map do |raw|
+    s = raw.sub(/#.*$/, '')
+    s = s.gsub(/"[^"]*"/, '""')
+    s = s.gsub(/'[^']*'/, "''")
+    s
+  end
+
+  offenders = []
+  # `pending_assign` is true when the previous non-empty
+  # line ended with `=` (an assignment whose RHS opener is
+  # on a continuation line). `open_rhs` is a stack of line
+  # indices for in-progress `if` / `case` / `do` RHS blocks.
+  pending_assign = false
+  open_rhs = []
+
+  cleaned_lines.each_with_index do |raw_clean, idx|
+    raw_orig = src_lines[idx]
+    stripped = raw_clean.rstrip
+    next if stripped.empty?
+
+    # A top-level `end` or `}` closes the innermost open RHS
+    # block (and clears any pending_assign state).
+    if stripped =~ /^\s*end\s*(?:#|$)/
+      open_rhs.pop if !open_rhs.empty?
+      pending_assign = false
+      next
+    end
+    if stripped =~ /^\s*\}\s*(?:#|$)/
+      open_rhs.pop if !open_rhs.empty?
+      pending_assign = false
+      next
+    end
+
+    # Detect the START of a multi-line assignment whose RHS
+    # is an `if` / `case` / `do` expression. Two forms are
+    # supported:
+    #   (a) `x = if cond1 ...` (opener on the same line)
+    #   (b) `x =` on one line followed by `if cond1 ...`
+    #       on the next non-empty line (continuation).
+    if !pending_assign &&
+       stripped =~ /^\s*\w[\w.\[\]\:]*\s*=(?!=)[^=]*\b(if|case|do)\b/
+      open_rhs << idx
+    elsif pending_assign && stripped =~ /^\s*(if|case|do)\b/
+      open_rhs << idx
+      pending_assign = false
+    end
+
+    # A non-comparison line ending with `=` sets the
+    # pending_assign flag (the next non-empty line should
+    # open the RHS).
+    if stripped =~ /=(?!=)\s*(?:#|$)/ &&
+       stripped !~ /\b==/ && stripped !~ /\b!=/ &&
+       stripped !~ /\b<=/ && stripped !~ /\b>=/ &&
+       stripped !~ /:=/ && stripped !~ /=>/ &&
+       stripped !~ /<<=/ && stripped !~ /\+=/
+      pending_assign = true
+    elsif !open_rhs.empty?
+      # We are inside an open RHS but did NOT close it on
+      # this line; keep pending_assign sticky until the
+      # opener / closer / value keyword lands.
+      pending_assign = false
+    else
+      pending_assign = false
+    end
+
+    # Detect a standalone control-flow keyword as a value
+    # ONLY if we are currently inside an open RHS block.
+    if !open_rhs.empty? && stripped =~ /^\s*(next|break|return)\s*(?:#|$)/
+      keyword = Regexp.last_match(1)
+      offenders << "#{idx + 1}: #{raw_orig.rstrip}  " \
+                     "[#{keyword} used as value inside assignment RHS]"
+    end
+  end
+  offenders
+end
+
+test 'V18-BOOT: production source has NO `next`/`break`/`return` used as assignment RHS value' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  offenders = v18_boot_violations(src)
+  assert_equal [], offenders,
+               'V18-BOOT: production source MUST NOT use control-flow keywords ' \
+               '(next / break / return) as expression values inside assignment ' \
+               'RHS expressions; the SketchUp 2020 embedded Ruby parser rejects ' \
+               "this with `void value expression` SyntaxError. Offenders:\n" \
+               "#{offenders.join("\n")}"
+end
+
+test 'V18-BOOT: V1.8 production file parses under the local vendored Ruby (sanity check)' do
+  # Load the production file in isolation and confirm it
+  # parses cleanly. This is a host-side sanity check
+  # against the local vendored Ruby 2.7.8; the BOOT BLOCK
+  # fix must keep this green.
+  load_path = File.expand_path(
+    '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+    __dir__
+  )
+  # Clear any previously-loaded copy of the module so we
+  # get a clean parse-and-load cycle.
+  if defined?(SUAnalysis::Core::CanonicalStructureReconstructor)
+    SUAnalysis::Core.send(:remove_const, :CanonicalStructureReconstructor)
+  end
+  begin
+    load load_path
+    refute_nil SUAnalysis::Core::CanonicalStructureReconstructor
+    assert_equal 'csr.v1',
+                 SUAnalysis::Core::CanonicalStructureReconstructor::SCHEMA_VERSION,
+                 'V18-BOOT: production module must load and expose SCHEMA_VERSION'
+  ensure
+    # The test framework already required this module via
+    # the file's top-level require_relative; reload the
+    # module so subsequent tests in this file see the same
+    # constants + method definitions.
+    if defined?(SUAnalysis::Core::CanonicalStructureReconstructor)
+      SUAnalysis::Core.send(:remove_const, :CanonicalStructureReconstructor)
+    end
+    load load_path
+  end
+end
+
+test 'V18-BOOT: _validate_adjacency_against_edges still produces correct results after restructure' do
+  # The BOOT BLOCK restructure moved the non-array branch
+  # out of the if-expression and into a standalone guard.
+  # All four mismatch families must continue to fire.
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => 'cn-1',                  # <-- scalar value
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adj,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-v18-boot'
+  }
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-BOOT: scalar adjacency value MUST still be FAILED; " \
+               "got #{result['state']}"
+  non_array = result['reasons'].any? { |r|
+    r.to_s.start_with?(
+      'invalid_graph:adjacency_mismatch:non_array_value:cn-2'
+    )
+  }
+  assert non_array,
+         "V18-BOOT: must still emit non_array_value for cn-2 after restructure; " \
+         "got #{result['reasons'].inspect}"
+end

@@ -659,6 +659,17 @@ module SUAnalysis
         # supplied. Missing supplied-key is normalized to an
         # empty list. Non-Array supplied values are rejected
         # explicitly.
+        #
+        # OWNER SU2020 BOOT BLOCK fix (narrow, no algorithm
+        # change): the previous implementation used `next` as
+        # the value of an `else` branch of an `if` expression
+        # assigned to `supplied`. The local development Ruby
+        # (2.7.x) accepts that, but the SketchUp 2020 embedded
+        # Ruby parser rejects it with
+        # `SyntaxError: void value expression`. The control
+        # flow is restructured below so `next` is a standalone
+        # block control statement and `supplied` is assigned
+        # only from `nil` / `Array` cases.
         node_set.each do |nid|
           # Look up the supplied value, defensively handling
           # both string and symbol keys.
@@ -667,17 +678,23 @@ module SUAnalysis
                            elsif adj_h.key?(nid.to_sym)
                              adj_h[nid.to_sym]
                            end
-          supplied =
-            if supplied_value.nil?
-              []
-            elsif supplied_value.is_a?(Array)
-              supplied_value.map(&:to_s).reject(&:empty?).sort.uniq
-            else
-              # Scalar / Hash / arbitrary non-Array value:
-              # fail closed (no silent coercion).
-              mismatches << "#{REASON_ADJACENCY_MISMATCH}:non_array_value:#{nid}"
-              next
-            end
+          # Scalar / Hash / arbitrary non-Array supplied value:
+          # fail closed (no silent coercion). Handled FIRST as a
+          # standalone control-flow branch so `next` is never
+          # used as an expression value.
+          if supplied_value && !supplied_value.is_a?(Array)
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:non_array_value:#{nid}"
+            next
+          end
+          # Normalize to a sorted/uniq String Array. nil
+          # (key absent) -> empty list; Array -> filtered +
+          # sorted/uniq. No control-flow keywords are used as
+          # expression values here.
+          supplied = if supplied_value.nil?
+                       []
+                     else
+                       supplied_value.map(&:to_s).reject(&:empty?).sort.uniq
+                     end
           expected_nbrs = Array(expected[nid]).map(&:to_s).sort.uniq
           supplied.each do |n|
             unless node_set.include?(n)
