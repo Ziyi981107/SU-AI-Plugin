@@ -1,6 +1,189 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.8 AIPM-SOURCE-REVIEW-CORRECTION (THIS UPDATE)
+## V1.8 FINAL-FOUR-RESIDUALS (THIS UPDATE)
+
+Updated: 2026-09-03 (V18-FINAL-FOUR-RESIDUALS-2026-09-03
+dispatch EXECUTION on assigned `dev/v1.8` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the AIPM narrow
+recheck `Review/CURRENT_AIPM_REVIEW.md`).
+Per dispatch §0, the ONLY authority for this packet is
+the FR18-01..FR18-04 review findings. Frozen V1.8
+Blueprint preserved unchanged.
+
+Status (this dispatch):
+
+- **V1.7: CLOSED** (per
+  `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
+- **V1.8: ACTIVE** (per dispatch §0).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
+- **V1.8 AIPM narrow recheck (this packet)**: BLOCK →
+  all FR18-01..FR18-04 fixed; Pi Complete; awaiting AIPM
+  final recheck.
+- **V1.8 Codex gate**: NOT REQUIRED
+  (`CODEX_RISK_TRIGGER = NO`).
+- **V1.8 Owner SU2020 gate (Scenarios A–D)**: pending
+  AFTER AIPM final recheck PASS.
+- **V1.9 / PreparedCadDataset NOT STARTED.**
+- **V2 / MCP OUT OF SCOPE.**
+
+V1.8 FR18 FINAL-RESIDUALS PACKET — 2026-09-03.
+
+- Starting HEAD: `ab3e0c8a573052598ebba6fa0b483341408a660f`
+  (the prior V18-AIPM-SOURCE-REVIEW-CORRECTION complete
+  state on `dev/v1.8`).
+- Implementation SHA: produced by this dispatch
+  (see `git log -1` after commit).
+- Final HEAD on `dev/v1.8`: see `git rev-parse HEAD`
+  after push.
+- V1.8 RBZ candidate: size **1,076,511 bytes**; entries
+  **69**; SHA-256
+  **`e4348abd68618b337161415c20fe0b81352de800e1b91ee8fb1492954986ffdb`**.
+- Packaged `html/app.js` SHA-256:
+  `56878DD018A0DB6A1684CABE91EE84EB1426B295C7B1CF60F6A08F5D98353F2D`.
+- Packaged `html/index.html` SHA-256:
+  `6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`.
+- Packaged `html/style.css` SHA-256:
+  `3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`.
+- Full Ruby suite: **1045 / 1045 PASS** / 0 fail / 0 error
+  (V1.0–V1.6 regressions + 127 V1.7 tests + 9 V1.5
+  BLOCK-005 + 7 V1.6 close-autodiscard + 4
+  LEGACY-COMPAT + 9 RBZ smoke + 15 V1.8 focused core
+  tests (V18-T01..T15) + 5 V1.8 runner integration
+  tests (V18-I01..I05) + 32 prior V1.8 SR18 focused tests
+  + 16 new V1.8 FR18 focused tests (V18-FR01..FR04)).
+  Delta vs prior V18-AIPM-SOURCE-REVIEW-CORRECTION 1029:
+  +16 tests (the new FR18 focused set).
+- V18-FR focused timing: **0.054 s** end-to-end (16
+  tests). 500-node chain walk + 300-node cycle walk
+  both finish sub-second on the new local-Set indexed
+  traversal.
+- Node DOM (`tests/test_html_render_dom.js`): unchanged
+  from V1.8 base; all 327 assertions PASS, final line
+  `PASS`.
+- `git diff --check`: clean (0 warnings).
+- per dispatch §Gate: STOPPED awaiting AIPM narrow
+  recheck of the FR18-01..FR18-04 deltas only; Codex
+  xHigh recheck NOT invoked (no risk trigger, frozen
+  boundary untouched); V1.9 NOT STARTED; final Owner
+  SU2020 real-host verification gate (Blueprint §22
+  A–D) NOT YET RUN.
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.8`. Pi did NOT rewrite any frozen
+design authority. No V1.7 schema / identity / digest
+changes. No SegmentConflict semantic changes. No
+source / provenance authority changes. No workspace
+ownership changes. No host mutation / Face /
+Observer. No site semantics. No V1.9.
+
+Corrections by this dispatch (each regression-locked
+in `tests/test_v18_structure_reconstruction.rb`):
+
+- **FR18-01 (coordinate_epsilon authority)**:
+  `core/canonical_structure_reconstructor.rb` —
+  rewrote `_resolve_coordinate_eps(graph, kw)` with
+  the strict authority contract: ANY explicit finite
+  positive `coordinate_epsilon:` keyword wins VERBATIM
+  (including exactly `1.0e-6`; the previous
+  `kw != 1.0e-6` short-circuit is removed); with no
+  explicit value, per-node epsilon is usable ONLY when
+  ALL nodes are finite / positive / CONSISTENT;
+  conflicting per-node eps with no explicit kw returns
+  the stable failure reason
+  `invalid_graph:coordinate_epsilon_mismatch` (no
+  silent median / min / max / first selection). The
+  `reconstruct(...)` entry point routes this to
+  `_empty_result` with `STATE_FAILED`.
+
+- **FR18-02 (true indexed O(V+E) membership)**:
+  `core/canonical_structure_reconstructor.rb` —
+  removed the process-global `comp_set(arr)` helper
+  and its `@_comp_set_cache` (object-id-keyed
+  membership cache); removed every `comp.include?`
+  Array scan from the production traversal hot path;
+  `_classify_component` now builds ONE local
+  `comp_set = Set.new(comp)` and threads it through
+  `_build_chain` / `_build_loop` / `_walk_cycle` /
+  `_parallel_pairs_in_comp` /
+  `_edges_in_component_via_index`; the rebuilt
+  adjacency accumulates via Set/hash
+  (`adj_set[k].add(b)`) and publishes sorted Arrays.
+
+- **FR18-03 (true deep freeze)**:
+  `core/canonical_structure_reconstructor.rb` —
+  rewrote `deep_freeze(obj)` to recursively freeze
+  Hash KEYS as well as values, recursively freeze
+  Array members, and **explicitly freeze String scalar
+  values** (Ruby Strings are mutable by default).
+  Mutation of `result['digest']`, `loop['loop_id']`,
+  `loop['source_occurrence_ids'][0]`, etc. now
+  raises `FrozenError` and the digest / payload
+  remain unchanged.
+
+- **FR18-04 (complete adjacency validation)**:
+  `core/canonical_structure_reconstructor.rb` —
+  rewrote `_validate_adjacency_against_edges(adj_h,
+  node_set, edge_h)` to iterate over EVERY canonical
+  node id (not only supplied keys), normalize missing
+  supplied-key to empty list, reject non-Array
+  adjacency values with the stable
+  `non_array_value:<kid>` reason, and report
+  `missing_neighbor` for omitted edge-backed keys.
+  Isolated known node with explicit empty adjacency
+  remains valid; omitted isolated node key remains
+  valid.
+
+New tests added by this dispatch (16 new V18-FR):
+
+- `V18-FR01` (4): explicit 1e-6 wins verbatim over
+  conflicting per-node eps; conflicting per-node eps
+  without kw -> FAILED mismatch reason; consistent
+  per-node eps -> uses exact value; no per-node eps +
+  no kw -> defensive 1e-6 fallback.
+- `V18-FR02` (5): source guards for
+  `comp.include?` / `@_comp_set_cache` /
+  `adjacency[k].include?` insert scans; 500-node chain
+  walk performance smoke; 300-node cycle walk
+  performance smoke.
+- `V18-FR03` (3): `digest` / `loop_id` /
+  `source_occurrence_ids` strings are frozen; in-place
+  `<<` mutations raise and digest/payload remain
+  unchanged; Hash keys inside the published payload are
+  frozen.
+- `V18-FR04` (4): omitted edge-backed adjacency key
+  -> FAILED missing_neighbor; scalar non-Array adjacency
+  value -> FAILED non_array_value; isolated known node
+  empty adjacency remains valid; omitted isolated node
+  key remains valid.
+
+CODEX_RISK_TRIGGER = NO. Per dispatch §Do-not-change:
+V1.7 schema, V1.7 identity, V1.7 digest semantics,
+SegmentConflict semantics, source / provenance
+authority, tolerance authority upstream, workspace
+ownership, native SketchUp mutation, host Face
+creation, Undo / Observer architecture, UI product
+scope, V1.9 are all UNCHANGED.
+
+The already-PASS SR18-01 / SR18-03 / SR18-05 / SR18-06
+areas were NOT reworked beyond mechanical test
+compatibility.
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected AIPM action: AIPM narrow recheck of
+FR18-01..FR18-04 only. On AIPM PASS: final Owner
+SU2020 real-host verification gate (Blueprint §22
+Scenarios A–D). V1.9 / PreparedCadDataset remains
+deferred.
+
+CODEX_GATE: NOT REQUIRED.
+OWNER_GATE: NOT YET RUN.
+V1.9: NOT STARTED.
+
+## V1.8 AIPM-SOURCE-REVIEW-CORRECTION (HISTORICAL)
 
 Updated: 2026-09-02 (V18-AIPM-SOURCE-REVIEW-CORRECTION-
 2026-09-02 dispatch EXECUTION on assigned `dev/v1.8` per

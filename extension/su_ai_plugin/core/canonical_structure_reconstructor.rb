@@ -61,6 +61,8 @@ module SUAnalysis
       REASON_DUPLICATE_CANONICAL_EDGE_ID = 'duplicate_canonical_edge_id'.freeze
       REASON_SELF_LOOP_EDGE           = 'self_loop_edge'.freeze
       REASON_ADJACENCY_MISMATCH       = 'invalid_graph:adjacency_mismatch'.freeze
+      REASON_COORDINATE_EPSILON_MISMATCH =
+        'invalid_graph:coordinate_epsilon_mismatch'.freeze
       REASON_UPSTREAM_TOPOLOGY_ISSUE  = 'upstream_topology_issue'.freeze
       REASON_BRANCHING_COMPONENT      = 'branching_component'.freeze
       REASON_INVALID_COMPONENT        = 'invalid_component'.freeze
@@ -112,22 +114,35 @@ module SUAnalysis
       end
 
       # Resolve ONE coordinate_epsilon for the whole
-      # reconstruction (SR18-02). Authority order:
+      # reconstruction (FR18-01). Authority order:
       #   1. explicit `coordinate_epsilon:` keyword argument
-      #      (V1.8 WorkingModeRunner integration captures
-      #      `tol.coordinate_epsilon` and passes it in);
+      #      wins VERBATIM if finite + positive -- including
+      #      exactly 1.0e-6 (no special-casing of the default);
       #   2. per-node `coordinate_epsilon` carried by the
-      #      canonical graph nodes (only if finite, positive,
-      #      and ALL canonical nodes agree);
-      #   3. graph.digest-side metadata (rare, defensive);
-      #   4. hard-coded 1e-6 fallback (defensive only --
-      #      asserted NEVER reached when a valid captured
-      #      non-default epsilon is present in the caller).
+      #      canonical graph nodes (only when ALL canonical
+      #      nodes carry a finite, positive, CONSISTENT value);
+      #   3. hard-coded 1.0e-6 fallback (used ONLY when no
+      #      explicit value AND no per-node value is available).
+      #
+      # Returns [coord_eps_or_nil, failure_reason_or_nil]:
+      #   - on success, coord_eps is a Float > 0 and the
+      #     failure reason is nil;
+      #   - on failure (conflicting per-node eps with no
+      #     explicit kw), coord_eps is nil and the failure
+      #     reason is the stable
+      #     `invalid_graph:coordinate_epsilon_mismatch` token.
+      # No silent median / min / max / first selection.
       def _resolve_coordinate_eps(graph_h, eps_kw)
-        kw = _safe_eps(eps_kw) if eps_kw.is_a?(Numeric)
-        return kw if kw.is_a?(Numeric) && kw > 0 && kw != 1.0e-6
-        # Try per-node eps from canonical graph nodes (Hash
-        # form, read from the graph passed in).
+        # 1. Explicit kw wins verbatim (including exactly 1e-6).
+        if eps_kw.is_a?(Numeric)
+          kw = eps_kw.to_f
+          if kw.finite? && kw > 0
+            return [kw, nil]
+          end
+        end
+        # 2. Try per-node eps from canonical graph nodes (Hash
+        # form, read from the graph passed in). Only valid when
+        # ALL finite-positive per-node values are consistent.
         node_list = if graph_h.is_a?(CanonicalGeometryGraph)
                       graph_h.nodes
                     else
@@ -141,22 +156,18 @@ module SUAnalysis
           f = v.to_f
           node_eps << f if f.finite? && f > 0
         end
-        if node_eps.any?
-          uniq = node_eps.uniq
-          if uniq.length == 1
-            return _safe_eps(uniq.first)
-          end
-          # Conflicting per-node eps: pick the median
-          # (deterministic) and document the disagreement.
-          sorted = node_eps.sort
-          median = sorted[sorted.length / 2]
-          return _safe_eps(median)
+        if node_eps.empty?
+          # 3. Defensive fallback (matches legacy 1e-6 contract).
+          return [1.0e-6, nil]
         end
-        # Defensive fallback. SR18-02 calls this the
-        # `silent_1e6_fallback` and tests assert it is NOT
-        # reached when the caller has supplied a valid
-        # non-default eps.
-        1.0e-6
+        uniq = node_eps.uniq
+        if uniq.length == 1
+          return [uniq.first, nil]
+        end
+        # Conflicting per-node eps with no explicit kw ->
+        # FR18-01 fails conservatively with a stable reason
+        # instead of silently picking median/min/max/first.
+        [nil, REASON_COORDINATE_EPSILON_MISMATCH]
       end
 
       # ---- Public entry ----
@@ -198,13 +209,23 @@ module SUAnalysis
           graph_dgst  = (h[:digest] || h['digest'] || '').to_s
         end
 
-        # SR18-02: resolve ONE coordinate_epsilon for the
+        # FR18-01: resolve ONE coordinate_epsilon for the
         # whole reconstruction. Threaded explicitly through
-        # every geometry check below; no silent 1e-6 fallback.
-        coord_eps = _resolve_coordinate_eps(
+        # every geometry check below; no silent 1e-6 fallback,
+        # no silent median/min/max/first selection on
+        # inconsistent per-node values.
+        coord_eps, eps_failure = _resolve_coordinate_eps(
           graph.is_a?(CanonicalGeometryGraph) ? graph : h,
           coordinate_epsilon
         )
+        if coord_eps.nil?
+          # Conflicting per-node eps with no explicit kw:
+          # fail closed with the stable mismatch reason.
+          return _empty_result(source_snapshot_id: source_snapshot_id,
+                               workspace_id: workspace_id,
+                               graph_digest: graph_dgst,
+                               reasons: [eps_failure])
+        end
 
         # ---- Step 1: graph validation ----
         reasons, validated = _validate_graph(node_h, edge_h, adj_h)
@@ -239,15 +260,23 @@ module SUAnalysis
         # ignore string-format inconsistency between
         # canonical_edge_id and canonical_node_id keys --
         # both are opaque identifiers in V1.8).
-        adjacency = Hash.new { |h_inner, k| h_inner[k] = [] }
+        #
+        # FR18-02: accumulate via per-node Set (O(1) add)
+        # instead of `Array#include?` insertion scans, then
+        # publish sorted Arrays so the published payload is
+        # deterministic AND downstream traversal can rely on
+        # O(V+E) Set lookups rather than O(N) Array scans.
+        adj_set = Hash.new { |h_inner, k| h_inner[k] = Set.new }
         edge_list.each do |eid|
           e = edges_by_id[eid]
           a = e['node_a_id'].to_s
           b = e['node_b_id'].to_s
           next if a.empty? || b.empty?
-          adjacency[a] << b unless adjacency[a].include?(b)
-          adjacency[b] << a unless adjacency[b].include?(a)
+          adj_set[a].add(b)
+          adj_set[b].add(a)
         end
+        adjacency = {}
+        adj_set.each { |k, s| adjacency[k] = s.to_a.sort }
 
         # SR18-04: build deterministic edge indexes once so
         # traversal is O(V + E). Built from the validated
@@ -438,22 +467,31 @@ module SUAnalysis
         result
       end
 
-      # SR18-07: deep-freeze a value in place. Recurses
-      # through Hash and Array. String/Frozen-String-typed
-      # scalars are immutable in Ruby by default; numeric
-      # / symbol / nil are immutable by definition. Returns
-      # the same object (mutated in place) so the call site
-      # reads naturally.
+      # FR18-03: deep-freeze a value in place. Recurses
+      # through Hash (freezing keys AND values) and Array
+      # (freezing each member). String scalars are explicitly
+      # frozen (Ruby Strings are mutable by default; without
+      # this branch, callers could mutate `result['digest']`,
+      # `loop_id`, `chain_id`, `region_id`, `source_occurrence_id`
+      # strings in place after publication). Numeric, symbol,
+      # true, false, and nil are immutable by definition and
+      # safely pass through. JSON-shape frozen recursively.
+      # Returns the same object (mutated in place) so the call
+      # site reads naturally.
       def deep_freeze(obj)
         case obj
         when Hash
+          obj.each_key { |k| deep_freeze(k) }
           obj.each_value { |v| deep_freeze(v) }
           obj.freeze
         when Array
           obj.each { |v| deep_freeze(v) }
           obj.freeze
+        when String
+          obj.freeze
         else
-          # Strings / numerics / symbols / nil: nothing to do.
+          # Numeric / Symbol / TrueClass / FalseClass / NilClass
+          # are immutable by definition.
           obj
         end
       end
@@ -575,14 +613,28 @@ module SUAnalysis
         [reasons, true]
       end
 
-      # SR18-08: structural adjacency vs edge inventory.
+      # FR18-04: structural adjacency vs edge inventory.
+      # Normalizes expected adjacency for EVERY canonical
+      # node id (missing expected-key = empty list), normalizes
+      # supplied adjacency for EVERY canonical node id
+      # (missing supplied-key = empty list), and compares the
+      # two sets for every canonical node id. An omitted
+      # edge-backed adjacency key now reports
+      # `missing_neighbor` instead of silently passing.
+      # Non-Array adjacency values are rejected as
+      # `non_array_value` (no silent scalar coercion). An
+      # isolated canonical node with empty adjacency remains
+      # valid (no edges = empty list = empty list).
       # Returns an Array of stable
-      # `invalid_graph:adjacency_mismatch:...` reason strings.
-      # Empty Array means adjacency is consistent with the
-      # edge inventory.
+      # `invalid_graph:adjacency_mismatch:...` reason strings
+      # sorted + uniq. Empty Array means adjacency is
+      # consistent with the edge inventory.
       def _validate_adjacency_against_edges(adj_h, node_set, edge_h)
         mismatches = []
         return mismatches unless adj_h.is_a?(Hash)
+        # 1. Build expected adjacency from the edge inventory,
+        # for EVERY canonical node id that participates in any
+        # edge. Isolated nodes get empty expected lists below.
         expected = {}
         edge_h.each do |e|
           h = e.is_a?(Hash) ? e : {}
@@ -594,32 +646,56 @@ module SUAnalysis
           (expected[b] ||= []) << a
         end
         expected.each_value { |arr| arr.sort!.uniq! }
-        # 1. unknown adjacency key
+        # 2. Unknown supplied adjacency keys are still
+        # failures (defensive against stale or fabricated
+        # ids that are not in the canonical node set).
         adj_h.each_key do |k|
           kid = k.to_s
           unless node_set.include?(kid)
             mismatches << "#{REASON_ADJACENCY_MISMATCH}:unknown_key:#{kid}"
           end
         end
-        # 2. unknown neighbor / 3. missing edge-backed /
-        # 4. extra neighbor not backed by edge
-        adj_h.each do |k, neighbors|
-          kid = k.to_s
-          next unless node_set.include?(kid)
-          given = Array(neighbors).map(&:to_s).sort.uniq
-          want  = Array(expected[kid]).sort.uniq
-          extra = given - want
-          missing = want - given
-          given.each do |n|
+        # 3. For EVERY canonical node id, compare expected vs
+        # supplied. Missing supplied-key is normalized to an
+        # empty list. Non-Array supplied values are rejected
+        # explicitly.
+        node_set.each do |nid|
+          # Look up the supplied value, defensively handling
+          # both string and symbol keys.
+          supplied_value = if adj_h.key?(nid)
+                             adj_h[nid]
+                           elsif adj_h.key?(nid.to_sym)
+                             adj_h[nid.to_sym]
+                           end
+          supplied =
+            if supplied_value.nil?
+              []
+            elsif supplied_value.is_a?(Array)
+              supplied_value.map(&:to_s).reject(&:empty?).sort.uniq
+            else
+              # Scalar / Hash / arbitrary non-Array value:
+              # fail closed (no silent coercion).
+              mismatches << "#{REASON_ADJACENCY_MISMATCH}:non_array_value:#{nid}"
+              next
+            end
+          expected_nbrs = Array(expected[nid]).map(&:to_s).sort.uniq
+          supplied.each do |n|
             unless node_set.include?(n)
-              mismatches << "#{REASON_ADJACENCY_MISMATCH}:unknown_neighbor:#{kid}->#{n}"
+              mismatches << "#{REASON_ADJACENCY_MISMATCH}:unknown_neighbor:#{nid}->#{n}"
             end
           end
-          extra.each do |n|
-            mismatches << "#{REASON_ADJACENCY_MISMATCH}:extra_neighbor:#{kid}->#{n}"
+          # Missing edge-backed neighbor: expected entries
+          # that did not appear in supplied.
+          (expected_nbrs - supplied).each do |n|
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:missing_neighbor:#{nid}->#{n}"
           end
-          missing.each do |n|
-            mismatches << "#{REASON_ADJACENCY_MISMATCH}:missing_neighbor:#{kid}->#{n}"
+          # Extra neighbor not backed by an edge: supplied
+          # entries that did not appear in expected AND are
+          # known canonical ids (so we do not double-count
+          # `unknown_neighbor`).
+          (supplied - expected_nbrs).each do |n|
+            next unless node_set.include?(n)
+            mismatches << "#{REASON_ADJACENCY_MISMATCH}:extra_neighbor:#{nid}->#{n}"
           end
         end
         mismatches.uniq.sort
@@ -688,13 +764,20 @@ module SUAnalysis
 
       def _classify_component(comp, adjacency, edges_by_id, node_index,
                               coord_eps = nil, edge_indexes = nil)
+        # FR18-02: ONE local Set for this component, used by
+        # every per-step `include?` check below (degree,
+        # chain walk, loop walk, parallel-pair pruning). The
+        # previous `comp.include?(other)` Array scan was
+        # O(N) per step and would degrade to O(V^2) for a
+        # long simple chain / loop.
+        comp_set = Set.new(comp)
         # SR18-04: detect parallel edges in this component
         # FIRST. Conservative: any node pair with >1 edge
         # => the component cannot be safely parsed, so we
         # return :parallel_edges without guessing.
         idx = edge_indexes || _build_edge_indexes(edges_by_id)
         if idx['has_parallel']
-          pair_set = _parallel_pairs_in_comp(comp, idx)
+          pair_set = _parallel_pairs_in_comp(comp_set, idx)
           return [:parallel_edges, nil] unless pair_set.empty?
         end
 
@@ -714,7 +797,7 @@ module SUAnalysis
             a = h['node_a_id'].to_s
             b = h['node_b_id'].to_s
             other = (a == nid) ? b : (b == nid ? a : nil)
-            !other.nil? && comp.include?(other)
+            !other.nil? && comp_set.include?(other)
           }
         end
         degree_counts = Hash.new(0)
@@ -724,7 +807,7 @@ module SUAnalysis
         term_count = degree_map.values.count(1)
         branch_count = degree_map.values.count { |d| d > 2 }
 
-        edges_in_comp = _edges_in_component_via_index(comp, idx, edges_by_id)
+        edges_in_comp = _edges_in_component_via_index(comp_set, idx, edges_by_id)
 
         # ---- branching > 2 ----
         if branch_count > 0
@@ -746,8 +829,8 @@ module SUAnalysis
         # is not mis-classified as invalid.
         if min_d == 2 && max_d == 2 && term_count == 0 &&
            comp.length >= 3 && edges_in_comp.length == comp.length
-          payload = _build_loop(comp, adjacency, edges_by_id, node_index,
-                                coord_eps, idx)
+          payload = _build_loop(comp, comp_set, adjacency, edges_by_id,
+                                node_index, coord_eps, idx)
           return [:simple_loop, payload]
         end
 
@@ -761,8 +844,8 @@ module SUAnalysis
 
         # ---- simple open chain ----
         if term_count == 2 && max_d <= 2 && min_d >= 1
-          payload = _build_chain(comp, adjacency, edges_by_id, node_index,
-                                 degree_map, coord_eps, idx)
+          payload = _build_chain(comp, comp_set, adjacency, edges_by_id,
+                                 node_index, degree_map, coord_eps, idx)
           return [:simple_chain, payload]
         end
 
@@ -770,11 +853,10 @@ module SUAnalysis
       end
 
       # SR18-04: collect the set of parallel-edge pairs that
-      # are wholly contained inside `comp`. Returns sorted
-      # Array of 'a|b' strings. Empty when no parallel edges
-      # touch this component.
-      def _parallel_pairs_in_comp(comp, edge_indexes)
-        comp_set = comp.is_a?(Set) ? comp : Set.new(comp)
+      # are wholly contained inside `comp_set` (already a Set).
+      # Returns sorted Array of 'a|b' strings. Empty when no
+      # parallel edges touch this component.
+      def _parallel_pairs_in_comp(comp_set, edge_indexes)
         out = []
         edge_indexes['parallel_pairs'].each do |pair|
           a, b = pair.split('|', 2)
@@ -786,8 +868,8 @@ module SUAnalysis
 
       # ---- chain ----
 
-      def _build_chain(comp, adjacency, edges_by_id, node_index, degree_map,
-                     coord_eps = nil, edge_indexes = nil)
+      def _build_chain(comp, comp_set, adjacency, edges_by_id, node_index,
+                     degree_map, coord_eps = nil, edge_indexes = nil)
         # Terminal nodes (degree 1).
         terminals = comp.select { |nid| degree_map[nid] == 1 }.sort
         # Blueprint §7: start from the lex-smaller terminal.
@@ -814,6 +896,8 @@ module SUAnalysis
           # SR18-04: use the incident index for O(deg(current))
           # candidate edges instead of scanning every edge in
           # the graph.
+          # FR18-02: per-step `comp_set.include?(other)` is
+          # O(1) instead of the previous O(V) `comp.include?`.
           incident = []
           (incident_list[current] || []).each do |eid|
             next if used_edges[eid]
@@ -823,7 +907,7 @@ module SUAnalysis
             b = h['node_b_id'].to_s
             other = (a == current) ? b : (b == current ? a : nil)
             next if other.nil?
-            next unless comp.include?(other)
+            next unless comp_set.include?(other)
             incident << [eid, other]
           end
           incident.sort_by! { |pair| pair[0].to_s }
@@ -911,8 +995,8 @@ module SUAnalysis
 
       # ---- loop ----
 
-      def _build_loop(comp, adjacency, edges_by_id, node_index, coord_eps = nil,
-                      edge_indexes = nil)
+      def _build_loop(comp, comp_set, adjacency, edges_by_id, node_index,
+                      coord_eps = nil, edge_indexes = nil)
         # Blueprint §4.2: start at lex-smallest canonical node.
         sorted_comp = comp.sort
         start_node = sorted_comp.first
@@ -921,15 +1005,15 @@ module SUAnalysis
         # token sequence.
         idx = edge_indexes || _build_edge_indexes(edges_by_id)
         neighbors = Array(adjacency[start_node]).select { |n|
-          comp.include?(n)
+          comp_set.include?(n)
         }.sort
         if neighbors.length != 2
           return _loop_with_failure(comp, edges_by_id,
                                    REASON_LOOP_TRAVERSAL_FAILED, coord_eps)
         end
-        orientation_a = _walk_cycle(start_node, neighbors[0], comp,
+        orientation_a = _walk_cycle(start_node, neighbors[0], comp_set,
                                     adjacency, edges_by_id, node_index, idx)
-        orientation_b = _walk_cycle(start_node, neighbors[1], comp,
+        orientation_b = _walk_cycle(start_node, neighbors[1], comp_set,
                                     adjacency, edges_by_id, node_index, idx)
         a_valid = _valid_cycle?(orientation_a)
         b_valid = _valid_cycle?(orientation_b)
@@ -979,7 +1063,7 @@ module SUAnalysis
         }
       end
 
-      def _walk_cycle(start_node, first_neighbor, comp, adjacency,
+      def _walk_cycle(start_node, first_neighbor, comp_set, adjacency,
                       edges_by_id, node_index, edge_indexes = nil)
         # Walk a deterministic cycle using the FIRST neighbor
         # as the orientation choice. We choose at each
@@ -1006,8 +1090,11 @@ module SUAnalysis
           prev = current
           current = next_node
           break if current == start_node && ordered_nodes.length > 1
+          # FR18-02: per-step membership check via the local
+          # Set is O(1) instead of the previous O(V) Array
+          # scan. This keeps the cycle walk linear in V+E.
           nbrs = Array(adjacency[current]).select { |n|
-            comp.include?(n) && n != prev
+            comp_set.include?(n) && n != prev
           }.sort
           next_node = nbrs.first
           if next_node.nil? && current != start_node
@@ -1018,7 +1105,8 @@ module SUAnalysis
         return nil if ordered_nodes.first != start_node
         return nil unless ordered_nodes.last == start_node
         # Must visit all component nodes.
-        return nil if ordered_nodes.uniq.length != comp.length
+        comp_length = comp_set.length
+        return nil if ordered_nodes.uniq.length != comp_length
         # Remove the trailing duplicate (closure) so node_ids
         # is the open sequence; world_coordinates carries the
         # closure coordinate for the polygon.
@@ -1642,15 +1730,15 @@ module SUAnalysis
       end
 
       # ---- edge helpers ----
-      # SR18-04: index-aware edge collection. Sum of
-      # incident-edge lists for each node in `comp`,
+      # FR18-02: index-aware edge collection. Sum of
+      # incident-edge lists for each node in `comp_set`,
       # restricted to edges whose OTHER endpoint is also in
-      # comp, deduped, sorted. O(V + E_comp) instead of
+      # comp_set, deduped, sorted. O(V + E_comp) instead of
       # O(V^2).
-      def _edges_in_component_via_index(comp, edge_indexes,
+      def _edges_in_component_via_index(comp_set, edge_indexes,
                                         edges_by_id)
         seen = {}
-        comp.each do |nid|
+        comp_set.each do |nid|
           (edge_indexes['incident'][nid] || []).each do |eid|
             h = edges_by_id[eid]
             next if h.nil?
@@ -1658,7 +1746,7 @@ module SUAnalysis
             b = h['node_b_id'].to_s
             other = (a == nid) ? b : (b == nid ? a : nil)
             next if other.nil?
-            next unless comp_set(comp).include?(other)
+            next unless comp_set.include?(other)
             seen[eid] = true
           end
         end
@@ -1675,7 +1763,7 @@ module SUAnalysis
           return []
         end
         idx = _build_edge_indexes(edges_by_id)
-        _edges_in_component_via_index(comp, idx, edges_by_id)
+        _edges_in_component_via_index(Set.new(comp), idx, edges_by_id)
       end
 
       # SR18-04: pair-index lookup, O(1) on average. Falls
@@ -1696,13 +1784,18 @@ module SUAnalysis
         nil
       end
 
-      # Cheap Set for repeated `include?` checks in the
-      # indexed edge helpers. Cached per process.
-      def comp_set(arr)
-        @_comp_set_cache ||= {}
-        @_comp_set_cache[arr.object_id] ||= Set.new(arr)
-        @_comp_set_cache[arr.object_id]
-      end
+      # FR18-02: removed the previous process-global
+      # `comp_set(arr)` helper and its instance-variable
+      # membership cache (which was keyed by
+      # `arr.object_id`). Object IDs can be reused after GC
+      # and the cache could grow across reconstructions.
+      # Component membership checks now use a local Set that
+      # is built once per traversal context (see
+      # `_classify_component`) and passed through the
+      # indexed helpers (`_parallel_pairs_in_comp`,
+      # `_edges_in_component_via_index`, `_build_chain`,
+      # `_walk_cycle`). No `comp.include?` remains in the
+      # production traversal hot path.
 
       def _aggregate_edge_meta(edge_ids, edges_by_id)
         length = 0.0

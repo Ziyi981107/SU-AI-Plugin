@@ -2071,3 +2071,651 @@ test 'V18-SR06: invalid adjacency (adjacency_mismatch) -> FAILED' do
   assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
                "V18-SR06: adjacency_mismatch MUST be FAILED; got #{result['state']}"
 end
+
+
+# ================================================================= = #
+# V18-FR01 — FR18-01 (epsilon authority) focused regressions.
+#
+# Per dispatch V18-FINAL-FOUR-RESIDUALS-2026-09-03:
+#   - any explicit finite positive `coordinate_epsilon:` wins
+#     verbatim, including exactly 1e-6;
+#   - with no explicit value, node epsilon is usable only if
+#     finite/positive/consistent;
+#   - conflicting per-node eps -> FAILED stable reason
+#     `invalid_graph:coordinate_epsilon_mismatch`,
+#     no median/min/max/first selection.
+# ================================================================= = #
+
+# Helper: minimal canonical graph with explicit per-node
+# `coordinate_epsilon` overrides. Returns a clean rectangle
+# graph Hash (4 nodes + 4 edges, adjacency is the canonical
+# rectangle).
+def v18_fr01_graph_with_node_eps(node_eps_by_id)
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true,
+     'coordinate_epsilon' => node_eps_by_id['cn-1'],
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true,
+     'coordinate_epsilon' => node_eps_by_id['cn-2'],
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true,
+     'coordinate_epsilon' => node_eps_by_id['cn-3'],
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true,
+     'coordinate_epsilon' => node_eps_by_id['cn-4'],
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  adjacency = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+  }
+  {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adjacency,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-fr01'
+  }
+end
+
+test 'V18-FR01: explicit 1e-6 wins verbatim over conflicting per-node eps' do
+  # Per-node eps disagree: 1e-3 vs 1e-5 vs 1e-4 vs 1e-6.
+  graph = v18_fr01_graph_with_node_eps(
+    'cn-1' => 1.0e-3, 'cn-2' => 1.0e-5,
+    'cn-3' => 1.0e-4, 'cn-4' => 1.0e-6
+  )
+  # The previous bug rejected kw == 1e-6 and then silently
+  # picked a median of conflicting per-node eps. The frozen
+  # FR18-01 contract says ANY explicit finite positive kw
+  # wins verbatim -- including exactly 1e-6 -- even when the
+  # per-node eps disagree.
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w',
+    coordinate_epsilon: 1.0e-6
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR01: explicit 1e-6 MUST NOT be rejected when conflicting nodes disagree; " \
+               "got #{result['state']}"
+  loop = result['loops'].first
+  refute_nil loop
+  assert_equal 1.0e-6, loop['coordinate_epsilon'],
+               "V18-FR01: explicit kw=1e-6 MUST be used verbatim (not median of node eps)"
+end
+
+test 'V18-FR01: conflicting per-node eps without kw -> FAILED mismatch reason' do
+  # Per-node eps disagree: 1e-3 vs 1e-5. No explicit kw.
+  # The frozen FR18-01 contract says: fail closed with a
+  # stable `invalid_graph:coordinate_epsilon_mismatch`
+  # reason -- NO silent median/min/max/first selection.
+  graph = v18_fr01_graph_with_node_eps(
+    'cn-1' => 1.0e-3, 'cn-2' => 1.0e-5,
+    'cn-3' => 1.0e-4, 'cn-4' => 1.0e-6
+  )
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR01: conflicting per-node eps without kw MUST be FAILED; " \
+               "got #{result['state']}"
+  expected_reason =
+    CanonicalStructureReconstructor::REASON_COORDINATE_EPSILON_MISMATCH
+  assert_includes result['reasons'], expected_reason,
+                  "V18-FR01: must emit #{expected_reason}; " \
+                  "got #{result['reasons'].inspect}"
+  assert_includes result['unresolved_issues'], expected_reason,
+                  "V18-FR01: reason must also appear in unresolved_issues; " \
+                  "got #{result['unresolved_issues'].inspect}"
+end
+
+test 'V18-FR01: consistent per-node eps without kw -> uses that exact value' do
+  # All nodes carry the SAME finite positive epsilon (1e-4),
+  # which is the frozen "captured tolerance" pattern used by
+  # the V1.8 WorkingModeRunner integration. With no explicit
+  # kw, the reconstructor MUST adopt that exact consistent
+  # per-node value (not the 1e-6 fallback).
+  graph = v18_fr01_graph_with_node_eps(
+    'cn-1' => 1.0e-4, 'cn-2' => 1.0e-4,
+    'cn-3' => 1.0e-4, 'cn-4' => 1.0e-4
+  )
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR01: consistent per-node eps MUST NOT be FAILED; got #{result['state']}"
+  loop = result['loops'].first
+  refute_nil loop
+  assert_equal 1.0e-4, loop['coordinate_epsilon'],
+               "V18-FR01: consistent per-node eps MUST be used verbatim"
+end
+
+test 'V18-FR01: no per-node eps + no kw -> defensive 1e-6 fallback' do
+  # No per-node eps at all (all nil), no kw. The defensive
+  # 1e-6 fallback MUST still apply so the reconstructor
+  # remains operational when neither authority is available.
+  graph = v18_fr01_graph_with_node_eps(
+    'cn-1' => nil, 'cn-2' => nil, 'cn-3' => nil, 'cn-4' => nil
+  )
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR01: no eps authority must fall back to 1e-6; got #{result['state']}"
+  loop = result['loops'].first
+  refute_nil loop
+  assert_equal 1.0e-6, loop['coordinate_epsilon'],
+               "V18-FR01: fallback path MUST use 1e-6 when no authority is available"
+end
+
+
+# ================================================================= = #
+# V18-FR02 — FR18-02 (true indexed O(V+E) membership) focused
+# regressions.
+#
+# Source guards + behavioural guards.
+# ================================================================= = #
+
+test 'V18-FR02: production traversal has NO comp.include? in hot path' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  offenders = []
+  src.each_line.with_index(1) do |line, lineno|
+    stripped = line.sub(/#.*$/, '')
+    cleaned = stripped.gsub(/"[^"]*"/, '').gsub(/'[^']*'/, '')
+    if cleaned =~ /comp\.include\?/
+      offenders << "#{lineno}: #{line.strip}"
+    end
+  end
+  assert_equal [], offenders,
+               "V18-FR02: production traversal MUST NOT use comp.include?; " \
+               "offenders: #{offenders.inspect}"
+end
+
+test 'V18-FR02: production source has NO @_comp_set_cache / object_id cache' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  refute_match(/@_comp_set_cache/, src,
+               'V18-FR02: production source MUST NOT define @_comp_set_cache')
+  refute_match(/def\s+comp_set\b/, src,
+               'V18-FR02: production source MUST NOT define a comp_set global helper')
+  # The historical object_id-keyed membership cache pattern is gone.
+  refute_match(/object_id.*Set\.new/, src,
+               'V18-FR02: production source MUST NOT use object_id-keyed membership cache')
+end
+
+test 'V18-FR02: production adjacency rebuild accumulates via Set (no Array#include? insert scan)' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/core/canonical_structure_reconstructor.rb',
+      __dir__
+    )
+  )
+  # The previous build path was:
+  #   adjacency[a] << b unless adjacency[a].include?(b)
+  # The FR18-02 contract requires Set/hash accumulation
+  # without Array#include? insertion scans.
+  refute_match(/adjacency\[.*?\]\.include\?/, src,
+               'V18-FR02: production source MUST NOT use adjacency[key].include? insert scan')
+  # The new path must include Set/hash accumulation.
+  assert_match(/adj_set\[.*?\]\.add\(b\)/, src,
+               'V18-FR02: production source MUST accumulate per-node adjacency via Set#add')
+end
+
+test 'V18-FR02: 500-node chain walk finishes comfortably bounded (no V^2)' do
+  n = 500
+  nodes = (1..n).map do |i|
+    {'canonical_node_id' => "cn-#{i}",
+     'world_coordinate' => [i.to_f, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  end
+  edges = (1...n).map do |i|
+    {'canonical_edge_id' => "ce-#{i}",
+     'node_a_id' => "cn-#{i}", 'node_b_id' => "cn-#{i + 1}",
+     'origin_kind' => 'source_derived', 'derived_edge_id' => "d-#{i}",
+     'source_occurrence_id' => "o-#{i}",
+     'source_occurrence_ids' => ["o-#{i}"],
+     'repair_action_id' => '',
+     'world_endpoints' => [[i.to_f, 0.0, 0.0], [(i + 1).to_f, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  end
+  adj = {}
+  nodes.each { |nd| adj[nd['canonical_node_id']] = [] }
+  edges.each do |e|
+    (adj[e['node_a_id']] ||= []) << e['node_b_id']
+    (adj[e['node_b_id']] ||= []) << e['node_a_id']
+  end
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adj,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-fr02-500-chain'
+  }
+  started_at = Time.now
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  elapsed = Time.now - started_at
+  assert_equal 1, result['metrics']['component_count']
+  assert_equal 1, result['metrics']['open_chain_count']
+  assert_equal n, result['chains'].first['node_ids'].length
+  assert_equal n - 1, result['chains'].first['edge_ids'].length
+  assert elapsed < 5.0,
+         "V18-FR02: 500-node chain walk MUST finish in <5s; got #{elapsed}s"
+end
+
+test 'V18-FR02: 300-node cycle walk finishes comfortably bounded (no V^2)' do
+  n = 300
+  nodes = (1..n).map do |i|
+    angle = (2.0 * Math::PI * (i - 1)) / n
+    {
+      'canonical_node_id' => "cn-#{i}",
+      'world_coordinate' => [10.0 * Math.cos(angle),
+                             10.0 * Math.sin(angle), 0.0],
+      'endpoint_keys' => [], 'derived_edge_ids' => [],
+      'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+      'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+      'membership_count' => 1
+    }
+  end
+  edges = (1..n).map do |i|
+    a_id = "cn-#{i}"
+    b_id = (i < n) ? "cn-#{i + 1}" : 'cn-1'
+    a = nodes[i - 1]['world_coordinate']
+    b = if i < n
+          nodes[i]['world_coordinate']
+        else
+          nodes[0]['world_coordinate']
+        end
+    {'canonical_edge_id' => "ce-#{i}",
+     'node_a_id' => a_id, 'node_b_id' => b_id,
+     'origin_kind' => 'source_derived', 'derived_edge_id' => "d-#{i}",
+     'source_occurrence_id' => "o-#{i}",
+     'source_occurrence_ids' => ["o-#{i}"],
+     'repair_action_id' => '',
+     'world_endpoints' => [a, b],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  end
+  adj = {}
+  nodes.each { |nd| adj[nd['canonical_node_id']] = [] }
+  edges.each do |e|
+    (adj[e['node_a_id']] ||= []) << e['node_b_id']
+    (adj[e['node_b_id']] ||= []) << e['node_a_id']
+  end
+  graph = {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges, 'adjacency' => adj,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-fr02-300-cycle'
+  }
+  started_at = Time.now
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  elapsed = Time.now - started_at
+  assert_equal 1, result['metrics']['component_count'],
+               "V18-FR02: single cycle component"
+  assert_equal 1, result['metrics']['closed_loop_count'],
+               "V18-FR02: 1 closed loop; got #{result['metrics']}"
+  assert_equal n, result['loops'].first['node_ids'].length,
+               "V18-FR02: cycle visits all #{n} nodes"
+  assert elapsed < 5.0,
+         "V18-FR02: 300-node cycle walk MUST finish in <5s; got #{elapsed}s"
+end
+
+
+# ================================================================= = #
+# V18-FR03 — FR18-03 (true deep freeze) focused regressions.
+#
+# Per dispatch V18-FINAL-FOUR-RESIDUALS-2026-09-03:
+#   - deep-freeze Hash keys + values;
+#   - deep-freeze Arrays;
+#   - freeze String scalar values;
+#   - mutation of digest / loop_id / source_occurrence_id
+#     strings must fail;
+#   - digest/payload cannot change after publication.
+# ================================================================= = #
+
+test 'V18-FR03: digest / loop_id / source_occurrence_id strings are frozen' do
+  graph = v18_build_graph([
+    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+  ])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert result['digest'].frozen?,
+         'V18-FR03: result[\'digest\'] string MUST be frozen'
+  loop = result['loops'].first
+  refute_nil loop
+  assert loop['loop_id'].frozen?,
+         'V18-FR03: loop[\'loop_id\'] string MUST be frozen'
+  loop['source_occurrence_ids'].each_with_index do |s, i|
+    assert s.frozen?,
+           "V18-FR03: loop source_occurrence_ids[#{i}] string MUST be frozen"
+  end
+  region = result['regions'].first
+  refute_nil region
+  assert region['region_id'].frozen?,
+         'V18-FR03: region[\'region_id\'] string MUST be frozen'
+  result['reasons'].each do |r|
+    assert r.frozen?,
+           "V18-FR03: reason string MUST be frozen; got #{r.inspect}"
+  end
+end
+
+test 'V18-FR03: in-place string mutation of digest / loop_id / source_occurrence_id raises' do
+  graph = v18_build_graph([
+    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+    [[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]]
+  ])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  digest_before = result['digest'].to_s
+  loop = result['loops'].first
+  loop_id_before = loop['loop_id'].to_s
+  occ_id_before = loop['source_occurrence_ids'].first.to_s
+  # 1. digest string in-place mutation must fail.
+  raised = false
+  begin
+    result['digest'] << 'x'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised,
+         'V18-FR03: result[\'digest\'] << \'x\' MUST raise'
+  # 2. loop_id string in-place mutation must fail.
+  raised = false
+  begin
+    loop['loop_id'] << 'x'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised,
+         'V18-FR03: loop[\'loop_id\'] << \'x\' MUST raise'
+  # 3. source_occurrence_id string in-place mutation must fail.
+  raised = false
+  begin
+    loop['source_occurrence_ids'].first << 'x'
+  rescue RuntimeError, FrozenError
+    raised = true
+  end
+  assert raised,
+         'V18-FR03: source_occurrence_ids[0] << \'x\' MUST raise'
+  # 4. digest / loop_id / source_occurrence_id are unchanged.
+  assert_equal digest_before, result['digest'],
+               'V18-FR03: digest MUST remain unchanged'
+  assert_equal loop_id_before, loop['loop_id'],
+               'V18-FR03: loop_id MUST remain unchanged'
+  assert_equal occ_id_before, loop['source_occurrence_ids'].first,
+               'V18-FR03: source_occurrence_id MUST remain unchanged'
+end
+
+test 'V18-FR03: Hash keys inside published payload are frozen' do
+  graph = v18_build_graph([
+    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+  ])
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  # Every top-level key of the published Hash must be a
+  # frozen String (the published keys are the String
+  # schema_field names).
+  result.each_key do |k|
+    assert k.frozen?,
+           "V18-FR03: top-level result key #{k.inspect} MUST be frozen"
+  end
+  loop = result['loops'].first
+  loop.each_key do |k|
+    assert k.frozen?,
+           "V18-FR03: loop key #{k.inspect} MUST be frozen"
+  end
+end
+
+
+# ================================================================= = #
+# V18-FR04 — FR18-04 (complete adjacency validation) focused
+# regressions.
+#
+# Per dispatch V18-FINAL-FOUR-RESIDUALS-2026-09-03:
+#   A. remove an entire edge-backed adjacency key => FAILED.
+#   B. scalar / non-Array adjacency value => FAILED.
+#   C. isolated known node with explicit empty adjacency
+#      remains valid if the graph otherwise supports
+#      isolated-node policy.
+# Plus the existing four mismatch families continue to fail.
+# ================================================================= = #
+
+# Helper: minimal 4-node rectangular graph (cn-1..cn-4)
+# matching the canonical rectangle adjacency. Caller supplies
+# an adjacency_override Hash; node_set is derived from the
+# canonical nodes cn-1..cn-4 so isolated-node cases can
+# exercise the per-canonical-node iteration.
+def v18_fr04_graph_with_adj(adjacency_override)
+  nodes = [
+    {'canonical_node_id' => 'cn-1', 'world_coordinate' => [0.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-2', 'world_coordinate' => [10.0, 0.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-3', 'world_coordinate' => [10.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-4', 'world_coordinate' => [0.0, 5.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1},
+    {'canonical_node_id' => 'cn-iso', 'world_coordinate' => [50.0, 50.0, 0.0],
+     'endpoint_keys' => [], 'derived_edge_ids' => [],
+     'source_occurrence_ids' => [], 'layer_names' => ['L0'],
+     'resolved_clique' => true, 'coordinate_epsilon' => 1.0e-6,
+     'membership_count' => 1}
+  ]
+  edges = [
+    {'canonical_edge_id' => 'ce-1', 'node_a_id' => 'cn-1', 'node_b_id' => 'cn-2',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-1',
+     'source_occurrence_id' => 'o-1', 'source_occurrence_ids' => ['o-1'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-2', 'node_a_id' => 'cn-2', 'node_b_id' => 'cn-3',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-2',
+     'source_occurrence_id' => 'o-2', 'source_occurrence_ids' => ['o-2'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-3', 'node_a_id' => 'cn-3', 'node_b_id' => 'cn-4',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-3',
+     'source_occurrence_id' => 'o-3', 'source_occurrence_ids' => ['o-3'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []},
+    {'canonical_edge_id' => 'ce-4', 'node_a_id' => 'cn-4', 'node_b_id' => 'cn-1',
+     'origin_kind' => 'source_derived', 'derived_edge_id' => 'd-4',
+     'source_occurrence_id' => 'o-4', 'source_occurrence_ids' => ['o-4'],
+     'repair_action_id' => '',
+     'world_endpoints' => [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]],
+     'layer_name' => 'L0', 'unresolved_flags' => []}
+  ]
+  {
+    'schema_version' => 'cgg.v1',
+    'nodes' => nodes, 'edges' => edges,
+    'adjacency' => adjacency_override,
+    'unresolved_topology_issues' => [],
+    'metrics' => {}, 'non_transitive_clusters' => [],
+    'open_endpoints' => [], 'tolerance_digest' => 'tol',
+    'digest' => 'g-fr04'
+  }
+end
+
+test 'V18-FR04: omitted entire edge-backed adjacency key -> FAILED missing_neighbor' do
+  # Adjacency is missing the entire key for cn-2, which is
+  # edge-backed (cn-1 <-> cn-2 <-> cn-3). Previously the
+  # omission passed because validation only iterated
+  # supplied keys. FR18-04 requires that we iterate EVERY
+  # canonical node and compare expected vs supplied.
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    # 'cn-2' => <omitted entirely>,
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1'],
+    'cn-iso' => []
+  }
+  graph = v18_fr04_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR04: omitted edge-backed key MUST be FAILED; got #{result['state']}"
+  missing_present = result['reasons'].any? { |r|
+    r.to_s.start_with?(
+      'invalid_graph:adjacency_mismatch:missing_neighbor:cn-2->'
+    )
+  }
+  assert missing_present,
+         "V18-FR04: must report missing_neighbor for cn-2; " \
+         "got #{result['reasons'].inspect}"
+end
+
+test 'V18-FR04: scalar non-Array adjacency value -> FAILED non_array_value' do
+  # cn-2 carries a scalar String instead of an Array. Per
+  # FR18-04, the reconstructor must NOT silently coerce a
+  # scalar into a valid adjacency list.
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => 'cn-1',
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1'],
+    'cn-iso' => []
+  }
+  graph = v18_fr04_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR04: scalar adjacency value MUST be FAILED; got #{result['state']}"
+  scalar_present = result['reasons'].any? { |r|
+    r.to_s.start_with?(
+      'invalid_graph:adjacency_mismatch:non_array_value:cn-2'
+    )
+  }
+  assert scalar_present,
+         "V18-FR04: must report non_array_value for cn-2; " \
+         "got #{result['reasons'].inspect}"
+end
+
+test 'V18-FR04: isolated known node empty adjacency remains valid (clean negative case)' do
+  # cn-iso is an isolated canonical node (no incident
+  # edges). Its adjacency is explicitly an empty Array,
+  # which is the canonical "isolated node" representation.
+  # Per FR18-04, an isolated known node with empty adjacency
+  # remains valid; the validation must NOT report
+  # missing_neighbor for an isolated node.
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1'],
+    'cn-iso' => []
+  }
+  graph = v18_fr04_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR04: isolated known node with empty adjacency MUST NOT be FAILED; " \
+               "got #{result['state']}"
+  refute result['reasons'].any? { |r|
+    r.to_s.start_with?('invalid_graph:adjacency_mismatch')
+  }, "V18-FR04: isolated node with empty adjacency MUST NOT report any mismatch; " \
+     "got #{result['reasons'].inspect}"
+  assert_equal 1, result['metrics']['closed_loop_count'],
+               "V18-FR04: 1 closed loop; got #{result['metrics']}"
+end
+
+test 'V18-FR04: omitted isolated node key remains valid' do
+  # Same as above, but the isolated canonical node does not
+  # even appear as a key in the adjacency hash at all.
+  # FR18-04 says: missing supplied-key for an isolated node
+  # normalizes to an empty list and remains valid.
+  adj = {
+    'cn-1' => ['cn-2', 'cn-4'],
+    'cn-2' => ['cn-1', 'cn-3'],
+    'cn-3' => ['cn-2', 'cn-4'],
+    'cn-4' => ['cn-3', 'cn-1']
+    # cn-iso is omitted entirely
+  }
+  graph = v18_fr04_graph_with_adj(adj)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  refute_equal CanonicalStructureReconstructor::STATE_FAILED, result['state'],
+               "V18-FR04: omitted isolated node key MUST NOT be FAILED; " \
+               "got #{result['state']}"
+  refute result['reasons'].any? { |r|
+    r.to_s.include?('cn-iso')
+  }, "V18-FR04: omitted isolated node MUST NOT generate any cn-iso reason; " \
+     "got #{result['reasons'].inspect}"
+end
