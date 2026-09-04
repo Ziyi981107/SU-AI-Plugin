@@ -2,86 +2,233 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>CAD 检查结果</title>
+  <title>SU AI · CAD Prep</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    V1.9A-A1 — Production UI shell (port of Owner-approved
+    Prototype/V1_9A/index.html).
+
+    Production frontend safety contract (per dispatch §11):
+      - No eval / new Function / document.write.
+      - No remote runtime dependency (no CDN, no web font,
+        no remote icon library, no remote script).
+      - All user-supplied text rendered via textContent.
+      - Legacy-aware: flex layout + explicit margins (no CSS
+        Grid, no flex `gap`, no `backdrop-filter`).
+      - 4 tabs (处理 default, 问题, 图层, 详情).
+      - 5 capability cards in fixed order, always visible.
+
+    Render contract (per dispatch §5):
+      - The frontend renders purely from the additive
+        `cadPrepWorkflow` payload (top-level key on the
+        UIBridge payload).
+      - Existing V1.0–V1.8 raw payload fields
+        (selectionType, summary, groups, layerGroups,
+        layerIssueGroups, faceInventoryGroups, derivedWorkspace)
+        remain available for technical / detail rendering.
+
+    Authority:
+      Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md
+      + dispatch Prompt/CURRENT_PI_DISPATCH.md (V1.9A-A1).
+
+    Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 contracts UNCHANGED.
+    No algorithm change. No source CAD mutation.
+  -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>CAD 检查结果</h1>
-    <div id="selection-info" class="muted">未选择对象</div>
-  </header>
-  <main>
-    <!--
-      V1.6 UI-CN-SIMPLIFICATION (per dispatch
-      V16-UI-CN-SIMPLIFICATION-2026-09-01): the default visible
-      structure is materially simpler than V1.5.
-        Default visible:
-          A. Header (CAD 检查结果 + selection line)
-          B. #summary (compact scalar + per-issue-type counters)
-          C. #groups (canonical issue groups; OPEN only on defaultOpen)
-          D. 处理工作区 (Working Mode card + ONE primary CTA + collapsed 更多操作)
-          E. 平面校正 (Planar Normalization card, condensed Chinese rows)
-        Collapsed by default:
-          - 检查详情 (was: scalar + per-issue-type details)
-          - 按图层查看问题
-          - 图层信息
-          - 面信息
-          - 技术详情 (preserves source snapshot id / fingerprint /
-            config digest / raw workspace state / per-action audit /
-            raw normalization audit / reason / failure_reason)
-      The default screen therefore shows only what a normal user
-      needs to (a) know whether their CAD has issues, (b) know the
-      current workspace state, (c) know the system's recommended next
-      step, and (d) click the right button.
-    -->
-    <section id="summary"></section>
-    <section id="groups"></section>
-    <!--
-      V1.4 (per directive 030, Stage 4): the "处理工作区" section sits
-      AFTER the per-issue-type groups block. The action row carries
-      ONE primary action button (Prepare / Analyze Planarity / Apply
-      Safe Normalization) and a collapsed "更多操作" <details> block
-      with the secondary Discard / Rebuild controls.
-    -->
-    <details id="working-mode-section">
-      <summary id="working-mode-summary">处理工作区</summary>
-      <div id="working-mode-list"></div>
-      <div id="working-mode-actions"></div>
-    </details>
-    <!--
-      V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): the
-      "技术详情" section preserves the full data contract
-      (source snapshot id, source fingerprint, execution
-      config digest, raw workspace state, per-action
-      action_id / rule_id / survivor_id / source occurrence
-      count, raw normalization reason / audit fields). It is
-      rendered CLOSED by default; normal users do not need to
-      open it.
-    -->
-    <details id="technical-details-section">
-      <summary id="technical-details-summary">技术详情</summary>
-      <div id="technical-details-list"></div>
-    </details>
-    <!--
-      V1.6 UI-CN-SIMPLIFICATION: per dispatch §3, the following
-      sections remain available but are COLLAPSED by default
-      and moved BELOW the primary Working Mode + Technical
-      Details blocks. Users only open them when they need
-      detailed per-layer / per-face inspection.
-    -->
-    <details id="layer-issues-section">
-      <summary id="layer-issues-summary">按图层查看问题</summary>
-      <div id="layer-issues-list"></div>
-    </details>
-    <details id="layers-section">
-      <summary id="layers-summary">图层信息</summary>
-      <div id="layers-list"></div>
-    </details>
-    <details id="face-inventory-section">
-      <summary id="face-inventory-summary">面信息</summary>
-      <div id="face-inventory-list"></div>
-    </details>
-  </main>
+  <div class="app-shell" id="app-shell">
+
+    <!-- ============================== -->
+    <!-- App header                    -->
+    <!-- ============================== -->
+    <header class="app-header" role="banner">
+      <div class="app-header-left">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#5b6cff"/>
+                <stop offset="1" stop-color="#8a5cf6"/>
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="18" height="18" rx="5" fill="url(#brand-grad)"/>
+            <path d="M6 14 L10 8 L13 12 L16 9" stroke="#ffffff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">SU AI · CAD Prep</div>
+          <div class="brand-subtitle" id="brand-subtitle">CAD 准备</div>
+        </div>
+      </div>
+
+      <div class="app-header-right">
+        <div class="selection-line" id="selection-line">
+          <span class="selection-label">当前选择：</span>
+          <span class="selection-value" id="selection-value">尚未选择</span>
+        </div>
+        <div class="status-chip" id="status-chip" data-state="IDLE">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text" id="status-text">尚未处理</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============================== -->
+    <!-- Top tab navigation            -->
+    <!-- ============================== -->
+    <nav class="tab-bar" role="tablist" aria-label="主导航">
+      <button class="tab-item" id="tab-process" role="tab" aria-selected="true" aria-controls="panel-process" data-tab="process">
+        <span class="tab-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M2 7h10M2 11h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        处理
+      </button>
+      <button class="tab-item" id="tab-issues" role="tab" aria-selected="false" aria-controls="panel-issues" data-tab="issues">
+        <span class="tab-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7 4v3.5M7 9.2v.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        问题
+        <span class="tab-badge" id="tab-issues-badge" hidden>0</span>
+      </button>
+      <button class="tab-item" id="tab-layers" role="tab" aria-selected="false" aria-controls="panel-layers" data-tab="layers">
+        <span class="tab-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.5l5 2.6v6L7 12.6 2 10.1v-6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M2 4.1l5 2.6 5-2.6" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+        </span>
+        图层
+      </button>
+      <button class="tab-item" id="tab-details" role="tab" aria-selected="false" aria-controls="panel-details" data-tab="details">
+        <span class="tab-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2.2" y="2.5" width="9.6" height="9" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M4 5h6M4 7h6M4 9h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </span>
+        详情
+      </button>
+    </nav>
+
+    <main class="app-main" id="app-main">
+
+      <!-- ============================================== -->
+      <!-- Panel: 处理 (Process) — default                -->
+      <!-- ============================================== -->
+      <section class="panel" id="panel-process" role="tabpanel" aria-labelledby="tab-process">
+
+        <!-- Recovery banner (STALE / FAILED) -->
+        <div class="recovery-banner" id="recovery-banner" hidden>
+          <div class="recovery-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 18 18"><path d="M9 1.8l7.2 4v7.4L9 17.2 1.8 13.2V5.8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M9 6v3.6M9 11.6v.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </div>
+          <div class="recovery-body">
+            <div class="recovery-title" id="recovery-title">工作副本已失效</div>
+            <div class="recovery-desc" id="recovery-desc">源对象已被修改或 SketchUp 撤销了一次操作。请重新生成工作副本，或放弃当前副本以保持源 CAD 完整。</div>
+          </div>
+          <div class="recovery-actions">
+            <button class="btn btn-primary" id="btn-rebuild" type="button" data-action="rebuild_workspace">重新生成工作副本</button>
+            <button class="btn btn-ghost" id="btn-discard" type="button" data-action="discard_workspace">放弃工作副本</button>
+          </div>
+        </div>
+
+        <!-- Top-level CTA row (single primary action) -->
+        <div class="cta-row" id="cta-row">
+          <div class="cta-summary" id="cta-summary">
+            <div class="cta-headline" id="cta-headline">CAD 尚未处理</div>
+            <div class="cta-sub" id="cta-sub">开始后将创建安全工作副本并完成全部检查</div>
+          </div>
+          <div class="cta-actions">
+            <button class="btn btn-primary btn-lg" id="btn-primary-cta" type="button" data-action="primary_cta">
+              <span class="btn-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 7l3 3 5-6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span id="btn-primary-cta-text">开始处理</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top issue summary (error-only per dispatch §8) -->
+        <section class="issue-summary" id="issue-summary" aria-label="问题摘要">
+          <!-- Populated by app.js from cadPrepWorkflow.issue_summary. -->
+        </section>
+
+        <!-- Capability cards (5 fixed order; always visible per Blueprint §4.3 P3) -->
+        <section class="capability-grid" id="capability-grid" aria-label="处理能力">
+          <!-- Cards injected by app.js in fixed order. -->
+        </section>
+
+      </section>
+
+      <!-- ============================================== -->
+      <!-- Panel: 问题 (Issues)                           -->
+      <!-- ============================================== -->
+      <section class="panel" id="panel-issues" role="tabpanel" aria-labelledby="tab-issues" hidden>
+        <div class="panel-header">
+          <h2 class="panel-title">当前未解决问题</h2>
+          <p class="panel-sub">仅显示当前已处理结果中尚未修复的问题</p>
+        </div>
+        <div class="issues-list" id="issues-list" aria-label="未解决问题列表">
+          <!-- Populated by app.js from cadPrepWorkflow + raw legacy payload. -->
+        </div>
+        <details class="audit-block" id="audit-source-issues">
+          <summary>原始检查记录</summary>
+          <div class="audit-body" id="audit-source-body">
+            <!-- Populated by app.js from legacy groups. -->
+          </div>
+        </details>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- Panel: 图层 (Layers)                          -->
+      <!-- ============================================== -->
+      <section class="panel" id="panel-layers" role="tabpanel" aria-labelledby="tab-layers" hidden>
+        <div class="panel-header">
+          <h2 class="panel-title">图层语义</h2>
+          <p class="panel-sub">图层角色与可见性</p>
+        </div>
+        <div class="layer-list" id="layer-list" aria-label="图层列表">
+          <!-- Populated by app.js from legacy layerGroups. -->
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- Panel: 详情 (Details / Technical)              -->
+      <!-- ============================================== -->
+      <section class="panel" id="panel-details" role="tabpanel" aria-labelledby="tab-details" hidden>
+        <div class="panel-header">
+          <h2 class="panel-title">技术详情</h2>
+          <p class="panel-sub">审计与诊断信息（含原始计数 / 源指纹 / 配置摘要）</p>
+        </div>
+        <details class="audit-block" id="audit-source-details" open>
+          <summary>源快照与配置</summary>
+          <div class="audit-body" id="audit-source-details-body"></div>
+        </details>
+        <details class="audit-block" id="audit-raw-inventory">
+          <summary>原始计数</summary>
+          <div class="audit-body" id="audit-raw-inventory-body"></div>
+        </details>
+        <details class="audit-block" id="audit-workspace">
+          <summary>工作副本状态</summary>
+          <div class="audit-body" id="audit-workspace-body"></div>
+        </details>
+        <details class="audit-block" id="audit-repair-history">
+          <summary>修复审计</summary>
+          <div class="audit-body" id="audit-repair-history-body"></div>
+        </details>
+        <details class="audit-block" id="audit-canonical">
+          <summary>规范几何摘要</summary>
+          <div class="audit-body" id="audit-canonical-body"></div>
+        </details>
+        <details class="audit-block" id="audit-source-issues-details">
+          <summary>原始检查记录</summary>
+          <div class="audit-body" id="audit-source-issues-details-body"></div>
+        </details>
+      </section>
+
+    </main>
+
+    <footer class="app-footer" role="contentinfo">
+      <span class="footer-text" id="footer-text">V1.9A · A1 生产前端</span>
+    </footer>
+
+  </div>
+
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>
 </body>

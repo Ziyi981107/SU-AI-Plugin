@@ -1,1797 +1,987 @@
 /*
- * extension/html/app.js — UI render + click handler.
+ * extension/html/app.js — V1.9A-A1 production UI render + click
+ * handler.
  *
- * Per CodeX Round 010..014:
- *   - No eval, no new Function, no document.write, no innerHTML for
- *     user-supplied strings.
- *   - All text rendered via textContent / setAttribute.
- *   - Click -> window.sketchup.locate(issue_id).
- *   - DOMContentLoaded -> window.sketchup.ready() (ready handshake).
+ * Locked contracts (per dispatch §5 / §11 / §12):
+ *   - All user-supplied text rendered via textContent /
+ *     safe attribute APIs. No innerHTML / no eval / no
+ *     new Function / no document.write.
+ *   - No remote runtime dependency.
+ *   - 4 tabs (处理 default, 问题, 图层, 详情).
+ *   - 5 capability cards in fixed order, always visible.
+ *   - Inventory absent from default 处理 view; raw counts
+ *     reachable in 详情 only.
+ *   - DOMContentLoaded -> window.sketchup.ready() handshake
+ *     (preserved from V1.4 production contract).
+ *   - Render contract:
+ *       window.SUAIP.render(json) — main render entry
+ *         (preserved from V1.4 production contract).
+ *       window.SUAIP.toast(message) — user-facing toast
+ *         (preserved from V1.4 production contract).
  *
- * Per CodeX Round 019 BLOCK-006-R2: the locked Stage 6 plan section
- * 6.7 summary MUST render per-issue-type counts as individual
- * human-readable counters (e.g. "Short edges: 1", "Duplicate
- * candidates: 0") in the canonical order, NOT as
- * "Issues: [object Object]". The scalar header rows (Selection,
- * Edges, Vertices, non-zero-Z vertices, Warnings) are emitted FIRST
- * and the per-issue-type rows are emitted AFTER, one per canonical
- * issue_type, all in a single linear summary block. The order of
- * canonical issue types is locked and matches
- * `SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES`.
+ * Callbacks dispatched to host (per dispatch §12):
+ *   prepare_workspace, discard_workspace, rebuild_workspace,
+ *   compute_planar_normalization, apply_planar_normalization,
+ *   compute_gap_repair, apply_gap_repair,
+ *   compute_structure_reconstruction, locate, close.
  *
- * V1.6 UI-CN-SIMPLIFICATION (per dispatch
- * V16-UI-CN-SIMPLIFICATION-2026-09-01):
- *   - All normal user-facing text is Simplified Chinese.
- *   - Internal data identifiers (issue_id, snapshot_id, fingerprint,
- *     config_digest, action_id, rule_id, survivor_id, source
- *     occurrence counts, raw audit rows, internal state enum names)
- *     are NO LONGER visible in the default primary Working Mode
- *     area; they are preserved under a collapsed `技术详情`
- *     section so the data contract is NOT deleted.
- *   - The default UI shows one clear primary next-action whenever
- *     possible (Prepare / Analyze Planarity / Apply Safe
- *     Normalization). Unavailable actions are HIDDEN rather than
- *     rendered as disabled buttons.
- *   - Per-state condensed Working Mode rows; technical detail
- *     block (`技术详情`) is collapsed by default and lists source
- *     snapshot id, source fingerprint, execution config digest,
- *     raw workspace state, duplicate repair technical audit rows,
- *     per-action action_id/rule_id/survivor_id/source occurrence
- *     count, raw normalization reason, raw normalization audit
- *     fields.
- *   - V1.6 Planar Normalization `Ready` UI shows a compact
- *     primary card; the locked Blueprint §11 fields (Target Z /
- *     Eligible / Movable / Outliers / Affected / Skipped /
- *     Max movement) and the post-apply audit are rendered as
- *     CONCISE Chinese rows under the card when applicable.
- *   - Callback action names (prepare_workspace, discard_workspace,
- *     rebuild_workspace, compute_planar_normalization,
- *     apply_planar_normalization) are preserved verbatim. The
- *     destructive Apply Safe Normalization action MUST NOT appear
- *     enabled in any state other than READY_TO_NORMALIZE (per
- *     dispatch §2.2 bullet 2 / §10 CN5).
- *   - V1.5 Duplicate Repair summary row is condensed to the
- *     user-facing line ("重复线清理：已处理 X，跳过 Y，失败 Z")
- *     while the full audit (action_id, rule_id, survivor_id,
- *     source occurrence count) is preserved in `技术详情`.
- *   - The textContent-only contract for user-supplied strings is
- *     preserved. No innerHTML / no eval / no new Function / no
- *     document.write.
+ * Render path:
+ *   AnalysisResult + WorkingModeRunner.snapshot
+ *   -> UIBridge -> { cadPrepWorkflow: { ... }, derivedWorkspace,
+ *                    layerGroups, layerIssueGroups,
+ *                    faceInventoryGroups, summary, groups, ... }
+ *   -> window.SUAIP.render(json) -> this module
+ *   -> DOM (4 tabs, 5 cards, error-only summary).
  *
- * V1.1 (per plan §4.10):
- *   - renderLayers(payload.layerGroups) renders the dialog Layers
- *     section. Each layer row exposes both a `role` badge AND a
- *     SEPARATE `visibility` badge (R007); they are independent.
- *   - The `<summary id="layers-summary">` text is populated at
- *     render time to "Layers — N total (M with issues)" BEFORE the
- *     user opens the details (so the user sees the count even when
- *     collapsed). Per ChatGPT §11.5.
- *   - Layer rows have `cursor: default` and NO click handler (mirrors
- *     V1.0 L3 non-locatable warning pattern from Round 020).
- *   - NO role color hints (R008); the CSS applies a single neutral
- *     `.layer-row` style and only `data-visible="false"` carries
- *     the muted `opacity: 0.6` style.
- *   - Hidden rows are placed at the BOTTOM of their role bucket by
- *     the Ruby-side mapper (per ChatGPT §11.2 / R009); the JS layer
- *     preserves the locked canonical order it receives and does NOT
- *     re-sort.
+ * Authority:
+ *   Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md
+ *   + dispatch Prompt/CURRENT_PI_DISPATCH.md (V1.9A-A1).
+ *
+ * Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 contracts UNCHANGED.
+ * No algorithm change. No source CAD mutation.
  */
+
 (function () {
   'use strict';
 
   // window.SUAIP is the page-function namespace (render/toast).
-  // It does NOT carry host actions (Prepare/Discard/Rebuild);
-  // those live on window.sketchup.<callback> (registered by
+  // Host callbacks (Prepare/Discard/Rebuild/...) live on
+  // window.sketchup.<callback> (registered by
   // DialogRunner.add_action_callback at boot).
-  // See addAction() below for the host-action dispatch path.
   var ROOT = window.SUAIP || (window.SUAIP = {});
 
-  // V1.6 UI-CN-SIMPLIFICATION: locked Simplified Chinese label
-  // map for normal user-facing presentation. Internal data
-  // identifiers (issue_id, snapshot_id, fingerprint, etc.) are
-  // intentionally NOT translated; they remain as raw server
-  // values inside `技术详情`. Order matters for ISSUE_TYPE_LABELS
-  // (matches SUAnalysis::Core::IssueRegistry::CANONICAL_ISSUE_TYPES)
-  // but is otherwise a presentation concern only.
-  var ISSUE_TYPE_LABELS_CN = [
-    ['duplicate_edge_candidate',  '重复线候选'],
-    ['short_edge',                '短线'],
-    ['open_endpoint',             '未闭合端点'],
-    ['gap_candidate',             '间隙候选'],
-    ['significant_non_zero_z',    '明显非零 Z'],
-    ['abnormal_large_coord',      '异常大坐标'],
-    ['deep_nesting',              '嵌套层级过深']
-  ];
+  // ================================================================
+  // 1. Static Simplified Chinese labels (presentation-only)
+  // ================================================================
 
-  // V1.1 (per plan §4.10): locked layer-role labels. 5 canonical roles
-  // ONLY (R007 — the OFFSCREEN role Symbol is REMOVED). Order mirrors
-  // `SUAnalysis::Core::LayerRole::ALL` and is INDEPENDENT from the
-  // issue-type order above (R012). The Ruby mapper already enforces
-  // role bucket order when sorting layerGroups; JS preserves the
-  // received order without re-sorting.
-  var LAYER_ROLE_LABELS_CN = [
-    ['dimension',    '尺寸标注'],
-    ['annotation',   '注释'],
-    ['guide',        '辅助线'],
-    ['construction', '构造线'],
-    ['unknown',      '未识别']
-  ];
-
-  // V1.1 (per plan §4.10): locked layer visibility labels. Mirrors
-  // `SUAnalysis::Core::LayerRole::VISIBILITY_HUMAN` +
-  // `LayerRole::VISIBILITY_UNKNOWN_HUMAN`. Per the plan, the
-  // visibility_label on each row is pre-computed server-side
-  // (LayerRole.visibility_label) and JS uses the per-row string
-  // verbatim; this table is exposed for harness introspection only.
-  var LAYER_VISIBILITY_LABELS_CN = {
-    visible: '可见',
-    hidden:  '隐藏',
-    unknown: '可见性未知'
+  // Overall presentation state -> user-facing CN label.
+  // Per Blueprint §4.4: raw enum strings MUST NOT be exposed
+  // to the user.
+  var OVERALL_STATE_LABELS_CN = {
+    IDLE:                 '尚未处理',
+    SCANNING:             '正在检查',
+    NEEDS_ATTENTION:      '发现需要处理的问题',
+    READY_FOR_VALIDATION: '已完成检查',
+    STALE:                '工作副本已失效',
+    FAILED:               '处理失败'
   };
 
-  // V1.6 UI-CN-SIMPLIFICATION: severity Simplified Chinese labels.
-  // Server-side severity strings are the canonical Symbols
-  // ('high' / 'medium' / 'low'); JS maps them to concise Chinese
-  // presentation in the badge text only.
-  var SEVERITY_LABELS_CN = {
-    high:   '高',
-    medium: '中',
-    low:    '低'
+  // Card presentation state -> CSS class (icon / pill).
+  var CARD_STATE_TO_CLASS = {
+    UNCOMPUTED:      'is-idle',
+    CHECKING:        'is-accent',
+    CLEAN:           'is-ok',
+    ACTIONABLE:      'is-warn',
+    REVIEW_REQUIRED: 'is-warn',
+    APPLIED:         'is-ok',
+    BLOCKED:         'is-warn',
+    STALE:           'is-warn',
+    FAILED:          'is-err'
   };
 
-  // V1.6 UI-CN-SIMPLIFICATION: workspace state Simplified Chinese
-  // labels for the Working Mode summary line.
-  var WORKSPACE_STATE_LABELS_CN = {
-    none:      '未准备',
-    building:  '正在准备',
-    ready:     '已准备',
-    discarded: '已放弃',
-    failed:    '处理失败'
+  // Layer role CN labels (mirrors V1.1 layerGroups).
+  var LAYER_ROLE_LABELS_CN = {
+    dimension:    '尺寸标注',
+    annotation:   '注释',
+    guide:        '辅助线',
+    construction: '构造线',
+    unknown:      '未识别'
   };
 
-  // V1.6 UI-CN-SIMPLIFICATION: planar normalization state Simplified
-  // Chinese labels (matches Blueprint §11).
-  var PN_STATE_LABELS_CN = {
-    NOT_COMPUTED:        '未检查',
-    READY_TO_NORMALIZE:  '可安全校正',
-    REVIEW_REQUIRED:     '需要人工确认',
-    NO_CANDIDATE:        '无需校正',
-    APPLIED:             '已校正',
-    FAILED:              '校正失败',
-    INVALID_TOLERANCE:   '配置无效',
-    INVALID_INPUT:       '数据无效'
+  // Inline SVG paths for the 5 capability cards.
+  var CARD_ICON_PATHS = {
+    duplicate_cleanup:    'M8 3h9a2 2 0 0 1 2 2v12M4 7h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z',
+    planar_normalization: 'M4 18h16M5 16l4-8 4 6 3-3 3 4',
+    gap_endpoint:         'M3 12h6m6 0h6M9 12a3 3 0 1 1 6 0 3 3 0 0 1-6 0z',
+    structure_region:     'M4 6h6v6H4zM14 6h6v6h-6zM4 16h6v6H4zM14 16h6v6h-6z',
+    other:                'M12 3l9 4.5v9L12 21 3 16.5v-9L12 3z M12 8v4 M12 16v.2'
   };
 
-  // V1.6 UI-CN-SIMPLIFICATION: short user-facing row labels for the
-  // default-visible Working Mode card. Internal identifiers that
-  // still need to be visible in `技术详情` (Source Snapshot /
-  // Fingerprint / Config) keep their English keys for the DOM
-  // `data-field` attribute, but the visible text is Chinese.
-  var FIELD_LABEL_CN = {
-    sourceSnapshot:           '源快照',
-    sourceFingerprint:        '源指纹',
-    executionConfig:          '执行配置',
-    duplicateRepairs:         '重复线清理',
-    planarNormalization:      '平面校正',
-    targetZ:                  '目标 Z',
-    eligibleVertices:         '可处理顶点',
-    proposedMovable:          '待移动顶点',
-    outliers:                 '异常点',
-    affectedDerivedEdges:     '受影响线段',
-    skippedScope:             '已跳过',
-    maxProposedMovement:      '最大校正量',
-    reviewReason:             '原因',
-    appliedTargetZ:           '目标 Z',
-    movedApplied:             '已移动',
-    maxMovement:              '最大校正量',
-    outliersUnchanged:        '保留异常项',
-    failureReason:            '失败原因',
-    lastError:                '上次错误'
-  };
+  // ================================================================
+  // 2. DOM-safe render helpers
+  // ================================================================
 
-  // V1.6 UI-CN-SIMPLIFICATION: action button Simplified Chinese
-  // labels. The internal data-action attribute (callback name) is
-  // unchanged; only the visible button text is translated.
-  var ACTION_LABEL_CN = {
-    prepare_workspace:             '准备处理',
-    discard_workspace:             '放弃工作副本',
-    rebuild_workspace:             '重新生成',
-    compute_planar_normalization:  '检查平面偏差',
-    apply_planar_normalization:    '应用平面校正',
-    // V1.7 Endpoint / Gap Repair + Canonical Topology.
-    compute_gap_repair:            '检查间隙',
-    apply_gap_repair:              '修复间隙',
-    // V1.8 Polyline / Closed Loop / Region Reconstruction.
-    compute_structure_reconstruction: '检查结构'
-  };
+  function clearChildren(parent) {
+    while (parent && parent.firstChild) {
+      parent.removeChild(parent.firstChild);
+    }
+  }
 
-  // V1.6 UI-CN-SIMPLIFICATION: section header Simplified Chinese
-  // labels (rendered in the index.html <summary> static text AND
-  // populated by JS at render time).
-  var SECTION_LABEL_CN = {
-    main:                    'CAD 检查结果',
-    noSelection:             '未选择对象',
-    issues:                  '问题概览',
-    inspectionDetails:       '检查详情',
-    layerIssues:             '按图层查看问题',
-    layers:                  '图层信息',
-    faceInventory:           '面信息',
-    workingMode:             '处理工作区',
-    planarNormalization:     '平面校正',
-    technicalDetails:        '技术详情',
-    moreActions:             '更多操作',
-    topologyRepair:          '拓扑修复',
-    structureReconstruction: '轮廓与区域'
-  };
+  function el(tag, opts, children) {
+    var node = document.createElement(tag);
+    if (opts) {
+      if (opts.className) node.className = opts.className;
+      if (opts.dataset) {
+        Object.keys(opts.dataset).forEach(function (k) {
+          node.dataset[k] = opts.dataset[k];
+        });
+      }
+      if (opts.attrs) {
+        Object.keys(opts.attrs).forEach(function (k) {
+          node.setAttribute(k, opts.attrs[k]);
+        });
+      }
+      if (opts.text != null) node.textContent = String(opts.text);
+    }
+    if (children) {
+      children.forEach(function (c) {
+        if (c == null) return;
+        if (typeof c === 'string') {
+          node.appendChild(document.createTextNode(c));
+        } else {
+          node.appendChild(c);
+        }
+      });
+    }
+    return node;
+  }
 
-  // V1.7 Endpoint / Gap Repair + Canonical Topology:
-  // Simplified Chinese state labels (Blueprint §17).
-  var TOPO_STATE_LABELS_CN = {
-    NOT_COMPUTED:        '未检查',
-    READY_TO_REPAIR:     '发现可修复间隙',
-    REVIEW_REQUIRED:     '需要人工确认',
-    NO_CANDIDATE:        '无需修复',
-    APPLIED:             '已修复',
-    FAILED:              '修复失败'
-  };
+  function svgInline(pathD, sizePx, classes) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', String(sizePx));
+    svg.setAttribute('height', String(sizePx));
+    svg.setAttribute('viewBox', '0 0 24 24');
+    if (classes) svg.setAttribute('class', classes);
+    var p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', pathD);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '1.6');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(p);
+    return svg;
+  }
 
-  // V1.7: short user-facing row labels for the new
-  // "拓扑修复" card. Internal identifiers remain in
-  // `技术详情`.
-  var FIELD_LABEL_CN_TOPO = {
-    openEndpoints:        '开放端点',
-    safeProposals:        '可安全修复',
-    reviewRequired:       '需人工确认',
-    maxGap:               '最大间隙',
-    appliedCount:         '已修复间隙',
-    remainingOpen:        '剩余开放端点',
-    computed:             '已检查'
-  };
+  function emptyNode(text) {
+    var d = document.createElement('div');
+    d.textContent = text;
+    return d;
+  }
 
-  // V1.8 Polyline / Closed Loop / Region Reconstruction:
-  // Simplified Chinese state labels (Blueprint §16).
-  var STRUCTURE_STATE_LABELS_CN = {
-    NOT_COMPUTED:        '未检查',
-    READY:               '结构可用',
-    READY_WITH_WARNINGS: '存在需检查项',
-    FAILED:              '检查失败'
-  };
+  // ================================================================
+  // 3. Capability card render
+  // ================================================================
 
-  // V1.8: short user-facing row labels for the new
-  // "轮廓与区域" card. Internal identifiers remain in
-  // `技术详情`.
-  var FIELD_LABEL_CN_STRUCT = {
-    openChains:           '开放链',
-    closedLoops:          '闭合轮廓',
-    regions:              '区域',
-    holes:                '洞',
-    exceptions:           '异常'
-  };
+  function renderCard(card) {
+    var iconCls = CARD_STATE_TO_CLASS[card.state] || '';
+    var pillCls = CARD_STATE_TO_CLASS[card.state] || 'is-idle';
 
-  function render(payload) {
-    var sel = document.getElementById('selection-info');
-    sel.textContent = payload.selectionLabel + ' (' + payload.selectionType + ')';
+    var root = el('article', {
+      className: 'cap-card',
+      dataset: { cardId: card.id }
+    });
 
-    var summary = document.getElementById('summary');
-    summary.textContent = '';
-    // Phase 1 — locked scalar header rows (Stage 6 plan section 6.7).
-    // The selection line is rendered separately as #selection-info,
-    // so the summary block is reserved for the snapshot+issue
-    // counts. We do NOT include the selection label here to avoid
-    // duplicating it.
-    // V1.3 (per directive 027 items 1 + 2): the scalar rows include
-    // 'Faces' and 'Faces With Holes' as additive counters derived
-    // from payload.summary (which UIBridge populates from
-    // preflight.face_count + preflight.faces_with_holes_count).
-    // V1.6 UI-CN-SIMPLIFICATION: scalar labels are Simplified
-    // Chinese in normal user-facing presentation.
-    var scalarKeys = ['edges', 'vertices', 'non_zero_z_vertices', 'warnings',
-                     'faces', 'faces_with_holes'];
-    var scalarLabelCN = {
-      edges:               '线段',
-      vertices:            '顶点',
-      non_zero_z_vertices: '非零 Z 顶点',
-      warnings:            '警告',
-      faces:               '面',
-      faces_with_holes:    '含洞面'
+    // Icon
+    root.appendChild(el('div', {
+      className: 'cap-icon ' + iconCls
+    }, [ svgInline(CARD_ICON_PATHS[card.id] || CARD_ICON_PATHS.other, 20) ]));
+
+    // Body
+    var body = el('div', { className: 'cap-body' });
+    var header = el('div', { className: 'cap-header' });
+    header.appendChild(el('div', {
+      className: 'cap-title',
+      text: card.title || card.id
+    }));
+    header.appendChild(el('span', {
+      className: 'cap-state ' + pillCls,
+      text: card.state_label || card.state || ''
+    }));
+    body.appendChild(header);
+
+    if (card.summary) {
+      body.appendChild(el('div', { className: 'cap-summary', text: card.summary }));
+    }
+
+    if (card.metrics && card.metrics.length) {
+      var m = el('div', { className: 'cap-metrics' });
+      card.metrics.forEach(function (mm) {
+        if (!mm) return;
+        if (mm.value == null) return;
+        var n = Number(mm.value);
+        if (!isFinite(n)) return;
+        var metric = el('span', { className: 'cap-metric' });
+        metric.appendChild(el('span', {
+          className: 'cap-metric-value',
+          text: String(n)
+        }));
+        metric.appendChild(document.createTextNode(mm.label || ''));
+        m.appendChild(metric);
+      });
+      body.appendChild(m);
+    }
+    root.appendChild(body);
+
+    // Actions
+    if (card.primary_action || card.secondary_action) {
+      var actions = el('div', { className: 'cap-actions' });
+      if (card.secondary_action) {
+        var sa = renderActionButton(card.secondary_action, 'btn-ghost');
+        actions.appendChild(sa);
+      }
+      if (card.primary_action) {
+        var pa = renderActionButton(card.primary_action, 'btn-primary');
+        actions.appendChild(pa);
+      }
+      root.appendChild(actions);
+    }
+
+    return root;
+  }
+
+  function renderActionButton(action, baseClass) {
+    var cls = baseClass;
+    if (action.kind === 'danger') cls = 'btn-danger';
+    var btn = el('button', { className: 'btn ' + cls, attrs: { type: 'button' } });
+    btn.appendChild(document.createTextNode(action.label || ''));
+    if (action.callback) {
+      btn.setAttribute('data-action', action.callback);
+    }
+    if (action.enabled === false) {
+      btn.setAttribute('disabled', 'disabled');
+    }
+    return btn;
+  }
+
+  function renderCards(gridEl, cards) {
+    clearChildren(gridEl);
+    if (!cards || !cards.length) {
+      // Truthful fallback: the presenter SHOULD always emit
+      // exactly 5 cards in fixed order; if not, render an
+      // empty placeholder so the user sees something.
+      var empty = el('div', { className: 'cap-card' });
+      empty.appendChild(el('div', { className: 'cap-icon is-idle' },
+        [ svgInline(CARD_ICON_PATHS.other, 20) ]));
+      var b = el('div', { className: 'cap-body' });
+      b.appendChild(el('div', { className: 'cap-title', text: '处理能力' }));
+      b.appendChild(el('div', { className: 'cap-summary', text: '尚未加载' }));
+      empty.appendChild(b);
+      gridEl.appendChild(empty);
+      return;
+    }
+    cards.forEach(function (c) {
+      gridEl.appendChild(renderCard(c));
+    });
+  }
+
+  // ================================================================
+  // 4. Top issue summary (error-only per dispatch §8)
+  // ================================================================
+
+  function renderIssueSummary(container, summary) {
+    clearChildren(container);
+    if (!summary) return;
+
+    if (summary.kind === 'clean') {
+      container.className = 'issue-summary is-clean';
+      var t = el('div', { className: 'issue-summary-text' });
+      t.appendChild(el('div', {
+        className: 'issue-summary-headline',
+        text: summary.headline || 'CAD 状态良好'
+      }));
+      t.appendChild(el('div', {
+        className: 'cap-summary',
+        text: summary.subtitle || '未发现需要处理的问题'
+      }));
+      container.appendChild(t);
+      return;
+    }
+
+    if (summary.kind === 'empty-idle') {
+      container.className = 'issue-summary is-empty';
+      var tt = el('div', { className: 'issue-summary-text' });
+      tt.appendChild(el('div', {
+        className: 'issue-summary-headline',
+        text: summary.headline || 'CAD 尚未处理'
+      }));
+      tt.appendChild(el('div', {
+        className: 'cap-summary',
+        text: summary.subtitle || ''
+      }));
+      container.appendChild(tt);
+      return;
+    }
+
+    // kind === 'issues'
+    container.className = 'issue-summary';
+    var left = el('div', { className: 'issue-summary-text' });
+    left.appendChild(el('div', {
+      className: 'issue-summary-headline',
+      text: summary.headline || '发现需要处理的问题'
+    }));
+    if (summary.chips && summary.chips.length) {
+      var list = el('div', { className: 'issue-summary-list' });
+      summary.chips.forEach(function (c) {
+        if (!c) return;
+        var n = Number(c.value);
+        if (!isFinite(n) || n <= 0) return; // error-only
+        var chip = el('span', { className: 'issue-summary-chip' });
+        chip.appendChild(el('span', {
+          className: 'issue-summary-chip-num',
+          text: String(n)
+        }));
+        chip.appendChild(document.createTextNode(c.label || ''));
+        list.appendChild(chip);
+      });
+      if (list.firstChild) left.appendChild(list);
+    }
+    container.appendChild(left);
+
+    if (summary.cta) {
+      var right = el('div', { className: 'cta-actions' });
+      var b = el('button', {
+        className: 'btn btn-secondary',
+        attrs: { type: 'button', 'data-action': 'rebuild_workspace' }
+      });
+      b.appendChild(document.createTextNode(summary.cta));
+      right.appendChild(b);
+      container.appendChild(right);
+    }
+  }
+
+  // ================================================================
+  // 5. Issues / Layers / Details render
+  // ================================================================
+
+  function renderIssuesList(container, items) {
+    clearChildren(container);
+    if (!items || !items.length) {
+      var empty = el('div', { className: 'issue-row is-empty' });
+      empty.appendChild(document.createTextNode('当前没有未解决问题'));
+      container.appendChild(empty);
+      return;
+    }
+    items.forEach(function (it) {
+      var row = el('div', {
+        className: 'issue-row' + (it.locatable ? '' : ' no-action'),
+        attrs: { 'data-locatable': it.locatable ? 'true' : 'false' }
+      });
+      if (it.issue_id) {
+        row.setAttribute('data-issue-id', it.issue_id);
+      }
+      var iconClass = it.severity === 'err' ? 'is-err'
+                    : it.severity === 'warn' ? 'is-warn'
+                    : it.severity === 'ok' ? 'is-ok' : '';
+      row.appendChild(el('div', {
+        className: 'issue-row-icon ' + iconClass
+      }, [ svgInline(it.icon || CARD_ICON_PATHS.other, 16) ]));
+      var body = el('div', { className: 'issue-row-body' });
+      body.appendChild(el('div', { className: 'issue-row-title', text: it.title || '' }));
+      body.appendChild(el('div', { className: 'issue-row-desc',  text: it.desc  || '' }));
+      row.appendChild(body);
+
+      // Per CodeX Round 020 L3: only register a click handler
+      // on LOCATABLE rows. Non-locatable rows are inert.
+      if (it.locatable && it.issue_id && window.sketchup &&
+          typeof window.sketchup.locate === 'function') {
+        row.addEventListener('click', function () {
+          try {
+            window.sketchup.locate(it.issue_id);
+          } catch (e) {
+            // Defensive: never crash the UI on a callback
+            // failure.
+            _toast('定位失败: ' + (e && e.message ? e.message : e), 'err');
+          }
+        });
+      }
+
+      if (it.action) {
+        var acts = el('div', { className: 'issue-row-actions' });
+        var btn = el('button', {
+          className: 'btn ' + (it.action.kind === 'danger' ? 'btn-danger' : 'btn-secondary'),
+          attrs: { type: 'button' }
+        });
+        btn.appendChild(document.createTextNode(it.action.label || ''));
+        if (it.action.callback) {
+          btn.setAttribute('data-action', it.action.callback);
+        }
+        if (it.action.enabled === false) {
+          btn.setAttribute('disabled', 'disabled');
+        }
+        acts.appendChild(btn);
+        row.appendChild(acts);
+      }
+      container.appendChild(row);
+    });
+  }
+
+  function renderLayerList(container, layers) {
+    clearChildren(container);
+    if (!layers || !layers.length) {
+      var empty = el('div', { className: 'issue-row is-empty' });
+      empty.appendChild(document.createTextNode('当前没有图层信息'));
+      container.appendChild(empty);
+      return;
+    }
+    layers.forEach(function (l) {
+      var row = el('div', { className: 'layer-row' });
+      row.appendChild(el('div', { className: 'layer-row-name', text: l.name || '' }));
+      var roleLabel = LAYER_ROLE_LABELS_CN[l.role] || l.role_label || l.role || '未知';
+      var roleKnown = (l.role_known !== false && l.role !== 'unknown');
+      row.appendChild(el('span', {
+        className: 'layer-row-role ' + (roleKnown ? 'is-known' : 'is-unknown'),
+        text: roleLabel
+      }));
+      var vis = el('div', {
+        className: 'layer-row-vis' + (l.visible ? '' : ' is-hidden')
+      });
+      vis.appendChild(document.createTextNode(l.visible ? '可见' : '隐藏'));
+      row.appendChild(vis);
+      if (l.edge_count != null) {
+        row.appendChild(el('div', {
+          className: 'layer-row-count',
+          text: l.edge_count + ' 条边'
+        }));
+      } else if (l.count != null) {
+        row.appendChild(el('div', {
+          className: 'layer-row-count',
+          text: l.count + ' 项'
+        }));
+      }
+      container.appendChild(row);
+    });
+  }
+
+  function renderKvList(container, rows) {
+    clearChildren(container);
+    if (!rows || !rows.length) {
+      var empty = el('div', { className: 'audit-row' });
+      empty.appendChild(el('span', { className: 'audit-row-key', text: '(empty)' }));
+      empty.appendChild(el('span', { className: 'audit-row-value', text: '' }));
+      container.appendChild(empty);
+      return;
+    }
+    rows.forEach(function (r) {
+      var row = el('div', { className: 'audit-row' });
+      row.appendChild(el('span', { className: 'audit-row-key', text: r.k || '' }));
+      row.appendChild(el('span', { className: 'audit-row-value', text: r.v == null ? '' : String(r.v) }));
+      container.appendChild(row);
+    });
+  }
+
+  // ================================================================
+  // 6. Tab switching
+  // ================================================================
+
+  function switchTab(tabId) {
+    var tabMap = {
+      'process': { btn: 'tab-process',  panel: 'panel-process' },
+      'issues':  { btn: 'tab-issues',   panel: 'panel-issues'  },
+      'layers':  { btn: 'tab-layers',   panel: 'panel-layers'  },
+      'details': { btn: 'tab-details',  panel: 'panel-details' }
     };
-    scalarKeys.forEach(function (k) {
-      var stat = document.createElement('div');
-      stat.className = 'stat';
-      stat.setAttribute('data-stat', k);
-      var label = scalarLabelCN[k] || humanizeKey(k);
-      stat.textContent = label + ': ' + (payload.summary ? (payload.summary[k] || 0) : 0);
-      summary.appendChild(stat);
-    });
-
-    // Phase 2 — locked per-issue-type counters in canonical order.
-    // The renderer NEVER falls back to stringifying a nested Hash,
-    // so the output is always human-readable. Missing issue types
-    // default to 0 (per the locked count-zero-required-categories
-    // contract).
-    var issues = (payload.summary && payload.summary.issues) || {};
-    ISSUE_TYPE_LABELS_CN.forEach(function (pair) {
-      var type = pair[0];
-      var label = pair[1];
-      var stat = document.createElement('div');
-      stat.className = 'stat issue-stat issue-type-' + type;
-      stat.setAttribute('data-issue-type', type);
-      var count = (typeof issues[type] === 'number') ? issues[type] : 0;
-      stat.textContent = label + ': ' + count;
-      summary.appendChild(stat);
-    });
-
-    var groupsEl = document.getElementById('groups');
-    groupsEl.textContent = '';
-    (payload.groups || []).forEach(function (g) {
-      var det = document.createElement('details');
-      det.open = !!g.defaultOpen;
-      var sum = document.createElement('summary');
-      // V1.6 UI-CN-SIMPLIFICATION: issue group summary label is
-      // Simplified Chinese for the canonical issue types we know.
-      // Unknown groups fall back to a humanized English label.
-      sum.textContent = issueTypeLabelCN(g.type) + ' (' + g.count + ')';
-      det.appendChild(sum);
-      (g.issues || []).forEach(function (issue) {
-        det.appendChild(renderIssue(issue));
-      });
-      groupsEl.appendChild(det);
-    });
-
-    // V1.1 (per plan §4.10): render the Layers section BELOW the
-    // per-issue-type groups block (per ChatGPT §11.1). The function
-    // is resilient to undefined / null / non-Array layerGroups — an
-    // empty selection or a V1.0 caller that does not supply
-    // layerGroups results in an empty list with summary text
-    // "Layers — 0 total (0 with issues)".
-    renderLayers(payload.layerGroups);
-
-    // V1.2 (per directive 026): render the "Issues by Layer" section
-    // AFTER the per-issue-type groups block AND BEFORE the V1.1
-    // Layers section. Resilient to undefined / null / non-Array
-    // payload.layerIssueGroups — defaults to "Issues by Layer — 0
-    // layers (0 issues)" with zero buckets. Issues inside each
-    // bucket reuse renderIssue() so the click-to-locate and
-    // non-locatable-inert contracts carry through unchanged.
-    renderLayerIssues(payload.layerIssueGroups);
-
-    // V1.3 (per directive 027): render the "Face Inventory" section
-    // AFTER the V1.1 Layers section. Resilient to undefined / null /
-    // non-Array payload.faceInventoryGroups — defaults to "Face
-    // Inventory — 0 total (0 with holes)" with zero rows. Rows are
-    // aggregate-by-layer (NOT per-face), non-actionable, neutral
-    // styling; reuse the V1.1 layer semantics.
-    renderFaceInventory(payload.faceInventoryGroups);
-
-    // V1.4 (per directive 030, Stage 4): render the "Working Mode"
-    // section AFTER V1.3. Resilient to a missing payload.derivedWorkspace
-    // (defaults to state='none'). All text via textContent (per the
-    // locked textContent-only contract for user-facing text). The
-    // action buttons (Prepare / Discard / Rebuild) wire to
-    // window.sketchup.<callback> -- the callbacks are
-    // registered by DialogRunner.add_action_callback (Ruby
-    // side) and exposed by SketchUp's HtmlDialog at
-    // window.sketchup.<callback>. window.SUAIP only carries
-    // the page functions render/toast (NOT the host actions).
-    //
-    // V1.6 UI-CN-SIMPLIFICATION: the Working Mode card uses the
-    // SIMPLIFIED presentation — one clear primary next action,
-    // a concise user-facing status sentence, condensed V1.5 audit
-    // row (no internal IDs by default), and a condensed V1.6
-    // normalization card. Technical detail rows are emitted to a
-    // SEPARATE `技术详情` collapsed block (renderTechnicalDetails)
-    // so the data contract is preserved without polluting the
-    // default screen.
-    renderWorkingMode(payload.derivedWorkspace);
-    renderTechnicalDetails(payload.derivedWorkspace);
-  }
-
-  function humanizeKey(k) {
-    if (!k) return '';
-    return k.split('_').map(function (w) {
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    }).join(' ');
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION: map a canonical issue_type Symbol
-  // to its Simplified Chinese label. Returns the humanized English
-  // form for any unknown type (safe fallback).
-  function issueTypeLabelCN(t) {
-    if (!t) return '';
-    for (var i = 0; i < ISSUE_TYPE_LABELS_CN.length; i++) {
-      if (ISSUE_TYPE_LABELS_CN[i][0] === t) return ISSUE_TYPE_LABELS_CN[i][1];
-    }
-    return humanizeKey(t);
-  }
-
-  // Per Owner Gate 2 V1.1 NIT (1-2): edge / issue counters must
-  // (a) pluralize correctly (1 edge vs 4 edges, 1 issue vs 2 issues)
-  // and (b) be visually separated so the row does not collapse to
-  // "1 edge3 issues" when the flexbox gap is 0 in the host
-  // dialog. We centralize the formatter here so both the layer
-  // row and any future caller use the same rule.
-  function formatCount(n, noun) {
-    var count = (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 0;
-    return count + ' ' + noun + (count === 1 ? '' : 's');
-  }
-
-  function renderIssue(issue) {
-    var div = document.createElement('div');
-    div.setAttribute('data-issue-id', issue.issue_id || '');
-    // Per CodeX Round 020 REAL-HOST BLOCK (recheck) L3: ONLY register
-    // the locate click handler when the issue is locatable. For
-    // non-locatable rows (preflight warnings like deep_nesting and
-    // abnormal_large_coord), the locator returns :unresolved and the
-    // JS previously raised a misleading "source no longer available"
-    // toast — these rows are intentionally non-locatable (no source
-    // token to resolve), NOT stale. Registering no click handler
-    // means there is no path to window.sketchup.locate and therefore
-    // no path to the toast.
-    //
-    // Visual non-action state: a `no-action` class so CSS can apply
-    // default cursor + remove the hover affordance. This keeps the
-    // locked contract that all user text is rendered via textContent
-    // (no innerHTML for user-supplied strings).
-    var locatable = (issue.locatable === true);
-    div.className = 'issue' + (locatable ? '' : ' no-action');
-    div.setAttribute('data-locatable', locatable ? 'true' : 'false');
-
-    var sev = (issue.severity || 'low').toLowerCase();
-    var badge = document.createElement('span');
-    badge.className = 'badge sev-' + sev;
-    // V1.6 UI-CN-SIMPLIFICATION: severity badge text is the
-    // mapped Simplified Chinese label.
-    badge.textContent = SEVERITY_LABELS_CN[sev] || sev;
-
-    // V1.6 UI-CN-SIMPLIFICATION (dispatch §7): issue ID is hidden
-    // from the primary row. We keep it as a data attribute on the
-    // row for harness introspection + Owner tooltip + the
-    // `技术详情` block, but the primary visible text does NOT
-    // include the raw issue_id.
-    var msg = document.createElement('div');
-    msg.className = 'msg';
-    msg.textContent = issue.message || '';
-
-    // Per dispatch §7 the issue row carries the Chinese severity
-    // badge and one concise Chinese message. The Issue ID is
-    // preserved as a data attribute and exposed under `技术详情`.
-    var top = document.createElement('div');
-    top.appendChild(badge);
-    div.appendChild(top);
-    div.appendChild(msg);
-
-    // ONLY register the click handler when the issue is locatable.
-    // For locatable === false, the row is intentionally non-actionable;
-    // there is no click handler and therefore no path to the stale-
-    // source toast (Round 020 REAL-HOST BLOCK L3 fix).
-    if (locatable) {
-      div.addEventListener('click', function () {
-        var id = issue.issue_id || '';
-        if (window.sketchup && window.sketchup.locate) {
-          window.sketchup.locate(id);
-        }
-      });
-    }
-
-    return div;
-  }
-
-  function toast(msg) {
-    var el = document.getElementById('toast');
-    if (!el) return;
-    el.textContent = msg;
-    el.hidden = false;
-    setTimeout(function () { el.hidden = true; }, 4000);
-  }
-
-  // V1.1 (per plan §4.10): render the dialog Layers section.
-  // Populates #layers-list with one .layer-row per group and the
-  // #layers-summary text with "Layers — N total (M with issues)"
-  // BEFORE the user opens the details. The locked render contract
-  // (textContent only, no innerHTML for user strings, no eval,
-  // no new Function) is preserved.
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: per-row role + visibility badge
-  // labels are Simplified Chinese.
-  function renderLayers(layerGroups) {
-    var layersList = document.getElementById('layers-list');
-    var layersSummary = document.getElementById('layers-summary');
-    // Defensive: clear the previous render so a re-render does not
-    // accumulate. textContent = '' is the spec-clean equivalent of
-    // element.innerHTML = '' without touching the locked contract.
-    if (layersList) layersList.textContent = '';
-    // Coerce undefined / null / non-Array to []. This keeps the
-    // no-payload path testable (a V1.0 caller that does not supply
-    // layerGroups, or an empty selection, both end up here).
-    var groups = Array.isArray(layerGroups) ? layerGroups : [];
-    var total = groups.length;
-    var withIssues = 0;
-    groups.forEach(function (g) {
-      if (g && g.issue_count && g.issue_count > 0) withIssues++;
-      if (layersList) layersList.appendChild(renderLayerRow(g));
-    });
-    if (layersSummary) {
-      // V1.6 UI-CN-SIMPLIFICATION: section header text is
-      // Simplified Chinese.
-      layersSummary.textContent = SECTION_LABEL_CN.layers +
-                                  '\u2014 ' + total + ' 个图层（' +
-                                  withIssues + ' 个存在问题）';
-    }
-  }
-
-  // V1.2 (per directive 026): render the dialog "Issues by Layer"
-  // section. Populates #layer-issues-list with one .layer-issue-bucket
-  // per non-empty bucket and the #layer-issues-summary text with
-  // "Issues by Layer — N layers (M issues)" BEFORE the user opens
-  // the details. Each bucket is a `<details>` with its own summary;
-  // issues inside reuse renderIssue() so the existing click-to-
-  // locate and non-locatable-inert contracts carry through unchanged.
-  // Locked render contract preserved: no innerHTML, no eval, no new
-  // Function, no document.write.
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: section header + bucket count noun
-  // are Simplified Chinese.
-  function renderLayerIssues(layerIssueGroups) {
-    var listEl = document.getElementById('layer-issues-list');
-    var summaryEl = document.getElementById('layer-issues-summary');
-    // Defensive: clear the previous render.
-    if (listEl) listEl.textContent = '';
-    var buckets = Array.isArray(layerIssueGroups) ? layerIssueGroups : [];
-    var totalBuckets = buckets.length;
-    var totalIssues = 0;
-    buckets.forEach(function (b) {
-      if (!b || !Array.isArray(b.issues)) return;
-      totalIssues += b.issues.length;
-      if (listEl) listEl.appendChild(renderLayerIssueBucket(b));
-    });
-    if (summaryEl) {
-      // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
-      // Chinese ("按图层查看问题— N 个图层（M 个问题）"). The
-      // noun "个图层" already encodes the counter so we do
-      // NOT pass it through formatCount (which would append
-      // a stray "s" for the English pluralization).
-      summaryEl.textContent = SECTION_LABEL_CN.layerIssues +
-                              '\u2014 ' + totalBuckets + ' 个图层' +
-                              '（' + totalIssues + ' 个问题）';
-    }
-  }
-
-  // V1.3 (per directive 027): render the dialog "Face Inventory"
-  // section. Populates #face-inventory-list with one .face-inventory-row
-  // per layer that has at least one face, and the #face-inventory-summary
-  // text with "Face Inventory — N total (H with holes)" BEFORE the user
-  // opens the details. Aggregate rows by source face layer (per directive
-  // item 4: NOT one UI row per individual face). Rows reuse the
-  // V1.1 layer semantics: role badge + visibility badge are SEPARATE
-  // (R007), neutral styling, no role color selectors.
-  // Locked render contract preserved: no innerHTML, no eval, no new
-  // Function, no document.write.
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
-  // Chinese.
-  function renderFaceInventory(faceInventoryGroups) {
-    var listEl = document.getElementById('face-inventory-list');
-    var summaryEl = document.getElementById('face-inventory-summary');
-    if (listEl) listEl.textContent = '';
-    var buckets = Array.isArray(faceInventoryGroups) ? faceInventoryGroups : [];
-    var totalFaces = 0;
-    var totalHoles = 0;
-    buckets.forEach(function (b) {
-      if (!b) return;
-      var fc = (typeof b.face_count === 'number') ? b.face_count : 0;
-      var hc = (typeof b.faces_with_holes_count === 'number') ? b.faces_with_holes_count : 0;
-      totalFaces += fc;
-      totalHoles += hc;
-      if (listEl) listEl.appendChild(renderFaceInventoryRow(b));
-    });
-    if (summaryEl) {
-      // V1.6 UI-CN-SIMPLIFICATION: section header is Simplified
-      // Chinese.
-      summaryEl.textContent = SECTION_LABEL_CN.faceInventory +
-                              '\u2014 ' + totalFaces +
-                              ' 个面（' + totalHoles + ' 个含洞）';
-    }
-  }
-
-  // V1.3: render one Face Inventory row. Per directive 027 item 5:
-  //   - layer name;
-  //   - face count with correct singular/plural wording;
-  //   - count of faces with holes;
-  //   - role badge and visibility badge using the V1.1 layer
-  //     semantics when available.
-  // Per directive item 7: rows are informational and non-actionable.
-  // No click handler. No Locate action. Default cursor. No toast.
-  // Per directive item 11: no new role colors; reuse neutral
-  // styling; severity colors remain exclusive to issue severity.
-  function renderFaceInventoryRow(b) {
-    var div = document.createElement('div');
-    div.className = 'face-inventory-row';
-    var role = (b && b.role) ? String(b.role) : 'unknown';
-    var visibility_unknown = !!(b && b.visibility_unknown);
-    var visible = !!(b && b.visible);
-    div.setAttribute('data-role', role);
-    div.setAttribute('data-visible', visible ? 'true' : 'false');
-    div.setAttribute('data-visibility-unknown', visibility_unknown ? 'true' : 'false');
-    div.setAttribute('data-layer-name', (b && b.name) ? String(b.name) : '');
-
-    var name = document.createElement('span');
-    name.className = 'layer-name';
-    name.textContent = (b && b.name) ? String(b.name) : '';
-
-    // V1.6 UI-CN-SIMPLIFICATION: role badge uses the Simplified
-    // Chinese label map; visibility badge uses the Simplified
-    // Chinese label map. The Ruby mapper still emits a
-    // pre-computed visibility_label per row; if the row is from
-    // a server-side payload that has already been translated we
-    // honor it, otherwise we map from the canonical role /
-    // visibility symbol.
-    var roleBadge = document.createElement('span');
-    roleBadge.className = 'role-badge';
-    roleBadge.textContent = (b && b.role_label) ? String(b.role_label)
-                                                : layerRoleLabelCN(role);
-
-    var visBadge = document.createElement('span');
-    visBadge.className = 'visibility-badge';
-    visBadge.textContent = (b && b.visibility_label) ? String(b.visibility_label)
-                                                      : '';
-
-    var facesCell = document.createElement('span');
-    facesCell.className = 'face-count';
-    var fc = (b && typeof b.face_count === 'number') ? b.face_count : 0;
-    facesCell.textContent = formatCount(fc, '个面');
-
-    var facesSep = document.createElement('span');
-    facesSep.className = 'face-count-sep';
-    facesSep.setAttribute('aria-hidden', 'true');
-    facesSep.textContent = '\u00B7'; // middle dot "·"
-
-    var holesCell = document.createElement('span');
-    holesCell.className = 'holes-count';
-    var hc = (b && typeof b.faces_with_holes_count === 'number') ? b.faces_with_holes_count : 0;
-    holesCell.textContent = formatCount(hc, '个含洞面');
-
-    div.appendChild(name);
-    div.appendChild(roleBadge);
-    div.appendChild(visBadge);
-    div.appendChild(facesCell);
-    div.appendChild(facesSep);
-    div.appendChild(holesCell);
-    // No click handler -- Face Inventory rows are non-actionable.
-    return div;
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION: map a canonical layer-role Symbol
-  // to its Simplified Chinese label.
-  function layerRoleLabelCN(r) {
-    if (!r) return LAYER_ROLE_LABELS_CN[4][1]; // 'unknown'
-    for (var i = 0; i < LAYER_ROLE_LABELS_CN.length; i++) {
-      if (LAYER_ROLE_LABELS_CN[i][0] === r) return LAYER_ROLE_LABELS_CN[i][1];
-    }
-    return humanizeKey(r);
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION: short Chinese sentence describing
-  // the current workspace state for the default Working Mode
-  // summary line. The full technical state string is preserved in
-  // `技术详情`.
-  function workspaceStateSentenceCN(ws) {
-    var state = (typeof ws.state === 'string') ? ws.state : 'none';
-    var totalEntities = (typeof ws.entity_count === 'number') ? ws.entity_count : 0;
-    switch (state) {
-      case 'none':
-        return '尚未准备工作副本';
-      case 'building':
-        return '正在准备工作副本…';
-      case 'ready':
-        return '工作副本已准备，共 ' + totalEntities + ' 条记录';
-      case 'discarded':
-        return '工作副本已放弃';
-      case 'failed':
-        return '处理失败，需要重新生成';
-      default:
-        return state;
-    }
-  }
-
-  // V1.4 (per directive 030, Stage 4) + V1.6 UI-CN-SIMPLIFICATION:
-  // render the dialog's simplified "Working Mode" section. The
-  // default screen shows:
-  //   - one short Chinese status sentence;
-  //   - one condensed user-facing summary row for the V1.5
-  //     duplicate-repair audit (when present);
-  //   - one condensed user-facing summary row for the V1.6
-  //     planar-normalization card (when present);
-  //   - ONE primary action button (Prepare / Analyze Planarity /
-  //     Apply Safe Normalization) chosen by current workspace +
-  //     normalization state. Unavailable actions are HIDDEN rather
-  //     than rendered as disabled buttons.
-  // Secondary operational controls (Discard / Rebuild) are emitted
-  // to a separate collapsed "更多操作" block when applicable.
-  // Technical detail rows (source snapshot id / fingerprint /
-  // config digest / raw workspace state / per-action audit /
-  // raw normalization audit) are emitted to renderTechnicalDetails
-  // (under `技术详情`) so the data contract is preserved without
-  // polluting the default screen.
-  //
-  // Locked contract:
-  //   - All user-facing text rendered via textContent (no
-  //     innerHTML for user-supplied strings).
-  //   - Source-vs-derived ownership is shown by NEVER
-  //     recoloring / re-layering / hiding source; the section
-  //     is INFO ONLY -- it tells the user where the captured
-  //     source snapshot came from and what workspace state
-  //     is current.
-  //   - Action buttons wire to window.sketchup.<callback> (no
-  //     eval). The buttons are HIDDEN when not available in the
-  //     current state (NOT rendered as disabled).
-  //   - No new role / state color selectors.
-  //   - The destructive Apply Safe Normalization action MUST
-  //     NOT appear enabled in any state other than
-  //     READY_TO_NORMALIZE (per dispatch §2.2 bullet 2).
-  function renderWorkingMode(derivedWorkspace) {
-    var listEl = document.getElementById('working-mode-list');
-    var actionsEl = document.getElementById('working-mode-actions');
-    var summaryEl = document.getElementById('working-mode-summary');
-    if (!listEl || !actionsEl) return;
-
-    // Defensive: missing or wrong-shape payload => 'none'.
-    var ws = (derivedWorkspace && typeof derivedWorkspace === 'object')
-              ? derivedWorkspace : { 'state': 'none' };
-    var state = (typeof ws.state === 'string') ? ws.state : 'none';
-
-    // Clear previous render.
-    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-    while (actionsEl.firstChild) actionsEl.removeChild(actionsEl.firstChild);
-
-    // Summary text (rendered BEFORE user opens the details block,
-    // mirroring the V1.1/V1.2/V1.3 sections' convention).
-    // V1.6 UI-CN-SIMPLIFICATION: the summary text is the concise
-    // Chinese sentence describing the current workspace state.
-    if (summaryEl) {
-      summaryEl.textContent = SECTION_LABEL_CN.workingMode +
-                              '\u2014 ' + workspaceStateSentenceCN(ws);
-    }
-
-    // Per-state user-facing rows.
-    if (state === 'none') {
-      addRow(listEl, 'none', null, null, '尚未准备工作副本');
-      // V1.5 Phase 1 + V1.6 UI-CN-SIMPLIFICATION: when a
-      // duplicate_repair summary has been recorded (even on a
-      // discarded workspace), surface it as a single condensed
-      // Chinese row so the user can see the audit trail after
-      // Discard. The full per-action audit (action_id, rule_id,
-      // survivor_id, source occurrence count) is preserved in
-      // `技术详情`.
-      if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        renderDuplicateRepairUserRow(listEl, 'none', ws.duplicate_repair);
+    Object.keys(tabMap).forEach(function (k) {
+      var m = tabMap[k];
+      var btn = document.getElementById(m.btn);
+      var panel = document.getElementById(m.panel);
+      if (!btn || !panel) return;
+      if (k === tabId) {
+        btn.setAttribute('aria-selected', 'true');
+        panel.removeAttribute('hidden');
+      } else {
+        btn.setAttribute('aria-selected', 'false');
+        panel.setAttribute('hidden', '');
       }
+    });
+  }
+
+  // ================================================================
+  // 7. Toast (preserved from V1.4 contract)
+  // ================================================================
+
+  function _toast(message, kind) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    clearChildren(t);
+    t.textContent = String(message == null ? '' : message);
+    t.className = 'toast' + (kind === 'err' ? ' is-err' : (kind === 'warn' ? ' is-warn' : ''));
+    t.removeAttribute('hidden');
+    // Auto-hide after 4s.
+    if (_toast._hider) {
+      try { clearTimeout(_toast._hider); } catch (e) {}
+    }
+    _toast._hider = setTimeout(function () {
+      try { t.setAttribute('hidden', ''); } catch (e) {}
+    }, 4000);
+  }
+
+  // ================================================================
+  // 8. Main render entry — window.SUAIP.render(payload)
+  // ================================================================
+
+  function _setText(id, text) {
+    var n = document.getElementById(id);
+    if (n) n.textContent = text == null ? '' : String(text);
+  }
+
+  function _setAttr(id, name, value) {
+    var n = document.getElementById(id);
+    if (!n) return;
+    if (value == null) {
+      n.removeAttribute(name);
     } else {
-      // state in {building, ready, discarded, failed}.
-      // V1.6 UI-CN-SIMPLIFICATION: failed state exposes a
-      // concise Chinese recovery sentence in the primary list.
-      // The full raw last_error string is preserved in
-      // `技术详情` for Owner / AIPM diagnosis.
-      if (state === 'failed') {
-        addRow(listEl, 'failed', null, null, '处理失败，请点击下方「重新生成」');
-      }
-      // V1.5 BLOCK-004: condensed duplicate-repair row in the
-      // default Working Mode card. Full audit rows are in
-      // `技术详情`.
-      if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-        renderDuplicateRepairUserRow(listEl, state, ws.duplicate_repair);
-      }
-      // V1.6 Planar Normalization condensed card (per
-      // dispatch §3 D + §10 CN4-CN10). The full Blueprint §11
-      // rows and (when applicable) the locked action button
-      // are rendered here; the raw audit rows are preserved in
-      // `技术详情`.
-      if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
-        renderPlanarNormalization(listEl, state, ws.planar_normalization);
-      }
-      // V1.7 Endpoint / Gap Repair + Canonical Topology:
-      // condensed card (per dispatch §5 normal flow). The
-      // full Blueprint §17 rows and (when applicable) the
-      // locked primary CTA are rendered here. The raw
-      // proposal/audit rows + canonical graph digest are
-      // preserved in `技术详情`.
-      if (ws.topology_repair && typeof ws.topology_repair === 'object') {
-        renderTopologyRepair(listEl, state, ws.topology_repair);
-      }
-      // V1.8 Polyline / Closed Loop / Region Reconstruction:
-      // condensed card (per Blueprint §16). The locked
-      // metric rows (开放链 / 闭合轮廓 / 区域 / 洞 / 异常)
-      // are rendered here. The reconstruction digest,
-      // canonical-graph digest, full metrics + reason codes
-      // are preserved in `技术详情`.
-      if (ws.structure_reconstruction && typeof ws.structure_reconstruction === 'object') {
-        renderStructureReconstruction(listEl, state, ws.structure_reconstruction);
-      }
+      n.setAttribute(name, String(value));
     }
-
-    // V1.6 UI-CN-SIMPLIFICATION (per dispatch §4): ONE primary
-    // action button is shown when applicable. Unavailable
-    // actions are HIDDEN (NOT rendered as disabled). The
-    // primary action is chosen by current workspace + planar
-    // normalization + topology-repair state.
-    renderPrimaryAction(actionsEl, state, ws.planar_normalization,
-                        ws.topology_repair, ws.structure_reconstruction);
-
-    // Secondary operational controls live in a collapsed
-    // `更多操作` block under the primary CTA (per dispatch
-    // §4.5). They are emitted to a separate sub-element so
-    // they do not clutter the primary action row.
-    renderMoreActions(actionsEl, state);
   }
 
-  // V1.6 UI-CN-SIMPLIFICATION: condensed Chinese user-facing
-  // duplicate-repair row. The full audit is preserved in
-  // `技术详情`. The summary line format is
-  // "重复线清理：已处理 X，跳过 Y，失败 Z" per dispatch §6.
-  function renderDuplicateRepairUserRow(listEl, state, dr) {
-    var applied = (typeof dr.actions_applied === 'number') ? dr.actions_applied : 0;
-    var skipped = (typeof dr.actions_skipped === 'number') ? dr.actions_skipped : 0;
-    var failed  = (typeof dr.actions_failed === 'number')  ? dr.actions_failed  : 0;
-    var line = FIELD_LABEL_CN.duplicateRepairs + '：已处理 ' + applied +
-               '，跳过 ' + skipped + '，失败 ' + failed;
-    addRow(listEl, state, null, line, line);
+  function _show(el, yes) {
+    if (!el) return;
+    if (yes) el.removeAttribute('hidden');
+    else el.setAttribute('hidden', '');
   }
 
-  // V1.6 UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX:
-  // emit the ONE primary action button when applicable.
-  // Unavailable actions are HIDDEN. Destructive Apply Safe
-  // Normalization is rendered ONLY when workspaceState ===
-  // 'ready' AND pnState === 'READY_TO_NORMALIZE'.
-  //
-  // Action-state matrix (per dispatch V16-UI-CN-SIMPLIFICATION-FIX
-  // §5):
-  //   - 'none'                         -> 准备处理
-  //   - 'discarded'                    -> 准备处理 (primary)
-  //   - 'failed'                       -> 准备处理 (primary; same
-  //                                        class of mistake: the
-  //                                        user may select a NEW
-  //                                        source after a failed
-  //                                        build)
-  //   - 'ready' + NOT_COMPUTED         -> 检查平面偏差
-  //   - 'ready' + READY_TO_NORMALIZE   -> 应用平面校正
-  //   - 'ready' + (REVIEW_REQUIRED / NO_CANDIDATE / APPLIED /
-  //                FAILED / INVALID_*) -> no destructive Apply
-  //                                       CTA
-  //   - 'building'                     -> no buttons (in-progress)
-  //
-  // `准备处理` is the primary CTA in BOTH 'none' and 'discarded'
-  // (and 'failed') because in all three the user may select a
-  // NEW CAD source and must be able to create a fresh
-  // SourceSnapshot + Derived Workspace from the CURRENT
-  // selection. Rebuild replays the previously captured workspace,
-  // which is not the same thing.
-  //
-  // V1.7 topology-repair priority: if a READY_TO_REPAIR
-  // proposal exists, `修复间隙` wins; otherwise if the
-  // topology-repair is NOT_COMPUTED, `检查间隙` is shown
-  // (priority alongside the V1.6 normalization CTA when both
-  // are NOT_COMPUTED; topology-repair is the more visible one
-  // because it produces visible derived geometry).
-  function renderPrimaryAction(actionsEl, workspaceState, pn, topo, struct) {
-    if (workspaceState === 'none') {
-      // No workspace yet -> Prepare.
-      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
-                'prepare_workspace', true);
+  function _dispatchCallback(action) {
+    if (!action) return;
+    if (!window.sketchup || typeof window.sketchup[action] !== 'function') {
+      _toast('当前 SketchUp 环境下不可用: ' + action, 'warn');
       return;
     }
-    if (workspaceState === 'discarded') {
-      // Per V16-UI-CN-SIMPLIFICATION-FIX Owner real-host finding:
-      // after Discard the user may select a NEW source and must
-      // be able to create a fresh SourceSnapshot. Rebuild replays
-      // the previously captured workspace, which is not a
-      // substitute. Prepare is the primary CTA; Rebuild is
-      // available as a secondary control under `更多操作` when
-      // a previously captured source still exists.
-      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
-                'prepare_workspace', true);
-      return;
-    }
-    if (workspaceState === 'failed') {
-      // Per V16-UI-CN-SIMPLIFICATION-FIX "same class of mistake"
-      // review: the user may select a NEW source after a failed
-      // build. Prepare is the primary CTA; Rebuild replays the
-      // captured workspace as a secondary control.
-      addAction(actionsEl, ACTION_LABEL_CN.prepare_workspace,
-                'prepare_workspace', true);
-      return;
-    }
-    // Workspace exists (ready).
-    if (workspaceState === 'ready') {
-      var pnState = (pn && typeof pn === 'object' && typeof pn.state === 'string')
-                    ? pn.state : 'NOT_COMPUTED';
-      var topoActive = (topo && typeof topo === 'object' && typeof topo.state === 'string');
-      var topoState  = topoActive ? topo.state : null;
-      var structActive = (struct && typeof struct === 'object' && typeof struct.state === 'string');
-      var structState  = structActive ? struct.state : 'NOT_COMPUTED';
-      // V1.7 priority: a READY_TO_REPAIR topology proposal is
-      // the most visible product of the gateway. Show it as
-      // the primary CTA before any other action.
-      if (topoState === 'READY_TO_REPAIR') {
-        addAction(actionsEl, ACTION_LABEL_CN.apply_gap_repair,
-                  'apply_gap_repair', true);
-        return;
-      }
-      // V1.7 priority: when topology_repair is explicitly
-      // present AND not yet computed, the gateway CTA is
-      // `检查间隙`. (When topology_repair is absent entirely,
-      // V1.7 is not yet active and we fall through to V1.6 PN
-      // so existing V1.6 UI tests continue to PASS.)
-      if (topoState === 'NOT_COMPUTED') {
-        addAction(actionsEl, ACTION_LABEL_CN.compute_gap_repair,
-                  'compute_gap_repair', true);
-        return;
-      }
-      // V1.8 priority: when topology_repair is in a terminal
-      // state (APPLIED / NO_CANDIDATE / REVIEW_REQUIRED /
-      // FAILED) and the user has not yet computed the
-      // structure reconstruction, surface `检查结构` as the
-      // next primary CTA. The structure check is read-only
-      // and does not require the user to first run gap repair.
-      if (structState === 'NOT_COMPUTED' &&
-          (topoState === 'APPLIED' ||
-           topoState === 'NO_CANDIDATE' ||
-           topoState === 'REVIEW_REQUIRED' ||
-           topoState === 'FAILED')) {
-        addAction(actionsEl, ACTION_LABEL_CN.compute_structure_reconstruction,
-                  'compute_structure_reconstruction', true);
-        return;
-      }
-      // V1.6 PN / V1.7 fallback. PN state retains its previous
-      // semantics for all non-READY_TO_REPAIR topology
-      // states.
-      if (pnState === 'NOT_COMPUTED') {
-        addAction(actionsEl, ACTION_LABEL_CN.compute_planar_normalization,
-                  'compute_planar_normalization', true);
-        return;
-      }
-      if (pnState === 'READY_TO_NORMALIZE') {
-        addAction(actionsEl, ACTION_LABEL_CN.apply_planar_normalization,
-                  'apply_planar_normalization', true);
-        return;
-      }
-      // All other states (REVIEW_REQUIRED / NO_CANDIDATE /
-      // APPLIED / FAILED / invalid_*): no destructive Apply
-      // button. The user can rebuild / discard from the
-      // `更多操作` block.
-      return;
-    }
-    // 'building' (in-progress) -> no buttons.
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION + V16-UI-CN-SIMPLIFICATION-FIX:
-// secondary operational controls. Per dispatch §4.5 these live
-// in a collapsed `更多操作` block under the primary CTA.
-// Unavailable controls are HIDDEN rather than rendered as
-// disabled buttons. The collapsed block is itself HIDDEN when
-// no secondary control is meaningful (e.g. state='none' before
-// the first Prepare, OR state='building' in-progress), so the
-// default screen shows ONLY the primary CTA.
-//
-// Per V16-UI-CN-SIMPLIFICATION-FIX §5 the action-state matrix:
-//   - 'none'         -> primary=准备处理, secondary=(none, no block)
-//   - 'discarded'    -> primary=准备处理, secondary=重新生成
-//                        (only; the previously captured source
-//                         can still be replayed)
-//   - 'failed'       -> primary=准备处理, secondary=重新生成
-//   - 'ready'        -> primary per PN state, secondary=放弃工作副本
-//                        + 重新生成
-//   - 'building'     -> no buttons at all (in-progress)
-function renderMoreActions(actionsEl, workspaceState) {
-    var hasDiscard = (workspaceState === 'ready');
-    var hasRebuild = (workspaceState === 'ready' || workspaceState === 'discarded' ||
-                      workspaceState === 'failed');
-    if (!hasDiscard && !hasRebuild) return;
-    // We emit a small `<details>` with `<summary>更多操作</summary>`
-    // containing the available secondary buttons.
-    var det = document.createElement('details');
-    det.className = 'more-actions';
-    var sum = document.createElement('summary');
-    sum.textContent = SECTION_LABEL_CN.moreActions;
-    det.appendChild(sum);
-    var inner = document.createElement('div');
-    inner.className = 'more-actions-inner';
-    if (hasDiscard) {
-      addAction(inner, ACTION_LABEL_CN.discard_workspace,
-                'discard_workspace', true);
-    }
-    if (hasRebuild) {
-      addAction(inner, ACTION_LABEL_CN.rebuild_workspace,
-                'rebuild_workspace', true);
-    }
-    det.appendChild(inner);
-    actionsEl.appendChild(det);
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): render the
-  // collapsed `技术详情` block. This preserves the full data
-  // contract (source snapshot id / fingerprint / config digest /
-  // raw workspace state / per-action audit / raw normalization
-  // audit) so AIPM / Pi / Owner can still inspect the technical
-  // truth, while keeping the default screen materially simpler.
-  // The block is rendered CLOSED by default; users only see it
-  // when they explicitly open the section.
-  function renderTechnicalDetails(derivedWorkspace) {
-    var listEl = document.getElementById('technical-details-list');
-    if (!listEl) return;
-    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-    var ws = (derivedWorkspace && typeof derivedWorkspace === 'object')
-              ? derivedWorkspace : null;
-    if (!ws) return;
-
-    // Raw workspace state (always shown when ws is present).
-    if (typeof ws.state === 'string') {
-      addTechRow(listEl, 'workspace_state', ws.state);
-    }
-    if (ws.source_snapshot_id) {
-      addTechRow(listEl, 'source_snapshot_id', ws.source_snapshot_id);
-    }
-    if (ws.source_fingerprint_digest) {
-      addTechRow(listEl, 'source_fingerprint_digest', ws.source_fingerprint_digest);
-    }
-    if (ws.execution_config_digest) {
-      addTechRow(listEl, 'execution_config_digest', ws.execution_config_digest);
-    }
-    if (ws.workspace_id) {
-      addTechRow(listEl, 'workspace_id', ws.workspace_id);
-    }
-    if (ws.last_error) {
-      addTechRow(listEl, 'last_error', ws.last_error);
-    }
-
-    // Duplicate repair technical audit: applied/skipped/failed,
-    // duplicate classes before/after, duplicate pairs before/
-    // after, derived edge counts before/after, and per-action
-    // audit rows (action_id / rule_id / survivor_id / source
-    // occurrence count).
-    if (ws.duplicate_repair && typeof ws.duplicate_repair === 'object') {
-      renderDuplicateRepairTechnicalRows(listEl, ws.duplicate_repair);
-    }
-    // V1.6 Planar Normalization raw audit rows (per dispatch
-    // §5.5): raw normalization reason string, raw audit fields
-    // (status, target_z, applied_count, max_movement,
-    // outlier_count, failure_reason).
-    if (ws.planar_normalization && typeof ws.planar_normalization === 'object') {
-      renderPlanarNormalizationTechnicalRows(listEl, ws.planar_normalization);
-    }
-    // V1.7 Endpoint / Gap Repair + Canonical Topology:
-    // raw proposal / audit / canonical-graph rows (per
-    // dispatch §5).
-    if (ws.topology_repair && typeof ws.topology_repair === 'object') {
-      renderTopologyRepairTechnicalRows(listEl, ws.topology_repair);
-    }
-    // V1.8 Polyline / Closed Loop / Region Reconstruction:
-    // raw reconstruction digest / canonical graph digest /
-    // full metrics / reason codes (per Blueprint §16).
-    if (ws.structure_reconstruction && typeof ws.structure_reconstruction === 'object') {
-      renderStructureReconstructionTechnicalRows(listEl, ws.structure_reconstruction);
+    try {
+      window.sketchup[action]();
+    } catch (e) {
+      _toast('调用失败: ' + (e && e.message ? e.message : e), 'err');
     }
   }
 
-  function addTechRow(listEl, key, value) {
-    var row = document.createElement('div');
-    row.className = 'tech-row';
-    row.setAttribute('data-field', key);
-    var labelEl = document.createElement('span');
-    labelEl.className = 'label';
-    labelEl.textContent = key + ':';
-    var valEl = document.createElement('span');
-    valEl.className = 'value';
-    valEl.textContent = String(value);
-    row.appendChild(labelEl);
-    row.appendChild(valEl);
-    listEl.appendChild(row);
-  }
-
-  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): per-action
-  // audit rows (BLOCK-004 / CodeX 032 recheck 2026-08-25
-  // minimum). Every action row exposes status, removed count,
-  // survivor ID, and source-occurrence count as visible fields.
-  // textContent only (no innerHTML).
-  function renderDuplicateRepairTechnicalRows(listEl, dr) {
-    var applied = (typeof dr.actions_applied === 'number') ? dr.actions_applied : 0;
-    var skipped = (typeof dr.actions_skipped === 'number') ? dr.actions_skipped : 0;
-    var failed  = (typeof dr.actions_failed === 'number')  ? dr.actions_failed  : 0;
-    var bits = [];
-    bits.push('applied=' + applied);
-    bits.push('skipped=' + skipped);
-    bits.push('failed=' + failed);
-    if (typeof dr.duplicate_classes_before === 'number' &&
-        typeof dr.duplicate_classes_after === 'number') {
-      bits.push('classes=' + dr.duplicate_classes_before + '->' + dr.duplicate_classes_after);
-    }
-    if (typeof dr.duplicate_pairs_before === 'number' &&
-        typeof dr.duplicate_pairs_after === 'number') {
-      bits.push('pairs=' + dr.duplicate_pairs_before + '->' + dr.duplicate_pairs_after);
-    }
-    if (typeof dr.derived_edge_count_before === 'number' &&
-        typeof dr.derived_edge_count_after === 'number') {
-      bits.push('derived_edges=' + dr.derived_edge_count_before + '->' + dr.derived_edge_count_after);
-    }
-    addTechRow(listEl, 'duplicate_repair_summary', bits.join('; '));
-
-    if (Array.isArray(dr.actions) && dr.actions.length > 0) {
-      dr.actions.forEach(function (act) {
-        if (!act || typeof act !== 'object') return;
-        var status = act.status || 'unknown';
-        var actionId = act.action_id || '?';
-        var removedCount = (typeof act.removed_count === 'number') ? act.removed_count : 0;
-        var survivorId = act.survivor_derived_id || '';
-        var sourceCount = (typeof act.source_occurrence_count === 'number') ?
-                          act.source_occurrence_count : 0;
-        var ruleId = act.rule_id || '';
-        var basis = act.confidence_basis || act.explanation || 'no detail';
-        var row = document.createElement('div');
-        row.className = 'tech-row action-audit-row';
-        row.setAttribute('data-action-id', actionId);
-        row.setAttribute('data-action-status', status);
-        if (survivorId) row.setAttribute('data-survivor-id', survivorId);
-        var c1 = document.createElement('span');
-        c1.setAttribute('data-field', 'status');
-        c1.textContent = 'status=' + status;
-        row.appendChild(c1);
-        var c2 = document.createElement('span');
-        c2.setAttribute('data-field', 'action_id');
-        c2.textContent = 'action_id=' + actionId;
-        row.appendChild(c2);
-        var c3 = document.createElement('span');
-        c3.setAttribute('data-field', 'survivor_id');
-        c3.textContent = 'survivor_id=' + survivorId;
-        row.appendChild(c3);
-        var c4 = document.createElement('span');
-        c4.setAttribute('data-field', 'removed_count');
-        c4.textContent = 'removed_count=' + removedCount;
-        row.appendChild(c4);
-        var c5 = document.createElement('span');
-        c5.setAttribute('data-field', 'source_count');
-        c5.textContent = 'source_count=' + sourceCount;
-        row.appendChild(c5);
-        var c6 = document.createElement('span');
-        c6.setAttribute('data-field', 'rule_id');
-        c6.textContent = 'rule_id=' + ruleId;
-        row.appendChild(c6);
-        var c7 = document.createElement('span');
-        c7.setAttribute('data-field', 'basis');
-        c7.textContent = 'basis=' + basis;
-        row.appendChild(c7);
-        listEl.appendChild(row);
+  function _bindActions(root) {
+    // Generic delegated click handler for any descendant
+    // element with a data-action attribute. The frontend
+    // DOES NOT maintain a JS-side state machine — each
+    // action just calls the matching existing
+    // window.sketchup.<callback> and the host re-pushes
+    // a fresh payload.
+    var nodes = root.querySelectorAll('[data-action]');
+    nodes.forEach(function (n) {
+      // Avoid double-binding (some elements were bound
+      // explicitly in renderCard / renderIssuesList etc.).
+      if (n.__v19a_bound) return;
+      n.__v19a_bound = true;
+      n.addEventListener('click', function (ev) {
+        var action = n.getAttribute('data-action');
+        if (!action) return;
+        // The view_issues pseudo-action is intercepted by
+        // the frontend to switch to the 问题 tab.
+        if (action === 'view_issues') {
+          ev.preventDefault();
+          switchTab('issues');
+          return;
+        }
+        if (action === 'primary_cta') {
+          // The CTA's actual callback is determined by the
+          // cadPrepWorkflow primary_cta.callback; the data-action
+          // attribute on btn-primary-cta is rewritten by render().
+          var cta = n.getAttribute('data-action-callback') || '';
+          if (!cta) return;
+          ev.preventDefault();
+          _dispatchCallback(cta);
+          return;
+        }
+        ev.preventDefault();
+        _dispatchCallback(action);
       });
-    }
+    });
   }
 
-  // V1.6 UI-CN-SIMPLIFICATION (per dispatch §5.5): raw
-  // normalization audit / reason / target_z / max_movement /
-  // outlier count are preserved under `技术详情` for AIPM/Pi/
-  // Owner diagnosis. The default Working Mode card only shows
-  // the condensed Chinese user-facing rows.
-  function renderPlanarNormalizationTechnicalRows(listEl, pn) {
-    if (!pn || typeof pn !== 'object') return;
-    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
-    addTechRow(listEl, 'planar_normalization_state', pnState);
-    var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
-    if (proposal) {
-      if (typeof proposal.reason === 'string' && proposal.reason.length > 0) {
-        addTechRow(listEl, 'planar_normalization_reason', proposal.reason);
-      }
-      if (typeof proposal.target_z === 'number') {
-        addTechRow(listEl, 'planar_normalization_target_z', proposal.target_z);
-      }
-      if (typeof proposal.tolerance_used === 'number') {
-        addTechRow(listEl, 'planar_normalization_tolerance_used', proposal.tolerance_used);
-      }
-    }
-    var audit = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
-    if (audit) {
-      if (typeof audit.status === 'string') {
-        addTechRow(listEl, 'planar_normalization_audit_status', audit.status);
-      }
-      if (typeof audit.rule_id === 'string') {
-        addTechRow(listEl, 'planar_normalization_audit_rule_id', audit.rule_id);
-      }
-      if (typeof audit.rule_version === 'string') {
-        addTechRow(listEl, 'planar_normalization_audit_rule_version', audit.rule_version);
-      }
-      if (typeof audit.target_z === 'number') {
-        addTechRow(listEl, 'planar_normalization_audit_target_z', audit.target_z);
-      }
-      if (typeof audit.max_movement === 'number') {
-        addTechRow(listEl, 'planar_normalization_audit_max_movement', audit.max_movement);
-      }
-      if (typeof audit.applied_count === 'number') {
-        addTechRow(listEl, 'planar_normalization_audit_applied_count', audit.applied_count);
-      }
-      if (typeof audit.failed_count === 'number') {
-        addTechRow(listEl, 'planar_normalization_audit_failed_count', audit.failed_count);
-      }
-      if (typeof audit.reason === 'string' && audit.reason.length > 0) {
-        addTechRow(listEl, 'planar_normalization_audit_reason', audit.reason);
-      }
-    }
-  }
-
-  // V1.6 Planar Normalization: render the compact Chinese
-  // "平面校正" card inside the default Working Mode list.
-  // Always renders a "平面校正" State row in Chinese. When the
-  // snapshot carries additional Blueprint §11 fields AND/OR an
-  // audit row, those are rendered as concise Chinese rows under
-  // the card. The destructive Apply action is rendered by
-  // renderPrimaryAction (NOT here). The raw audit fields are
-  // preserved under `技术详情` by renderTechnicalDetails.
-  //
-  // Per dispatch §3 D: NOT_COMPUTED shows "尚未检查平面偏差。",
-  // READY_TO_NORMALIZE shows target_z + movable count + outlier
-  // count + the primary CTA, REVIEW_REQUIRED shows a Chinese
-  // explanation with no destructive action, NO_CANDIDATE shows
-  // a Chinese no-action explanation, APPLIED shows moved count +
-  // max movement + outlier count, FAILED shows a Chinese
-  // failure reason + recovery action.
-  function renderPlanarNormalization(listEl, workspaceState, pn) {
-    if (!pn || typeof pn !== 'object') return;
-    var pnState = (typeof pn.state === 'string') ? pn.state : 'NOT_COMPUTED';
-    var pnLabel = PN_STATE_LABELS_CN[pnState] || pnState;
-    // Card title row.
-    addRow(listEl, workspaceState, FIELD_LABEL_CN.planarNormalization,
-           pnLabel, pnLabel);
-
-    // NOT_COMPUTED -> short message, no further rows.
-    if (pnState === 'NOT_COMPUTED') {
-      addRow(listEl, workspaceState, null, null, '尚未检查平面偏差。');
-      return;
-    }
-    // REVIEW_REQUIRED -> reason row in Chinese.
-    if (pnState === 'REVIEW_REQUIRED') {
-      addRow(listEl, workspaceState, null, null,
-             '检测到多组高度，无法安全自动判断。');
-      var proposalRQ = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
-      if (proposalRQ && typeof proposalRQ.reason === 'string' && proposalRQ.reason.length > 0) {
-        addRow(listEl, workspaceState, FIELD_LABEL_CN.reviewReason,
-               proposalRQ.reason, proposalRQ.reason);
-      }
-      return;
-    }
-    // NO_CANDIDATE -> short message.
-    if (pnState === 'NO_CANDIDATE') {
-      addRow(listEl, workspaceState, null, null, '当前几何无需平面校正。');
-      return;
-    }
-    // READY_TO_NORMALIZE -> Blueprint §11 condensed rows.
-    if (pnState === 'READY_TO_NORMALIZE') {
-      addRow(listEl, workspaceState, null, null,
-             '检测到可安全校正的轻微 Z 偏差。');
-      var proposal = (pn.proposal && typeof pn.proposal === 'object') ? pn.proposal : null;
-      if (proposal) {
-        if (typeof proposal.target_z === 'number') {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.targetZ,
-                 String(proposal.target_z), String(proposal.target_z));
-        }
-        if (typeof proposal.movable_count === 'number') {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.proposedMovable,
-                 proposal.movable_count + ' 个',
-                 proposal.movable_count + ' 个');
-        }
-        if (typeof proposal.outlier_count === 'number') {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.outliers,
-                 proposal.outlier_count + ' 个',
-                 proposal.outlier_count + ' 个');
-        }
-      }
-      return;
-    }
-    // APPLIED -> moved + max movement + outlier unchanged.
-    if (pnState === 'APPLIED') {
-      addRow(listEl, workspaceState, null, null, '平面校正已完成。');
-      var auditA = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
-      if (auditA) {
-        if (typeof auditA.applied_count === 'number') {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.movedApplied,
-                 auditA.applied_count + ' 个',
-                 auditA.applied_count + ' 个');
-        }
-        if (typeof auditA.max_movement === 'number') {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.maxMovement,
-                 String(auditA.max_movement),
-                 String(auditA.max_movement));
-        }
-        if (Array.isArray(auditA.outlier_derived_ids) && auditA.outlier_derived_ids.length > 0) {
-          addRow(listEl, workspaceState, FIELD_LABEL_CN.outliersUnchanged,
-                 auditA.outlier_derived_ids.length + ' 个',
-                 auditA.outlier_derived_ids.length + ' 个');
-        }
-      }
-      return;
-    }
-    // FAILED -> Chinese failure reason + recovery.
-    if (pnState === 'FAILED') {
-      addRow(listEl, workspaceState, null, null, '平面校正失败。');
-      var auditF = (pn.audit && typeof pn.audit === 'object') ? pn.audit : null;
-      if (auditF && typeof auditF.reason === 'string' && auditF.reason.length > 0) {
-        addRow(listEl, workspaceState, FIELD_LABEL_CN.failureReason,
-               auditF.reason, auditF.reason);
-      }
-      return;
-    }
-    // invalid_tolerance / invalid_input -> Chinese explanation.
-    if (pnState === 'INVALID_TOLERANCE' || pnState === 'INVALID_INPUT') {
-      addRow(listEl, workspaceState, null, null, '当前配置或数据无效，无法计算。');
-    }
-  }
-
-  // Helper: append a labelled, factual row to the working-mode list.
-  // `state` is the data-state attribute ('none' / 'building' / 'ready'
-  // / 'discarded' / 'failed'). `label` is the small heading; `value`
-  // is the short text; `title` is the long text (used as a tooltip
-  // via the `title` attribute, so no user-text innerHTML).
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: when `label` is null the row is a
-  // single-line message (no label-value separator), which is the
-  // dominant pattern in the simplified Working Mode card.
-  function addRow(listEl, state, label, value, title) {
-    var row = document.createElement('div');
-    row.className = 'working-mode-row';
-    row.setAttribute('data-state', state);
-    if (label) {
-      var labelEl = document.createElement('span');
-      labelEl.className = 'label';
-      labelEl.textContent = label + '：';
-      row.appendChild(labelEl);
-      if (value) {
-        var valEl = document.createElement('span');
-        valEl.className = 'value';
-        valEl.textContent = value;
-        if (title && title !== value) {
-          valEl.setAttribute('title', title);
-        }
-        row.appendChild(valEl);
-      }
-    } else if (value) {
-      var valEl2 = document.createElement('span');
-      valEl2.className = 'value';
-      valEl2.textContent = value;
-      if (title && title !== value) {
-        valEl2.setAttribute('title', title);
-      }
-      row.appendChild(valEl2);
-    } else if (title) {
-      // No short value; put the message in the row directly.
-      var msgEl = document.createElement('span');
-      msgEl.className = 'value';
-      msgEl.textContent = title;
-      row.appendChild(msgEl);
-    }
-    listEl.appendChild(row);
-  }
-
-  // ============================================================
-  // V1.7 Endpoint / Gap Repair + Canonical Topology
-  // ============================================================
-  //
-  // renderTopologyRepair: condensed Simplified-Chinese user-
-  // facing card for the new `拓扑修复` section. Per Blueprint
-  // §17 the visible rows are:
-  //   - 开放端点 / 可安全修复 / 需人工确认 (before apply)
-  //   - 已修复间隙 / 剩余开放端点 / 需人工确认 (after apply)
-  // Internal identifiers (proposal IDs, endpoint keys,
-  // canonical node IDs, tolerance values) live under
-  // `技术详情` (renderTopologyRepairTechnicalRows).
-  function renderTopologyRepair(listEl, workspaceState, topo) {
-    if (!topo || typeof topo !== 'object') return;
-    var state = (typeof topo.state === 'string') ? topo.state : 'NOT_COMPUTED';
-    var label = TOPO_STATE_LABELS_CN[state] || state;
-    // Card title row (visible name).
-    addRow(listEl, workspaceState, SECTION_LABEL_CN.topologyRepair,
-           label, label);
-    var metrics = (topo.proposal && topo.proposal.metrics &&
-                   typeof topo.proposal.metrics === 'object')
-                  ? topo.proposal.metrics : {};
-    var openCount = (typeof metrics.open_endpoint_count === 'number')
-                    ? metrics.open_endpoint_count : 0;
-    var readyCount = (typeof metrics.ready_proposal_count === 'number')
-                     ? metrics.ready_proposal_count : 0;
-    var reviewCount = (typeof metrics.review_proposal_count === 'number')
-                      ? metrics.review_proposal_count : 0;
-    if (state === 'NOT_COMPUTED') {
-      addRow(listEl, workspaceState, null, null, '尚未检查可修复间隙。');
-      return;
-    }
-    if (state === 'READY_TO_REPAIR') {
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.safeProposals, '' + readyCount, '' + readyCount);
-      if (reviewCount > 0) {
-        addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
-               '' + reviewCount, '' + reviewCount);
-      }
-      return;
-    }
-    if (state === 'REVIEW_REQUIRED') {
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
-             '' + reviewCount, '' + reviewCount);
-      addRow(listEl, workspaceState, null, null,
-             '存在多义连接，建议逐项查看后人工处理。');
-      return;
-    }
-    if (state === 'NO_CANDIDATE') {
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.openEndpoints, '' + openCount, '' + openCount);
-      addRow(listEl, workspaceState, null, null, '在当前容差下未发现可安全修复的间隙。');
-      return;
-    }
-    if (state === 'APPLIED') {
-      var audit = (topo.audit && typeof topo.audit === 'object') ? topo.audit : {};
-      var applied = (typeof audit.applied_count === 'number')
-                    ? audit.applied_count
-                    : (Array.isArray(audit.applied_proposals) ? audit.applied_proposals.length : 0);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.appliedCount,
-             '' + applied, '' + applied);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.remainingOpen,
-             '' + openCount, '' + openCount);
-      if (reviewCount > 0) {
-        addRow(listEl, workspaceState, FIELD_LABEL_CN_TOPO.reviewRequired,
-               '' + reviewCount, '' + reviewCount);
-      }
-      return;
-    }
-    if (state === 'FAILED') {
-      var audit2 = (topo.audit && typeof topo.audit === 'object') ? topo.audit : {};
-      var reason = audit2.reason || audit2.last_error || '未知错误';
-      addRow(listEl, workspaceState, null, null,
-             '修复失败：' + String(reason));
-      return;
-    }
-  }
-
-  // renderTopologyRepairTechnicalRows: full audit evidence
-  // for `技术详情`. Proposal count, audit fields,
-  // canonical-graph digest, unresolved issue codes.
-  function renderTopologyRepairTechnicalRows(listEl, topo) {
-    if (!topo || typeof topo !== 'object') return;
-    var state = (typeof topo.state === 'string') ? topo.state : 'NOT_COMPUTED';
-    addTechRow(listEl, 'topology_repair_state', state);
-    var proposal = (topo.proposal && typeof topo.proposal === 'object') ?
-                    topo.proposal : null;
-    if (proposal) {
-      if (typeof proposal.reason === 'string' && proposal.reason.length > 0) {
-        addTechRow(listEl, 'topology_repair_reason', proposal.reason);
-      }
-      if (typeof proposal.open_endpoint_count === 'number') {
-        addTechRow(listEl, 'topology_repair_open_endpoint_count',
-                   proposal.open_endpoint_count);
-      }
-      if (proposal.metrics && typeof proposal.metrics === 'object') {
-        Object.keys(proposal.metrics).sort().forEach(function (k) {
-          addTechRow(listEl, 'topology_repair_metric_' + k, proposal.metrics[k]);
+  function _buildIssueRows(payload, cadPrep) {
+    // Current unresolved / relevant issues first. Priority:
+    //   1. Cards that are REVIEW_REQUIRED / FAILED (per
+    //      cadPrepWorkflow.cards).
+    //   2. ACTIONABLE items (without a separate issue row;
+    //      the action lives on the card).
+    //   3. Legacy groups (raw issue Registry) for the
+    //      "原始检查记录" block.
+    var rows = [];
+    var cards = (cadPrep && cadPrep.cards) || [];
+    cards.forEach(function (c) {
+      if (!c) return;
+      if (c.state === 'REVIEW_REQUIRED') {
+        rows.push({
+          severity: 'warn',
+          title:    c.title + ' · 需要人工查看',
+          desc:     c.summary,
+          locatable: false,
+          issue_id: null,
+          icon: CARD_ICON_PATHS[c.id] || CARD_ICON_PATHS.other,
+          action:   c.primary_action || c.secondary_action
+        });
+      } else if (c.state === 'FAILED') {
+        rows.push({
+          severity: 'err',
+          title:    c.title + ' · 处理失败',
+          desc:     c.summary,
+          locatable: false,
+          issue_id: null,
+          icon: CARD_ICON_PATHS[c.id] || CARD_ICON_PATHS.other
         });
       }
-      if (proposal.tolerance && typeof proposal.tolerance === 'object') {
-        Object.keys(proposal.tolerance).sort().forEach(function (k) {
-          addTechRow(listEl, 'topology_repair_tolerance_' + k,
-                     proposal.tolerance[k]);
-        });
-      }
-    }
-    var audit = (topo.audit && typeof topo.audit === 'object') ? topo.audit : null;
-    if (audit) {
-      Object.keys(audit).sort().forEach(function (k) {
-        var v = audit[k];
-        if (Array.isArray(v)) {
-          v.forEach(function (item, idx) {
-            if (item && typeof item === 'object') {
-              Object.keys(item).sort().forEach(function (kk) {
-                addTechRow(listEl, 'topology_repair_audit_' + k + '_' + idx + '_' + kk,
-                           item[kk]);
-              });
-            } else {
-              addTechRow(listEl, 'topology_repair_audit_' + k + '_' + idx, item);
-            }
-          });
-        } else if (v && typeof v === 'object') {
-          Object.keys(v).sort().forEach(function (kk) {
-            addTechRow(listEl, 'topology_repair_audit_' + k + '_' + kk, v[kk]);
+    });
+
+    // Legacy raw groups (preserve V1.0-V1.4 issue rows).
+    var groups = payload.groups || [];
+    groups.forEach(function (g) {
+      if (!g || !g.issues) return;
+      g.issues.forEach(function (iss) {
+        if (!iss) return;
+        if (iss.locatable) {
+          rows.push({
+            severity: iss.severity || 'info',
+            title:    iss.message || iss.issue_type || iss.issue_id || '',
+            desc:     iss.issue_type || '',
+            locatable: true,
+            issue_id: iss.issue_id,
+            icon: CARD_ICON_PATHS.other
           });
         } else {
-          addTechRow(listEl, 'topology_repair_audit_' + k, v);
+          rows.push({
+            severity: iss.severity || 'info',
+            title:    iss.message || iss.issue_type || iss.issue_id || '',
+            desc:     iss.issue_type || '',
+            locatable: false,
+            issue_id: iss.issue_id,
+            icon: CARD_ICON_PATHS.other
+          });
         }
       });
+    });
+    return rows;
+  }
+
+  function _buildLegacySourceRows(payload) {
+    // Compact per-issue-type counts (legacy V1.0-V1.4
+    // "raw inventory"-style summary).
+    var rows = [];
+    var summary = payload.summary || {};
+    var issues = summary.issues || {};
+    Object.keys(issues).forEach(function (k) {
+      rows.push({ k: k, v: String(issues[k]) });
+    });
+    if (typeof summary.edges === 'number') {
+      rows.push({ k: 'edges', v: String(summary.edges) });
     }
-    var cg = (topo.canonical_graph && typeof topo.canonical_graph === 'object') ?
-              topo.canonical_graph : null;
-    if (cg) {
-      if (typeof cg.digest === 'string') {
-        addTechRow(listEl, 'canonical_graph_digest', cg.digest);
+    if (typeof summary.vertices === 'number') {
+      rows.push({ k: 'vertices', v: String(summary.vertices) });
+    }
+    if (typeof summary.non_zero_z_vertices === 'number') {
+      rows.push({ k: 'non_zero_z_vertices', v: String(summary.non_zero_z_vertices) });
+    }
+    if (typeof summary.warnings === 'number') {
+      rows.push({ k: 'warnings', v: String(summary.warnings) });
+    }
+    return rows;
+  }
+
+  function _buildDetailsKv(payload, cadPrep) {
+    var rows = [];
+    var dw = payload.derivedWorkspace || {};
+    if (dw.source_snapshot_id) {
+      rows.push({ k: 'source_snapshot_id', v: dw.source_snapshot_id });
+    }
+    if (dw.source_fingerprint_digest) {
+      rows.push({ k: 'source_fingerprint', v: dw.source_fingerprint_digest });
+    }
+    if (dw.execution_config_digest) {
+      rows.push({ k: 'config_digest', v: dw.execution_config_digest });
+    }
+    if (dw.workspace_id) {
+      rows.push({ k: 'workspace_id', v: dw.workspace_id });
+    }
+    if (dw.last_error) {
+      rows.push({ k: 'last_error', v: dw.last_error });
+    }
+    if (typeof dw.entity_count === 'number') {
+      rows.push({ k: 'entity_count', v: String(dw.entity_count) });
+    }
+    if (cadPrep && cadPrep.schema_version) {
+      rows.push({ k: 'cadPrepWorkflow.schema_version', v: cadPrep.schema_version });
+    }
+    if (cadPrep && cadPrep.overall_state) {
+      rows.push({ k: 'cadPrepWorkflow.overall_state', v: cadPrep.overall_state });
+    }
+    if (cadPrep && cadPrep.headline) {
+      rows.push({ k: 'cadPrepWorkflow.headline', v: cadPrep.headline });
+    }
+    return rows;
+  }
+
+  function _buildRawInventoryKv(payload) {
+    var rows = [];
+    var summary = payload.summary || {};
+    Object.keys(summary).forEach(function (k) {
+      // Skip nested `issues` Hash (already shown elsewhere).
+      if (k === 'issues') return;
+      var v = summary[k];
+      var s;
+      if (v == null) {
+        s = '';
+      } else if (typeof v === 'object') {
+        s = JSON.stringify(v);
+      } else {
+        s = String(v);
       }
-      if (typeof cg.schema_version === 'string') {
-        addTechRow(listEl, 'canonical_graph_schema_version', cg.schema_version);
+      rows.push({ k: k, v: s });
+    });
+    return rows;
+  }
+
+  function _buildWorkspaceKv(payload) {
+    var rows = [];
+    var dw = payload.derivedWorkspace || {};
+    Object.keys(dw).forEach(function (k) {
+      if (k === 'duplicate_repair' || k === 'planar_normalization' ||
+          k === 'topology_repair'   || k === 'structure_reconstruction') {
+        // Rendered under their own audit blocks below.
+        return;
       }
-      if (cg.metrics && typeof cg.metrics === 'object') {
-        Object.keys(cg.metrics).sort().forEach(function (k) {
-          addTechRow(listEl, 'canonical_graph_metric_' + k, cg.metrics[k]);
+      var v = dw[k];
+      var s;
+      if (v == null) {
+        s = '';
+      } else if (typeof v === 'object') {
+        s = JSON.stringify(v);
+      } else {
+        s = String(v);
+      }
+      rows.push({ k: k, v: s });
+    });
+    return rows;
+  }
+
+  function _buildRepairHistoryKv(payload) {
+    var rows = [];
+    var dw = payload.derivedWorkspace || {};
+    // Duplicate repair summary.
+    var dr = dw.duplicate_repair;
+    if (dr && typeof dr === 'object') {
+      rows.push({ k: 'duplicate_repair.actions_applied', v: String(dr.actions_applied || 0) });
+      rows.push({ k: 'duplicate_repair.actions_skipped', v: String(dr.actions_skipped || 0) });
+      rows.push({ k: 'duplicate_repair.actions_failed',  v: String(dr.actions_failed  || 0) });
+      if (dr.duplicate_pairs_before != null) {
+        rows.push({ k: 'duplicate_repair.pairs_before', v: String(dr.duplicate_pairs_before) });
+      }
+      if (dr.duplicate_pairs_after != null) {
+        rows.push({ k: 'duplicate_repair.pairs_after', v: String(dr.duplicate_pairs_after) });
+      }
+      if (dr.tolerance_status) {
+        rows.push({ k: 'duplicate_repair.tolerance_status', v: String(dr.tolerance_status) });
+      }
+    } else {
+      rows.push({ k: 'duplicate_repair', v: '未执行' });
+    }
+    // Planar normalization.
+    var pn = dw.planar_normalization;
+    if (pn && typeof pn === 'object') {
+      rows.push({ k: 'planar_normalization.state',    v: String(pn.state || 'NOT_COMPUTED') });
+      rows.push({ k: 'planar_normalization.computed', v: String(!!pn.computed) });
+    } else {
+      rows.push({ k: 'planar_normalization', v: '未执行' });
+    }
+    // Topology repair.
+    var tr = dw.topology_repair;
+    if (tr && typeof tr === 'object') {
+      rows.push({ k: 'topology_repair.state',    v: String(tr.state || 'NOT_COMPUTED') });
+      rows.push({ k: 'topology_repair.computed', v: String(!!tr.computed) });
+    } else {
+      rows.push({ k: 'topology_repair', v: '未执行' });
+    }
+    return rows;
+  }
+
+  function _buildCanonicalKv(payload) {
+    var rows = [];
+    var dw = payload.derivedWorkspace || {};
+    var sr = dw.structure_reconstruction;
+    if (sr && typeof sr === 'object') {
+      rows.push({ k: 'structure_reconstruction.state',    v: String(sr.state || 'NOT_COMPUTED') });
+      rows.push({ k: 'structure_reconstruction.computed', v: String(!!sr.computed) });
+      if (sr.digest) {
+        rows.push({ k: 'structure_reconstruction.digest', v: String(sr.digest) });
+      }
+      if (sr.canonical_graph_digest) {
+        rows.push({ k: 'canonical_graph_digest', v: String(sr.canonical_graph_digest) });
+      }
+      if (sr.metrics && typeof sr.metrics === 'object') {
+        Object.keys(sr.metrics).forEach(function (k) {
+          rows.push({
+            k: 'structure_reconstruction.metrics.' + k,
+            v: JSON.stringify(sr.metrics[k])
+          });
         });
       }
-      if (Array.isArray(cg.unresolved_issues)) {
-        cg.unresolved_issues.forEach(function (u, idx) {
-          addTechRow(listEl, 'canonical_graph_unresolved_' + idx, u);
-        });
+    } else {
+      rows.push({ k: 'structure_reconstruction', v: '未执行' });
+    }
+    // V1.7 canonical graph digest (when available).
+    var tr = dw.topology_repair;
+    if (tr && typeof tr === 'object' && tr.canonical_graph) {
+      var cg = tr.canonical_graph;
+      if (cg.digest)         rows.push({ k: 'canonical_graph.digest',         v: String(cg.digest) });
+      if (cg.schema_version) rows.push({ k: 'canonical_graph.schema_version', v: String(cg.schema_version) });
+    }
+    return rows;
+  }
+
+  function _primaryCtaFor(overallState) {
+    var map = {
+      IDLE:                 { label: '开始处理', callback: 'prepare_workspace', enabled: true  },
+      SCANNING:             { label: '正在准备...', callback: 'prepare_workspace', enabled: false },
+      NEEDS_ATTENTION:      { label: '重新检测', callback: 'rebuild_workspace', enabled: true  },
+      READY_FOR_VALIDATION: { label: '重新检测', callback: 'rebuild_workspace', enabled: true  },
+      STALE:                { label: '重新检测', callback: 'rebuild_workspace', enabled: false },
+      FAILED:               { label: '重新检测', callback: 'rebuild_workspace', enabled: true  }
+    };
+    return map[overallState] || map.IDLE;
+  }
+
+  function _buildIssuesBadgeCount(cadPrep, payload) {
+    var n = 0;
+    var cards = (cadPrep && cadPrep.cards) || [];
+    cards.forEach(function (c) {
+      if (!c) return;
+      if (c.state === 'REVIEW_REQUIRED' || c.state === 'FAILED') n++;
+    });
+    var groups = payload.groups || [];
+    groups.forEach(function (g) {
+      if (g && g.count) n += Number(g.count) || 0;
+    });
+    return n;
+  }
+
+  function render(payload) {
+    // Defensive: tolerate missing cadPrepWorkflow (older
+    // dialog_runner / test payloads). Show IDLE.
+    var cadPrep = (payload && payload.cadPrepWorkflow) || null;
+    var overall = (cadPrep && cadPrep.overall_state) || 'IDLE';
+    var overallLabel = OVERALL_STATE_LABELS_CN[overall] || overall;
+
+    // --- Header ---
+    var sel = (cadPrep && cadPrep.selection) || {};
+    var selLabel = sel.label && sel.label.length ? sel.label : '尚未选择';
+    _setText('selection-value', selLabel);
+    var statusChip = document.getElementById('status-chip');
+    var statusText = document.getElementById('status-text');
+    if (statusChip) statusChip.setAttribute('data-state', overall);
+    if (statusText) statusText.textContent = overallLabel;
+
+    // --- CTA row ---
+    _setText('cta-headline', (cadPrep && cadPrep.headline) || 'CAD 尚未处理');
+    _setText('cta-sub',      (cadPrep && cadPrep.subheadline) || '');
+    var primaryBtn = document.getElementById('btn-primary-cta');
+    var primaryText = document.getElementById('btn-primary-cta-text');
+    var cta = _primaryCtaFor(overall);
+    if (primaryText) primaryText.textContent = cta.label;
+    if (primaryBtn) {
+      primaryBtn.setAttribute('data-action', 'primary_cta');
+      primaryBtn.setAttribute('data-action-callback', cta.callback);
+      if (cta.enabled) {
+        primaryBtn.removeAttribute('disabled');
+      } else {
+        primaryBtn.setAttribute('disabled', 'disabled');
+      }
+    }
+
+    // --- Recovery banner ---
+    var banner = document.getElementById('recovery-banner');
+    var recovery = cadPrep && cadPrep.recovery;
+    if (recovery) {
+      _show(banner, true);
+      banner.className = 'recovery-banner' + (overall === 'FAILED' ? ' is-failed' : '');
+      _setText('recovery-title', recovery.title || '');
+      _setText('recovery-desc',  recovery.desc  || '');
+      var rb = document.getElementById('btn-rebuild');
+      if (rb) rb.setAttribute('data-action', recovery.primary_callback || 'rebuild_workspace');
+      var rd = document.getElementById('btn-discard');
+      if (rd) rd.setAttribute('data-action', recovery.secondary_callback || 'discard_workspace');
+    } else {
+      _show(banner, false);
+    }
+
+    // --- Issue summary ---
+    renderIssueSummary(document.getElementById('issue-summary'),
+                       cadPrep && cadPrep.issue_summary);
+
+    // --- Capability cards ---
+    renderCards(document.getElementById('capability-grid'),
+                cadPrep && cadPrep.cards);
+
+    // --- Issues tab ---
+    renderIssuesList(document.getElementById('issues-list'),
+                     _buildIssueRows(payload, cadPrep));
+    renderKvList(document.getElementById('audit-source-body'),
+                 _buildLegacySourceRows(payload));
+
+    // --- Layers tab (legacy layerGroups payload). ---
+    renderLayerList(document.getElementById('layer-list'),
+                    payload.layerGroups || []);
+
+    // --- Details tab (audit blocks). ---
+    renderKvList(document.getElementById('audit-source-details-body'),
+                 _buildDetailsKv(payload, cadPrep));
+    renderKvList(document.getElementById('audit-raw-inventory-body'),
+                 _buildRawInventoryKv(payload));
+    renderKvList(document.getElementById('audit-workspace-body'),
+                 _buildWorkspaceKv(payload));
+    renderKvList(document.getElementById('audit-repair-history-body'),
+                 _buildRepairHistoryKv(payload));
+    renderKvList(document.getElementById('audit-canonical-body'),
+                 _buildCanonicalKv(payload));
+    renderKvList(document.getElementById('audit-source-issues-details-body'),
+                 _buildLegacySourceRows(payload));
+
+    // --- Tab badges ---
+    var badge = document.getElementById('tab-issues-badge');
+    var badgeCount = _buildIssuesBadgeCount(cadPrep, payload);
+    if (badge) {
+      if (badgeCount > 0) {
+        badge.removeAttribute('hidden');
+        badge.textContent = String(badgeCount);
+      } else {
+        badge.setAttribute('hidden', '');
+        badge.textContent = '0';
+      }
+    }
+
+    // --- Wire action buttons ---
+    var appShell = document.getElementById('app-shell');
+    if (appShell) _bindActions(appShell);
+  }
+
+  // ================================================================
+  // 9. Wire up (tab clicks + ready handshake)
+  // ================================================================
+
+  function init() {
+    // Tab clicks
+    document.querySelectorAll('.tab-item').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tab = btn.getAttribute('data-tab');
+        if (tab) switchTab(tab);
+      });
+    });
+
+    // V1.4 ready handshake: signal host that DOM is ready
+    // and the host can begin pushing payloads via
+    // window.SUAIP.render(json). We call ready() exactly
+    // once, after DOMContentLoaded, via the existing
+    // callback path.
+    if (window.sketchup && typeof window.sketchup.ready === 'function') {
+      try {
+        window.sketchup.ready();
+      } catch (e) {
+        // Defensive: never crash the UI on handshake failure.
+        _toast('ready 握手失败: ' + (e && e.message ? e.message : e), 'err');
       }
     }
   }
 
-  // V1.8 Polyline / Closed Loop / Region Reconstruction:
-  // condensed Simplified-Chinese user-facing card for the
-  // new `轮廓与区域` section. The default visible rows are
-  // the locked Blueprint §16 metrics: 开放链 / 闭合轮廓 /
-  // 区域 / 洞 / 异常. Internal identifiers (canonical graph
-  // digest, result digest, full metrics, reason codes, loop
-  // / chain / region ids) live under `技术详情`
-  // (renderStructureReconstructionTechnicalRows).
-  function renderStructureReconstruction(listEl, workspaceState, struct) {
-    if (!struct || typeof struct !== 'object') return;
-    var state = (typeof struct.state === 'string') ? struct.state : 'NOT_COMPUTED';
-    var label = STRUCTURE_STATE_LABELS_CN[state] || state;
-    // Card title row (visible name).
-    addRow(listEl, workspaceState, SECTION_LABEL_CN.structureReconstruction,
-           label, label);
-    var metrics = (struct.metrics && typeof struct.metrics === 'object')
-                  ? struct.metrics : {};
-    var openChains    = (typeof metrics.open_chain_count  === 'number') ? metrics.open_chain_count  : 0;
-    var closedLoops   = (typeof metrics.closed_loop_count === 'number') ? metrics.closed_loop_count : 0;
-    var regions       = (typeof metrics.region_count      === 'number') ? metrics.region_count      : 0;
-    var holes         = (typeof metrics.hole_count        === 'number') ? metrics.hole_count        : 0;
-    // 异常 = distinct unresolved issue codes (the canonical
-    // per-component / per-loop / per-region count). Avoids
-    // double-counting overlapping loop / component metrics.
-    var invalid       = (typeof metrics.unresolved_issue_count === 'number')
-                       ? metrics.unresolved_issue_count : 0;
-    if (state === 'NOT_COMPUTED') {
-      addRow(listEl, workspaceState, null, null, '尚未检查结构。');
-      return;
-    }
-    if (state === 'READY' || state === 'READY_WITH_WARNINGS') {
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.openChains,
-             '' + openChains, '' + openChains);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.closedLoops,
-             '' + closedLoops, '' + closedLoops);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.regions,
-             '' + regions, '' + regions);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.holes,
-             '' + holes, '' + holes);
-      addRow(listEl, workspaceState, FIELD_LABEL_CN_STRUCT.exceptions,
-             '' + invalid, '' + invalid);
-      return;
-    }
-    if (state === 'FAILED') {
-      var issues = Array.isArray(struct.unresolved_issues)
-                   ? struct.unresolved_issues : [];
-      var reason = (issues.length > 0) ? issues.join('；') :
-                    (struct.reason || '未知错误');
-      addRow(listEl, workspaceState, null, null,
-             '结构检查失败：' + String(reason));
-      return;
-    }
-  }
-
-  // renderStructureReconstructionTechnicalRows: full audit
-  // evidence for `技术详情`. Reconstruction digest,
-  // canonical-graph digest, full metrics, reason codes.
-  function renderStructureReconstructionTechnicalRows(listEl, struct) {
-    if (!struct || typeof struct !== 'object') return;
-    var state = (typeof struct.state === 'string') ? struct.state : 'NOT_COMPUTED';
-    addTechRow(listEl, 'structure_reconstruction_state', state);
-    if (typeof struct.computed === 'boolean') {
-      addTechRow(listEl, 'structure_reconstruction_computed',
-                 struct.computed ? 'true' : 'false');
-    }
-    if (typeof struct.canonical_graph_digest === 'string') {
-      addTechRow(listEl, 'structure_reconstruction_canonical_graph_digest',
-                 struct.canonical_graph_digest);
-    }
-    if (typeof struct.digest === 'string' && struct.digest.length > 0) {
-      addTechRow(listEl, 'structure_reconstruction_digest',
-                 struct.digest);
-    }
-    if (struct.metrics && typeof struct.metrics === 'object') {
-      Object.keys(struct.metrics).sort().forEach(function (k) {
-        addTechRow(listEl, 'structure_reconstruction_metric_' + k,
-                   struct.metrics[k]);
-      });
-    }
-    if (Array.isArray(struct.unresolved_issues)) {
-      struct.unresolved_issues.forEach(function (u, idx) {
-        addTechRow(listEl, 'structure_reconstruction_unresolved_' + idx, u);
-      });
-    }
-    if (Array.isArray(struct.reasons)) {
-      struct.reasons.forEach(function (r, idx) {
-        addTechRow(listEl, 'structure_reconstruction_reason_' + idx, r);
-      });
-    }
-  }
-
-  // Helper: append an action button. `callback` is a SketchUp
-  // add_action_callback name (Prepare / Discard / Rebuild).
-  // V14-RUNTIME-BLOCK-001 (2026-08-22, real-SU2020 Owner
-  // repro): the host action callbacks registered by
-  // DialogRunner.add_action_callback live on
-  // `window.sketchup.<name>` (NOT `window.SUAIP.<name>` --
-  // window.SUAIP only carries the page functions render/toast).
-  // The previous addAction resolved via
-  // `window.SUAIP[callback]` -- which never matched the real
-  // SU callback path -- so the click handler was a no-op on a
-  // real SU host (Prepare/Discard/Rebuild buttons did nothing).
-  // The fix below resolves via `window.sketchup[callback]`
-  // (BRACKET LOOKUP, no eval). When the callback is absent
-  // (test env / partial install), the click is a safe no-op
-  // (the dialog stays usable).
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: button label is the Simplified
-  // Chinese presentation. The internal `data-action` attribute
-  // preserves the canonical English callback name so the Ruby
-  // dispatch + DOM tests still resolve correctly.
-  function addAction(actionsEl, label, callback, enabled) {
-    var btn = document.createElement('button');
-    btn.textContent = label;
-    btn.setAttribute('data-action', callback);
-    if (!enabled) btn.setAttribute('disabled', 'disabled');
-    btn.addEventListener('click', function () {
-      if (btn.hasAttribute('disabled')) return;
-      // No eval; locate the callback on window.sketchup and
-      // call it. The callback is registered by
-      // DialogRunner.add_action_callback at boot.
-      var sk = window.sketchup || {};
-      var fn = sk[callback];
-      if (typeof fn === 'function') fn();
-    });
-    actionsEl.appendChild(btn);
-  }
-
-  // V1.2: render one layer-issue bucket. Returns a `<details>`
-  // element whose summary is "LayerName (N issue(s))" and whose
-  // body contains the existing renderIssue() rows for each issue
-  // in the bucket. The bucket honors `default_open` (set by
-  // LayerIssueGrouper).
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: bucket header uses the
-  // formatCount helper so "1 issue" reads correctly in any
-  // language; per dispatch §13 CN13 the wording is Simplified
-  // Chinese.
-  function renderLayerIssueBucket(b) {
-    var det = document.createElement('details');
-    det.open = !!(b && b.default_open);
-    var sum = document.createElement('summary');
-    var layerName = (b && b.name) ? String(b.name) : '';
-    var count = (b && typeof b.count === 'number') ? b.count : 0;
-    // V1.6 UI-CN-SIMPLIFICATION: bucket header reads
-    // "LayerName（N 个问题）"; we do NOT pass it through
-    // formatCount (the noun "个问题" already encodes the
-    // counter and the English-pluralization 's' suffix
-    // would corrupt the Simplified Chinese wording).
-    sum.textContent = layerName + '（' + count + ' 个问题）';
-    det.appendChild(sum);
-    var issues = (b && Array.isArray(b.issues)) ? b.issues : [];
-    issues.forEach(function (issue) {
-      det.appendChild(renderIssue(issue));
-    });
-    return det;
-  }
-
-  // V1.1 (per plan §4.10): render one layer row. The row carries:
-  //   - data-role (locked canonical role symbol)
-  //   - data-visible (true | false)        — operational layer
-  //                                          visibility (R007).
-  //   - data-visibility-unknown (true | false) — whether the host
-  //                                          capability was missing
-  //                                          (R011).
-  //   - data-layer-name                    — verbatim layer name.
-  // The row exposes BOTH a role badge (e.g. "Dimension") AND a
-  // SEPARATE visibility badge ("Visible" / "Off-screen" /
-  // "Visibility: unknown"); the two are independent (R007). The row
-  // has cursor: default and NO click handler; it is intentionally
-  // non-actionable (mirrors V1.0 L3 non-locatable warning pattern).
-  //
-  // V1.6 UI-CN-SIMPLIFICATION: role + visibility badges use the
-  // Simplified Chinese label maps.
-  function renderLayerRow(g) {
-    var div = document.createElement('div');
-    div.className = 'layer-row';
-    var role = (g && g.role) ? String(g.role) : 'unknown';
-    var visibility_unknown = !!(g && g.visibility_unknown);
-    var visible = !!(g && g.visible);
-    // The Ruby mapper already coerces these to the right shape.
-    // We re-check on the JS side for defensive rendering of any
-    // future payload shape (e.g. a malformed layerGroups array).
-    div.setAttribute('data-role', role);
-    div.setAttribute('data-visible', visible ? 'true' : 'false');
-    div.setAttribute('data-visibility-unknown', visibility_unknown ? 'true' : 'false');
-    div.setAttribute('data-layer-name', (g && g.name) ? String(g.name) : '');
-
-    var name = document.createElement('span');
-    name.className = 'layer-name';
-    name.textContent = (g && g.name) ? String(g.name) : '';
-
-    var roleBadge = document.createElement('span');
-    roleBadge.className = 'role-badge';
-    // V1.6 UI-CN-SIMPLIFICATION: the visible role label is
-    // always the JS Simplified Chinese translation (based on
-    // the canonical role Symbol). The Ruby mapper's pre-
-    // computed `role_label` is not used here because the
-    // mapper currently emits English labels; we want the
-    // visible presentation to ALWAYS be Simplified Chinese
-    // regardless of payload version.
-    roleBadge.textContent = layerRoleLabelCN(role);
-
-    var visBadge = document.createElement('span');
-    visBadge.className = 'visibility-badge';
-    // V1.6 UI-CN-SIMPLIFICATION: prefer the JS Simplified
-    // Chinese translation based on the canonical visibility
-    // Symbol; fall back to the raw server-provided label only
-    // when the visibility is `unknown` (where the server may
-    // carry extra diagnostic context).
-    var visKey = visibility_unknown ? 'unknown' : (visible ? 'visible' : 'hidden');
-    visBadge.textContent = LAYER_VISIBILITY_LABELS_CN[visKey] || '';
-
-    var edgesCell = document.createElement('span');
-    edgesCell.className = 'edge-count';
-    var edgeCount = (g && g.edge_count != null) ? g.edge_count : 0;
-    edgesCell.textContent = edgeCount + ' 条';
-
-    // Visible separator between the edge and issue counts. The
-    // separator is a real DOM node (not just whitespace) so the
-    // mock test harness and any future SR / a11y reader both pick
-    // it up reliably. Per Owner Gate 2 V1.1 NIT: prior rendering
-    // produced visually-joined text like "1 edge3 issues" when the
-    // flexbox gap was 0; this separator makes the join explicit
-    // in BOTH the CSS and the textContent.
-    var countSep = document.createElement('span');
-    countSep.className = 'layer-count-sep';
-    countSep.setAttribute('aria-hidden', 'true');
-    countSep.textContent = '\u00B7'; // middle dot "·"
-
-    var issuesCell = document.createElement('span');
-    var issueCount = (g && g.issue_count != null) ? g.issue_count : 0;
-    issuesCell.className = 'issue-count' + (issueCount > 0 ? ' has-issues' : '');
-    issuesCell.textContent = issueCount + ' 个问题';
-
-    div.appendChild(name);
-    div.appendChild(roleBadge);
-    div.appendChild(visBadge);
-    div.appendChild(edgesCell);
-    div.appendChild(countSep);
-    div.appendChild(issuesCell);
-    // No click handler — layers are intentionally non-actionable.
-    // There is no path to window.sketchup.locate from this row.
-    return div;
-  }
-
+  // Expose on window.SUAIP (preserved from V1.4 contract).
   ROOT.render = render;
-  ROOT.toast   = toast;
-  ROOT.ISSUE_TYPE_LABELS_CN    = ISSUE_TYPE_LABELS_CN;
-  ROOT.LAYER_ROLE_LABELS_CN    = LAYER_ROLE_LABELS_CN;
-  ROOT.LAYER_VISIBILITY_LABELS_CN = LAYER_VISIBILITY_LABELS_CN;
-  ROOT.SEVERITY_LABELS_CN      = SEVERITY_LABELS_CN;
-  ROOT.WORKSPACE_STATE_LABELS_CN = WORKSPACE_STATE_LABELS_CN;
-  ROOT.PN_STATE_LABELS_CN      = PN_STATE_LABELS_CN;
-  ROOT.FIELD_LABEL_CN          = FIELD_LABEL_CN;
-  ROOT.ACTION_LABEL_CN         = ACTION_LABEL_CN;
-  ROOT.SECTION_LABEL_CN        = SECTION_LABEL_CN;
-  ROOT.renderLayers            = renderLayers;
-  ROOT.renderLayerRow          = renderLayerRow;
-  ROOT.renderLayerIssues       = renderLayerIssues;
-  ROOT.renderLayerIssueBucket  = renderLayerIssueBucket;
-  ROOT.renderFaceInventory     = renderFaceInventory;
-  ROOT.renderFaceInventoryRow  = renderFaceInventoryRow;
-  ROOT.renderWorkingMode       = renderWorkingMode;
-  ROOT.renderTechnicalDetails  = renderTechnicalDetails;
-  // V1.6 Planar Normalization / Z Policy: expose the
-  // sub-renderer so the DOM tests (CN1-CN18 per dispatch
-  // V16-UI-CN-SIMPLIFICATION-2026-09-01) can call it directly.
-  // These are pure functions of (listEl, state, payload) and
-  // have no other side effect.
-  ROOT.renderPlanarNormalization       = renderPlanarNormalization;
+  ROOT.toast  = _toast;
 
-  document.addEventListener('DOMContentLoaded', function () {
-    if (window.sketchup && window.sketchup.ready) {
-      window.sketchup.ready();
-    }
-  });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();

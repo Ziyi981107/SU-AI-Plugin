@@ -13,6 +13,7 @@
 require 'json'
 require_relative 'core/issue_registry'
 require_relative 'core/working_mode_runner'
+require_relative 'cad_prep_workflow_presenter'
 
 module SUAnalysis
   module Extension
@@ -56,6 +57,14 @@ module SUAnalysis
       # key `derivedWorkspace` for the dialog's 'Working Mode'
       # section. Default value is the runner's idle snapshot
       # (state='none', no source_snapshot_id, etc.).
+      #
+      # V1.9A-A1: adds ONE new top-level key `cadPrepWorkflow`
+      # for the new production UX presentation model. Pure
+      # / testable / JSON-safe / additive — legacy callers
+      # (V1.0–V1.8) that read summary / groups / diagnostics /
+      # layerGroups / layerIssueGroups / faceInventoryGroups /
+      # derivedWorkspace continue to receive them unchanged.
+      # The new payload is the SOLE new top-level key.
       def as_html_data(analysis_result)
         return {} if analysis_result.nil?
         result = {
@@ -72,6 +81,45 @@ module SUAnalysis
           # Default ('none' state) when no workspace is active.
           'derivedWorkspace'   => SUAnalysis::Core::WorkingModeRunner.snapshot
         }
+        # V1.9A-A1: additive top-level presentation model.
+        # The presenter is pure / testable; it consumes the
+        # analysis_result + the live WorkingModeRunner.snapshot
+        # and emits a JSON-safe presentation Hash. No live
+        # SketchUp objects cross the bridge (the presenter
+        # only reads primitive / Hash / Array values).
+        begin
+          wf_payload = SUAnalysis::Extension::CadPrepWorkflowPresenter.present(
+            analysis_result:   analysis_result,
+            workspace_snapshot: SUAnalysis::Core::WorkingModeRunner.snapshot
+          )
+          result['cadPrepWorkflow'] = wf_payload
+        rescue StandardError => e
+          # Defensive: a presenter failure MUST NOT break the
+          # legacy payload. Surface the error as a STALE
+          # presentation so the UI can render a coherent
+          # fallback instead of crashing mid-dialog.
+          result['cadPrepWorkflow'] = {
+            'schema_version' => SUAnalysis::Extension::CadPrepWorkflowPresenter::SCHEMA_VERSION,
+            'overall_state'  => 'STALE',
+            'headline'       => '工作副本已失效',
+            'subheadline'    => 'V1.9A-A1 presenter error: ' + e.message.to_s,
+            'selection'      => { 'type' => analysis_result.selection_type.to_s,
+                                  'label' => analysis_result.selection_label.to_s },
+            'issue_summary'  => { 'kind' => 'issues', 'headline' => '处理失败',
+                                  'subtitle' => 'Presenter 不可用，请重新生成工作副本',
+                                  'chips' => [{ 'value' => 1, 'label' => '失败' }],
+                                  'cta' => '重新检测' },
+            'cards'          => [],
+            'recovery'       => {
+              'title'          => 'Presenter 不可用',
+              'desc'           => 'V1.9A-A1 presenter raised an exception: ' + e.class.to_s + ': ' + e.message.to_s,
+              'primary_label'  => '重新生成工作副本',
+              'primary_callback' => 'rebuild_workspace',
+              'secondary_label'  => '放弃工作副本',
+              'secondary_callback' => 'discard_workspace'
+            }
+          }.freeze
+        end
         result
       end
 

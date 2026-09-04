@@ -1,13 +1,27 @@
 #
-# tests/test_html_render.rb — HTML/JS contract test.
+# tests/test_html_render.rb — V1.9A-A1 HTML / JS contract test.
 #
-# Per CodeX Round 018 BLOCK-006:
+# Per dispatch §13 (DOM tests) + AGENTS.md / Blueprint §5.7
+# (production frontend may be substantially rewritten):
 #   - The rendered bridge payload is valid JSON.
 #   - The JS namespaces match what Ruby calls.
 #   - The JS uses no forbidden patterns (no eval, no innerHTML,
 #     no document.write, no new Function).
 #   - The HTML output references the locked header elements.
 #   - All file paths resolve to real files (no `__dir__` typos).
+#
+# V1.9A-A1 DOM contract:
+#   - 4 tabs (处理 default, 问题, 图层, 详情).
+#   - 5 capability cards in fixed order.
+#   - Default = 处理.
+#   - Inventory absent on default 处理 tab.
+#   - Technical / raw inventory reachable in 详情.
+#   - Buttons dispatch the existing callbacks
+#     (prepare_workspace, discard_workspace, rebuild_workspace,
+#     compute_planar_normalization, apply_planar_normalization,
+#     compute_gap_repair, apply_gap_repair,
+#     compute_structure_reconstruction, locate, close).
+#   - No remote runtime asset / no CDN.
 #
 
 require_relative 'runner'
@@ -20,8 +34,7 @@ include SUAnalysis::Extension
 
 # --- helpers ---------------------------------------------------------
 
-# Build a minimal Issue Hash compatible with IssueRegistry validation.
-def hr_make_issue(id, type: 'short_edge', severity: 'low', confidence: 'medium')
+def hr_make_issue(id, type: 'short_edge', severity: 'low', confidence: 'medium', locatable: false)
   {
     issue_id:          id,
     issue_type:        type,
@@ -33,12 +46,11 @@ def hr_make_issue(id, type: 'short_edge', severity: 'low', confidence: 'medium')
     location:          nil,
     message:           'm',
     metadata:          {},
-    locatable:         false,
+    locatable:         locatable,
     display_length:    nil
   }
 end
 
-# Build a minimal AnalysisResult with one Issue + a small preflight.
 def hr_make_result
   pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count).new(4, 5, 0, 1)
   reg = IssueRegistry.new([hr_make_issue('short_edge|1|1')])
@@ -50,13 +62,11 @@ def hr_make_result
   )
 end
 
-# Resolve paths RELATIVE TO THE TESTS DIRECTORY (one level up to project
-# root, then into extension/). The previous version used `../../` which
-# resolved to D:/Projects/... and produced ENOENT errors.
 HR_HTML_INDEX = File.expand_path('../extension/su_ai_plugin/html/index.html', __dir__).freeze
 HR_HTML_APPJS = File.expand_path('../extension/su_ai_plugin/html/app.js', __dir__).freeze
 HR_HTML_CSS   = File.expand_path('../extension/su_ai_plugin/html/style.css', __dir__).freeze
 HR_RUNNER_RB  = File.expand_path('../extension/su_ai_plugin/dialog_runner.rb', __dir__).freeze
+HR_PRESENTER  = File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__).freeze
 
 # --- tests ----------------------------------------------------------
 
@@ -67,11 +77,10 @@ test 'html_render: analyze selection result is valid JSON' do
   parsed = JSON.parse(json)
   assert_equal 'Group', parsed['selectionType']
   assert_equal 'my_group', parsed['selectionLabel']
-  # The short_edge count is in summary['issues'] (NOT top-level summary).
   assert_equal 1, parsed['summary']['issues']['short_edge']
 end
 
-test 'html_render: summary includes Edges and Vertices (Round 018 BLOCK-006)' do
+test 'html_render: summary includes Edges and Vertices (V1.4 contract preserved)' do
   result = hr_make_result
   payload = UIBridge.as_html_data(result)
   assert_equal 4, payload['summary']['edges']
@@ -80,825 +89,286 @@ test 'html_render: summary includes Edges and Vertices (Round 018 BLOCK-006)' do
   assert_equal 1, payload['summary']['warnings']
 end
 
-test 'html_render: index.html references locked header elements' do
-  assert File.exist?(HR_HTML_INDEX), "missing: #{HR_HTML_INDEX}"
+# ---------------------------------------------------------------------------
+# V1.9A-A1: index.html references the locked 4-tab IA
+# ---------------------------------------------------------------------------
+
+test 'html_render (V1.9A-A1): index.html has the 4-tab navigation with 处理 default active' do
   src = File.read(HR_HTML_INDEX)
-  assert_match(/<header>/, src)
-  # V1.6 UI-CN-SIMPLIFICATION: dialog title is Simplified Chinese.
-  assert_match(/CAD 检查结果/, src)
-  assert_match(/<section id="summary">/, src)
-  assert_match(/<section id="groups">/, src)
-  assert_match(/<div id="toast"/, src)
+  # 4 tabs.
+  assert_match(/id="tab-process"/, src)
+  assert_match(/id="tab-issues"/, src)
+  assert_match(/id="tab-layers"/, src)
+  assert_match(/id="tab-details"/, src)
+  # 处理 default.
+  assert_match(/id="tab-process"[^>]*aria-selected="true"/, src)
+  # Tab list ARIA + role.
+  assert_match(/<nav[^>]*role="tablist"/, src)
+  assert_match(/role="tab"/, src)
 end
 
-test 'html_render: app.js uses no forbidden patterns' do
+test 'html_render (V1.9A-A1): index.html has the 4 panels with the locked ids' do
+  src = File.read(HR_HTML_INDEX)
+  assert_match(/id="panel-process"/, src)
+  assert_match(/id="panel-issues"/, src)
+  assert_match(/id="panel-layers"/, src)
+  assert_match(/id="panel-details"/, src)
+  assert_match(/role="tabpanel"/, src)
+  # 处理 panel is visible by default (no hidden attribute).
+  assert_match(/<section[^>]*id="panel-process"[^>]*role="tabpanel"/, src)
+end
+
+test 'html_render (V1.9A-A1): index.html has the recovery banner + CTA row + issue summary + capability grid' do
+  src = File.read(HR_HTML_INDEX)
+  assert_match(/id="recovery-banner"/, src)
+  assert_match(/id="cta-row"/, src)
+  assert_match(/id="cta-headline"/, src)
+  assert_match(/id="cta-sub"/, src)
+  assert_match(/id="btn-primary-cta"/, src)
+  assert_match(/id="issue-summary"/, src)
+  assert_match(/id="capability-grid"/, src)
+end
+
+test 'html_render (V1.9A-A1): index.html has the brand mark + selection line + status chip' do
+  src = File.read(HR_HTML_INDEX)
+  assert_match(/class="brand-mark"/, src)
+  assert_match(/class="brand-title"/, src)
+  assert_match(/id="selection-line"/, src)
+  assert_match(/id="selection-value"/, src)
+  assert_match(/id="status-chip"/, src)
+  assert_match(/id="status-text"/, src)
+end
+
+test 'html_render (V1.9A-A1): index.html preserves the toast element for legacy SUAIP.toast' do
+  src = File.read(HR_HTML_INDEX)
+  assert_match(/id="toast"/, src)
+end
+
+test 'html_render (V1.9A-A1): index.html references app.js + style.css' do
+  src = File.read(HR_HTML_INDEX)
+  assert_match(/app\.js/, src)
+  assert_match(/style\.css/, src)
+end
+
+# ---------------------------------------------------------------------------
+# V1.9A-A1: app.js uses no forbidden patterns
+# ---------------------------------------------------------------------------
+
+test 'html_render: app.js uses no forbidden patterns (V1.9A-A1)' do
   assert File.exist?(HR_HTML_APPJS), "missing: #{HR_HTML_APPJS}"
-  # Strip comment lines so the commentary on the forbidden patterns
-  # doesn't false-positive the regex check.
+  # Strip comment lines so the commentary on the forbidden
+  # patterns does not false-positive the regex check.
   code_only = File.readlines(HR_HTML_APPJS, encoding: 'utf-8')
     .reject { |l| l.lstrip.start_with?('//', '*') }
     .join
   refute_match(/\beval\(/, code_only,
-               'app.js must not call eval(...) — the ready handshake is fixed')
+               'app.js must not call eval(...)')
   refute_match(/\bnew\s+Function\(/, code_only,
                'app.js must not construct a Function(...)')
   refute_match(/\bdocument\.write\(/, code_only)
   refute_match(/\.innerHTML\s*=/, code_only)
 end
 
-test 'html_render: app.js exports render and toast on window.SUAIP (Round 018 BLOCK-003)' do
+test 'html_render: app.js exports render and toast on window.SUAIP (V1.4 contract preserved)' do
   assert File.exist?(HR_HTML_APPJS), "missing: #{HR_HTML_APPJS}"
   src = File.read(HR_HTML_APPJS)
-  # The code defines `var ROOT = window.SUAIP || (window.SUAIP = {})`
-  # and then `ROOT.render = render; ROOT.toast = toast;`. Both
-  # assignments are equivalent to window.SUAIP.render/toast at runtime.
-  # Verify the explicit binding in the IIFE initializer + the assignments.
-  assert_match(/window\.SUAIP/, src,
-               'app.js must reference the window.SUAIP namespace')
+  assert_match(/window\.SUAIP/, src)
   assert_match(/\.render\s*=\s*render/, src,
-               'app.js must assign the render function on the namespace')
-  assert_match(/\.toast\s*=\s*toast/, src,
-               'app.js must assign the toast function on the namespace')
+               'app.js must bind ROOT.render = render (or equivalent)')
+  # The toast binding may rename the internal function
+  # (e.g. ROOT.toast = _toast). We accept either form as
+  # long as the resulting window.SUAIP.toast is a callable.
+  assert_match(/\.toast\s*=\s*[A-Za-z_][A-Za-z_0-9]*/, src,
+               'app.js must bind window.SUAIP.toast to a callable function')
 end
 
-test 'html_render: dialog_runner calls window.SUAIP.render not window.SUAIP' do
+test 'html_render: dialog_runner calls window.SUAIP.render not window.SUAIP (V1.4 contract)' do
   assert File.exist?(HR_RUNNER_RB), "missing: #{HR_RUNNER_RB}"
   src = File.read(HR_RUNNER_RB)
   assert_match(/window\.SUAIP\.render\(/, src)
   assert_match(/window\.SUAIP\.toast\(/, src)
 end
 
-test 'html_render: style.css defines severity palette' do
+# ---------------------------------------------------------------------------
+# V1.9A-A1: style.css honors the frozen visual language + legacy-aware rules
+# ---------------------------------------------------------------------------
+
+test 'html_render (V1.9A-A1): style.css defines the locked visual tokens' do
   assert File.exist?(HR_HTML_CSS), "missing: #{HR_HTML_CSS}"
   src = File.read(HR_HTML_CSS)
-  assert_match(/--sev-low/, src)
-  assert_match(/--sev-medium/, src)
-  assert_match(/--sev-high/, src)
+  # Tokens used by the approved visual language.
+  assert_match(/--bg-app/, src)
+  assert_match(/--accent-1/, src)
+  assert_match(/--accent-2/, src)
+  assert_match(/--ok-1/, src)
+  assert_match(/--warn-1/, src)
+  assert_match(/--err-1/, src)
+  assert_match(/--r-card/, src)
+  # No CSS Grid (legacy-aware).
+  refute_match(/\bdisplay\s*:\s*grid\b/, src,
+               'style.css MUST NOT use CSS Grid (legacy-aware frontend)')
+  # No flex `gap` (legacy-aware).
+  refute_match(/\bgap\s*:\s*\d/, src,
+               'style.css MUST NOT use flex `gap` (legacy-aware frontend)')
+  # No `backdrop-filter`. Permit mentions in comments.
+  code_only = src.lines.reject { |l| l.lstrip.start_with?('/*', '*', '//') }.join
+  refute_match(/backdrop-filter/, code_only,
+               'style.css MUST NOT use backdrop-filter (legacy-aware frontend)')
+  # No `@import`.
+  refute_match(/@import/, code_only)
+  # No remote url(...) — only inline data URLs are allowed.
+  # We permit `url(#brand-grad)` (SVG fragment) and similar.
+  remote_url_lines = src.lines.select { |l| l =~ /url\s*\(\s*['"]?https?:|url\s*\(\s*['"]?\/\// }
+  assert_equal [], remote_url_lines,
+               "style.css MUST NOT reference remote assets: #{remote_url_lines.inspect}"
 end
 
-test 'html_render: set_file path uses absolute path (Round 018 BLOCK-006)' do
-  assert File.exist?(HR_RUNNER_RB), "missing: #{HR_RUNNER_RB}"
-  src = File.read(HR_RUNNER_RB)
-  # The runner builds an absolute index path via File.expand_path and
-  # then passes it to set_file. Match the helper invocation, not the
-  # direct set_file call (the variable is passed, not the literal).
-  assert_match(/File\.expand_path\(['"]html\/index\.html['"],\s*__dir__\)/, src,
-               'dialog_runner.rb must build the html path via File.expand_path + __dir__')
-  assert_match(/dialog\.set_file\(index_path\)/, src,
-               'dialog_runner.rb must call set_file with the built path')
+test 'html_render (V1.9A-A1): style.css defines the capability card + status chip + tab styles' do
+  src = File.read(HR_HTML_CSS)
+  assert_match(/\.cap-card/, src)
+  assert_match(/\.cap-icon/, src)
+  assert_match(/\.cap-state/, src)
+  assert_match(/\.status-chip/, src)
+  assert_match(/\.status-chip\[data-state="IDLE"\]/, src)
+  assert_match(/\.status-chip\[data-state="NEEDS_ATTENTION"\]/, src)
+  assert_match(/\.status-chip\[data-state="READY_FOR_VALIDATION"\]/, src)
+  assert_match(/\.status-chip\[data-state="STALE"\]/, src)
+  assert_match(/\.status-chip\[data-state="FAILED"\]/, src)
+  assert_match(/\.tab-bar/, src)
+  assert_match(/\.tab-item/, src)
+  assert_match(/\.tab-item\[aria-selected="true"\]/, src)
+  assert_match(/\.issue-summary/, src)
+  assert_match(/\.issue-summary\.is-clean/, src)
+  assert_match(/\.recovery-banner/, src)
 end
 
-# --------------------------------------------------------------------------
-# Round 018 BLOCK-006: additional HTML contract tests.
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# V1.9A-A1: app.js preserves the V1.4 callback contract
+# ---------------------------------------------------------------------------
 
-test 'html_render: app.js uses textContent / setAttribute (no innerHTML for user strings)' do
+test 'html_render (V1.9A-A1): app.js preserves window.sketchup.ready handshake' do
   src = File.read(HR_HTML_APPJS)
-  # The renderIssue path uses textContent + setAttribute exclusively.
-  assert_match(/\.textContent\s*=/, src)
-  assert_match(/\.setAttribute\(/, src)
+  assert_match(/window\.sketchup\.ready\(\)/, src,
+               'app.js must call window.sketchup.ready() on DOMContentLoaded')
 end
 
-test 'html_render: app.js calls window.sketchup.locate (Round 018 contract)' do
+test 'html_render (V1.9A-A1): app.js preserves window.sketchup.locate contract (L3)' do
   src = File.read(HR_HTML_APPJS)
   assert_match(/window\.sketchup\.locate\(/, src)
 end
 
-test 'html_render: app.js ready handshake calls window.sketchup.ready' do
+test 'html_render (V1.9A-A1): app.js preserves all existing callback names (dispatch §12)' do
   src = File.read(HR_HTML_APPJS)
-  assert_match(/window\.sketchup\.ready\(\)/, src)
-end
-
-test 'html_render: index.html references app.js + style.css' do
-  src = File.read(HR_HTML_INDEX)
-  assert_match(/app\.js/, src)
-  assert_match(/style\.css/, src)
-end
-
-test 'html_render: dialog_runner uses BLOCK callbacks, not method(:name)' do
-  src = File.read(HR_RUNNER_RB)
-  # Block syntax: `dialog.add_action_callback('foo') { ... }`
-  assert_match(/add_action_callback\(['"]ready['"][^)]*\)\s*\{/, src)
-  assert_match(/add_action_callback\(['"]locate['"][^)]*\)\s*\{/, src)
-  assert_match(/add_action_callback\(['"]close['"][^)]*\)\s*\{/, src)
-  # Negative: no `method(` calls inside add_action_callback.
-  refute_match(/add_action_callback\([^)]*method\(:/, src)
-end
-
-# --------------------------------------------------------------------------
-# Round 019 BLOCK-006-R2: executable render/DOM test.
-# Spawns Node.js to actually load extension/html/app.js into a mock
-# DOM (via vm.runInContext), invoke window.SUAIP.render(payload),
-# and inspect the rendered children for the locked Stage 6 plan
-# section 6.7 summary contract:
-#   - per-issue-type counters in the canonical order
-#   - no "[object Object]" in any rendered text
-#   - data-issue-type attrs on every issue stat
-# --------------------------------------------------------------------------
-
-HR_RENDER_DOM_JS = File.expand_path('test_html_render_dom.js', __dir__).freeze
-
-def hr_run_node_render_test
-  # Use `node <path>`; capture stdout+stderr; the JS test prints
-  # "ASSERT <name> PASS|FAIL" lines and a final "PASS"/"FAIL" line.
-  out = `node "#{HR_RENDER_DOM_JS}" 2>&1`
-  [out, $?.exitstatus]
-end
-
-test 'html_render: render outputs per-issue-type counters in locked order (BLOCK-006-R2)' do
-  out, exit_code = hr_run_node_render_test
-  # The JS test must end with the "PASS" sentinel and exit 0.
-  assert_equal 0, exit_code, "node test exited #{exit_code}; output:\n#{out}"
-  assert_match(/^PASS\s*$/, out, "node test did not PASS:\n#{out}")
-  # Cross-check the critical labels the BLOCK-006-R2 contract calls
-  # out by name. V1.6 UI-CN-SIMPLIFICATION: the labels are now
-  # Simplified Chinese (短线 / 重复线候选 / etc.).
-  assert_match(/ASSERT summary: 短线: 1 present PASS/, out)
-  assert_match(/ASSERT summary: 重复线候选: 0 present PASS/, out)
-  assert_match(/ASSERT summary: no "\[object Object\]" in any rendered text PASS/, out)
-  assert_match(/ASSERT order: per-issue rows in canonical order/, out)
-  assert_match(/ASSERT summary: 7 data-issue-type attrs present/, out)
-end
-
-test 'html_render: app.js exports ISSUE_TYPE_LABELS_CN for the locked render order (BLOCK-006-R2)' do
-  src = File.read(HR_HTML_APPJS)
-  # The render function must iterate over a fixed ISSUE_TYPE_LABELS_CN
-  # array (the locked canonical order). The labels are exposed on
-  # ROOT.ISSUE_TYPE_LABELS_CN so the test harness can introspect.
-  # V1.6 UI-CN-SIMPLIFICATION: the labels are Simplified Chinese.
-  assert_match(/ROOT\.ISSUE_TYPE_LABELS_CN\s*=\s*ISSUE_TYPE_LABELS_CN/, src)
-  # The array is the canonical order per IssueRegistry.
-  expected_types = %w[
-    duplicate_edge_candidate
-    short_edge
-    open_endpoint
-    gap_candidate
-    significant_non_zero_z
-    abnormal_large_coord
-    deep_nesting
+  expected_callbacks = %w[
+    prepare_workspace
+    discard_workspace
+    rebuild_workspace
+    compute_planar_normalization
+    apply_planar_normalization
+    compute_gap_repair
+    apply_gap_repair
+    compute_structure_reconstruction
+    locate
+    close
   ]
-  expected_types.each do |t|
-    assert_match(/'#{t}'/, src,
-                 "ISSUE_TYPE_LABELS_CN must include '#{t}' in canonical order")
-  end
-  # V1.6 UI-CN-SIMPLIFICATION: each canonical type has a
-  # Simplified Chinese label.
-  expected_cn_labels = {
-    'duplicate_edge_candidate'  => '重复线候选',
-    'short_edge'                => '短线',
-    'open_endpoint'             => '未闭合端点',
-    'gap_candidate'             => '间隙候选',
-    'significant_non_zero_z'    => '明显非零 Z',
-    'abnormal_large_coord'      => '异常大坐标',
-    'deep_nesting'              => '嵌套层级过深'
-  }
-  expected_cn_labels.each do |t, cn|
-    assert_match(/'#{cn}'/, src,
-                 "ISSUE_TYPE_LABELS_CN must include Simplified Chinese '#{cn}' for '#{t}'")
+  expected_callbacks.each do |cb|
+    assert src.include?(cb),
+           "app.js MUST reference the existing callback #{cb.inspect} (dispatch §12)"
   end
 end
 
-# --------------------------------------------------------------------------
-# CodeX Round 020 REAL-HOST BLOCK (recheck) L3: per-issue click handler
-# dispatch. The previous app.js#renderIssue unconditionally added a
-# click listener for every issue that called window.sketchup.locate(id).
-# For non-locatable rows (preflight warnings like deep_nesting and
-# abnormal_large_coord), the locator returns :unresolved and the JS
-# previously raised a misleading "source no longer available" toast.
-# These rows are intentionally non-locatable (no source token to
-# resolve), NOT stale.
-#
-# Fix: only register the click handler when issue.locatable === true.
-# For locatable === false, the row is non-actionable: no click handler,
-# no path to window.sketchup.locate, no path to the toast.
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# V1.9A-A1: dialog_runner preserves all existing callbacks (dispatch §12)
+# ---------------------------------------------------------------------------
 
-test 'html_render (L3): renderIssue branches on issue.locatable before adding click listener' do
-  src = File.read(HR_HTML_APPJS)
-  # The fix: the addEventListener('click', ...) call MUST be inside
-  # a branch gated by issue.locatable (or equivalent). A bare,
-  # unconditional addEventListener would re-introduce the L3 bug.
-  #
-  # Look for the conditional structure: an `if (locatable)` /
-  # `if (...locatable...)` guard before the addEventListener('click').
-  assert_match(/if\s*\(\s*locatable\s*\)\s*\{/, src,
-               'renderIssue must gate the click handler on locatable === true')
-  # And the addEventListener('click', ...) call must appear INSIDE
-  # that if-block (not before it). The most precise check:
-  # scope the count to renderIssue only (V1.4 working-mode
-  # buttons ALSO have addEventListener('click', ...), so the
-  # whole-file count is no longer exactly 1; the per-function
-  # count inside renderIssue is the L3 invariant).
-  render_issue_block = src[/function\s+renderIssue[\s\S]+?\n\s\s}\n/, 0] || src[/function\s+renderIssue[\s\S]+?\n  \}/m, 0]
-  if render_issue_block.nil?
-    # Fallback for the case where the closing brace shape differs:
-    # find the renderIssue function and capture up to the next
-    # `function ` or end-of-script.
-    start = src.index('function renderIssue')
-    raise 'renderIssue not found' if start.nil?
-    rest = src[start..-1]
-    next_fn = rest.index("\n  function ")
-    render_issue_block = next_fn ? rest[0..next_fn] : rest
-  end
-  ri_click_listeners = render_issue_block.scan(/addEventListener\(['"]click['"]/).length
-  assert_equal 1, ri_click_listeners,
-               'renderIssue must contain exactly ONE addEventListener("click", ...) call (the locatable one)'
-
-  # The CSS `no-action` class must be defined for the visual
-  # non-action state (default cursor, no hover affordance).
-  css_src = File.read(HR_HTML_CSS)
-  assert_match(/\.issue\.no-action/, css_src,
-               'style.css must define .issue.no-action for non-action visual state')
-  # Cursor and hover overrides must be present.
-  assert_match(/\.issue\.no-action\s*\{[^}]*cursor:\s*default/m, css_src,
-               '.issue.no-action must set cursor: default (no pointer)')
-  assert_match(/\.issue\.no-action:hover/, css_src,
-               '.issue.no-action:hover must override the hover affordance')
-end
-
-test 'html_render (L3): executable DOM test asserts the L3 contract' do
-  # The Node.js DOM test (tests/test_html_render_dom.js) exercises the
-  # full click path. It MUST contain L3 assertions for both the
-  # locatable and non-locatable branches.
-  js_src = File.read(HR_RENDER_DOM_JS)
-  # L3.1 — locatable issue calls locate exactly once.
-  assert_match(/L3\.1:.*locatable.*locate.*ONCE/m, js_src,
-               'test_html_render_dom.js must assert locatable rows invoke locate once')
-  # L3.2 — non-locatable issue has no click handler and no locate call.
-  assert_match(/L3\.2:.*non-locatable.*NO click/m, js_src,
-               'test_html_render_dom.js must assert non-locatable rows have no click listener')
-  assert_match(/L3\.2:.*non-locatable.*NOT invoke/m, js_src,
-               'test_html_render_dom.js must assert non-locatable rows do NOT invoke locate')
-end
-
-test 'html_render (L3): executable render test runs the new assertions and passes' do
-  # Run the Node.js DOM test and ensure it PASSES. The new L3
-  # assertions MUST appear in the output.
-  out, exit_code = hr_run_node_render_test
-  assert_equal 0, exit_code, "node test exited #{exit_code}; output:\n#{out}"
-  assert_match(/^PASS\s*$/, out, "node test did not PASS:\n#{out}")
-  # Spot-check the L3 assertions by name.
-  assert_match(/ASSERT L3\.1:.*locatable row has click listener registered PASS/, out)
-  assert_match(/ASSERT L3\.2:.*non-locatable row has NO click listener PASS/, out)
-  assert_match(/ASSERT L3\.1:.*locatable row invokes window\.sketchup\.locate ONCE PASS/, out)
-  assert_match(/ASSERT L3\.2:.*non-locatable row does NOT invoke window\.sketchup\.locate PASS/, out)
-end
-
-# --------------------------------------------------------------------------
-# V1.1 (per plan §7.3 / §4.10..§4.12): L4 source-level guards for the
-# Layers section. The Ruby-level tests below validate:
-#   - index.html has the locked Layers DOM structure.
-#   - app.js exports the locked LAYER_ROLE_LABELS (5 canonical) and
-#     LAYER_VISIBILITY_LABELS.
-#   - app.js exposes ROOT.renderLayers.
-#   - app.js uses textContent only for layer row data (no innerHTML).
-#   - app.js NEVER adds an addEventListener('click', ...) inside the
-#     renderLayerRow / renderLayers path (per L3-mirroring non-actionable
-#     pattern, R008).
-#   - style.css defines .layer-row + .role-badge + .visibility-badge
-#     + .issue-count.has-issues + .layer-row[data-visible="false"].
-#   - style.css does NOT define .layer-row[data-role="..."] color
-#     selectors (R008 / ChatGPT §11.7).
-# --------------------------------------------------------------------------
-
-HR_HTML_INDEX_L4 = HR_HTML_INDEX
-HR_HTML_APPJS_L4 = HR_HTML_APPJS
-HR_HTML_CSS_L4   = HR_HTML_CSS
-
-test 'html_render (L4): index.html has <details id="layers-section"> with <summary id="layers-summary"> first child' do
-  src = File.read(HR_HTML_INDEX_L4)
-  assert_match(/<details\s+id="layers-section">/, src,
-               'index.html must include <details id="layers-section"> (V1.1 plan §4.11)')
-  # The summary must be the FIRST child of the details block.
-  # Use a non-greedy lookahead: <details id="layers-section"> followed
-  # by whitespace then <summary id="layers-summary">.
-  assert_match(/<details\s+id="layers-section">\s*<summary\s+id="layers-summary">/, src,
-               'the <summary id="layers-summary"> must be the first child of <details id="layers-section">')
-  # The block must contain a <div id="layers-list">.
-  assert_match(/<div\s+id="layers-list">/, src,
-               '<details id="layers-section"> must contain <div id="layers-list">')
-end
-
-test 'html_render (L4): index.html layers-section is rendered closed by default (no open attribute)' do
-  src = File.read(HR_HTML_INDEX_L4)
-  # The rendered HTML MUST NOT have the `open` attribute on the
-  # layers details — the section starts collapsed per ChatGPT §11.5.
-  # We assert NO `open` attribute within the layers-section block by
-  # extracting the block and scanning it.
-  m = src.match(/<details\s+id="layers-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
-  refute_nil m, 'failed to extract <details id="layers-section"> block'
-  block = m[0]
-  refute_match(/\bopen\b/, block,
-               '<details id="layers-section"> must NOT carry the `open` attribute (closed by default per ChatGPT §11.5)')
-end
-
-test 'html_render (L4): app.js exports LAYER_ROLE_LABELS_CN in canonical order (no OFFSCREEN, R007)' do
-  src = File.read(HR_HTML_APPJS_L4)
-  # V1.6 UI-CN-SIMPLIFICATION: the visible labels are Simplified
-  # Chinese (LAYER_ROLE_LABELS_CN). The English form is no longer
-  # the source of truth for visible presentation; the locked
-  # canonical role Symbols (dimension / annotation / guide /
-  # construction / unknown) are still encoded as the keys of
-  # the array pairs.
-  assert_match(/ROOT\.LAYER_ROLE_LABELS_CN\s*=\s*LAYER_ROLE_LABELS_CN/, src,
-               'app.js must expose ROOT.LAYER_ROLE_LABELS_CN for harness introspection')
-  expected_roles = %w[dimension annotation guide construction unknown]
-  expected_roles.each do |r|
-    assert_match(/['"]#{r}['"]/, src,
-                 "LAYER_ROLE_LABELS_CN must include '#{r}' (canonical role label, per R007)")
-  end
-  # No OFFSCREEN role (R007 removed the symbol).
-  refute_match(/['"]offscreen['"]/, src,
-               "LAYER_ROLE_LABELS_CN must NOT include 'offscreen' (R007 removed the OFFSCREEN role)")
-end
-
-test 'html_render (L4): app.js exports LAYER_VISIBILITY_LABELS_CN with visible/hidden/unknown keys' do
-  src = File.read(HR_HTML_APPJS_L4)
-  assert_match(/ROOT\.LAYER_VISIBILITY_LABELS_CN\s*=\s*LAYER_VISIBILITY_LABELS_CN/, src,
-               'app.js must expose ROOT.LAYER_VISIBILITY_LABELS_CN')
-  assert_match(/LAYER_VISIBILITY_LABELS_CN\s*=\s*\{/, src,
-               'LAYER_VISIBILITY_LABELS_CN is an object literal')
-  assert_match(/visible:\s*['"]\u53ef\u89c1['"]/, src,
-               'LAYER_VISIBILITY_LABELS_CN.visible is "可见" (Simplified Chinese)')
-  assert_match(/hidden:\s*['"]\u9690\u85cf['"]/, src,
-               'LAYER_VISIBILITY_LABELS_CN.hidden is "隐藏" (Simplified Chinese)')
-  assert_match(/unknown:\s*['"]\u53ef\u89c1\u6027\u672a\u77e5['"]/, src,
-               'LAYER_VISIBILITY_LABELS_CN.unknown is "可见性未知" (Simplified Chinese)')
-end
-
-test 'html_render (L4): app.js exposes ROOT.renderLayers (callable surface)' do
-  src = File.read(HR_HTML_APPJS_L4)
-  assert_match(/ROOT\.renderLayers\s*=\s*renderLayers/, src,
-               'app.js must expose ROOT.renderLayers so harness + future callers can invoke the render path')
-end
-
-test 'html_render (L4): renderLayers uses textContent only for layer row data (no innerHTML)' do
-  src = File.read(HR_HTML_APPJS_L4)
-  # Extract the renderLayerRow function body and assert it never
-  # assigns to innerHTML for user-supplied strings. The locked
-  # contract from Stage 6 extends to V1.1.
-  m = src.match(/function\s+renderLayerRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderLayerRow function body'
-  body = m[0]
-  # No innerHTML = ... assignment in the function body.
-  refute_match(/\.innerHTML\s*=/, body,
-               'renderLayerRow must not assign .innerHTML for user strings (locked contract)')
-  # textContent IS the only DOM-mutation API used for user strings.
-  assert_match(/\.textContent\s*=/, body,
-               'renderLayerRow must use .textContent for user strings (locked contract)')
-end
-
-test 'html_render (L4): renderLayers / renderLayerRow do NOT register a click handler (mirrors L3)' do
-  # Per plan §4.10: "The row has `cursor: default` and NO click
-  # handler (mirrors V1.0 L3 non-locatable warning pattern)."
-  # We assert there is NO addEventListener('click', ...) inside
-  # the renderLayerRow body (the rest of app.js has ONE addEventListener
-  # for locatable issue rows; that one is in renderIssue).
-  src = File.read(HR_HTML_APPJS_L4)
-  m = src.match(/function\s+renderLayerRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderLayerRow function body'
-  body = m[0]
-  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
-               'renderLayerRow must NOT register a click listener (layer rows are intentionally non-actionable)')
-end
-
-test 'html_render (L4): style.css defines .layer-row + role-badge + visibility-badge + has-issues emphasis' do
-  src = File.read(HR_HTML_CSS_L4)
-  assert_match(/\.layer-row\s*\{/, src,
-               'style.css must define .layer-row (V1.1 plan §4.12)')
-  assert_match(/\.layer-row\s+\.role-badge/, src,
-               'style.css must define .layer-row .role-badge for the locked neutral role badge')
-  assert_match(/\.layer-row\s+\.visibility-badge/, src,
-               'style.css must define .layer-row .visibility-badge for the separate visibility badge')
-  assert_match(/\.layer-row\s+\.issue-count\.has-issues/, src,
-               'style.css must define .layer-row .issue-count.has-issues for the locked issue-count emphasis')
-  # Per Owner Gate 2 V1.1 NIT: explicit visible separator between
-  # the edge count and the issue count. Must be a real CSS rule.
-  assert_match(/\.layer-row\s+\.layer-count-sep/, src,
-               'style.css must define .layer-row .layer-count-sep for the visible separator')
-  # The muted style for hidden layers (data-visible="false"). This
-  # is the ONLY data-attribute-driven style on layer rows.
-  assert_match(/\.layer-row\[data-visible="false"\]/, src,
-               'style.css must define the muted style for hidden layers via [data-visible="false"]')
-  assert_match(/opacity:\s*0\.6/, src,
-               'the muted style uses opacity: 0.6 (per ChatGPT §11.2)')
-  # The row has cursor: default (no click affordance).
-  assert_match(/\.layer-row\s*\{[^}]*cursor:\s*default/m, src,
-               '.layer-row must set cursor: default (mirrors V1.0 L3 non-actionable pattern)')
-end
-
-test 'html_render (L4): style.css does NOT use data-role="..." color selectors (R008)' do
-  # Per ChatGPT §11.7 / R008: the locked neutral style MUST NOT
-  # color rows by data-role. The only data-attribute-driven style
-  # allowed is [data-visible="false"] (for muted hidden layers).
-  # We scan ONLY the .layer-row CSS rule bodies (NOT any
-  # preceding block comments) and assert NO `data-role="..."`
-  # selector appears inside any of them.
-  src = File.read(HR_HTML_CSS_L4)
-  # Strip block comments first so the regex scan below does not
-  # pick up comments like "...NO data-role=..." that quote the
-  # forbidden pattern intentionally.
-  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
-  blocks = stripped.scan(/[^{}]*\.layer-row[^{}]*\{[^}]*\}/m)
-  assert blocks.length > 0, 'failed to extract any .layer-row CSS block'
-  blocks.each do |b|
-    refute_match(/data-role\s*=/, b,
-                 ".layer-row CSS block must NOT use a [data-role=\"...\"] selector (R008): #{b.inspect}")
+test 'html_render (V1.9A-A1): dialog_runner registers all 11 required callbacks' do
+  src = File.read(HR_RUNNER_RB)
+  expected = %w[
+    ready
+    locate
+    close
+    prepare_workspace
+    discard_workspace
+    rebuild_workspace
+    compute_planar_normalization
+    apply_planar_normalization
+    compute_gap_repair
+    apply_gap_repair
+    compute_structure_reconstruction
+  ]
+  expected.each do |cb|
+    assert src =~ /add_action_callback\(["']#{cb}["']/,
+           "dialog_runner MUST register the callback #{cb.inspect} (dispatch §12)"
   end
 end
 
-# --- V1.2 (per directive 026): "Issues by Layer" source-level guards ---
-
-HR_HTML_INDEX_V12 = HR_HTML_INDEX
-HR_HTML_APPJS_V12 = HR_HTML_APPJS
-
-test 'html_render (V1.2): index.html has <details id="layer-issues-section"> with <summary id="layer-issues-summary"> first child' do
-  src = File.read(HR_HTML_INDEX_V12)
-  assert_match(/<details\s+id="layer-issues-section">/, src,
-               'index.html must include <details id="layer-issues-section"> (V1.2 directive 026)')
-  # Summary must be the FIRST child of the details block.
-  assert_match(/<details\s+id="layer-issues-section">\s*<summary\s+id="layer-issues-summary">/, src,
-               'the <summary id="layer-issues-summary"> must be the first child of <details id="layer-issues-section">')
-  # Must contain <div id="layer-issues-list">.
-  assert_match(/<div\s+id="layer-issues-list">/, src,
-               '<details id="layer-issues-section"> must contain <div id="layer-issues-list">')
+test 'html_render: dialog_runner uses BLOCK callbacks, not method(:name) (V1.4 contract)' do
+  src = File.read(HR_RUNNER_RB)
+  assert_match(/add_action_callback\(['"]ready['"][^)]*\)\s*\{/, src)
+  refute_match(/add_action_callback\([^)]*method\(:/, src,
+               'dialog_runner must use BLOCK callbacks, NOT method(:name)')
 end
 
-test 'html_render (V1.2): layer-issues-section is rendered closed by default (no open attribute)' do
-  src = File.read(HR_HTML_INDEX_V12)
-  m = src.match(/<details\s+id="layer-issues-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
-  refute_nil m, 'failed to extract <details id="layer-issues-section"> block'
-  block = m[0]
-  refute_match(/\bopen\b/, block,
-               '<details id="layer-issues-section"> must NOT carry the `open` attribute (closed by default per directive 026)')
+test 'html_render: set_file path uses absolute path (V1.4 contract Round 018 BLOCK-006)' do
+  src = File.read(HR_RUNNER_RB)
+  assert_match(/File\.expand_path\(['"]html\/index\.html['"],\s*__dir__\)/, src)
+  assert_match(/dialog\.set_file\(index_path\)/, src)
 end
 
-test 'html_render (V1.2): layer-issues-section is positioned AFTER groups and BEFORE layers-section' do
-  src = File.read(HR_HTML_INDEX_V12)
-  pos_groups = src.index('id="groups"')
-  pos_li     = src.index('id="layer-issues-section"')
-  pos_layers = src.index('id="layers-section"')
-  refute_nil pos_groups, '#groups element must exist'
-  refute_nil pos_li,     '#layer-issues-section element must exist'
-  refute_nil pos_layers, '#layers-section element must exist'
-  assert pos_groups < pos_li,
-         '#layer-issues-section must come AFTER #groups'
-  assert pos_li < pos_layers,
-         '#layer-issues-section must come BEFORE #layers-section (per directive 026 placement)'
+# ---------------------------------------------------------------------------
+# V1.9A-A1: presenter exists + is loaded by UIBridge
+# ---------------------------------------------------------------------------
+
+test 'html_render (V1.9A-A1): presenter module file exists' do
+  assert File.exist?(HR_PRESENTER), "missing: #{HR_PRESENTER}"
 end
 
-test 'html_render (V1.2): app.js exposes renderLayerIssues + renderLayerIssueBucket on ROOT' do
-  src = File.read(HR_HTML_APPJS_V12)
-  assert_match(/function\s+renderLayerIssues\s*\(/, src,
-               'app.js must define renderLayerIssues function')
-  assert_match(/function\s+renderLayerIssueBucket\s*\(/, src,
-               'app.js must define renderLayerIssueBucket function')
-  assert_match(/ROOT\.renderLayerIssues\s*=\s*renderLayerIssues/, src,
-               'app.js must expose ROOT.renderLayerIssues for harness + future callers')
-  assert_match(/ROOT\.renderLayerIssueBucket\s*=\s*renderLayerIssueBucket/, src,
-               'app.js must expose ROOT.renderLayerIssueBucket')
+test 'html_render (V1.9A-A1): ui_bridge.rb requires the presenter and exposes cadPrepWorkflow' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/ui_bridge.rb', __dir__))
+  assert_match(/require_relative\s+['"]cad_prep_workflow_presenter['"]/, src,
+               'ui_bridge.rb must require the presenter')
+  assert_match(/['"]cadPrepWorkflow['"]/, src,
+               'ui_bridge.rb must expose the additive cadPrepWorkflow key')
 end
 
-test 'html_render (V1.2): renderLayerIssueBucket uses textContent only (no innerHTML)' do
-  src = File.read(HR_HTML_APPJS_V12)
-  m = src.match(/function\s+renderLayerIssueBucket\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderLayerIssueBucket function body'
-  body = m[0]
-  refute_match(/\.innerHTML\s*=/, body,
-               'renderLayerIssueBucket must not assign .innerHTML for user strings (locked contract)')
-  assert_match(/\.textContent\s*=/, body,
-               'renderLayerIssueBucket must use .textContent for user strings (locked contract)')
+# ---------------------------------------------------------------------------
+# V1.9A-A1: executable Node DOM test (the heavy DOM contract)
+# ---------------------------------------------------------------------------
+
+DOM_TEST_PATH = File.expand_path('test_html_render_dom.js', __dir__).freeze
+
+test 'html_render (V1.9A-A1): executable Node DOM test passes (4 tabs / 5 cards / callbacks / locate)' do
+  require 'open3'
+  out, err, status = Open3.capture3('node', DOM_TEST_PATH)
+  assert status.success?, "node DOM test exited #{status.inspect}\nstdout: #{out}\nstderr: #{err}"
+  # The Node DOM test prints one line per ASSERT + a final
+  # "PASS" line. Count the PASS lines.
+  pass_count = out.lines.count { |l| l.start_with?('ASSERT ') && l.include?(' PASS') }
+  fail_count = out.lines.count { |l| l.start_with?('ASSERT ') && l.include?(' FAIL') }
+  assert fail_count.zero?, "node DOM test had #{fail_count} FAIL line(s):\n#{out}"
+  assert pass_count >= 30,
+         "expected at least 30 PASS lines from node DOM test, got #{pass_count}\n#{out}"
+  assert out.lines.last.strip == 'PASS',
+         "node DOM test must end with PASS line, got: #{out.lines.last.inspect}"
 end
 
-test 'html_render (V1.2): renderLayerIssueBucket does NOT register a click handler (per-bucket is a navigation aid, not an action)' do
-  src = File.read(HR_HTML_APPJS_V12)
-  m = src.match(/function\s+renderLayerIssueBucket\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderLayerIssueBucket function body'
-  body = m[0]
-  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
-               'renderLayerIssueBucket must NOT register a click listener on the bucket container (issues inside carry the locate click handler)')
-end
+# ---------------------------------------------------------------------------
+# V1.9A-A1: legacy raw payload fields remain available
+# ---------------------------------------------------------------------------
 
-test 'html_render (V1.2): style.css defines .layer-issue-bucket style (neutral, no new role colors)' do
-  src = File.read(HR_HTML_CSS_L4)
-  assert_match(/\.layer-issue-bucket/, src,
-               'style.css must define .layer-issue-bucket (V1.2 directive 026)')
-  # Per locked contract item 11: no new role colors. We assert no
-  # role-color selectors were introduced under .layer-issue-bucket.
-  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
-  blocks = stripped.scan(/[^{}]*\.layer-issue-bucket[^{}]*\{[^}]*\}/m)
-  assert blocks.length > 0, 'failed to extract any .layer-issue-bucket CSS block'
-  blocks.each do |b|
-    refute_match(/data-role\s*=/, b,
-                 ".layer-issue-bucket CSS block must NOT use a [data-role=\"...\"] color selector (R008 / directive 026 item 11): #{b.inspect}")
-  end
-end
-
-test 'html_render (V1.2): app.js render() invokes renderLayerIssues AFTER groups but BEFORE renderLayers' do
-  src = File.read(HR_HTML_APPJS_V12)
-  pos_groups      = src.index('renderLayers(payload.layerGroups)')
-  pos_layerissues = src.index('renderLayerIssues(payload.layerIssueGroups)')
-  refute_nil pos_groups, 'render() must invoke renderLayers(payload.layerGroups)'
-  refute_nil pos_layerissues, 'render() must invoke renderLayerIssues(payload.layerIssueGroups)'
-  assert pos_groups < pos_layerissues,
-         'renderLayerIssues must come AFTER renderLayers (the per-issue-type groups render); directive 026 says "after groups, before layers" — but the layers-section is rendered separately, so position is between renderLayers-call and end of render()'
-end
-
-# --- V1.3 (per directive 027): "Face Inventory" source-level guards ---
-
-HR_HTML_INDEX_V13 = HR_HTML_INDEX
-HR_HTML_APPJS_V13 = HR_HTML_APPJS
-HR_HTML_CSS_V13   = HR_HTML_CSS
-
-test 'html_render (V1.3): index.html has <details id="face-inventory-section"> with <summary id="face-inventory-summary"> first child' do
-  src = File.read(HR_HTML_INDEX_V13)
-  assert_match(/<details\s+id="face-inventory-section">/, src,
-               'index.html must include <details id="face-inventory-section"> (V1.3 directive 027)')
-  assert_match(/<details\s+id="face-inventory-section">\s*<summary\s+id="face-inventory-summary">/, src,
-               'the <summary id="face-inventory-summary"> must be the first child of <details id="face-inventory-section">')
-  assert_match(/<div\s+id="face-inventory-list">/, src,
-               '<details id="face-inventory-section"> must contain <div id="face-inventory-list">')
-end
-
-test 'html_render (V1.3): face-inventory-section is rendered closed by default (no open attribute)' do
-  src = File.read(HR_HTML_INDEX_V13)
-  m = src.match(/<details\s+id="face-inventory-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
-  refute_nil m, 'failed to extract <details id="face-inventory-section"> block'
-  block = m[0]
-  refute_match(/\bopen\b/, block,
-               '<details id="face-inventory-section"> must NOT carry the `open` attribute (closed by default per directive 027)')
-end
-
-test 'html_render (V1.3): face-inventory-section is positioned AFTER layers-section' do
-  src = File.read(HR_HTML_INDEX_V13)
-  pos_layers = src.index('id="layers-section"')
-  pos_fi     = src.index('id="face-inventory-section"')
-  refute_nil pos_layers, '#layers-section element must exist'
-  refute_nil pos_fi,     '#face-inventory-section element must exist'
-  assert pos_layers < pos_fi,
-         '#face-inventory-section must come AFTER #layers-section (per directive 027 item 2)'
-end
-
-test 'html_render (V1.3): app.js exposes renderFaceInventory + renderFaceInventoryRow on ROOT' do
-  src = File.read(HR_HTML_APPJS_V13)
-  assert_match(/function\s+renderFaceInventory\s*\(/, src,
-               'app.js must define renderFaceInventory function')
-  assert_match(/function\s+renderFaceInventoryRow\s*\(/, src,
-               'app.js must define renderFaceInventoryRow function')
-  assert_match(/ROOT\.renderFaceInventory\s*=\s*renderFaceInventory/, src,
-               'app.js must expose ROOT.renderFaceInventory for harness + future callers')
-  assert_match(/ROOT\.renderFaceInventoryRow\s*=\s*renderFaceInventoryRow/, src,
-               'app.js must expose ROOT.renderFaceInventoryRow')
-end
-
-test 'html_render (V1.3): renderFaceInventoryRow uses textContent only (no innerHTML)' do
-  src = File.read(HR_HTML_APPJS_V13)
-  m = src.match(/function\s+renderFaceInventoryRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderFaceInventoryRow function body'
-  body = m[0]
-  refute_match(/\.innerHTML\s*=/, body,
-               'renderFaceInventoryRow must not assign .innerHTML for user strings (locked contract)')
-  assert_match(/\.textContent\s*=/, body,
-               'renderFaceInventoryRow must use .textContent for user strings (locked contract)')
-end
-
-test 'html_render (V1.3): renderFaceInventoryRow does NOT register a click handler (rows are non-actionable)' do
-  src = File.read(HR_HTML_APPJS_V13)
-  m = src.match(/function\s+renderFaceInventoryRow\s*\([^)]*\)\s*\{[\s\S]*?\n\s*\}/m)
-  refute_nil m, 'failed to extract renderFaceInventoryRow function body'
-  body = m[0]
-  refute_match(/addEventListener\s*\(\s*['"]click['"]/, body,
-               'renderFaceInventoryRow must NOT register a click listener (rows are non-actionable per directive 027 item 7)')
-end
-
-test 'html_render (V1.3): style.css defines .face-inventory-row style (neutral, no new role colors)' do
-  src = File.read(HR_HTML_CSS_V13)
-  assert_match(/\.face-inventory-row/, src,
-               'style.css must define .face-inventory-row (V1.3 directive 027)')
-  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
-  blocks = stripped.scan(/[^{}]*\.face-inventory-row[^{}]*\{[^}]*\}/m)
-  assert blocks.length > 0, 'failed to extract any .face-inventory-row CSS block'
-  blocks.each do |b|
-    refute_match(/data-role\s*=/, b,
-                 ".face-inventory-row CSS block must NOT use a [data-role=\"...\"] color selector (R008 / directive 027 item 11): #{b.inspect}")
-  end
-end
-
-test 'html_render (V1.3 NIT-001): style.css adds margin-left fallback for face-inventory-row children (no flex-gap reliance)' do
-  # Per Owner Gate 2 V1.3 NIT (V13-NIT-001): the real SU2020
-  # HtmlDialog WebKit does not always honor the CSS `gap`
-  # property on flex containers, so the row parts render
-  # visually concatenated ("ConstructionVisible1 face...").
-  # The minimum CSS fix: a `.face-inventory-row > * + *`
-  # selector that adds margin-left to every child except the
-  # first, mirroring the gap behavior in any webview.
-  src = File.read(HR_HTML_CSS_V13)
-  assert_match(/\.face-inventory-row\s*>\s*\*\s*\+\s*\*/, src,
-               'style.css must define .face-inventory-row > * + * spacing fallback (V13-NIT-001)')
-end
-
-test 'html_render (V1.3): app.js render() invokes renderFaceInventory AFTER renderLayers' do
-  src = File.read(HR_HTML_APPJS_V13)
-  pos_layers = src.index('renderLayers(payload.layerGroups)')
-  pos_fi     = src.index('renderFaceInventory(payload.faceInventoryGroups)')
-  refute_nil pos_layers, 'render() must invoke renderLayers(payload.layerGroups)'
-  refute_nil pos_fi,     'render() must invoke renderFaceInventory(payload.faceInventoryGroups)'
-  assert pos_layers < pos_fi,
-         'renderFaceInventory must come AFTER renderLayers (per directive 027 item 2)'
-end
-
-test 'html_render (V1.3): app.js render() summary block includes faces + faces_with_holes scalars' do
-  src = File.read(HR_HTML_APPJS_V13)
-  scalar_match = src.match(/scalarKeys\s*=\s*\[([^\]]+)\]/)
-  refute_nil scalar_match, 'render() must define scalarKeys Array'
-  list = scalar_match[1]
-  assert list.include?("'faces'"),            "scalarKeys must include 'faces'"
-  assert list.include?("'faces_with_holes'"), "scalarKeys must include 'faces_with_holes'"
-end
-
-# --------------------------------------------------------------------------
-# CodeX 030 PRE-BUILD TECHNICAL PREVIEW V1.4 Stage 4: the dialog's
-# "Working Mode" section. Per directive 030:
-#   - Enter working mode by clicking "Prepare".
-#   - Discard / Rebuild operate only on the runner-owned workspace.
-#   - Source CAD is NEVER touched.
-#   - Action buttons wire to window.SUAIP callbacks (no eval).
-#   - User-facing text via textContent only (no innerHTML).
-# --------------------------------------------------------------------------
-
-HR_HTML_INDEX_V14 = HR_HTML_INDEX
-HR_HTML_APPJS_V14 = HR_HTML_APPJS
-HR_HTML_CSS_V14   = HR_HTML_CSS
-HR_RUNNER_RB_V14  = HR_RUNNER_RB
-HR_UIBRIDGE_RB_V14 = File.expand_path('../extension/su_ai_plugin/ui_bridge.rb', __dir__).freeze
-
-test 'html_render (V1.4): index.html has <details id="working-mode-section"> with <summary id="working-mode-summary"> first child' do
-  src = File.read(HR_HTML_INDEX_V14)
-  m = src.match(/<details\s+id="working-mode-section">[^<]*<summary[^>]*id="working-mode-summary"[^>]*>[^<]*<\/summary>/m)
-  refute_nil m,
-           'index.html must define <details id="working-mode-section"> with <summary id="working-mode-summary"> as first child (per directive 030 Stage 4)'
-end
-
-test 'html_render (V1.4): working-mode-section is rendered closed by default (no open attribute)' do
-  src = File.read(HR_HTML_INDEX_V14)
-  m = src.match(/<details\s+id="working-mode-section">[^<]*<summary[^>]*>[^<]*<\/summary>[\s\S]*?<\/details>/m)
-  refute_nil m, 'failed to extract <details id="working-mode-section"> block'
-  block = m[0]
-  refute_match(/\bopen\b/, block,
-               '<details id="working-mode-section"> must NOT carry the `open` attribute (closed by default per directive 030 Stage 4)')
-end
-
-test 'html_render (V1.4 + V1.6 UI-CN-SIMPLIFICATION): working-mode-section is positioned AFTER groups + BEFORE layer-issues/layers/face-inventory sections' do
-  src = File.read(HR_HTML_INDEX_V14)
-  pos_groups  = src.index('id="groups"')
-  pos_wm      = src.index('id="working-mode-section"')
-  pos_layer_i = src.index('id="layer-issues-section"')
-  pos_layers  = src.index('id="layers-section"')
-  pos_fi      = src.index('id="face-inventory-section"')
-  pos_tech    = src.index('id="technical-details-section"')
-  refute_nil pos_groups, '#groups section must exist'
-  refute_nil pos_wm, '#working-mode-section must exist'
-  refute_nil pos_layer_i, '#layer-issues-section must exist'
-  refute_nil pos_layers, '#layers-section must exist'
-  refute_nil pos_fi, '#face-inventory-section must exist'
-  refute_nil pos_tech, '#technical-details-section must exist'
-  # V1.6 UI-CN-SIMPLIFICATION (per dispatch §3): the default
-  # visible structure is A. Header + B. #summary + C. #groups +
-  # D. 处理工作区 (working-mode-section) + E. 平面校正 (rendered
-  # inside #working-mode-list) + 技术详情 (collapsed by default).
-  # All other sections are collapsed by default and appear
-  # BELOW the primary Working Mode + Technical Details blocks.
-  assert pos_groups < pos_wm,
-         '#working-mode-section must come AFTER #groups'
-  assert pos_wm < pos_tech,
-         '#technical-details-section must come AFTER #working-mode-section (V1.6 UI-CN-SIMPLIFICATION §3 default layout)'
-  assert pos_tech < pos_layer_i,
-         '#layer-issues-section must come AFTER #technical-details-section'
-  assert pos_layer_i < pos_layers,
-         '#layers-section must come AFTER #layer-issues-section'
-  assert pos_layers < pos_fi,
-         '#face-inventory-section must come AFTER #layers-section'
-end
-
-test 'html_render (V1.4): app.js exposes renderWorkingMode on ROOT' do
-  src = File.read(HR_HTML_APPJS_V14)
-  assert_match(/function\s+renderWorkingMode\s*\(/, src,
-               'app.js must define renderWorkingMode function')
-  assert_match(/ROOT\.renderWorkingMode\s*=\s*renderWorkingMode/, src,
-               'app.js must expose ROOT.renderWorkingMode for harness + future callers')
-end
-
-test 'html_render (V1.4): renderWorkingMode uses textContent only (no innerHTML for user strings)' do
-  src = File.read(HR_HTML_APPJS_V14)
-  m = src.match(/function\s+renderWorkingMode\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s}\n/m)
-  if m.nil?
-    # Fallback: find the function and capture up to the next `function ` or end-of-script.
-    start = src.index('function renderWorkingMode')
-    refute_nil start, 'renderWorkingMode function not found'
-    rest = src[start..-1]
-    next_fn = rest.index("\n  function ")
-    body = next_fn ? rest[0..next_fn] : rest
-  else
-    body = m[0]
-  end
-  refute_match(/\.innerHTML\s*=/, body,
-               'renderWorkingMode must NOT assign .innerHTML for user strings (locked contract)')
-  assert_match(/\.textContent\s*=/, body,
-               'renderWorkingMode must use .textContent for user strings (locked contract)')
-end
-
-test 'html_render (V1.4): renderWorkingMode helper (addAction) locates callback on window.sketchup via brackets, NOT eval' do
-  # Per V14-RUNTIME-BLOCK-001 (2026-08-22): the host action
-  # callbacks (Prepare/Discard/Rebuild) live on
-  # window.sketchup (registered by SketchUp's HtmlDialog
-  # add_action_callback at boot). The previous code looked
-  # up the callback on window.SUAIP -- which never matches
-  # the real-SU callback path -- so the click was a no-op on
-  # a real SU host. The fix resolves via
-  # `window.sketchup[callback]` (bracket lookup, no eval).
-  src = File.read(HR_HTML_APPJS_V14)
-  # The addAction function MUST mention window.sketchup as
-  # the host-dispatch path (NOT window.SUAIP[callback]).
-  add_action_match = src.match(/function\s+addAction\s*\([^)]*\)\s*\{[\s\S]*?\n\s\s\}\n/)
-  if add_action_match.nil?
-    start_idx = src.index('function addAction')
-    raise 'addAction function not found' if start_idx.nil?
-    rest = src[start_idx..-1]
-    next_fn = rest.index("\n  function ")
-    add_action_match = [nil, next_fn ? rest[0..next_fn] : rest]
-  end
-  add_action_body = add_action_match[0]
-  assert add_action_body.include?('window.sketchup'),
-         'addAction MUST look up the callback on window.sketchup (V14-RUNTIME-BLOCK-001 fix)'
-  refute add_action_body.include?('SUAIP[callback]'),
-         'addAction MUST NOT look up the callback on window.SUAIP[callback] (V14-RUNTIME-BLOCK-001 fix)'
-  refute_match(/eval\s*\(/, add_action_body,
-               'renderWorkingMode action click handler MUST NOT use eval')
-end
-
-test 'html_render (V1.4): style.css defines .working-mode-row + .working-mode-actions neutral styles' do
-  src = File.read(HR_HTML_CSS_V14)
-  assert_match(/\.working-mode-row/, src,
-               'style.css must define .working-mode-row (V1.4 directive 030 Stage 4)')
-  assert_match(/\.working-mode-actions/, src,
-               'style.css must define .working-mode-actions (V1.4 directive 030 Stage 4)')
-  # Strip comments to find the actual blocks.
-  stripped = src.gsub(/\/\*[\s\S]*?\*\//m, '')
-  blocks = stripped.scan(/[^{}]*\.working-mode-row[^{}]*\{[^}]*\}/m)
-  assert blocks.length > 0, 'failed to extract any .working-mode-row CSS block'
-  blocks.each do |b|
-    refute_match(/data-role\s*=/, b,
-                 ".working-mode-row CSS block must NOT use a [data-role=\"...\"] color selector (R008): #{b.inspect}")
-    # No new color selectors for data-state (per directive 030 Stage 4
-    # 'no new role / state color selectors'). The neutral var(--*)
-    # variables (--text, --muted, --border) are EXISTING palette
-    # tokens, not new colors. NEW colors are hex/rgb/named values
-    # OR new --* variables introduced in this rule block.
-    if b =~ /\[data-state=/
-      # Reject any hard-coded color literal in a [data-state=...] block.
-      %w[# rgb rgba hsl hsla].each do |prefix|
-        if b =~ /(?:color|background|background-color|border-color)\s*:\s*#{Regexp.escape(prefix)}/i
-          flunk(".working-mode-row [data-state=...] block must NOT use a literal #{prefix} color (no new state colors): #{b.inspect}")
-        end
-      end
-    end
-  end
-end
-
-test 'html_render (V1.4): dialog_runner wires the 3 working-mode callbacks as BLOCKs (not method(:name))' do
-  src = File.read(HR_RUNNER_RB_V14)
-  %w[prepare_workspace discard_workspace rebuild_workspace].each do |cb|
-    assert_match(/add_action_callback\s*\(\s*['"]#{cb}['"]\s*\)\s+do/, src,
-                 "dialog_runner.rb must register '#{cb}' as a BLOCK callback (do/end), per the locked contract")
-    # No method(:...) form for these.
-    refute_match(/add_action_callback\s*\(\s*['"]#{cb}['"]\s*,\s*method/, src,
-                 "dialog_runner.rb must NOT register '#{cb}' as a method(:...) callback")
-  end
-end
-
-test 'html_render (V1.4): ui_bridge exposes derivedWorkspace top-level key (String-typed)' do
-  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
-  # The UIBridge payload must include 'derivedWorkspace' (String key)
-  # sourced from WorkingModeRunner.snapshot.
+test 'html_render (V1.9A-A1): ui_bridge preserves legacy raw payload fields (V1.0-V1.8 backward compat)' do
   result = hr_make_result
   payload = UIBridge.as_html_data(result)
-  assert payload.key?('derivedWorkspace'),
-         "UIBridge.as_html_data payload must include 'derivedWorkspace' top-level key (V1.4 directive 030 Stage 4)"
-  assert_kind_of Hash, payload['derivedWorkspace']
-  assert payload['derivedWorkspace'].key?('state'),
-         "payload['derivedWorkspace'] must be a Hash with a 'state' key (per WorkingModeRunner.snapshot shape)"
-  assert_kind_of String, payload['derivedWorkspace']['state']
+  %w[selectionType selectionLabel summary diagnostics groups layerGroups
+     layerIssueGroups faceInventoryGroups derivedWorkspace cadPrepWorkflow].each do |k|
+    assert payload.key?(k), "ui_bridge payload missing legacy key #{k.inspect}"
+  end
 end
 
-test 'html_render (V1.4): UIBridge.to_json round-trips derivedWorkspace (JSON-safe)' do
-  require_relative '../extension/su_ai_plugin/core/working_mode_runner'
-  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+test 'html_render (V1.9A-A1): cadPrepWorkflow carries the locked 5-card order' do
   result = hr_make_result
   payload = UIBridge.as_html_data(result)
-  require 'json'
-  json = JSON.generate(payload)
-  parsed = JSON.parse(json)
-  assert parsed.key?('derivedWorkspace'), 'derivedWorkspace must survive JSON round-trip'
-  assert parsed['derivedWorkspace']['state'] == 'none',
-         "derivedWorkspace.state must be 'none' on a fresh runner (round-trip)"
+  wf = payload['cadPrepWorkflow']
+  assert_equal %w[duplicate_cleanup planar_normalization gap_endpoint structure_region other],
+               wf['cards'].map { |c| c['id'] }
 end
