@@ -458,6 +458,15 @@ end
 # We reload them in dependency order (children before parents)
 # so any class-reopening that references a parent class method
 # resolves to the FRESHLY loaded in-tree implementation.
+#
+# V1.9A-A1 NOTE: cad_prep_workflow_presenter.rb MUST appear
+# in this list BEFORE ui_bridge.rb so that the in-tree
+# presenter is the one reloaded. The extracted RBZ may
+# contain an older copy (e.g. before the AIPM BLOCK 1 / BLOCK 2
+# fix-required edits), and `require_relative` inside
+# ui_bridge.rb caches by absolute path — without explicitly
+# reloading the presenter here, the stale extracted copy
+# would silently take precedence in subsequent tests.
 V14_RBZ_SMOKE_IN_TREE_FILES = %w[
   core/tolerance.rb
   core/analysis_config.rb
@@ -496,6 +505,7 @@ V14_RBZ_SMOKE_IN_TREE_FILES = %w[
   analyzers_runner.rb
   issue_locator.rb
   display_unit_formatter.rb
+  cad_prep_workflow_presenter.rb
   ui_bridge.rb
   dialog_controller.rb
   dialog_runner.rb

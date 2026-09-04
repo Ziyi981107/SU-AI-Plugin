@@ -95,24 +95,39 @@ module SUAnalysis
           result['cadPrepWorkflow'] = wf_payload
         rescue StandardError => e
           # Defensive: a presenter failure MUST NOT break the
-          # legacy payload. Surface the error as a STALE
+          # legacy payload. Surface the failure as a STALE
           # presentation so the UI can render a coherent
           # fallback instead of crashing mid-dialog.
+          #
+          # Per AIPM source review (non-blocking cleanup):
+          # the main product UI MUST stay generic and user-
+          # readable. The technical exception detail
+          # (class + message) stays in the SketchUp Ruby
+          # Console via the existing _safe_log path on the
+          # rebound rescue, NOT in the primary product
+          # copy.
+          begin
+            warn("[SU-AI-Plugin] V1.9A-A1 presenter fault: " +
+                 "#{e.class}: #{e.message}")
+          rescue StandardError
+            # Logging is best-effort; never propagate.
+            nil
+          end
           result['cadPrepWorkflow'] = {
             'schema_version' => SUAnalysis::Extension::CadPrepWorkflowPresenter::SCHEMA_VERSION,
             'overall_state'  => 'STALE',
             'headline'       => '工作副本已失效',
-            'subheadline'    => 'V1.9A-A1 presenter error: ' + e.message.to_s,
+            'subheadline'    => '请重新生成工作副本或放弃当前副本',
             'selection'      => { 'type' => analysis_result.selection_type.to_s,
                                   'label' => analysis_result.selection_label.to_s },
             'issue_summary'  => { 'kind' => 'issues', 'headline' => '处理失败',
-                                  'subtitle' => 'Presenter 不可用，请重新生成工作副本',
+                                  'subtitle' => '请重新生成工作副本',
                                   'chips' => [{ 'value' => 1, 'label' => '失败' }],
                                   'cta' => '重新检测' },
             'cards'          => [],
             'recovery'       => {
-              'title'          => 'Presenter 不可用',
-              'desc'           => 'V1.9A-A1 presenter raised an exception: ' + e.class.to_s + ': ' + e.message.to_s,
+              'title'          => '处理失败',
+              'desc'           => 'CAD 准备界面暂不可用。请重新生成工作副本，或放弃当前副本以保持源 CAD 完整。技术细节可在 SketchUp Ruby 控制台查看。',
               'primary_label'  => '重新生成工作副本',
               'primary_callback' => 'rebuild_workspace',
               'secondary_label'  => '放弃工作副本',

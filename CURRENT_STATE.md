@@ -1,6 +1,211 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL (THIS UPDATE)
+## V1.9A-A1 AIPM FIX REQUIRED CONTINUATION (THIS UPDATE)
+
+Updated: 2026-09-04 (V1.9A-A1 AIPM FIX REQUIRED
+CONTINUATION dispatch EXECUTION on assigned `dev/v1.9`
+per the AIPM direct source review of the V1.9A-A1 packet
+@ `a8563e3`). The original V1.9A-A1 dispatch authority
+remains in force; the AIPM FIX REQUIRED continuation adds
+THREE bounded corrections (BLOCK 1 copy + BLOCK 2 overall
+state + non-blocking presenter-fault cleanup) without
+expanding scope, changing frozen architecture, or rewriting
+any V1.x algorithm. A stale-load root cause was diagnosed
+and fixed in-repo (one missing entry in the RBZ-smoke
+reload list). All frozen V1.4–V1.8 Blueprint authority is
+preserved unchanged on `dev/v1.9`.
+
+Status (this continuation):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged; preserved
+  on `dev/v1.9` from `dev/v1.8 @ bbe423c` baseline).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+  (original packet @ a8563e3)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 AIPM FIX REQUIRED CONTINUATION (this
+  packet)**: COMPLETE on `dev/v1.9`; awaiting AIPM narrow
+  source recheck of the three corrections.
+- **V1.9A-A2 deterministic full-diagnostics orchestrator**:
+  NOT STARTED (per dispatch §0).
+- **V1.9B PreparedCadDataset / persistence**: NOT STARTED
+  (per dispatch §0).
+- **CODEX_RISK_TRIGGER = NO** (this continuation).
+- **AIPM_REVIEW = PENDING** (narrow recheck of the
+  FIX REQUIRED corrections only).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1.9A-A1 FIX REQUIRED CONTINUATION — 2026-09-04.
+
+- Starting HEAD for this continuation:
+  `a8563e3` (V1.9A-A1 packet's stable commit on `dev/v1.9`).
+- Implementation SHA: produced by this continuation
+  (see `git log -1 --format=%H` after commit).
+- Final HEAD on dev/v1.9: see `git rev-parse HEAD` after
+  push.
+- V1.9A-A1 FIX REQUIRED RBZ candidate: size
+  **1,100,036 bytes**; entries **70**; SHA-256
+  **`DAAF988D75DD2A40E8F2831822E43CD8E1A061DDD9E634A73FF65CD350A9095E`**.
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (unchanged from V1.9A-A1 original — no HTML change in
+  this continuation).
+- Packaged `html/app.js` SHA-256:
+  `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`
+  (unchanged from V1.9A-A1 original — no JS change in
+  this continuation).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (unchanged from V1.9A-A1 original — no CSS change in
+  this continuation).
+- Packaged `cad_prep_workflow_presenter.rb` SHA-256:
+  `EC46C603C3A737DDCC121AD90C7733418E0B59FE0D755923FCF3754495220949`
+  (NEW — contains BLOCK 1 + BLOCK 2 fixes).
+- Full Ruby suite: **1070 / 1070 total** / **1067 PASS** /
+  1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations present on the
+    V1.8 baseline at `bbe423c`:
+      - `capability.HtmlDialog: outside SU returns false
+        (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback ->
+        WorkingModeRunner -> workspace reaches :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    None caused by this continuation; reported separately
+    per dispatch §13.
+- V1.9A-A1 focused tests (after this continuation):
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    **38 / 38 PASS** (30 original + 8 BLOCK 1 / BLOCK 2
+    regression).
+  - `tests/test_v19a_ui_bridge.rb`: **10 / 10 PASS** (8
+    original + 1 non-blocking presenter-fault cleanup + 1
+    presenter-restoration defensive guard).
+- V1.9A-A1 DOM tests (this packet, rewritten):
+  - `tests/test_html_render.rb`: 24 / 24 PASS (all V1.9A
+    IA assertions).
+  - `tests/test_html_render_dom.js`: all assertions PASS,
+    final line `PASS`.
+
+Regression (per dispatch §13):
+
+- V1.7 focused set: **127 / 127 PASS** (baseline preserved).
+- V1.8 focused set: **71 / 71 PASS** (baseline preserved).
+- V1.8 SR18 set: **32 / 32 PASS**.
+- V1.7 INT set: **33 / 33 PASS**.
+- V1.6 close-autodiscard: **7 / 7 PASS**.
+- LEGACY-COMPAT: **4 / 4 PASS**.
+- RBZ smoke: **9 / 9 PASS** (rebuilt; presenter file
+  present).
+- `git diff --check`: clean (0 warnings).
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.9`. Pi did NOT rewrite any frozen design authority.
+No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No workspace ownership
+change. No host mutation / Face / Observer. No site
+semantics. No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this continuation:
+
+- **BLOCK 1 (truthful IDLE copy)**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  — `_build_issue_summary` IDLE branch + `_build_headlines`
+  IDLE branch both updated. Old copy
+  `"开始后将创建安全工作副本并完成全部检查"` (which falsely
+  promised full automatic diagnostics belonging to A2)
+  replaced with truthful A1 copy
+  `"开始后将创建安全工作副本并自动清理高置信度重复线"` (only
+  the V1.5 duplicate-repair batch actually runs on
+  prepare). IDLE `issue_summary.subtitle` synced. New
+  source-level guard test
+  `v19a_presenter (BLOCK 1): IDLE copy never claims full
+  diagnosis are automatically completed` asserts the
+  presenter source never contains `"完成全部检查"` /
+  `"完成所有检查"` (forward-protection against future drift).
+
+- **BLOCK 2 (overall state derives from rendered cards)**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  — `present` now builds `cards` BEFORE `overall` and passes
+  them into `_compute_overall_state`. The new helper
+  `_overall_state_for_ready_workspace(cards)` implements
+  the four-rule decision:
+    1. any ACTIONABLE / BLOCKED / FAILED → NEEDS_ATTENTION;
+    2. any REVIEW_REQUIRED → NEEDS_ATTENTION;
+    3. any stage-bound (duplicate_cleanup,
+       planar_normalization, gap_endpoint,
+       structure_region) UNCOMPUTED → NEEDS_ATTENTION
+       with the truthful headline `"仍有未检查项"` /
+       subtitle `"请逐项检查未完成的诊断"`;
+    4. all stage-bound cards CLEAN / APPLIED and no
+       REVIEW_REQUIRED → READY_FOR_VALIDATION.
+  Headlines under NEEDS_ATTENTION now distinguish
+  actionable / uncomputed / blocked / review-only cases.
+  Six regression tests pinned (see
+  `tests/test_v19a_cad_prep_workflow_presenter.rb`).
+
+- **NON-BLOCKING (presenter-fault UX cleanup)**:
+  `extension/su_ai_plugin/ui_bridge.rb` — the presenter-
+  fault rescue block no longer leaks the raw exception
+  `class` / `message` into the product-facing
+  subheadline / issue_summary subtitle / recovery desc.
+  The technical detail now goes ONLY to the SketchUp
+  Ruby Console via a best-effort `warn(...)` call. The
+  user-facing copy is generic / actionable
+  (`"请重新生成工作副本或放弃当前副本"` /
+  `"处理失败"` / `"CAD 准备界面暂不可用…技术细节可在
+  SketchUp Ruby 控制台查看。"`). Regression-locked in
+  `v19a_bridge (non-blocking): presenter-fault UX stays
+  generic — no technical class/message in product copy`.
+
+- **Stale-load test-infra fix (root cause of the
+  presentation-layer test pollution)**:
+  `tests/test_rbz_smoke.rb` — added
+  `cad_prep_workflow_presenter.rb` to the
+  `V14_RBZ_SMOKE_IN_TREE_FILES` reload list (placed
+  BEFORE `ui_bridge.rb` so the in-tree presenter is the
+  one reloaded, not the extracted copy transitively
+  cached via `require_relative`). Without this fix, the
+  present RBZ's older copy of the presenter (pre-BLOCK
+  1 / BLOCK 2) would silently take precedence in
+  subsequent tests via Ruby's `require_relative`
+  absolute-path cache — even after the RBZ smoke test
+  finished. This was the root cause of the earlier
+  session's apparent "stale-load" symptom (where the
+  on-disk source was the NEW logic but the tests
+  behaved as if OLD logic was being executed).
+  Fix scope: ONE line in the reload list; no production
+  code touched; the existing `load` (not `require`)
+  invariant re-binds methods to the in-tree source.
+
+New review artifact produced by this continuation:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the FIX
+  REQUIRED continuation section is appended below the
+  original V1.9A-A1 packet).
+
+Next expected action: AIPM narrow source recheck of the
+three FIX REQUIRED corrections (BLOCK 1 + BLOCK 2 +
+non-blocking presenter-fault cleanup) AND the
+stale-load test-infra fix. Then: Owner UX Gate A2 (real
+SU2020 orchestrated workflow). V1.9A-A2 orchestrator
+NOT STARTED. V1.9B PreparedCadDataset / persistence
+NOT STARTED.
+
+CODEX_GATE: NOT REQUIRED (per AGENTS.md §13; no risk
+trigger — only the presenter module, the UIBridge
+presenter-fault rescue, and three test files were
+touched by the production-data plane; no architecture
+change).
+
+OWNER_GATE: PENDING (A2).
+V1.9A-A2: NOT STARTED.
+V1.9B: NOT STARTED.
+
+## V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL (HISTORICAL)
 
 Updated: 2026-09-04 (V1.9A-A1 PRODUCTION UI SHELL +
 PRESENTATION MODEL dispatch EXECUTION on assigned
@@ -22,14 +227,15 @@ Status (this dispatch):
 - **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
   (`Prototype/V1_9A/`); Owner UX Gate = PASS.
 - **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
-  (this packet)**: COMPLETE on `dev/v1.9`; awaiting
-  AIPM source review.
+  (this packet)**: COMPLETE on `dev/v1.9`; superseded by
+  the FIX REQUIRED continuation (above).
 - **V1.9A-A2 deterministic full-diagnostics orchestrator**:
   NOT STARTED (per dispatch §0).
 - **V1.9B PreparedCadDataset / persistence**: NOT STARTED
   (per dispatch §0).
 - **CODEX_RISK_TRIGGER = NO** (dispatch §0).
-- **AIPM_REVIEW = PENDING** (this packet).
+- **AIPM_REVIEW = PENDING** (superseded by the FIX
+  REQUIRED continuation re-review).
 - **V2 / MCP OUT OF SCOPE**.
 
 V1.9A-A1 PACKET — 2026-09-04.

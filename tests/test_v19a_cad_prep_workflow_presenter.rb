@@ -86,16 +86,41 @@ test 'v19a_presenter: IDLE — workspace none — overall_state=IDLE, headline, 
   payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
   assert_equal 'IDLE', payload['overall_state']
   assert_equal 'CAD 尚未处理', payload['headline']
-  assert_equal '开始后将创建安全工作副本并完成全部检查', payload['subheadline']
+  # BLOCK 1 fix: A1 copywriting must NOT fake one-click full
+  # diagnosis. prepare_workspace runs the V1.5 duplicate
+  # batch only; V1.6 / V1.7 / V1.8 diagnostics remain user-
+  # triggered until A2 owns full orchestration.
+  assert_equal '开始后将创建安全工作副本并自动清理高置信度重复线', payload['subheadline'],
+               'IDLE subheadline MUST describe A1 actual behavior, NOT fake one-click full diagnosis'
   assert_equal 5, payload['cards'].length
   payload['cards'].each do |c|
     assert_equal 'UNCOMPUTED', c['state'],
                  "IDLE card #{c['id']} must be UNCOMPUTED (not CLEAN)"
   end
   assert_nil payload['recovery']
-  # Issue summary kind == empty-idle
+  # Issue summary kind == empty-idle; subtitle must match the
+  # truthful IDLE copy.
   assert_equal 'empty-idle', payload['issue_summary']['kind']
   assert_equal [], payload['issue_summary']['chips']
+  assert_equal '点击"开始处理"以创建安全工作副本并自动清理高置信度重复线',
+               payload['issue_summary']['subtitle'],
+               'IDLE issue_summary subtitle MUST match the truthful IDLE copy'
+end
+
+test 'v19a_presenter (BLOCK 1): IDLE copy never claims full diagnosis are automatically completed' do
+  # The presenter is the only writer of the IDLE
+  # headline / subheadline / issue_summary subtitle. Guard
+  # against future drift by grepping the source for the
+  # rejected copy.
+  src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  forbidden = [
+    '完成全部检查',     # old fake-orchestration copy
+    '完成所有检查'      # variant
+  ]
+  forbidden.each do |frag|
+    refute_includes src, frag,
+                 "presenter source MUST NOT contain the rejected IDLE copy fragment #{frag.inspect}"
+  end
 end
 
 test 'v19a_presenter: IDLE — discarded workspace is treated as IDLE' do
@@ -155,7 +180,10 @@ test 'v19a_presenter: READY_FOR_VALIDATION — ready with APPLIED cards shows he
   payload = v19a_present(v19a_make_ar, snap)
   assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
   # The "completed" headline includes 已应用 because some
-  # cards are APPLIED.
+  # cards are APPLIED. Per the existing frozen READY_FOR_VALIDATION
+  # behavior, APPLIED cards surface as "已完成" (kind=issues)
+  # rather than "CAD 状态良好" (kind=clean) -- so the user
+  # knows safe repairs were applied.
   assert_match(/已完成/, payload['headline'])
   # Planar card state == APPLIED.
   planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
@@ -404,22 +432,35 @@ test 'v19a_presenter: error-only summary never carries raw inventory chips' do
   end
 end
 
-test 'v19a_presenter: ready workspace with all NO_CANDIDATE + structure READY -> clean summary (not empty-idle)' do
+test 'v19a_presenter: ready workspace with all stages CLEAN + duplicate ran cleanly (no APPLIED) -> clean summary' do
+  # The "all clean" case requires duplicate_cleanup to have
+  # actually run. With actions_applied=0 the duplicate card
+  # is CLEAN (state_label "无重复线") rather than APPLIED;
+  # the issue_summary kind is therefore `clean` rather than
+  # the "已完成" issues-kind path.
   snap = {
     'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
     'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
     'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
     'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
   }
   payload = v19a_present(v19a_make_ar, snap)
-  # ready + no actionable = clean (the user has a workspace;
-  # the workspace is genuinely clean). NOT empty-idle.
-  assert_equal 'clean', payload['issue_summary']['kind']
+  # ready + all stage-bound cards CLEAN + no review =
+  # clean (the user has a workspace; the workspace is
+  # genuinely clean). NOT empty-idle.
+  assert_equal 'clean', payload['issue_summary']['kind'],
+               'all stage-bound cards CLEAN + no review + no APPLIED -> clean summary'
+  assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
 end
 
-test 'v19a_presenter: ready + NO_CANDIDATE -> clean empty issue summary' do
+test 'v19a_presenter: ready + all stage-bound cards CLEAN + duplicate ran cleanly (no APPLIED) -> clean empty issue summary' do
+  # Same as the previous test but with a non-empty structure
+  # metrics payload to exercise the "CLEAN with metrics" branch
+  # of _build_issue_summary under READY_FOR_VALIDATION.
   snap = {
     'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
     'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
     'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
     'structure_reconstruction' => {
@@ -431,6 +472,7 @@ test 'v19a_presenter: ready + NO_CANDIDATE -> clean empty issue summary' do
   summary = payload['issue_summary']
   assert_equal 'clean', summary['kind']
   assert_equal [], summary['chips']
+  assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
 end
 
 # --- "其他需检查项" surfaces non-primary issue types ---------------
@@ -478,6 +520,166 @@ test 'v19a_presenter: cards always emitted in the locked order duplicate / plana
   payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
   assert_equal %w[duplicate_cleanup planar_normalization gap_endpoint structure_region other],
                payload['cards'].map { |c| c['id'] }
+end
+
+# --- BLOCK 2 regression tests (AIPM source review) -----------------
+#
+# Per dispatch §0 (re-issued 2026-09-04 by AIPM after A1
+# source review): a `ready` workspace MUST NOT become
+# READY_FOR_VALIDATION while any capability card is still
+# UNCOMPUTED / BLOCKED / FAILED / REVIEW_REQUIRED. The
+# overall presentation state must reflect the actual rendered
+# card states.
+
+test 'v19a_presenter (BLOCK 2): ready + all stage snapshots absent -> overall != READY_FOR_VALIDATION' do
+  # No duplicate_repair / planar / gap / structure sub-snapshots.
+  # All 4 stage-bound cards will render UNCOMPUTED. The previous
+  # bug allowed overall = READY_FOR_VALIDATION in this case.
+  snap = { 'state' => 'ready' }
+  payload = v19a_present(v19a_make_ar, snap)
+  refute_equal 'READY_FOR_VALIDATION', payload['overall_state'],
+               'ready + all stages UNCOMPUTED MUST NOT be READY_FOR_VALIDATION'
+  assert_equal 'NEEDS_ATTENTION', payload['overall_state'],
+               'ready + all stages UNCOMPUTED MUST be NEEDS_ATTENTION'
+  assert_equal '仍有未检查项', payload['headline'],
+               'ready + all stages UNCOMPUTED headline MUST be 仍有未检查项'
+  assert_equal '请逐项检查未完成的诊断', payload['subheadline']
+  # The issue summary headline must match the truthful copy.
+  assert_equal '仍有未检查项', payload['issue_summary']['headline']
+end
+
+test 'v19a_presenter (BLOCK 2): ready + planar NOT_COMPUTED -> overall != READY_FOR_VALIDATION' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => { 'computed' => false, 'state' => 'NOT_COMPUTED' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  refute_equal 'READY_FOR_VALIDATION', payload['overall_state'],
+               'ready + planar NOT_COMPUTED MUST NOT be READY_FOR_VALIDATION'
+  assert_equal 'NEEDS_ATTENTION', payload['overall_state']
+  assert_equal '仍有未检查项', payload['headline']
+  # Planar card is UNCOMPUTED (truth rule).
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  assert_equal 'UNCOMPUTED', planar['state']
+end
+
+test 'v19a_presenter (BLOCK 2): ready + structure FAILED -> overall = NEEDS_ATTENTION' do
+  # duplicate_repair is APPLIED (so duplicate is NOT
+  # stage-bound UNCOMPUTED and the BLOCKED/FAILED headline
+  # path is reachable).
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 4, 'duplicate_pairs_before' => 8, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'FAILED',
+      'reason'   => 'some-segment-conflict-failure'
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  assert_equal 'NEEDS_ATTENTION', payload['overall_state']
+  # Headline reflects a blocked/failed stage (no UNCOMPUTED
+  # stage-bound cards because duplicate has APPLIED).
+  assert_equal '存在被阻塞的检查项', payload['headline']
+  # Structure card is FAILED.
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal 'FAILED', sr['state']
+end
+
+test 'v19a_presenter (BLOCK 2): ready + secondary issue causing other REVIEW_REQUIRED -> overall = NEEDS_ATTENTION' do
+  # Build an AnalysisResult whose registry.summary carries
+  # short_edge / abnormal_large_coord counts (the `other`
+  # catch-all card surfaces them as REVIEW_REQUIRED).
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count, :face_count, :faces_with_holes_count).new(10, 12, 0, 0, 0, 0)
+  reg = IssueRegistry.new([
+    { issue_id: 'short_edge|1|1',           issue_type: 'short_edge',           severity: 'low', confidence: 'high',
+      sources: [], source_entity_ids: [], edge_ids: [], location: nil, message: 'm', metadata: {}, locatable: false, display_length: nil },
+    { issue_id: 'abnormal_large_coord|1|1', issue_type: 'abnormal_large_coord', severity: 'low', confidence: 'high',
+      sources: [], source_entity_ids: [], edge_ids: [], location: nil, message: 'm', metadata: {}, locatable: false, display_length: nil }
+  ])
+  ar = AnalysisResult.new(preflight: pf, registry: reg,
+                         selection_type: 'Group', selection_label: 'x')
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 4, 'duplicate_pairs_before' => 8, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(ar, snap)
+  other = payload['cards'].find { |c| c['id'] == 'other' }
+  assert_equal 'REVIEW_REQUIRED', other['state'],
+               '`other` card MUST be REVIEW_REQUIRED when secondary issue types exist'
+  assert_equal 'NEEDS_ATTENTION', payload['overall_state'],
+               'ready + `other` REVIEW_REQUIRED MUST surface as NEEDS_ATTENTION'
+end
+
+test 'v19a_presenter (BLOCK 2): all required stages genuinely CLEAN + no review + no APPLIED -> READY_FOR_VALIDATION (clean)' do
+  # The truly-clean case: no APPLIED cards (only NO_CANDIDATE
+  # / READY). The existing frozen logic surfaces this as
+  # kind=clean / "CAD 状态良好" because no safe repair was
+  # applied — the workspace was simply clean from the start.
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
+  assert_equal 'clean', payload['issue_summary']['kind']
+  assert_equal 'CAD 状态良好', payload['headline']
+end
+
+test 'v19a_presenter (BLOCK 2): IDLE copy must not claim full diagnostics are automatically completed' do
+  # A1 must NOT fake one-click full diagnosis. The IDLE
+  # subheadline / issue_summary subtitle MUST describe only
+  # what prepare_workspace actually does in A1: the V1.5
+  # duplicate batch. Auto-running planar / gap / structure
+  # diagnostics is A2 scope.
+  payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
+  refute_includes payload['subheadline'], '完成全部检查',
+                  'IDLE subheadline MUST NOT claim full diagnostics are auto-completed'
+  refute_includes payload['issue_summary']['subtitle'], '完成全部检查',
+                  'IDLE issue_summary subtitle MUST NOT claim full diagnostics are auto-completed'
+  # The truthful copy references the V1.5 duplicate batch.
+  assert_match(/重复线/, payload['subheadline'],
+               'IDLE subheadline MUST mention the V1.5 duplicate batch (the only auto-applied step in A1)')
+end
+
+test 'v19a_presenter (BLOCK 2): NEEDS_ATTENTION headline distinguishes actionable / uncomputed / blocked' do
+  # Three cases that all surface NEEDS_ATTENTION but with
+  # different truthful copy.
+  # 1) actionable present -> "发现需要处理的问题"
+  snap_a = { 'state' => 'ready',
+            'duplicate_repair' => { 'actions_applied' => 4, 'duplicate_pairs_before' => 8, 'duplicate_pairs_after' => 0 },
+            'planar_normalization' => {
+              'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+              'proposal' => { 'movable' => 5 }
+            } }
+  pa = v19a_present(v19a_make_ar, snap_a)
+  assert_equal 'NEEDS_ATTENTION', pa['overall_state']
+  assert_equal '发现需要处理的问题', pa['headline']
+  # 2) stage-bound UNCOMPUTED only -> "仍有未检查项"
+  #    No duplicate / planar / gap / structure sub-snapshot.
+  snap_b = { 'state' => 'ready' }
+  pb = v19a_present(v19a_make_ar, snap_b)
+  assert_equal 'NEEDS_ATTENTION', pb['overall_state']
+  assert_equal '仍有未检查项', pb['headline']
+  assert_equal '请逐项检查未完成的诊断', pb['subheadline']
+  # 3) stage-bound BLOCKED only -> "存在被阻塞的检查项"
+  #    All other stages CLEAN/APPLIED so the BLOCKED/FAILED
+  #    headline path is reachable.
+  snap_c = { 'state' => 'ready',
+             'duplicate_repair' => { 'actions_applied' => 4, 'duplicate_pairs_before' => 8, 'duplicate_pairs_after' => 0 },
+             'planar_normalization' => { 'computed' => true, 'state' => 'INVALID_TOLERANCE' },
+             'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+             'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' } }
+  pc = v19a_present(v19a_make_ar, snap_c)
+  assert_equal 'NEEDS_ATTENTION', pc['overall_state']
+  assert_equal '存在被阻塞的检查项', pc['headline']
 end
 
 # --- selection shape ------------------------------------------------

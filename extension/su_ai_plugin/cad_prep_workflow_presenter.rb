@@ -168,8 +168,14 @@ module SUAnalysis
         snap = _coerce_snapshot(workspace_snapshot)
         analysis_summary = _safe_summary(analysis_result)
 
-        overall = _compute_overall_state(snap, analysis_summary)
-        cards   = _build_cards(snap, analysis_summary)
+        # Build the cards first; the overall state for a
+        # `ready` workspace MUST be derived from the actual
+        # rendered card states (BLOCK 2 fix). For IDLE /
+        # SCANNING / STALE / FAILED the workspace state is
+        # authoritative and the cards are derived from it
+        # (they all read UNCOMPUTED / CHECKING / STALE).
+        cards = _build_cards(snap, analysis_summary)
+        overall = _compute_overall_state(snap, cards)
         issue  = _build_issue_summary(overall, cards, snap, analysis_summary)
         headline, subheadline = _build_headlines(overall, cards, snap, analysis_summary)
         recovery = _build_recovery(overall, snap)
@@ -209,12 +215,23 @@ module SUAnalysis
       end
 
       # Determine the overall presentation state from the
-      # workspace snapshot + the analysis summary. The
-      # workspace state is authoritative for "is there a
-      # running workspace"; the per-stage planar / topology
-      # / structure sub-snapshots drive NEEDS_ATTENTION vs
-      # READY_FOR_VALIDATION.
-      def _compute_overall_state(snap, analysis_summary)
+      # workspace snapshot + the ACTUAL RENDERED CARDS.
+      #
+      # Per AIPM source review BLOCK 2: a `ready` workspace
+      # MUST NOT become READY_FOR_VALIDATION while any
+      # capability card is still UNCOMPUTED / BLOCKED /
+      # FAILED / REVIEW_REQUIRED. The previous implementation
+      # only checked a subset of sub-snapshot raw states and
+      # therefore allowed `ready + planar NOT_COMPUTED` to
+      # read as "CAD 状态良好" while the cards honestly said
+      # "未检查". The refactor derives the overall state from
+      # the actual rendered card states instead.
+      #
+      # For `none` / `discarded` / `building` / `failed` the
+      # workspace state is authoritative and the cards are
+      # derived from it (they all read UNCOMPUTED / CHECKING /
+      # STALE respectively).
+      def _compute_overall_state(snap, cards)
         ws = (snap['state'] || 'none').to_s
         if ws == 'building'
           return 'SCANNING'
@@ -232,36 +249,58 @@ module SUAnalysis
         if ws == 'none' || ws == 'discarded'
           return 'IDLE'
         end
-        # ws == 'ready' (the only remaining terminal
-        # workspace state). Determine whether the user has
-        # something actionable / reviewable.
-        if _has_actionable_or_review?(snap)
-          return 'NEEDS_ATTENTION'
-        end
-        'READY_FOR_VALIDATION'
+        # ws == 'ready'. Derive from the actual card states.
+        _overall_state_for_ready_workspace(cards)
       end
 
-      # Returns true if any of (planar_normalization,
-      # topology_repair, structure_reconstruction) is
-      # ACTIONABLE or REVIEW_REQUIRED.
-      def _has_actionable_or_review?(snap)
-        pn = snap['planar_normalization']
-        if pn.is_a?(Hash)
-          ps = pn['state'].to_s
-          return true if ps == 'READY_TO_NORMALIZE' || ps == 'REVIEW_REQUIRED'
+      # Derive the overall presentation state for a `ready`
+      # workspace from the actual rendered capability cards.
+      # The truthful rules (per AIPM source review BLOCK 2):
+      #
+      #   1. Any ACTIONABLE / BLOCKED / FAILED card
+      #      => NEEDS_ATTENTION (the user has explicit
+      #         work or a blocked stage to deal with).
+      #
+      #   2. Any REVIEW_REQUIRED card (incl. the `other`
+      #      catch-all card surfacing secondary issues)
+      #      => NEEDS_ATTENTION (the user must view it).
+      #
+      #   3. Any stage-bound card UNCOMPUTED
+      #      => NEEDS_ATTENTION with the truthful headline
+      #         "仍有未检查项" (the user has not yet
+      #         triggered that diagnostic; A2 will own
+      #         auto-orchestration, A1 must NOT fake it).
+      #      Stage-bound cards = duplicate_cleanup,
+      #      planar_normalization, gap_endpoint,
+      #      structure_region. The `other` catch-all card
+      #      is not stage-bound; it is allowed to render
+      #      as UNCOMPUTED when there are no secondary
+      #      issue types in the registry (frozen P3
+      #      capability-visibility contract).
+      #
+      #   4. All stage-bound cards CLEAN / APPLIED AND
+      #      no REVIEW_REQUIRED card AND `other` is not
+      #      REVIEW_REQUIRED
+      #      => READY_FOR_VALIDATION.
+      def _overall_state_for_ready_workspace(cards)
+        # 1) Actionable / Blocked / Failed wins immediately.
+        if cards.any? { |c| %w[ACTIONABLE BLOCKED FAILED].include?(c['state']) }
+          return 'NEEDS_ATTENTION'
         end
-        tr = snap['topology_repair']
-        if tr.is_a?(Hash)
-          ts = tr['state'].to_s
-          return true if ts == 'READY_TO_REPAIR' || ts == 'REVIEW_REQUIRED'
+        # 2) Review-required (incl. `other` catch-all) wins.
+        if cards.any? { |c| c['state'] == 'REVIEW_REQUIRED' }
+          return 'NEEDS_ATTENTION'
         end
-        sr = snap['structure_reconstruction']
-        if sr.is_a?(Hash)
-          ss = sr['state'].to_s
-          return true if ss.start_with?('REVIEW_REQUIRED') ||
-                         ss == 'READY_WITH_WARNINGS'
+        # 3) Stage-bound UNCOMPUTED wins.
+        stage_bound_ids = %w[duplicate_cleanup planar_normalization
+                             gap_endpoint structure_region]
+        stage_cards = cards.select { |c| stage_bound_ids.include?(c['id']) }
+        if stage_cards.any? { |c| c['state'] == 'UNCOMPUTED' }
+          return 'NEEDS_ATTENTION'
         end
-        false
+        # 4) All stages are CLEAN / APPLIED and nothing
+        #    else needs attention: ready for validation.
+        'READY_FOR_VALIDATION'
       end
 
       # ---- selection ----------------------------------------------
@@ -281,10 +320,18 @@ module SUAnalysis
       def _build_issue_summary(overall, cards, snap, analysis_summary)
         case overall
         when 'IDLE'
+          # BLOCK 1 fix: A1 does NOT fake one-click full
+          # diagnosis. prepare_workspace builds the working
+          # copy AND runs the V1.5 high-confidence duplicate
+          # repair batch. It does NOT auto-run the V1.6
+          # planar / V1.7 gap / V1.8 structure diagnostics
+          # — those remain user-triggered compute_* calls
+          # until A2 owns orchestration. The copy must
+          # truthfully describe what prepare actually does.
           return {
             'kind'        => 'empty-idle',
             'headline'    => 'CAD 尚未处理',
-            'subtitle'    => '点击"开始处理"以创建安全工作副本并完成全部检查',
+            'subtitle'    => '点击"开始处理"以创建安全工作副本并自动清理高置信度重复线',
             'chips'       => [],
             'cta'         => nil
           }.freeze
@@ -335,13 +382,33 @@ module SUAnalysis
             'cta'         => nil
           }.freeze
         end
-        # NEEDS_ATTENTION — collect chips from cards.
+        # NEEDS_ATTENTION — collect chips from cards. Per
+        # BLOCK 2, when NEEDS_ATTENTION is driven by stage-
+        # bound UNCOMPUTED / BLOCKED / FAILED cards (rather
+        # than actionable counts), the chips list may be
+        # empty AND the headline MUST be truthful (no fake
+        # "发现 0 类" text).
         chips = _collect_chips(cards, include_zero: false)
-        headline = if chips.length.zero?
-                     '发现需要处理的问题'
-                   else
-                     "发现 #{chips.length} 类 · #{chips.map { |c| c['value'].to_i }.sum} 项问题"
-                   end
+        stage_bound_ids = %w[duplicate_cleanup planar_normalization
+                             gap_endpoint structure_region]
+        stage_uncomputed = cards.any? { |c| stage_bound_ids.include?(c['id']) &&
+                                            c['state'] == 'UNCOMPUTED' }
+        stage_blocked    = cards.any? { |c| stage_bound_ids.include?(c['id']) &&
+                                            %w[BLOCKED FAILED].include?(c['state']) }
+        has_review       = cards.any? { |c| c['state'] == 'REVIEW_REQUIRED' }
+        has_actionable   = cards.any? { |c| c['state'] == 'ACTIONABLE' }
+        headline =
+          if chips.length.positive?
+            "发现 #{chips.length} 类 · #{chips.map { |c| c['value'].to_i }.sum} 项问题"
+          elsif stage_uncomputed
+            '仍有未检查项'
+          elsif stage_blocked
+            '存在被阻塞的检查项'
+          elsif has_review && !has_actionable
+            '存在需人工查看的问题'
+          else
+            '发现需要处理的问题'
+          end
         {
           'kind'        => 'issues',
           'headline'    => headline,
@@ -383,7 +450,11 @@ module SUAnalysis
       def _build_headlines(overall, cards, snap, analysis_summary)
         case overall
         when 'IDLE'
-          return ['CAD 尚未处理', '开始后将创建安全工作副本并完成全部检查']
+          # BLOCK 1 fix: truthful copy. A1 does NOT run
+          # planar / gap / structure diagnostics on
+          # prepare; only the V1.5 duplicate batch is
+          # auto-applied. A2 owns full orchestration.
+          return ['CAD 尚未处理', '开始后将创建安全工作副本并自动清理高置信度重复线']
         when 'SCANNING'
           return ['正在准备...', '正在创建安全工作副本']
         when 'READY_FOR_VALIDATION'
@@ -396,13 +467,34 @@ module SUAnalysis
         when 'FAILED'
           return ['处理失败', _failure_subtitle(snap)]
         end
-        # NEEDS_ATTENTION: count actionable categories from
-        # the cards' primary actions.
-        actionable_count = cards.count { |c| !c['primary_action'].nil? && c['primary_action']['enabled'] }
-        if actionable_count.zero?
-          return ['存在需人工查看的问题', '当前未自动修复']
+        # NEEDS_ATTENTION. Per BLOCK 2 the headline must
+        # distinguish WHY the user still has work to do:
+        #   - ACTIONABLE   => explicit safe repair is ready
+        #   - REVIEW_REQUIRED (without ACTIONABLE) =>
+        #                      user must view it
+        #   - stage-bound UNCOMPUTED => diagnostics not yet
+        #                      run; user must trigger them
+        #                      (A2 owns full auto-orchestration;
+        #                      A1 must NOT fake it)
+        #   - stage-bound BLOCKED / FAILED =>
+        #                      configuration / host issue
+        actionable_count = cards.count { |c| c['state'] == 'ACTIONABLE' }
+        if actionable_count.positive?
+          return ['发现需要处理的问题', nil]
         end
-        ['发现需要处理的问题', nil]
+        stage_bound_ids = %w[duplicate_cleanup planar_normalization
+                             gap_endpoint structure_region]
+        if cards.any? { |c| stage_bound_ids.include?(c['id']) &&
+                             c['state'] == 'UNCOMPUTED' }
+          return ['仍有未检查项', '请逐项检查未完成的诊断']
+        end
+        if cards.any? { |c| stage_bound_ids.include?(c['id']) &&
+                             %w[BLOCKED FAILED].include?(c['state']) }
+          return ['存在被阻塞的检查项', '请检查容差或输入数据']
+        end
+        # Only review-required cards remain (no actionable,
+        # no UNCOMPUTED-stage-bound, no BLOCKED/FAILED).
+        return ['存在需人工查看的问题', '当前未自动修复']
       end
 
       # ---- recovery ----------------------------------------------

@@ -3,15 +3,19 @@
 Project: `SU-AI-Plugin`
 Version: V1.9A
 Stage: V1.9A — Product UX + Diagnostics Orchestration
-Packet: A1 — PRODUCTION UI SHELL + PRESENTATION MODEL
+Packet: A1 — PRODUCTION UI SHELL + PRESENTATION MODEL (AIPM FIX REQUIRED CONTINUATION)
 Authority:
 - `Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`
 - `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A1)
+- AIPM FIX REQUIRED re-issue (BLOCK 1 + BLOCK 2 + non-blocking
+  presenter-fault cleanup) — 2026-09-04
 Baseline HEAD: `bbe423cce3f4136ddd4d0673fbce02527e36de15`
 (dev/v1.8 V18-OWNER-SU2020-UI-WIRING complete state)
 Baseline branch: `dev/v1.8`
 TARGET_BRANCH: **dev/v1.9**
-Implementation SHA: `a8563e3` (this packet's implementation commit)
+Original Implementation SHA: `a8563e3` (V1.9A-A1 packet's
+initial implementation commit; the FIX REQUIRED continuation
+extends it without rewriting any frozen authority).
 Final HEAD on dev/v1.9: see `git rev-parse HEAD` after push.
 A0 Owner UX Gate: PASS
 A0 prototype: `Prototype/V1_9A/` (preserved unchanged)
@@ -525,5 +529,209 @@ Per dispatch §15:
 - V1.9B = NOT STARTED
 
 STOP. Awaiting AIPM source review.
+
+---
+
+# AIPM FIX REQUIRED CONTINUATION (2026-09-04)
+
+After the original V1.9A-A1 packet above (`a8563e3`), AIPM
+performed direct source review and re-issued the packet with
+THREE bounded corrections (no architecture change, no
+algorithmic change, no V1.x scope expansion):
+
+- **BLOCK 1 (copy)**: IDLE user-facing copy must NOT claim
+  “开始后将创建安全工作副本并完成全部检查” because full
+  automatic diagnostics belong to A2. The copy was rewritten
+  to truthfully describe the A1 actual behavior (“开始后将创建
+  工作副本并自动清理高置信度重复线”).
+- **BLOCK 2 (overall state)**: `overall_state` for a `ready`
+  workspace MUST be derived from the actual rendered
+  capability card states, not from a subset of sub-snapshot
+  raw states. Implemented via the new
+  `_overall_state_for_ready_workspace(cards)` helper:
+    - any ACTIONABLE / BLOCKED / FAILED card → NEEDS_ATTENTION;
+    - any REVIEW_REQUIRED card → NEEDS_ATTENTION;
+    - any stage-bound UNCOMPUTED → NEEDS_ATTENTION
+      with the truthful headline “仍有未检查项”;
+    - READY_FOR_VALIDATION only when all stage-bound cards
+      are CLEAN / APPLIED and nothing else needs attention.
+- **NON-BLOCKING (presenter-fault UX)**: the main product UI
+  MUST stay generic and user-readable. Technical exception
+  detail (class + message) stays in the SketchUp Ruby
+  Console via the existing `_safe_log` path, NOT in the
+  product-facing subheadline / issue_summary / recovery copy.
+
+All six required regression tests are pinned in
+`tests/test_v19a_cad_prep_workflow_presenter.rb` and
+`tests/test_v19a_ui_bridge.rb`:
+
+1. ready + all stage snapshots absent → NEEDS_ATTENTION.
+2. ready + planar NOT_COMPUTED → NEEDS_ATTENTION.
+3. ready + structure FAILED → NEEDS_ATTENTION.
+4. ready + `other` card REVIEW_REQUIRED → NEEDS_ATTENTION.
+5. all required stages genuinely CLEAN + no review + no
+   APPLIED → READY_FOR_VALIDATION (clean).
+6. IDLE copy must not claim full automatic diagnostics.
+
+## Files changed by this continuation
+
+```
+M extension/su_ai_plugin/cad_prep_workflow_presenter.rb
+M extension/su_ai_plugin/ui_bridge.rb
+M tests/test_v19a_cad_prep_workflow_presenter.rb
+M tests/test_v19a_ui_bridge.rb
+M tests/test_rbz_smoke.rb
+```
+
+## Stale-load root cause (reproducible diagnosis)
+
+During this continuation, the first attempt to run the
+focused presenter tests showed all BLOCK 1 / BLOCK 2
+assertions failing with the OLD presenter behavior — but
+running the SAME test in isolation produced the correct
+NEW behavior. The root cause was traced to
+`tests/test_rbz_smoke.rb`:
+
+1. The RBZ smoke test extracts `dist/SU-AI-Plugin.rbz`
+   into a temp dir and loads its entry-point through
+   FakeUI.
+2. That chain pulls in the PRESENT RBZ's copy of
+   `cad_prep_workflow_presenter.rb`, which at the time
+   of diagnosis contained the PRE-FIX (A1-original) version.
+3. Subsequent tests inheriting `CadPrepWorkflowPresenter`
+   through `require_relative` saw the STALE extracted
+   copy because `require_relative` caches by absolute path.
+4. The existing `v14_reload_in_tree_production_files!`
+   helper reloaded 40+ production files after the smoke
+   test but did NOT include
+   `cad_prep_workflow_presenter.rb` (the file was added
+   in V1.9A-A1, after the helper was last updated).
+
+**Fix**: added `cad_prep_workflow_presenter.rb` to the
+`V14_RBZ_SMOKE_IN_TREE_FILES` reload list (placed
+BEFORE `ui_bridge.rb` so the in-tree presenter is the
+one reloaded, not the extracted copy transitively cached
+via `require_relative`). One-line helper invariant is
+preserved: `load` (not `require`) re-executes the file,
+re-binding the methods to the in-tree source location.
+
+After the fix, all v19a presenter / bridge tests pass in
+both the focused filter and the full suite run.
+
+## Evidence — focused filter
+
+```
+tests/run_all.rb v19a_presenter   → 38 tests: 38 pass, 0 fail, 0 error
+tests/run_all.rb v19a_bridge      → 10 tests: 10 pass, 0 fail, 0 error
+tests/run_all.rb html_render      → 24 tests: 24 pass, 0 fail, 0 error
+```
+
+## Evidence — required regressions
+
+```
+tests/run_all.rb V17   → 127 tests: 127 pass, 0 fail, 0 error
+tests/run_all.rb V18   →  71 tests:  71 pass, 0 fail, 0 error
+tests/run_all.rb V18-SR18 → 32 tests: 32 pass, 0 fail, 0 error
+tests/run_all.rb V17-INT  → 33 tests: 33 pass, 0 fail, 0 error
+tests/run_all.rb V16-CLOSE  → 7 tests: 7 pass, 0 fail, 0 error
+tests/run_all.rb LEGACY-COMPAT → 4 tests: 4 pass, 0 fail, 0 error
+tests/run_all.rb RBZ    → 9 tests: 9 pass, 0 fail, 0 error
+```
+
+## Evidence — full suite
+
+```
+tests/run_all.rb → 1070 tests: 1067 pass, 1 fail, 2 error
+```
+
+The 1 fail + 2 error are the SAME pre-existing
+test-environment / FakeUI limitations that were present
+on the V1.8 baseline at `bbe423c` (the dispatch
+baseline). They are unrelated to V1.9A-A1 scope and are
+reported separately per dispatch §13:
+
+- `capability.HtmlDialog: outside SU returns false
+  (R002 + S2-BLOCK-006)` — pre-existing test-env capability check.
+- `V14 production call chain: dialog callback →
+  WorkingModeRunner → workspace reaches :ready` — pre-existing
+  FakeUI setup limitation.
+- `V17-L1: host_state_changed invalidates the workspace via
+  validate-on-next-interaction` — pre-existing FakeUI host-state
+  validator setup limitation.
+
+## Evidence — Node DOM
+
+```
+node tests/test_html_render_dom.js → all assertions PASS,
+                                     final line `PASS`
+```
+
+## Evidence — `git diff --check`
+
+Clean (no whitespace warnings).
+
+## Updated RBZ identity (this continuation)
+
+```
+Path:           D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz
+Size:           1,100,036 bytes
+Entries:        70
+SHA-256:        DAAF988D75DD2A40E8F2831822E43CD8E1A061DDD9E634A73FF65CD350A9095E
+Packaged su_ai_plugin/cad_prep_workflow_presenter.rb
+                SHA-256: EC46C603C3A737DDCC121AD90C7733418E0B59FE0D755923FCF3754495220949
+Packaged su_ai_plugin/html/app.js
+                SHA-256: A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F
+Packaged su_ai_plugin/html/index.html
+                SHA-256: 4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A
+Packaged su_ai_plugin/html/style.css
+                SHA-256: 4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36
+```
+
+(app.js / index.html / style.css SHA-256 unchanged from the
+original V1.9A-A1 packet — the FIX REQUIRED continuation
+touches Ruby only. The new RBZ differs only in the embedded
+`cad_prep_workflow_presenter.rb`.)
+
+## Confirmation — no A2 / V1.9B / scope creep
+
+| Scope item                                                    | Started? | Evidence                                                  |
+|---------------------------------------------------------------|----------|-----------------------------------------------------------|
+| `CadPrepWorkflowOrchestrator`                                  | NO       | Not present in any file.                                  |
+| `start_cad_prep` orchestration callback                         | NO       | Not registered in `dialog_runner.rb`.                     |
+| Automatic full diagnostics after `prepare_workspace`           | NO       | Only the V1.5 duplicate-repair batch runs on prepare.     |
+| V1.6 / V1.7 / V1.8 algorithm change                            | NO       | `git diff bbe423c..HEAD -- extension/su_ai_plugin/core/` shows zero changes to frozen V1.6/V1.7/V1.8 algorithm files. |
+| Tolerance / source ownership change                            | NO       | No changes to `Tolerance` / `SourceSnapshot` / `WorkingModeRunner.snapshot` shape. |
+| Face / Observer architecture                                   | NO       | Not present in any file.                                  |
+| `PreparedCadDataset` / persistence (V1.9B)                     | NO       | Not present in any file; dispatch §4 forbids it.          |
+| MCP / LLM / Agent                                              | NO       | Not present in any file; dispatch §4 forbids it.          |
+| V1.x product UX redesign                                       | NO       | IA / 4 tabs / 5 cards / existing callbacks / legacy payload keys all UNCHANGED. |
+
+## `CODEX_RISK_TRIGGER` determination (this continuation)
+
+Per AGENTS.md §13 + dispatch §0:
+- Only the presenter module, the presenter fault-tolerance
+  block in UIBridge, and three regression-test files
+  were touched by the production-data plane.
+- One test-infrastructure fix was made (RBZ-smoke reload
+  list) so the in-tree presenter is the one reloaded after
+  the RBZ smoke test extracts the package into a temp dir.
+- No source / state ownership / transaction / recovery
+  change. No Face / Observer architecture. No source CAD
+  mutation. No canonical-topology / tolerance / segment-
+  conflict semantic change. No RBZ-only release claim.
+
+`CODEX_RISK_TRIGGER = NO`.
+
+## STOP (this continuation)
+
+- AIPM_REVIEW = PENDING (narrow recheck of BLOCK 1 + BLOCK 2
+  + non-blocking presenter-fault cleanup)
+- CODEX = NOT REQUIRED
+- OWNER_SU2020 = NOT YET
+- A2 = NOT STARTED
+- V1.9B = NOT STARTED
+
+STOP. Awaiting AIPM narrow source recheck of the FIX
+REQUIRED continuation only.
 
 END
