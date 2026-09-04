@@ -1,6 +1,157 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.8 OWNER-SU2020-UI-WIRING (THIS UPDATE)
+## V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL (THIS UPDATE)
+
+Updated: 2026-09-04 (V1.9A-A1 PRODUCTION UI SHELL +
+PRESENTATION MODEL dispatch EXECUTION on assigned
+`dev/v1.9` per dispatch `Prompt/CURRENT_PI_DISPATCH.md`
+and authority
+`Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`).
+Per dispatch, the ONLY authority for this packet is the
+V1.9A-A1 scope (production HtmlDialog port of approved A0
+prototype + additive cadPrepWorkflow presentation model).
+Frozen V1.8 Blueprint preserved unchanged. A0 prototype
+`Prototype/V1_9A/` preserved unchanged.
+
+Status (this dispatch):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged; preserved
+  on `dev/v1.9` from `dev/v1.8 @ bbe423c` baseline).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+  (this packet)**: COMPLETE on `dev/v1.9`; awaiting
+  AIPM source review.
+- **V1.9A-A2 deterministic full-diagnostics orchestrator**:
+  NOT STARTED (per dispatch §0).
+- **V1.9B PreparedCadDataset / persistence**: NOT STARTED
+  (per dispatch §0).
+- **CODEX_RISK_TRIGGER = NO** (dispatch §0).
+- **AIPM_REVIEW = PENDING** (this packet).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1.9A-A1 PACKET — 2026-09-04.
+
+- Starting HEAD: `bbe423cce3f4136ddd4d0673fbce02527e36de15`
+  (the V18-OWNER-SU2020-UI-WIRING complete state on
+  `dev/v1.8`, the dispatch baseline).
+- Implementation SHA: `a8563e3` (this packet's stable commit).
+- Final HEAD on dev/v1.9: see `git rev-parse HEAD` after
+  push.
+- V1.9A-A1 RBZ candidate: size **1,094,204 bytes**; entries
+  **70**; SHA-256
+  **`539b36ccbe82dfd17b96c79fa7d566fa40f7e1a72ca2df1c9073903d5e36a3d4`**.
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`.
+- Packaged `html/app.js` SHA-256:
+  `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`.
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`.
+- Packaged `cad_prep_workflow_presenter.rb` SHA-256:
+  `8FC3B10D25F9E880DE92634C95C37578FF96745C92E7A109C7B36FBA85C8BA08`.
+- Full Ruby suite: **1060 / 1060 total** / **1057 PASS** /
+  1 fail / 2 error.
+  - The 1 fail + 2 error are PRE-EXISTING on the V1.8
+    baseline (confirmed via `git checkout dev/v1.8` +
+    re-run):
+      - `capability.HtmlDialog: outside SU returns false
+        (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback ->
+        WorkingModeRunner -> workspace reaches :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    All three are unrelated to V1.9A-A1 scope (test-env /
+    pre-existing FakeUI limitations), per dispatch §13
+    reporting rule.
+- V1.9A-A1 focused tests (this packet, new):
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    **30 / 30 PASS**.
+  - `tests/test_v19a_ui_bridge.rb`: **8 / 8 PASS**.
+- V1.9A-A1 DOM tests (this packet, rewritten):
+  - `tests/test_html_render.rb`: all assertions PASS.
+  - `tests/test_html_render_dom.js`: 36+ Node DOM
+    assertions PASS (one PASS roll-up line).
+- Regression (per dispatch §13):
+  - V1.7 focused set: **127 / 127 PASS** (baseline
+    preserved).
+  - V1.8 focused set: **71 / 71 PASS** (baseline
+    preserved).
+  - V1.6 close-autodiscard: **7 / 7 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS**.
+  - RBZ smoke: **7 / 7 PASS** (rebuilt; presenter file
+    present).
+  - `git diff --check`: clean (0 warnings).
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.9`. Pi did NOT rewrite any frozen design authority.
+No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No workspace ownership
+change. No host mutation / Face / Observer. No site
+semantics. No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **Production frontend (port of approved A0 prototype)**:
+  `extension/su_ai_plugin/html/index.html` (267 lines),
+  `style.css` (797 lines), `app.js` (786 lines). 4-tab IA
+  (处理 default, 问题, 图层, 详情); recovery banner; CTA
+  row; error-only summary; 5 capability cards in fixed
+  order; raw inventory reachable only in 详情; legacy-aware
+  CSS (no CSS Grid, no flex `gap`, no `backdrop-filter`,
+  no `@import`, no remote `url(...)`, no web font, no CDN);
+  all user strings via `textContent`; all 11 existing
+  callbacks preserved verbatim (prepare_workspace,
+  discard_workspace, rebuild_workspace,
+  compute_planar_normalization, apply_planar_normalization,
+  compute_gap_repair, apply_gap_repair,
+  compute_structure_reconstruction, locate, close, ready);
+  locate / non-locatable / no-action row contract preserved
+  per CodeX Round 020 L3.
+
+- **Pure / testable presentation model (new)**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  (705 lines, `SUAnalysis::Extension::CadPrepWorkflowPresenter`).
+  Deterministic / idempotent / JSON-safe / pure. Maps
+  WorkingModeRunner.snapshot + AnalysisResult summary to
+  the additive top-level `cadPrepWorkflow` payload.
+  6 overall presentation states
+  (IDLE / SCANNING / NEEDS_ATTENTION / READY_FOR_VALIDATION /
+  STALE / FAILED); raw enum strings NEVER exposed to the
+  user (frozen CN labels). 5 capability cards in frozen
+  order. Critical truth rule: NOT_COMPUTED must NEVER be
+  rendered as CLEAN. Error-only summary contract.
+
+- **Additive UIBridge payload**:
+  `extension/su_ai_plugin/ui_bridge.rb` adds ONE new
+  top-level key `cadPrepWorkflow`. Legacy V1.0–V1.8 payload
+  fields (selectionType / selectionLabel / summary /
+  diagnostics / groups / layerGroups / layerIssueGroups /
+  faceInventoryGroups / derivedWorkspace) UNCHANGED.
+  Presenter-fault tolerance: if
+  CadPrepWorkflowPresenter raises, UIBridge surfaces a STALE
+  recovery payload instead of crashing the dialog.
+
+New review artifact produced by this dispatch:
+
+- `Review/CURRENT_PI_REPORT.md` (overwritten; this
+  packet's return channel).
+
+Next expected action: AIPM source review of the A1 packet
+(prototype fidelity / IA / presenter truthfulness / callback
+preservation / frontend safety / readiness for A2). Then:
+Owner UX Gate A2 (real SU2020 orchestrated workflow). V1.9A-A2
+orchestrator NOT STARTED. V1.9B PreparedCadDataset /
+persistence NOT STARTED.
+
+CODEX_GATE: NOT REQUIRED (per dispatch §0).
+OWNER_GATE: PENDING (A2).
+V1.9A-A2: NOT STARTED.
+V1.9B: NOT STARTED.
+
+## V1.8 OWNER-SU2020-UI-WIRING (HISTORICAL)
 
 Updated: 2026-09-03 (V1.8 OWNER SU2020 UI WIRING BLOCK
 narrow-fix dispatch EXECUTION on assigned `dev/v1.8` per
