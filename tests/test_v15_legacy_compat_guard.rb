@@ -143,6 +143,49 @@ module Tests
         ruby_min_unsupported: '2.3.0',
         ruby_min_required: '2.3.0',
         comment: 'Safe navigation `&.` requires Ruby >= 2.3.0. Use explicit nil guards for SU2017 (Ruby 2.2.4) compat.'
+      },
+      {
+        # Integer#positive? added in Ruby 2.3. SU2017 ( Ruby
+        # 2.2.4) does NOT have it; SU2020 (2.5.5) DOES have
+        # it. Project targets SU2017 baseline so this is a
+        # real SU2017 incompatibility. The lookahead
+        # `(?![A-Za-z0-9_=!?])` ensures we only match the
+        # method invocation, not arbitrary identifiers
+        # containing 'positive' (none exist in this codebase,
+        # but the guard is precise).
+        id:    'integer_positive_p',
+        regex: /\.[ ]?positive\?[ ]?(?![A-Za-z0-9_=!?])/,
+        ruby_min_unsupported: '2.3.0',
+        ruby_min_required: '2.3.0',
+        comment: 'Integer#positive? requires Ruby >= 2.3.0. Use `> 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+      },
+      {
+        # Integer#negative? added in Ruby 2.3. SU2017 ( Ruby
+        # 2.2.4) does NOT have it; SU2020 (2.5.5) DOES have
+        # it. Same SU2017 incompatibility class as
+        # Integer#positive?.
+        id:    'integer_negative_p',
+        regex: /\.[ ]?negative\?[ ]?(?![A-Za-z0-9_=!?])/,
+        ruby_min_unsupported: '2.3.0',
+        ruby_min_required: '2.3.0',
+        comment: 'Integer#negative? requires Ruby >= 2.3.0. Use `< 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+      },
+      {
+        # Array#sum / Enumerable#sum added in Ruby 2.4.
+        # SU2017 (Ruby 2.2.4) and SU2020 (Ruby 2.5.5) both
+        # REJECT this at runtime (NoMethodError). The
+        # lookahead `(?![A-Za-z0-9_=!?])` ensures the match
+        # is the `.sum` method invocation, NOT arbitrary
+        # identifier-shaped names like `edge_length_sum:`,
+        # `face_vertex_count_sum:`, `consumed`, or
+        # `summary`. The dispatch sites that historically
+        # used `.sum` are now expected to use `inject(0)` or
+        # `inject(0.0)` for Float sums.
+        id:    'enumerable_sum',
+        regex: /\.[ ]?sum(?![A-Za-z0-9_=!?])/,
+        ruby_min_unsupported: '2.4.0',
+        ruby_min_required: '2.4.0',
+        comment: 'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. Use `inject(0) { |acc, x| acc + x }` (or `inject(0.0) { ... }` for Float sums) for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
       }
     ].freeze
 
@@ -318,101 +361,35 @@ end
 # positive. Removed; do not re-add without strong
 # version-introduction evidence.
 
-# ---- V1.9A legacy compatibility source guard ----------------------
+# ---- V1.X legacy Ruby debt closure (per dispatch V1X-LEGACY-RUBY-DEBT-CLOSURE-2026-09-07) ----
 #
-# Per dispatch V19A-A1-LEGACY-RUBY-COMPATIBILITY-FIX-2026-09-04:
-#   AIPM narrow recheck found that the new V1.9A production
-#   presenter (cad_prep_workflow_presenter.rb) introduced
-#   Ruby APIs newer than the project's legacy-first Ruby 2.2
-#   baseline:
-#     - Integer#positive? (Ruby >= 2.3)
-#     - Array / Enumerable#sum (Ruby >= 2.4)
-#   V1.x targets SU2017+ (Ruby 2.2.4) and must not silently
-#   use these. The packet already replaced every
-#   `.positive?` / `.sum` site in the presenter with Ruby
-#   2.2-safe equivalents (`> 0` and `inject(0) { ... }`).
+# Per dispatch §2: extend the LEGACY-COMPAT guard so production
+# Ruby under `extension/` fails if executable code reintroduces:
+#   - `.positive?`
+#   - `.negative?`
+#   - `.sum`
+# Comments are NOT treated as findings (the scanner already skips
+# pure comment lines via `lstrip.start_with?('#')`).
 #
-# This guard scopes the regression specifically to the new
-# V1.9A presenter file (per dispatch §3: "focused V1.9A legacy
-# compatibility source guard that fails if the new production
-# presenter reintroduces at least: .positive?, .negative?, .sum").
-# It does NOT scan V1.6 / V1.7 / V1.8 files: those have
-# pre-existing `.sum` usages that are explicitly out of scope
-# per dispatch §4 (Do NOT reopen V1.6 / V1.7 / V1.8 algorithms).
-# Those pre-existing usages are documented as known
-# legacy-baseline debt and will be addressed by a separate
-# packet (if/when the legacy baseline target changes).
+# Implementation: the three new entries above were added to
+# `KNOWN_MODERN_SYNTAX` (alongside the existing endless_range /
+# beginless_range / numbered_block_params / safe_navigation
+# rules). The pre-existing test
+#   `LEGACY-COMPAT: no known modern-syntax constructs in
+#    production source`
+# now covers the whole `extension/` tree via
+# `PRODUCTION_FILES` and will catch any executable-code
+# reintroduction of these helpers anywhere under `extension/`.
 #
-# The guard uses the same file-walking + regex approach as the
-# existing endless-range regression test (no new framework).
-V19A_PRESENTER_LEGACY_TARGETS = [
-  {
-    id:           'integer_positive_p',
-    regex:        /\.[ ]?positive\?[ ]?/,
-    ruby_introduced: '2.3.0',
-    comment:      'Integer#positive? requires Ruby >= 2.3.0. Use `> 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
-  },
-  {
-    id:           'integer_negative_p',
-    regex:        /\.[ ]?negative\?[ ]?/,
-    ruby_introduced: '2.3.0',
-    comment:      'Integer#negative? requires Ruby >= 2.3.0. Use `< 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
-  },
-  {
-    id:           'enumerable_sum',
-    # Tight pattern: `.sum` as a method invocation. Matches
-    # `arr.sum`, `arr.map { ... }.sum`, `(expr).sum`. Does
-    # NOT match `foo_summary`, `consumed`, or
-    # `edge_length_sum:` keyword symbols (the `:` is required
-    # to bound the match against identifier-shaped names).
-    # A safe match boundary: lookbehind for `.` and the
-    # identifier is `sum` followed by NOT an identifier char.
-    regex:        /\.[ ]?sum(?![A-Za-z0-9_=!?])/,
-    ruby_introduced: '2.4.0',
-    comment:      'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. Use `inject(0) { |acc, x| acc + x }` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
-  }
-].freeze
-
-V19A_PRESENTER_PRODUCTION_FILES = [
-  File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__)
-].freeze
-
-def v19a_legacy_compat_findings
-  findings = []
-  V19A_PRESENTER_PRODUCTION_FILES.each do |f|
-    next unless File.file?(f)
-    text = File.binread(f).force_encoding(Encoding::UTF_8)
-    V19A_PRESENTER_LEGACY_TARGETS.each do |spec|
-      text.each_line.with_index(1) do |line, n|
-        line_to_check = line.sub(/\r?\n\z/, '')
-        stripped = line_to_check.lstrip
-        next if stripped.start_with?('#')
-        m = line_to_check.match(spec[:regex])
-        next unless m
-        findings << {
-          file:       f,
-          line_no:    n,
-          line:       line_to_check,
-          id:         spec[:id],
-          ruby_introduced: spec[:ruby_introduced],
-          match_text: m.to_s,
-          comment:    spec[:comment]
-        }
-      end
-    end
-  end
-  findings
-end
-
-test 'LEGACY-COMPAT V19A-A1: no .positive? / .negative? / .sum in V1.9A presenter (Ruby 2.2 baseline)' do
-  findings = v19a_legacy_compat_findings
-  if findings.any?
-    base = File.expand_path('..', __dir__)
-    msg = "V1.9A presenter reintroduced post-Ruby-2.2 helper(s) (SU2017 Ruby 2.2.4 / SU2020 Ruby 2.5.5 may fail at runtime):\n" +
-          findings.map do |f|
-            rel = f[:file].sub(base, '').sub(/^\//, '')
-            "  #{rel}:#{f[:line_no]}  [#{f[:id]}]  match=#{f[:match_text].inspect}  (Ruby >= #{f[:ruby_introduced]})  -- #{f[:comment]}"
-          end.join("\n")
-    assert false, msg
-  end
-end
+# The prior V19A-A1 SCOPED guard (which scanned only the new
+# V1.9A presenter file) has been REMOVED as redundant: the
+# global guard now covers it with the same precision. Keeping
+# a competing framework would conflict with the dispatch's
+# "extend the existing LEGACY-COMPAT guard" instruction.
+#
+# Pre-existing `.sum` usages in:
+#   - `core/source_fingerprint.rb` (V1.4 era)
+#   - `core/planar_normalization_executor.rb` (V1.6 era)
+# were replaced by mechanical inject-based reductions in this
+# same dispatch. The guard now keeps the entire `extension/`
+# tree clean.

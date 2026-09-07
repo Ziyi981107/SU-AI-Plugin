@@ -336,11 +336,15 @@ module SUAnalysis
       def _z_summary(zs)
         return { 'count' => 0, 'min' => nil, 'max' => nil, 'mean' => nil } if zs.empty?
         floats = zs.map(&:to_f)
+        # Ruby 2.2 compatibility: Array#sum was added in Ruby 2.4.
+        # Use inject-based reduction so this runs on the legacy
+        # baseline (SU2017 Ruby 2.2.4 / SU2020 Ruby 2.5.5).
+        total = floats.inject(0.0) { |acc, z| acc + z }
         {
           'count' => floats.length,
           'min'   => floats.min.to_f,
           'max'   => floats.max.to_f,
-          'mean'  => (floats.sum.to_f / floats.length.to_f)
+          'mean'  => (total / floats.length.to_f)
         }.freeze
       end
     end

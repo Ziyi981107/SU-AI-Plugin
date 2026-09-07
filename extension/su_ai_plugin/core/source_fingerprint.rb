@@ -221,10 +221,10 @@ module SUAnalysis
 
         new(
           edge_count:                  edges.length,
-          edge_length_sum:             edges.map { |e| e.respond_to?(:length) ? e.length : 0.0 }.sum,
+          edge_length_sum:             edges.inject(0.0) { |acc, e| acc + (e.respond_to?(:length) ? e.length : 0.0) },
           bounding_box:                bbox_flat,
           face_count:                  faces.length,
-          face_vertex_count_sum:      faces.map { |f| f.respond_to?(:outer_loop_vertex_count) ? f.outer_loop_vertex_count : 0 }.sum,
+          face_vertex_count_sum:      faces.inject(0) { |acc, f| acc + (f.respond_to?(:outer_loop_vertex_count) ? f.outer_loop_vertex_count : 0) },
           group_count:                 group_count,
           component_instance_count:   component_instance_count,
           component_definition_count:  component_definition_count,
