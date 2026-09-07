@@ -1187,6 +1187,79 @@ module SUAnalysis
         @topology_repair_canonical_graph   = nil
       end
 
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §4.1: production-safe invalidation seam for the V1.7
+      # topology / proposal / canonical-graph state after a
+      # derived-geometry mutation (e.g. apply_planar_normalization).
+      #
+      # This is the ONLY production-safe public method to
+      # clear stale V1.7 state from the runner. Per dispatch:
+      #
+      #   - must preserve the captured topology tolerance
+      #     authority (so the next recomputation resolves
+      #     against the SAME tolerance — explicit re-resolve
+      #     is not silently forced by the invalidation);
+      #   - must clear stale proposal / audit / canonical
+      #     graph that describe pre-Z geometry (these are
+      #     no longer truthful after a derived mutation);
+      #   - must NOT touch source (SourceSnapshot is
+      #     immutable; the orchestrator's contract enforces
+      #     this end-to-end);
+      #   - must NOT discard or rebuild the workspace (the
+      #     orchestrator's apply path is incremental: the
+      #     workspace stays :ready and the user keeps the
+      #     same DerivedGeometryWorkspace);
+      #   - must NOT create host geometry (no adapter
+      #     begin_operation / end_operation; this is a
+      #     pure state-reset on the runner);
+      #   - must NOT introduce threads, timers, observers,
+      #     or progress architecture (per dispatch §10).
+      #
+      # The existing test-only `clear_topology_repair`
+      # preserves the same field-clear semantics but is
+      # documented as test-only and is NOT called from
+      # production. The new seam is the production
+      # entry. It delegates to the same internal state
+      # reset pattern as the test-only helper.
+      def invalidate_topology_state_after_geometry_mutation
+        # Preserve the captured topology tolerance
+        # authority. The captured tolerance is the
+        # contract that V1.7's deterministic
+        # recomputation must reuse; clearing it would
+        # force a fresh re-resolve from the
+        # SourceSnapshot which is NOT what the
+        # dispatch intends.
+        #
+        # Clear stale proposal / audit / canonical
+        # graph that describe the pre-Z geometry. The
+        # user's downstream gap card and structure
+        # card will be rebuilt from the post-Z
+        # workspace by the orchestrator's apply
+        # pipeline.
+        @topology_repair_proposal        = nil
+        @topology_repair_audit           = nil
+        @topology_repair_canonical_graph = nil
+        # SR18-05: derived-geometry mutation also
+        # invalidates the V1.8 cache. The
+        # apply_planar_normalization path already
+        # invalidates the V1.8 cache on success /
+        # failure, but the orchestrator's
+        # post-apply recompute may be triggered
+        # against a state the runner did not see
+        # (e.g. a defensive re-run). Clearing the
+        # V1.8 cache here is idempotent and safe.
+        _invalidate_v18_cache
+        # Source is NOT touched (SourceSnapshot is
+        # immutable; the runner does not even expose
+        # a setter).
+        # Workspace is NOT discarded / rebuilt. The
+        # @current_workspace is left intact so the
+        # next compute_* call sees the post-Z
+        # workspace.
+        # No host geometry is created.
+        nil
+      end
+
       # Read-only accessor for tests.
       def topology_repair_proposal
         @topology_repair_proposal

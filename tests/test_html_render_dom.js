@@ -389,7 +389,9 @@ var sketchupMock = {
   apply_planar_normalization:   function () { sketchupMock._applyPlanar   = (sketchupMock._applyPlanar   || 0) + 1; },
   compute_gap_repair:           function () { sketchupMock._computeGap    = (sketchupMock._computeGap    || 0) + 1; },
   apply_gap_repair:             function () { sketchupMock._applyGap      = (sketchupMock._applyGap      || 0) + 1; },
-  compute_structure_reconstruction: function () { sketchupMock._computeStruct = (sketchupMock._computeStruct || 0) + 1; }
+  compute_structure_reconstruction: function () { sketchupMock._computeStruct = (sketchupMock._computeStruct || 0) + 1; },
+  start_cad_prep:    function () { sketchupMock._startCadPrep    = (sketchupMock._startCadPrep    || 0) + 1; },
+  refresh_cad_prep:  function () { sketchupMock._refreshCadPrep  = (sketchupMock._refreshCadPrep  || 0) + 1; }
 };
 
 var documentMock = {
@@ -522,15 +524,20 @@ assert('V1.9A-A1: selection line uses cadPrepWorkflow.selection.label',
 assert('V1.9A-A1: status chip carries overall_state',
        _findById(elements, 'status-chip').getAttribute('data-state') === 'IDLE');
 
-// Primary CTA = 开始处理 + dispatch prepare_workspace.
-assert('V1.9A-A1: primary CTA text = 开始处理',
+// Primary CTA = 开始处理 + dispatch start_cad_prep (V1.9A-A2).
+assert('V1.9A-A1 + A2: primary CTA text = 开始处理',
        _findById(elements, 'btn-primary-cta-text')._text === '开始处理');
-assert('V1.9A-A1: primary CTA dispatch = prepare_workspace',
-       _findById(elements, 'btn-primary-cta').getAttribute('data-action-callback') === 'prepare_workspace');
+assert('V1.9A-A1 + A2: primary CTA dispatch = start_cad_prep',
+       _findById(elements, 'btn-primary-cta').getAttribute('data-action-callback') === 'start_cad_prep');
 
 _findById(elements, 'btn-primary-cta').fireEvent('click');
-assert('V1.9A-A1: clicking primary CTA calls window.sketchup.prepare_workspace',
-       (sketchupMock._prepareWorkspace || 0) === 1);
+assert('V1.9A-A1 + A2: clicking primary CTA calls window.sketchup.start_cad_prep',
+       (sketchupMock._startCadPrep || 0) === 1);
+// A2 invariant: the legacy prepare_workspace callback is
+// NOT dispatched by the A2 primary CTA path (the
+// orchestrator owns prepare now).
+assert('V1.9A-A1 + A2: A2 primary CTA does NOT call legacy prepare_workspace',
+       (sketchupMock._prepareWorkspace || 0) === 0);
 
 // --- Render a NEEDS_ATTENTION payload (planar actionable) ---------------
 
@@ -576,6 +583,18 @@ assert('V1.9A-A1: planar primary button is enabled',
 planarBtn.fireEvent('click');
 assert('V1.9A-A1: clicking planar primary button calls apply_planar_normalization',
        (sketchupMock._applyPlanar || 0) === 1);
+
+// V1.9A-A2: NEEDS_ATTENTION primary CTA = 重新检测 ->
+// refresh_cad_prep (NOT rebuild_workspace, which would
+// destroy the prior workspace).
+assert('V1.9A-A1 + A2: NEEDS_ATTENTION primary CTA = 重新检测 / refresh_cad_prep',
+       _findById(elements, 'btn-primary-cta-text')._text === '重新检测' &&
+       _findById(elements, 'btn-primary-cta').getAttribute('data-action-callback') === 'refresh_cad_prep');
+_findById(elements, 'btn-primary-cta').fireEvent('click');
+assert('V1.9A-A1 + A2: clicking NEEDS_ATTENTION primary CTA calls refresh_cad_prep',
+       (sketchupMock._refreshCadPrep || 0) === 1);
+assert('V1.9A-A1 + A2: NEEDS_ATTENTION primary CTA does NOT call rebuild_workspace',
+       (sketchupMock._rebuildWorkspace || 0) === 0);
 
 // --- Render STALE payload: recovery banner + rebuild/discard -----------
 
@@ -749,6 +768,16 @@ assert('V1.9A-A1: clicking locatable row invokes window.sketchup.locate with the
 nonLocRow.fireEvent('click');
 assert('V1.9A-A1: clicking non-locatable row does NOT invoke locate',
        (sketchupMock._locateCalls || []).indexOf('short_edge|non|1') < 0);
+
+// V1.9A-A2: READY_FOR_VALIDATION primary CTA = 重新检测 ->
+// refresh_cad_prep. Re-render with READY_FOR_VALIDATION and
+// confirm the CTA mapping is correct.
+tabProcess.fireEvent('click');
+assert('V1.9A-A1 + A2: switching back to 处理 tab shows panel-process',
+       !_findById(elements, 'panel-process').hasAttribute('hidden'));
+assert('V1.9A-A1 + A2: READY_FOR_VALIDATION primary CTA = 重新检测 / refresh_cad_prep',
+       _findById(elements, 'btn-primary-cta-text')._text === '重新检测' &&
+       _findById(elements, 'btn-primary-cta').getAttribute('data-action-callback') === 'refresh_cad_prep');
 
 // --- Final pass/fail rollup --------------------------------------------
 

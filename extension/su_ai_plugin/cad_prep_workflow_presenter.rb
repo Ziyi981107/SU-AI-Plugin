@@ -1,13 +1,13 @@
 #
-# extension/su_ai_plugin/cad_prep_workflow_presenter.rb — V1.9A-A1.
+# extension/su_ai_plugin/cad_prep_workflow_presenter.rb — V1.9A-A2.
 #
-# Pure / testable presentation model for the new A1 product
-# UX. This is the ONLY module in V1.9A-A1 that translates
-# raw deterministic V1.4–V1.8 backend state into the
+# Pure / testable presentation model for the V1.9A product
+# UX. This is the ONLY module that translates raw
+# deterministic V1.4–V1.8 backend state into the
 # product-facing `cadPrepWorkflow` payload consumed by the
 # HtmlDialog frontend (app.js).
 #
-# Per dispatch §5 (V1.9A-A1):
+# Per dispatch §5 (V1.9A-A1) + §8 (V1.9A-A2):
 #
 #   AnalysisResult + WorkingModeRunner.snapshot
 #   → CadPrepWorkflowPresenter
@@ -30,33 +30,27 @@
 #     presentation model lives under the new top-level key
 #     `cadPrepWorkflow`; legacy readers are unaffected.
 #
-# This presenter implements ONLY V1.9A-A1 scope:
+# V1.9A-A2 SCOPE (this file's authoritative scope):
 #
-#   A1 MAY:    port approved HTML/CSS/JS design; add pure
-#              product-facing presenter; add additive
-#              cadPrepWorkflow payload; keep existing raw
-#              V1.0–V1.8 payload for details/backward
-#              compatibility; map current existing backend
-#              state into new cards; preserve existing
-#              callbacks.
+#   A2 MAY:    update the IDLE copy to truthfully promise
+#              automatic full diagnostics (the orchestrator
+#              runs after start_cad_prep); update the
+#              primary CTA mapping (IDLE -> start_cad_prep,
+#              NEEDS_ATTENTION / READY_FOR_VALIDATION ->
+#              refresh_cad_prep); gate the gap repair
+#              action when planar is still
+#              READY_TO_NORMALIZE (gap-ordering safety,
+#              dispatch §5.1); update the IDLE issue
+#              summary subtitle to reflect A2 truth.
 #
-#   A1 MUST NOT: implement CadPrepWorkflowOrchestrator
-#                (A2); add automatic full diagnostics after
-#                Prepare (A2); add start_cad_prep
-#                orchestration (A2); add automatic
-#                downstream recompute after Z repair (A2);
-#                add automatic structure recompute after
-#                gap repair (A2); change V1.6/V1.7/V1.8
-#                algorithms; change tolerance/source
-#                ownership; add Face or Observer
-#                architecture; add PreparedCadDataset /
-#                persistence (V1.9B); begin V1.9B; add
-#                MCP / LLM / Agent.
+#   A2 MUST NOT: change the V1.6 / V1.7 / V1.8 algorithms;
+#                change tolerance authority; change
+#                source / derived ownership; change
+#                transaction / Undo architecture; add Face
+#                or Observer architecture; begin V1.9B;
+#                add MCP / LLM / Agent.
 #
-# The presenter therefore maps the CURRENT stepwise V1.4–
-# V1.8 backend state (no orchestrator) into a coherent
-# product-facing presentation, and tells the truth about
-# what is NOT_COMPUTED vs what is genuinely clean.
+# Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 contracts UNCHANGED.
 
 module SUAnalysis
   module Extension
@@ -320,18 +314,18 @@ module SUAnalysis
       def _build_issue_summary(overall, cards, snap, analysis_summary)
         case overall
         when 'IDLE'
-          # BLOCK 1 fix: A1 does NOT fake one-click full
-          # diagnosis. prepare_workspace builds the working
-          # copy AND runs the V1.5 high-confidence duplicate
-          # repair batch. It does NOT auto-run the V1.6
-          # planar / V1.7 gap / V1.8 structure diagnostics
-          # — those remain user-triggered compute_* calls
-          # until A2 owns orchestration. The copy must
-          # truthfully describe what prepare actually does.
+          # V1.9A-A2 (dispatch §8.1): the IDLE copy now
+          # truthfully promises automatic full diagnostics.
+          # The orchestrator's start path runs prepare +
+          # V1.5 duplicate batch + V1.6 planar compute +
+          # V1.7 gap compute + V1.8 structure compute in
+          # one user click. The A1 truthful "only the V1.5
+          # duplicate batch runs" copy is retired because
+          # the orchestrator now owns the full pipeline.
           return {
             'kind'        => 'empty-idle',
             'headline'    => 'CAD 尚未处理',
-            'subtitle'    => '点击"开始处理"以创建安全工作副本并自动清理高置信度重复线',
+            'subtitle'    => '点击"开始处理"以创建安全工作副本并自动完成全部检查',
             'chips'       => [],
             'cta'         => nil
           }.freeze
@@ -456,11 +450,13 @@ module SUAnalysis
       def _build_headlines(overall, cards, snap, analysis_summary)
         case overall
         when 'IDLE'
-          # BLOCK 1 fix: truthful copy. A1 does NOT run
-          # planar / gap / structure diagnostics on
-          # prepare; only the V1.5 duplicate batch is
-          # auto-applied. A2 owns full orchestration.
-          return ['CAD 尚未处理', '开始后将创建安全工作副本并自动清理高置信度重复线']
+          # V1.9A-A2 (dispatch §8.1): the IDLE headline +
+          # subheadline now truthfully promise automatic
+          # full diagnostics (the orchestrator runs after
+          # start_cad_prep). The A1 truthful "only the V1.5
+          # duplicate batch runs" copy is retired because
+          # the orchestrator now owns the full pipeline.
+          return ['CAD 尚未处理', '开始后将创建安全工作副本并自动完成全部检查']
         when 'SCANNING'
           return ['正在准备...', '正在创建安全工作副本']
         when 'READY_FOR_VALIDATION'
@@ -778,17 +774,42 @@ module SUAnalysis
           ready    = _extract_topology_count(proposal, 'ready_proposals', 'ready_count')
           metrics  = []
           metrics << { 'value' => ready, 'label' => '可安全修复' } if ready.is_a?(Integer)
+          # V1.9A-A2 dispatch §5.1: gap-ordering safety.
+          # When planar state is READY_TO_NORMALIZE, the
+          # gap repair action MUST be disabled so the user
+          # is not invited to mutate geometry known to be
+          # pending a deterministic Z normalization. After
+          # the user applies Z, the orchestrator's apply
+          # path invalidates V1.7 state and recomputes gap;
+          # if gap is still actionable, the button is
+          # re-enabled by the same recompute.
+          #
+          # The orchestrator's apply_gap_and_refresh is the
+          # defense-in-depth backstop (it refuses mutation
+          # when planar is still READY_TO_NORMALIZE even
+          # if a buggy UI dispatches the callback).
+          planar_actionable = _planar_actionable?(snap)
+          summary_text = if planar_actionable
+                           ready.is_a?(Integer) ?
+                             "#{ready} 处间隙可安全修复；需先完成 Z 轴校正后重新确认" :
+                             '需先完成 Z 轴校正后重新确认'
+                         else
+                           ready.is_a?(Integer) ? "#{ready} 处间隙两端均在端点容差内" : '当前存在可安全修复的间隙'
+                         end
           {
             'id'               => 'gap_endpoint',
             'state'            => 'ACTIONABLE',
             'state_label'      => '发现安全修复项',
             'title'            => CARD_TITLES_CN['gap_endpoint'],
-            'summary'          => ready.is_a?(Integer) ? "#{ready} 处间隙两端均在端点容差内" : '当前存在可安全修复的间隙',
+            'summary'          => summary_text,
             'metrics'          => metrics,
             'primary_action'   => {
               'label'    => '修复间隙',
               'callback' => 'apply_gap_repair',
-              'enabled'  => true
+              # V1.9A-A2: gate the action when planar is
+              # still actionable. Defense-in-depth: the
+              # orchestrator ALSO refuses the mutation.
+              'enabled'  => planar_actionable ? false : true
             },
             'secondary_action' => nil,
             'detail_filter'    => 'gap'
@@ -853,6 +874,19 @@ module SUAnalysis
           end
         end
         nil
+      end
+
+      # V1.9A-A2 dispatch §5.1: gap-ordering safety.
+      # Returns true when the current planar state is
+      # READY_TO_NORMALIZE. The gap card's primary_action
+      # MUST be disabled in this state so the user is
+      # not invited to mutate geometry known to be
+      # pending a deterministic Z normalization.
+      def _planar_actionable?(snap)
+        return false if snap.nil? || !snap.is_a?(Hash)
+        pn = snap['planar_normalization']
+        return false unless pn.is_a?(Hash)
+        pn['state'].to_s == 'READY_TO_NORMALIZE'
       end
 
       # ---- card 4: structure_region ------------------------------

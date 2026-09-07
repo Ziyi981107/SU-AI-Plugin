@@ -920,3 +920,278 @@ ensure
   FakeUI.uninstall!
   SUAnalysis::Core::WorkingModeRunner.reset_for_tests
 end
+
+# --------------------------------------------------------------------------
+# V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+# §6 + §12.3: DialogRunner wiring tests. The orchestrator
+# packet adds two new production callbacks:
+#   - start_cad_prep  (IDLE primary CTA)
+#   - refresh_cad_prep (NEEDS_ATTENTION / READY_FOR_VALIDATION CTA)
+# and routes the existing apply_* + rebuild_workspace
+# callbacks through the orchestrator.
+#
+# These regressions prove the production-path wiring:
+#   - DialogRunner registers the EXACT callback names
+#     `start_cad_prep` and `refresh_cad_prep`;
+#   - the registered callbacks are Proc / block (per
+#     CodeX Round 018 BLOCK-004, NOT method(:name));
+#   - the registered callbacks delegate to the
+#     REAL CadPrepWorkflowOrchestrator methods;
+#   - the existing callbacks (ready, locate, close,
+#     prepare_workspace, discard_workspace,
+#     rebuild_workspace, compute_planar_normalization,
+#     apply_planar_normalization, compute_gap_repair,
+#     apply_gap_repair, compute_structure_reconstruction)
+#     remain registered unchanged;
+#   - the resulting payload is re-pushed via
+#     _safe_invoke -> push_data after success / failure.
+# --------------------------------------------------------------------------
+
+require_relative '../extension/su_ai_plugin/cad_prep_workflow_orchestrator'
+
+# Capture the original CadPrepWorkflowOrchestrator
+# methods once so the per-test begin/ensure can
+# restore them reliably.
+@@dr_a2_orchestrator_originals = {
+  start:                   SUAnalysis::Extension::CadPrepWorkflowOrchestrator.method(:start),
+  refresh:                 SUAnalysis::Extension::CadPrepWorkflowOrchestrator.method(:refresh),
+  apply_planar_and_refresh: SUAnalysis::Extension::CadPrepWorkflowOrchestrator.method(:apply_planar_and_refresh),
+  apply_gap_and_refresh:   SUAnalysis::Extension::CadPrepWorkflowOrchestrator.method(:apply_gap_and_refresh),
+  rebuild_and_scan:        SUAnalysis::Extension::CadPrepWorkflowOrchestrator.method(:rebuild_and_scan)
+}
+
+# Build a FakeUI dialog + register a
+# CadPrepWorkflowOrchestrator call counter so the
+# tests can prove the registered callbacks delegate to
+# the real production methods.
+def dr_wire_a2_callback_capture
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_realistic_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # Prepare to reach state='ready' (the precondition
+  # for the orchestrator's downstream stages).
+  dialog.callbacks['prepare_workspace'].call(nil)
+  # Counters for the orchestrator's start / refresh
+  # methods.
+  $dr_a2_start_calls = 0
+  $dr_a2_refresh_calls = 0
+  $dr_a2_apply_planar_calls = 0
+  $dr_a2_apply_gap_calls = 0
+  $dr_a2_rebuild_calls = 0
+  orig_start    = @@dr_a2_orchestrator_originals[:start]
+  orig_refresh  = @@dr_a2_orchestrator_originals[:refresh]
+  orig_app_pn   = @@dr_a2_orchestrator_originals[:apply_planar_and_refresh]
+  orig_app_gap  = @@dr_a2_orchestrator_originals[:apply_gap_and_refresh]
+  orig_rebuild  = @@dr_a2_orchestrator_originals[:rebuild_and_scan]
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(:start) do |*args, **kw|
+    $dr_a2_start_calls += 1
+    orig_start.call(*args, **kw)
+  end
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(:refresh) do |*args, **kw|
+    $dr_a2_refresh_calls += 1
+    orig_refresh.call(*args, **kw)
+  end
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(:apply_planar_and_refresh) do |*args, **kw|
+    $dr_a2_apply_planar_calls += 1
+    orig_app_pn.call(*args, **kw)
+  end
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(:apply_gap_and_refresh) do |*args, **kw|
+    $dr_a2_apply_gap_calls += 1
+    orig_app_gap.call(*args, **kw)
+  end
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(:rebuild_and_scan) do |*args, **kw|
+    $dr_a2_rebuild_calls += 1
+    orig_rebuild.call(*args, **kw)
+  end
+  [dialog, model]
+end
+
+def dr_a2_restore_orchestrator
+  if defined?(@@dr_a2_orchestrator_originals) && @@dr_a2_orchestrator_originals
+    %i[start refresh apply_planar_and_refresh apply_gap_and_refresh rebuild_and_scan].each do |m|
+      original = @@dr_a2_orchestrator_originals[m]
+      SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(m) do |*args, **kw|
+        original.call(*args, **kw)
+      end
+    end
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): registers exact callback name start_cad_prep' do
+  begin
+    FakeUI.install!
+    dr_reset_loader
+    Loader.register!
+    result = dr_realistic_result
+    model = FakeUI::FakeModel.new
+    dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+    refute_nil dialog.callbacks['start_cad_prep'],
+                'DialogRunner MUST register add_action_callback("start_cad_prep") ' \
+                'so the JS IDLE primary CTA click is not a no-op'
+    cb = dialog.callbacks['start_cad_prep']
+    assert_kind_of Proc, cb,
+                   'V1.9A-A2 start_cad_prep callback MUST be a Proc/block ' \
+                   '(per Round 018 BLOCK-004 -- NOT method(:name))'
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): registers exact callback name refresh_cad_prep' do
+  begin
+    FakeUI.install!
+    dr_reset_loader
+    Loader.register!
+    result = dr_realistic_result
+    model = FakeUI::FakeModel.new
+    dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+    refute_nil dialog.callbacks['refresh_cad_prep'],
+                'DialogRunner MUST register add_action_callback("refresh_cad_prep") ' \
+                'so the JS NEEDS_ATTENTION / READY_FOR_VALIDATION primary CTA click is not a no-op'
+    cb = dialog.callbacks['refresh_cad_prep']
+    assert_kind_of Proc, cb,
+                   'V1.9A-A2 refresh_cad_prep callback MUST be a Proc/block ' \
+                   '(per Round 018 BLOCK-004 -- NOT method(:name))'
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): existing callbacks remain unchanged after the A2 wiring' do
+  begin
+    FakeUI.install!
+    dr_reset_loader
+    Loader.register!
+    result = dr_realistic_result
+    model = FakeUI::FakeModel.new
+    dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+    # The previously-registered callbacks MUST all
+    # still be present (the A2 wiring is purely
+    # additive).
+    %w[
+      ready
+      locate
+      close
+      prepare_workspace
+      discard_workspace
+      rebuild_workspace
+      compute_planar_normalization
+      apply_planar_normalization
+      compute_gap_repair
+      apply_gap_repair
+      compute_structure_reconstruction
+      start_cad_prep
+      refresh_cad_prep
+    ].each do |name|
+      refute_nil dialog.callbacks[name],
+                 "DialogRunner MUST still register callback #{name.inspect} after the A2 wiring"
+    end
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): start_cad_prep callback invokes the real CadPrepWorkflowOrchestrator.start' do
+  begin
+    dialog, _model = dr_wire_a2_callback_capture
+    before_scripts = dialog.executed_scripts.length
+    # Fire the JS-side IDLE primary CTA click.
+    dialog.callbacks['start_cad_prep'].call(nil)
+    # The REAL CadPrepWorkflowOrchestrator.start MUST
+    # have been invoked exactly once.
+    assert_equal 1, $dr_a2_start_calls,
+                 'V1.9A-A2 start_cad_prep callback MUST invoke the REAL ' \
+                 'CadPrepWorkflowOrchestrator.start exactly once; ' \
+                 "got #{$dr_a2_start_calls} calls"
+    # The payload MUST be re-pushed via _safe_invoke.
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           "start_cad_prep MUST re-push the payload after success " \
+           "(expected >= 1 execute_script call, got #{pushed_count})"
+    latest = dialog.executed_scripts.last.to_s
+    assert_match(/SUAIP\.render\(/, latest,
+                 're-pushed payload MUST go through window.SUAIP.render')
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): refresh_cad_prep callback invokes the real CadPrepWorkflowOrchestrator.refresh' do
+  begin
+    dialog, _model = dr_wire_a2_callback_capture
+    before_scripts = dialog.executed_scripts.length
+    # Fire the JS-side NEEDS_ATTENTION / READY_FOR_VALIDATION primary CTA click.
+    dialog.callbacks['refresh_cad_prep'].call(nil)
+    # The REAL CadPrepWorkflowOrchestrator.refresh MUST
+    # have been invoked exactly once.
+    assert_equal 1, $dr_a2_refresh_calls,
+                 'V1.9A-A2 refresh_cad_prep callback MUST invoke the REAL ' \
+                 'CadPrepWorkflowOrchestrator.refresh exactly once; ' \
+                 "got #{$dr_a2_refresh_calls} calls"
+    # The payload MUST be re-pushed.
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           "refresh_cad_prep MUST re-push the payload after success " \
+           "(expected >= 1 execute_script call, got #{pushed_count})"
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): apply_planar_normalization callback routes through orchestrator' do
+  begin
+    dialog, _model = dr_wire_a2_callback_capture
+    dialog.callbacks['apply_planar_normalization'].call(nil)
+    assert_equal 1, $dr_a2_apply_planar_calls,
+                 'V1.9A-A2 apply_planar_normalization callback MUST invoke the REAL ' \
+                 'CadPrepWorkflowOrchestrator.apply_planar_and_refresh exactly once; ' \
+                 "got #{$dr_a2_apply_planar_calls} calls"
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): apply_gap_repair callback routes through orchestrator' do
+  begin
+    dialog, _model = dr_wire_a2_callback_capture
+    dialog.callbacks['apply_gap_repair'].call(nil)
+    assert_equal 1, $dr_a2_apply_gap_calls,
+                 'V1.9A-A2 apply_gap_repair callback MUST invoke the REAL ' \
+                 'CadPrepWorkflowOrchestrator.apply_gap_and_refresh exactly once; ' \
+                 "got #{$dr_a2_apply_gap_calls} calls"
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (V1.9A-A2): rebuild_workspace callback routes through orchestrator' do
+  begin
+    dialog, _model = dr_wire_a2_callback_capture
+    dialog.callbacks['rebuild_workspace'].call(nil)
+    assert_equal 1, $dr_a2_rebuild_calls,
+                 'V1.9A-A2 rebuild_workspace callback MUST invoke the REAL ' \
+                 'CadPrepWorkflowOrchestrator.rebuild_and_scan exactly once; ' \
+                 "got #{$dr_a2_rebuild_calls} calls"
+  ensure
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end

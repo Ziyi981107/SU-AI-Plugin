@@ -171,21 +171,28 @@ module Tests
         comment: 'Integer#negative? requires Ruby >= 2.3.0. Use `< 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
       },
       {
-        # Array#sum / Enumerable#sum added in Ruby 2.4.
-        # SU2017 (Ruby 2.2.4) and SU2020 (Ruby 2.5.5) both
-        # REJECT this at runtime (NoMethodError). The
-        # lookahead `(?![A-Za-z0-9_=!?])` ensures the match
-        # is the `.sum` method invocation, NOT arbitrary
+        # Array#sum / Enumerable#sum was introduced in
+        # Ruby 2.4. SU2017 (Ruby 2.2.4) does NOT have it
+        # (NoMethodError at runtime); SU2020 (Ruby 2.5.5)
+        # DOES have it. The guard is therefore necessary
+        # because the project baseline is SU2017+ (per
+        # PROJECT_MASTER_PLAN_V1X.md §3.3), NOT because
+        # SU2020 lacks `sum`. The lookahead
+        # `(?![A-Za-z0-9_=!?])` ensures the match is the
+        # `.sum` method invocation, NOT arbitrary
         # identifier-shaped names like `edge_length_sum:`,
         # `face_vertex_count_sum:`, `consumed`, or
         # `summary`. The dispatch sites that historically
-        # used `.sum` are now expected to use `inject(0)` or
-        # `inject(0.0)` for Float sums.
+        # used `.sum` are now expected to use `inject(0)`
+        # or `inject(0.0)` for Float sums (production
+        # closures using this guard: V1.4 fingerprint +
+        # V1.6 planar normalization, closed by the
+        # V1X-LEGACY-RUBY-DEBT-CLOSURE dispatch).
         id:    'enumerable_sum',
         regex: /\.[ ]?sum(?![A-Za-z0-9_=!?])/,
         ruby_min_unsupported: '2.4.0',
         ruby_min_required: '2.4.0',
-        comment: 'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. Use `inject(0) { |acc, x| acc + x }` (or `inject(0.0) { ... }` for Float sums) for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+        comment: 'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. Use `inject(0) { |acc, x| acc + x }` (or `inject(0.0) { ... }` for Float sums) for SU2017 (Ruby 2.2.4) compat. SU2020 (Ruby 2.5.5) does support `.sum` natively; the guard remains because the project baseline is SU2017+.'
       }
     ].freeze
 

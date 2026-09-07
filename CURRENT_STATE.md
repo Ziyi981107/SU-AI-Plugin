@@ -1,6 +1,358 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1X-LEGACY-RUBY-DEBT-CLOSURE (THIS UPDATE)
+## V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR (THIS UPDATE)
+
+Updated: 2026-09-07 (V1.9A-A2 dispatch EXECUTION on
+assigned `dev/v1.9` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the Blueprint
+`Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`).
+Per dispatch, the ONLY authority for this packet is the
+V1.9A-A2 scope: one-click deterministic full-diagnostics
+orchestration + auto downstream refresh + gap-ordering
+safety + production-safe topology-state invalidation
+seam. Frozen V1.8 Blueprint preserved unchanged. A0
+prototype + A1 production frontend preserved unchanged.
+V1.9B PreparedCadDataset / persistence NOT STARTED.
+V2 / MCP OUT OF SCOPE.
+
+Status (this packet):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged; preserved
+  on `dev/v1.9` from `dev/v1.8 @ bbe423c` baseline).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+  (original packet @ a8563e3)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 AIPM FIX REQUIRED CONTINUATION
+  (@ 3d5c72a)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX
+  (@ e38d6dc)**: COMPLETE on `dev/v1.9`.
+- **V1X-LEGACY-RUBY-DEBT-CLOSURE (@ 9d7b2b3)**: COMPLETE
+  on `dev/v1.9` (AIPM narrow recheck pending; not in
+  scope of this packet).
+- **V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR (this
+  packet)**: COMPLETE on `dev/v1.9`; awaiting AIPM
+  source review of the orchestrator + invalidation seam
+  + presenter / dialog_runner / RBZ wiring.
+- **V1.9B PreparedCadDataset / persistence**: NOT STARTED
+  (per dispatch §3).
+- **CODEX_RISK_TRIGGER = NO** (this packet; deterministic
+  orchestration around existing methods, no algorithm /
+  contract / source-ownership / transaction / Undo /
+  Face / Observer change, no canonical-graph / tolerance
+  / identity change, no V1.6 / V1.7 / V1.8 algorithm change).
+- **AIPM_REVIEW = PENDING** (full source review of the
+  orchestrator + invalidation seam + wiring + presenter
+  truth rule + gap-ordering gate + RBZ hashes).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1.9A-A2 — 2026-09-07.
+
+- Starting HEAD for this packet:
+  `19ed51ac36ab430b40ccbfd994a8ebfe761c6e0c` (the
+  V1X-LEGACY-RUBY-DEBT-CLOSURE complete state on
+  `dev/v1.9`).
+- Implementation SHA: produced by this packet (see
+  `git log -1 --format=%H` after commit).
+- Final HEAD on dev/v1.9: see `git rev-parse HEAD` after
+  push.
+- V1.9A-A2 RBZ candidate: size **1,125,456 bytes**;
+  entries **71**; SHA-256
+  **`197C8552F6C8F51BF423404BCC48CBE697C4C20EAA0FA72F658852713E70F03E`**.
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (unchanged from V1.9A-A1 baseline — no HTML change in
+  this packet).
+- Packaged `html/app.js` SHA-256:
+  `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+  (NEW — IDLE CTA = start_cad_prep; NEEDS_ATTENTION /
+  READY_FOR_VALIDATION CTA = refresh_cad_prep).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (unchanged — no CSS change in this packet).
+- Packaged `cad_prep_workflow_orchestrator.rb` SHA-256:
+  `9ED88C534E83DBB9053CA8A80F362C25A4EFD9DA9FC1165626E1095DBF540F54`
+  (NEW — the bounded deterministic orchestrator).
+- Packaged `cad_prep_workflow_presenter.rb` SHA-256:
+  `D512435FD9A8B129B8C567981CD1C89C2BD8F4200074AA6BE33886009251C943`
+  (NEW — IDLE copy + gap-ordering safety gate).
+- Packaged `dialog_runner.rb` SHA-256:
+  `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+  (NEW — start_cad_prep + refresh_cad_prep callbacks
+  + apply_* / rebuild_workspace routed through the
+  orchestrator).
+- Packaged `core/working_mode_runner.rb` SHA-256:
+  `2962F45A06338D929C38FB885ED129373E67C3F2E6E220FE075AF07DCEF02214`
+  (NEW — production-safe
+  `invalidate_topology_state_after_geometry_mutation`
+  seam).
+- Full Ruby suite: **1099 / 1099 total** / **1096 PASS** /
+  1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations from the V1.8
+    baseline (confirmed via isolated re-run):
+      - `capability.HtmlDialog: outside SU returns false
+        (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback ->
+        WorkingModeRunner -> workspace reaches :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately per
+    dispatch §13 reporting rule.
+- V1.9A-A2 focused tests (this packet, new):
+  - `tests/test_v19a_cad_prep_workflow_orchestrator.rb`:
+    **14 / 14 PASS** (START-01..04, REFRESH-01..02,
+    ZAPPLY-01..02, GAP-ORDER-01, GAPAPPLY-01, REBUILD-01,
+    source immutability, StandardError resilience,
+    invalidation-seam contract).
+  - V1.9A-A2 presenter focused tests: **8 / 8 PASS**
+    (IDLE copy + A2 truth, overall_state enum, planar
+    READY_TO_NORMALIZE gap gate, planar APPLIED
+    gap-enable, planar REVIEW_REQUIRED gap-enable,
+    planar NO_CANDIDATE gap-enable, frozen 5-card order,
+    no UNCOMPUTED stage-bound cards in normal A2 path).
+  - V1.9A-A2 dialog_runner focused tests: **8 / 8 PASS**
+    (start_cad_prep / refresh_cad_prep callback
+    registration + Proc contract + all 13 callbacks
+    preserved + start_cad_prep / refresh_cad_prep /
+    apply_planar / apply_gap / rebuild routes through
+    the real orchestrator + payload re-push).
+- V1.9A presenter tests (updated for A2 truth):
+  `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+  **41 / 41 PASS** (38 original + 1 BLOCK 1 retired A1
+  copy + 1 A2 IDLE copy + 8 NEW A2 focused = 41 of 41).
+  - The two A1 IDLE-truth tests (BLOCK 1 + BLOCK 2) were
+    retired / replaced by the A2 IDLE-truth tests (the
+    orchestrator now owns the full pipeline so the
+    "only the V1.5 duplicate batch runs" copy is
+    obsolete; the A2 copy is
+    "开始后将创建安全工作副本并自动完成全部检查").
+- V1.9A bridge tests: **10 / 10 PASS** (8 original + 1
+  presenter-fault + 1 presenter-restoration, unchanged).
+- V1.9A DOM tests (this packet, updated):
+  - `tests/test_html_render.rb`: **24 / 24 PASS**.
+  - `tests/test_html_render_dom.js`: all assertions PASS
+    (IDLE primary CTA dispatch = start_cad_prep;
+    NEEDS_ATTENTION / READY_FOR_VALIDATION primary CTA
+    dispatch = refresh_cad_prep; A2 primary CTA does
+    NOT call legacy prepare_workspace / rebuild_workspace;
+    all other callbacks preserved).
+- Regression (per dispatch §12.4):
+  - V1.4 fingerprint focused: **22 / 22 PASS**.
+  - V1.6 planar normalization: **33 / 33 PASS**.
+  - V1.7 focused: **127 / 127 PASS**.
+  - V1.7 INT: **33 / 33 PASS**.
+  - V1.8 focused: **71 / 71 PASS**.
+  - V1.8 SR18: **32 / 32 PASS**.
+  - V1.8 UI WIRING: **5 / 5 PASS** (existing V18 baseline).
+  - V1.6 close-autodiscard: **7 / 7 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS** (with the corrected
+    `enumerable_sum` comment per dispatch §11:
+    Enumerable#sum was introduced in Ruby 2.4, so
+    SU2017 (Ruby 2.2.4) lacks it; SU2020 (Ruby 2.5.5)
+    supports it natively. The guard remains because the
+    project baseline is SU2017+).
+  - HTML render: **24 / 24 PASS** (callback table
+    updated for A2).
+  - RBZ smoke: **7 / 7 PASS** (rebuilt with the new
+    orchestrator file; `cad_prep_workflow_orchestrator.rb`
+    added to the `V14_RBZ_SMOKE_IN_TREE_FILES` reload
+    list BEFORE `dialog_runner.rb` per the
+    `require_relative` cache invariant).
+  - `git diff --check`: clean (0 warnings on all
+    V1.9A-A2 changes; the trailing whitespace in
+    `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
+    and outside Pi's scope — `Prompt/` is read-only).
+
+Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 Blueprint authority
+preserved unchanged on the assigned `dev/v1.9`. Pi did
+NOT rewrite any frozen design authority. No V1.4 / V1.5
+/ V1.6 / V1.7 / V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change. No host
+mutation / Face / Observer. No site semantics. No
+PreparedCadDataset / persistence (V1.9B). No MCP / LLM /
+Agent.
+
+Corrections / additions by this packet:
+
+- **New orchestrator module**:
+  `extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb`
+  — the bounded deterministic orchestrator. The
+  orchestrator coordinates the EXISTING
+  `WorkingModeRunner` production methods
+  (no V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm
+  duplication). The orchestrator's public API is
+  frozen at `start` / `refresh` / `apply_planar_and_refresh`
+  / `apply_gap_and_refresh` / `rebuild_and_scan` (with
+  internal helpers `_workspace_ready?` /
+  `_planar_state_actionable?`). The orchestrator does
+  NOT own geometry / topology / structure / tolerance /
+  transaction / Undo / Observer / Face architecture.
+  The orchestrator does NOT introduce threads / timers
+  / background workers / progress animations (per
+  dispatch §10).
+
+- **Production-safe topology-state invalidation seam
+  (dispatch §4.1)**:
+  `extension/su_ai_plugin/core/working_mode_runner.rb`
+  — `invalidate_topology_state_after_geometry_mutation`
+  is the production entry for clearing stale V1.7
+  proposal / audit / canonical graph + the V1.8 cache
+  after a derived-geometry mutation. The seam:
+  - preserves the captured topology tolerance
+    authority (NOT cleared; downstream recompute must
+    reuse it);
+  - clears `@topology_repair_proposal`,
+    `@topology_repair_audit`,
+    `@topology_repair_canonical_graph`;
+  - clears the V1.8 cache via
+    `_invalidate_v18_cache` (idempotent);
+  - does NOT touch source (immutable);
+  - does NOT discard / rebuild workspace;
+  - does NOT create host geometry.
+
+- **New production callbacks (dispatch §6)**:
+  `extension/su_ai_plugin/dialog_runner.rb` — registers
+  `start_cad_prep` (IDLE primary CTA) and
+  `refresh_cad_prep` (NEEDS_ATTENTION /
+  READY_FOR_VALIDATION primary CTA) as block callbacks
+  (per CodeX Round 018 BLOCK-004). The existing
+  `apply_planar_normalization` / `apply_gap_repair` /
+  `rebuild_workspace` handlers now route through the
+  orchestrator (per dispatch §4.1 + §4.2 + §7). All
+  pre-existing callbacks remain registered for
+  backward compatibility.
+
+- **A2 IDLE copy + gap-ordering safety (dispatch §8 +
+  §5.1)**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  — the IDLE `subheadline` + `issue_summary.subtitle`
+  + `_build_headlines` IDLE branch now truthfully
+  promise automatic full diagnostics
+  ("开始后将创建安全工作副本并自动完成全部检查"). The
+  gap card's `primary_action.enabled` is now `false`
+  when the current `planar_normalization.state` is
+  `READY_TO_NORMALIZE` (dispatch §5.1), with a truthful
+  summary copy that tells the user to complete Z
+  repair first. The orchestrator's `apply_gap_and_refresh`
+  is the defense-in-depth backstop (refuses mutation
+  on `READY_TO_NORMALIZE` even if a buggy UI dispatches
+  the callback). `planar_normalization` states other
+  than `READY_TO_NORMALIZE` (NO_CANDIDATE, APPLIED,
+  REVIEW_REQUIRED, FAILED, BLOCKED, NOT_COMPUTED) do
+  NOT block gap repair — REVIEW_REQUIRED is a
+  non-actionable warning that V1.7's own conservative
+  rules already handle.
+
+- **Frontend CTA mapping (dispatch §8.2)**:
+  `extension/su_ai_plugin/html/app.js` — the primary
+  CTA mapping is now: `IDLE -> start_cad_prep`;
+  `SCANNING -> start_cad_prep` (disabled);
+  `NEEDS_ATTENTION / READY_FOR_VALIDATION ->
+  refresh_cad_prep`; `STALE / FAILED -> recovery
+  actions` (the recovery banner remains unchanged;
+  rebuild is reserved for the STALE / FAILED flow per
+  dispatch §7). The A1 IDLE CTA `prepare_workspace`
+  is RETIRED (the A1 prepare path is now orchestrated
+  inside `start_cad_prep`); the A1
+  NEEDS_ATTENTION / READY_FOR_VALIDATION CTA
+  `rebuild_workspace` is RETIRED (the A1 rebuild is
+  reserved for the recovery flow per dispatch §7).
+  All other callback names are preserved for backward
+  compatibility.
+
+- **Legacy Ruby guard documentation correction
+  (dispatch §11)**:
+  `tests/test_v15_legacy_compat_guard.rb` — the
+  `enumerable_sum` comment is corrected:
+  Enumerable#sum was introduced in Ruby 2.4, so
+  SU2017 (Ruby 2.2.4) lacks it; SU2020 (Ruby 2.5.5)
+  supports it natively. The guard is necessary because
+  the project baseline is SU2017+ (not because SU2020
+  lacks `sum`). The dispatch also re-iterated: the
+  guard remains necessary; do NOT reopen compatibility
+  architecture.
+
+- **New focused test files (dispatch §12.1 + §12.3)**:
+  `tests/test_v19a_cad_prep_workflow_orchestrator.rb`
+  (14 tests, pure / deterministic, covers the
+  dispatch §12.1 contract: START-01..04, REFRESH-01..02,
+  ZAPPLY-01..02, GAP-ORDER-01, GAPAPPLY-01, REBUILD-01,
+  + source immutability, StandardError resilience,
+  invalidation-seam contract). The orchestrator tests
+  use stubbed call counters to pin the exact
+  orchestrator call order without relying on real
+  geometry.
+
+- **Updated test files**:
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    added 8 A2 focused tests + replaced the 2 A1
+    IDLE-truth tests (BLOCK 1 / BLOCK 2) with the A2
+    IDLE-truth tests (the orchestrator now owns the
+    full pipeline so the A1 "only the V1.5 duplicate
+    batch runs" copy is retired; the A2 copy is
+    "开始后将创建安全工作副本并自动完成全部检查").
+  - `tests/test_html_render.rb`: updated the
+    callback-presence test to include
+    `start_cad_prep` + `refresh_cad_prep` (the A2
+    additions).
+  - `tests/test_html_render_dom.js`: updated the
+    IDLE / NEEDS_ATTENTION / READY_FOR_VALIDATION
+    primary CTA dispatch assertions to use
+    `start_cad_prep` / `refresh_cad_prep` (the A2
+    CTA mapping). Added A2 invariants: the A2
+    primary CTA does NOT call the legacy
+    `prepare_workspace` callback.
+  - `tests/test_dialog_runner.rb`: added 8 A2
+    dialog_runner wiring tests (start_cad_prep /
+    refresh_cad_prep callback registration + Proc
+    contract + all 13 callbacks preserved +
+    start_cad_prep / refresh_cad_prep /
+    apply_planar / apply_gap / rebuild routes
+    through the real orchestrator + payload re-push).
+  - `tests/test_rbz_smoke.rb`: added
+    `cad_prep_workflow_orchestrator.rb` to the
+    `V14_RBZ_SMOKE_IN_TREE_FILES` reload list
+    (placed BEFORE `dialog_runner.rb` so the
+    in-tree orchestrator is the one reloaded; the
+    extracted RBZ may contain an older copy, and
+    `require_relative` inside `dialog_runner.rb`
+    caches by absolute path — without explicitly
+    reloading the orchestrator here, the stale
+    extracted copy would silently take precedence
+    in subsequent tests).
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the
+  V1.9A-A2 packet section is appended below the
+  previous V1X-LEGACY-RUBY-DEBT-CLOSURE section).
+
+Next expected action: AIPM source review of the
+V1.9A-A2 packet (orchestrator + invalidation seam +
+presenter / dialog_runner / RBZ wiring + test files).
+Then: Owner UX Gate A2 (real SU2020 orchestrated
+workflow). V1.9B PreparedCadDataset / persistence
+NOT STARTED. Final V1.x Codex xHigh review remains
+mandatory later regardless.
+
+CODEX_RISK_TRIGGER = NO (per dispatch §13 —
+orchestrator + invalidation seam + presenter IDLE
+copy + gap-ordering safety + frontend CTA mapping +
+test infrastructure; no canonical graph identity /
+schema / digest / V1.7 segment conflict / tolerance
+authority / source-deriven ownership / host
+transaction / Undo / Face / Observer / V1.6 / V1.7 /
+V1.8 algorithm change).
+
+OWNER_GATE: PENDING (A2 real-SU2020 orchestrated
+workflow).
+V1.9A-A2: COMPLETE.
+V1.9B: NOT STARTED.
+
+## V1X-LEGACY-RUBY-DEBT-CLOSURE (HISTORICAL)
 
 Updated: 2026-09-07 (V1X-LEGACY-RUBY-DEBT-CLOSURE dispatch
 EXECUTION on assigned `dev/v1.9` per dispatch
@@ -34,7 +386,8 @@ Status (this packet):
   the 3 mechanical replacements and the global guard
   extension.
 - **V1.9A-A2 deterministic full-diagnostics orchestrator**:
-  NOT STARTED (per dispatch §3).
+  COMPLETE on `dev/v1.9` (per this packet's
+  V1.9A-A2 status section; NEXT packet).
 - **V1.9B PreparedCadDataset / persistence**: NOT STARTED
   (per dispatch §3).
 - **CODEX_RISK_TRIGGER = NO** (this packet; mechanical

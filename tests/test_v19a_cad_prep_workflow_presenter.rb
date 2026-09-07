@@ -86,12 +86,16 @@ test 'v19a_presenter: IDLE — workspace none — overall_state=IDLE, headline, 
   payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
   assert_equal 'IDLE', payload['overall_state']
   assert_equal 'CAD 尚未处理', payload['headline']
-  # BLOCK 1 fix: A1 copywriting must NOT fake one-click full
-  # diagnosis. prepare_workspace runs the V1.5 duplicate
-  # batch only; V1.6 / V1.7 / V1.8 diagnostics remain user-
-  # triggered until A2 owns full orchestration.
-  assert_equal '开始后将创建安全工作副本并自动清理高置信度重复线', payload['subheadline'],
-               'IDLE subheadline MUST describe A1 actual behavior, NOT fake one-click full diagnosis'
+  # V1.9A-A2 dispatch §8.1: the IDLE copy now
+  # truthfully promises automatic full diagnostics
+  # (the orchestrator's start path runs prepare +
+  # V1.5 duplicate batch + V1.6 planar compute +
+  # V1.7 gap compute + V1.8 structure compute in
+  # one user click). The A1 truthful "only the V1.5
+  # duplicate batch runs" copy is RETIRED because
+  # the orchestrator now owns the full pipeline.
+  assert_equal '开始后将创建安全工作副本并自动完成全部检查', payload['subheadline'],
+               'V1.9A-A2 IDLE subheadline MUST truthfully promise automatic full diagnostics (orchestrator owns the pipeline)'
   assert_equal 5, payload['cards'].length
   payload['cards'].each do |c|
     assert_equal 'UNCOMPUTED', c['state'],
@@ -102,25 +106,39 @@ test 'v19a_presenter: IDLE — workspace none — overall_state=IDLE, headline, 
   # truthful IDLE copy.
   assert_equal 'empty-idle', payload['issue_summary']['kind']
   assert_equal [], payload['issue_summary']['chips']
-  assert_equal '点击"开始处理"以创建安全工作副本并自动清理高置信度重复线',
+  assert_equal '点击"开始处理"以创建安全工作副本并自动完成全部检查',
                payload['issue_summary']['subtitle'],
-               'IDLE issue_summary subtitle MUST match the truthful IDLE copy'
+               'V1.9A-A2 IDLE issue_summary subtitle MUST truthfully promise automatic full diagnostics (orchestrator owns the pipeline)'
 end
 
-test 'v19a_presenter (BLOCK 1): IDLE copy never claims full diagnosis are automatically completed' do
-  # The presenter is the only writer of the IDLE
-  # headline / subheadline / issue_summary subtitle. Guard
-  # against future drift by grepping the source for the
-  # rejected copy.
+test 'v19a_presenter (A2): IDLE copy now claims full diagnosis are automatically completed' do
+  # V1.9A-A2 dispatch §8.1: the IDLE copy now
+  # truthfully promises automatic full diagnostics
+  # because the orchestrator's start path runs
+  # prepare + V1.5 duplicate + V1.6 planar compute +
+  # V1.7 gap compute + V1.8 structure compute in
+  # one user click. The presenter is the only
+  # writer of the IDLE headline / subheadline /
+  # issue_summary subtitle. Guard against future
+  # drift by grepping the source for the FROZEN
+  # A2 IDLE copy.
   src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  # A1 truthful-but-stale copy: "duplicate batch only".
+  # MUST be retired because the orchestrator now runs
+  # the full pipeline on prepare.
   forbidden = [
-    '完成全部检查',     # old fake-orchestration copy
-    '完成所有检查'      # variant
+    '点击"开始处理"以创建安全工作副本并自动清理高置信度重复线',
+    '开始后将创建安全工作副本并自动清理高置信度重复线'
   ]
   forbidden.each do |frag|
     refute_includes src, frag,
-                 "presenter source MUST NOT contain the rejected IDLE copy fragment #{frag.inspect}"
+                 "presenter source MUST NOT contain the retired A1 IDLE copy fragment #{frag.inspect} (A2 orchestrator owns the full pipeline)"
   end
+  # A2 frozen IDLE copy MUST be present.
+  assert_includes src, '点击"开始处理"以创建安全工作副本并自动完成全部检查',
+                  'presenter source MUST contain the frozen A2 IDLE issue_summary subtitle'
+  assert_includes src, '开始后将创建安全工作副本并自动完成全部检查',
+                  'presenter source MUST contain the frozen A2 IDLE subheadline'
 end
 
 test 'v19a_presenter: IDLE — discarded workspace is treated as IDLE' do
@@ -633,20 +651,32 @@ test 'v19a_presenter (BLOCK 2): all required stages genuinely CLEAN + no review 
   assert_equal 'CAD 状态良好', payload['headline']
 end
 
-test 'v19a_presenter (BLOCK 2): IDLE copy must not claim full diagnostics are automatically completed' do
-  # A1 must NOT fake one-click full diagnosis. The IDLE
-  # subheadline / issue_summary subtitle MUST describe only
-  # what prepare_workspace actually does in A1: the V1.5
-  # duplicate batch. Auto-running planar / gap / structure
-  # diagnostics is A2 scope.
+test 'v19a_presenter (BLOCK 2 + A2): IDLE copy now truthfully promises automatic full diagnostics' do
+  # V1.9A-A2 dispatch §8.1: the IDLE copy now
+  # truthfully promises automatic full diagnostics.
+  # The orchestrator's start path runs prepare +
+  # V1.5 duplicate batch + V1.6 planar compute +
+  # V1.7 gap compute + V1.8 structure compute in
+  # one user click. The A1 truthful "only the V1.5
+  # duplicate batch runs" copy is RETIRED because
+  # the orchestrator now owns the full pipeline.
   payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
-  refute_includes payload['subheadline'], '完成全部检查',
-                  'IDLE subheadline MUST NOT claim full diagnostics are auto-completed'
-  refute_includes payload['issue_summary']['subtitle'], '完成全部检查',
-                  'IDLE issue_summary subtitle MUST NOT claim full diagnostics are auto-completed'
-  # The truthful copy references the V1.5 duplicate batch.
-  assert_match(/重复线/, payload['subheadline'],
-               'IDLE subheadline MUST mention the V1.5 duplicate batch (the only auto-applied step in A1)')
+  assert_includes payload['subheadline'], '完成全部检查',
+                  'V1.9A-A2 IDLE subheadline MUST truthfully promise automatic full diagnostics (orchestrator owns the pipeline)'
+  assert_includes payload['issue_summary']['subtitle'], '完成全部检查',
+                  'V1.9A-A2 IDLE issue_summary subtitle MUST truthfully promise automatic full diagnostics'
+  # Guard against future copy drift by pinning the
+  # exact frozen subheadline string.
+  assert_equal '开始后将创建安全工作副本并自动完成全部检查', payload['subheadline'],
+               'V1.9A-A2 IDLE subheadline string is frozen by the orchestrator contract'
+  # The issue_summary subtitle is a user-action prompt
+  # ("点击 开始处理 以...") and follows the same A2
+  # truth contract: it tells the user the click will
+  # trigger automatic full diagnostics. The string is
+  # FROZEN (no future drift without an AIPM
+  # re-dispatch).
+  assert_equal '点击"开始处理"以创建安全工作副本并自动完成全部检查', payload['issue_summary']['subtitle'],
+               'V1.9A-A2 IDLE issue_summary subtitle is frozen by the orchestrator contract'
 end
 
 test 'v19a_presenter (BLOCK 2): NEEDS_ATTENTION headline distinguishes actionable / uncomputed / blocked' do
@@ -722,4 +752,179 @@ test 'v19a_presenter: no live Sketchup object sneaks into the payload' do
   refute payload['cards'].any? { |c| c.class != Hash }
   refute payload['recovery'].is_a?(FakeSketchup) if payload['recovery']
   refute payload['cards'].first['primary_action'].is_a?(FakeSketchup) if payload['cards'].first['primary_action']
+end
+
+
+# ===========================================================
+# V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR focused
+# presenter tests (dispatch §12.2).
+# ===========================================================
+
+# --- IDLE / NEEDS_ATTENTION / READY_FOR_VALIDATION CTA wiring ---
+
+# Per dispatch §8.2, the presenter does NOT own the
+# CTA mapping; the frontend owns the IDLE / SCANNING /
+# NEEDS_ATTENTION / READY_FOR_VALIDATION / STALE /
+# FAILED CTA table. The presenter only ships the
+# overall_state enum. This test pins the LOCKED CN
+# labels (per Blueprint §4.4) so the front-end map
+# never has to invent them.
+test 'v19a_presenter (A2): overall_state labels are frozen CN strings (front-end CTA table dependency)' do
+  payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
+  # IDLE label is part of the headline (per A2 truth
+  # rule; see IDLE test above).
+  assert_equal 'CAD 尚未处理', payload['headline']
+  # The overall_state enum is what the front-end uses
+  # to look up the CTA mapping; the raw enum MUST be
+  # present even when no CTA is rendered server-side.
+  assert_equal 'IDLE', payload['overall_state']
+end
+
+# --- Planar actionable + gap actionable -> gap repair disabled ---
+
+# Per dispatch §5.1: when planar state is
+# READY_TO_NORMALIZE, gap repair action MUST be
+# disabled so the user is not invited to mutate
+# geometry known to be pending a deterministic Z
+# normalization. The defense-in-depth (orchestrator
+# refusal) is in the orchestrator tests; this test
+# pins the presenter gate.
+test 'v19a_presenter (A2): planar READY_TO_NORMALIZE + gap READY_TO_REPAIR -> gap repair action disabled' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'movable' => 5, 'outlier_count' => 0, 'state' => 'READY_TO_NORMALIZE' }
+    },
+    'topology_repair' => {
+      'computed' => true, 'state' => 'READY_TO_REPAIR',
+      'proposal' => { 'ready_proposals' => [1, 2, 3] }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  gap = payload['cards'].find { |c| c['id'] == 'gap_endpoint' }
+  refute_nil gap['primary_action'], 'gap card MUST carry a primary_action when READY_TO_REPAIR'
+  assert_equal '修复间隙', gap['primary_action']['label']
+  assert_equal 'apply_gap_repair', gap['primary_action']['callback']
+  # The gap-ordering safety gate: when planar is
+  # READY_TO_NORMALIZE, the gap primary_action MUST be
+  # disabled.
+  assert_equal false, gap['primary_action']['enabled'],
+               'gap primary_action MUST be disabled when planar is READY_TO_NORMALIZE (gap-ordering safety)'
+  # The summary copy MUST truthfully tell the user
+  # the gap is pending Z repair.
+  assert_match(/Z 轴/, gap['summary'],
+               'gap summary MUST mention Z axis when gap is gated by Z repair')
+end
+
+# After Z is resolved (e.g. APPLIED), the gap repair
+# action is re-enabled.
+test 'v19a_presenter (A2): planar APPLIED + gap READY_TO_REPAIR -> gap repair action enabled' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'moved' => 5 }
+    },
+    'topology_repair' => {
+      'computed' => true, 'state' => 'READY_TO_REPAIR',
+      'proposal' => { 'ready_proposals' => [1, 2] }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  gap = payload['cards'].find { |c| c['id'] == 'gap_endpoint' }
+  refute_nil gap['primary_action']
+  assert_equal true, gap['primary_action']['enabled'],
+               'gap primary_action MUST be enabled after planar is APPLIED (gap-ordering safety released)'
+end
+
+# Planar REVIEW_REQUIRED (non-actionable warning) does
+# NOT block the gap repair (V1.7's own conservative
+# safety rules remain authoritative).
+test 'v19a_presenter (A2): planar REVIEW_REQUIRED + gap READY_TO_REPAIR -> gap repair action enabled' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'REVIEW_REQUIRED',
+      'proposal' => { 'outlier_count' => 2 }
+    },
+    'topology_repair' => {
+      'computed' => true, 'state' => 'READY_TO_REPAIR',
+      'proposal' => { 'ready_proposals' => [1] }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  gap = payload['cards'].find { |c| c['id'] == 'gap_endpoint' }
+  refute_nil gap['primary_action']
+  assert_equal true, gap['primary_action']['enabled'],
+               'gap primary_action MUST be enabled when planar is REVIEW_REQUIRED (non-actionable warning, no gate)'
+end
+
+# Planar NO_CANDIDATE + gap READY_TO_REPAIR -> gap
+# repair action enabled (the common case where Z is
+# already clean).
+test 'v19a_presenter (A2): planar NO_CANDIDATE + gap READY_TO_REPAIR -> gap repair action enabled' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair' => {
+      'computed' => true, 'state' => 'READY_TO_REPAIR',
+      'proposal' => { 'ready_proposals' => [1, 2] }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  gap = payload['cards'].find { |c| c['id'] == 'gap_endpoint' }
+  refute_nil gap['primary_action']
+  assert_equal true, gap['primary_action']['enabled'],
+               'gap primary_action MUST be enabled when planar is NO_CANDIDATE (clean Z, no gate)'
+end
+
+# --- Card order (frozen) is preserved in the A2 path ---
+
+# Per dispatch §8.4: 5 cards in the LOCKED order
+# duplicate / planar / gap / structure / other. The
+# A2 orchestrator does not change the card list or
+# the order; the presenter's frozen order is the
+# authoritative contract.
+test 'v19a_presenter (A2): cards remain in frozen order under orchestrator-driven snapshots' do
+  # A "normal" post-Start snapshot where all four
+  # stage-bound cards have been computed.
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  assert_equal %w[duplicate_cleanup planar_normalization gap_endpoint structure_region other],
+               payload['cards'].map { |c| c['id'] },
+               'A2 orchestrator-driven snapshot MUST preserve the frozen 5-card order'
+end
+
+# --- NOT_COMPUTED must never render as CLEAN in A2 path ---
+
+# The A2 truth rule: after a Start call, no main
+# capability card should remain UNCOMPUTED. The
+# presenter continues to enforce the truth rule
+# (NOT_COMPUTED never becomes CLEAN) even in the
+# post-A2 normal path.
+test 'v19a_presenter (A2): post-Start normal snapshot has no UNCOMPUTED stage-bound cards' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  stage_cards = %w[duplicate_cleanup planar_normalization gap_endpoint structure_region]
+  stage_cards.each do |id|
+    card = payload['cards'].find { |c| c['id'] == id }
+    refute_equal 'UNCOMPUTED', card['state'],
+                 "A2 post-Start #{id} MUST NOT remain UNCOMPUTED"
+  end
+  # And the overall is READY_FOR_VALIDATION (the
+  # A2 success state).
+  assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
 end

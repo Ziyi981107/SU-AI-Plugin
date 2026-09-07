@@ -19,8 +19,9 @@
  *       window.SUAIP.toast(message) — user-facing toast
  *         (preserved from V1.4 production contract).
  *
- * Callbacks dispatched to host (per dispatch §12):
- *   prepare_workspace, discard_workspace, rebuild_workspace,
+ * Callbacks dispatched to host (per dispatch §6 + §12):
+ *   start_cad_prep, refresh_cad_prep, prepare_workspace,
+ *   discard_workspace, rebuild_workspace,
  *   compute_planar_normalization, apply_planar_normalization,
  *   compute_gap_repair, apply_gap_repair,
  *   compute_structure_reconstruction, locate, close.
@@ -35,7 +36,7 @@
  *
  * Authority:
  *   Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md
- *   + dispatch Prompt/CURRENT_PI_DISPATCH.md (V1.9A-A1).
+ *   + dispatch Prompt/CURRENT_PI_DISPATCH.md (V1.9A-A2).
  *
  * Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 contracts UNCHANGED.
  * No algorithm change. No source CAD mutation.
@@ -823,13 +824,27 @@
   }
 
   function _primaryCtaFor(overallState) {
+    // V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+    // §8.2: the primary CTA mapping is owned by the
+    // backend orchestrator. The frontend only renders
+    // the labels + the callback name. The A1 IDLE CTA
+    // used `prepare_workspace` (which only built the
+    // workspace + ran the V1.5 duplicate batch); the A2
+    // IDLE CTA uses `start_cad_prep` which runs the full
+    // pipeline (prepare + duplicate + planar + gap +
+    // structure). The A1 NEEDS_ATTENTION / READY_FOR_
+    // VALIDATION CTA used `rebuild_workspace` (which
+    // destroyed the prior workspace); the A2 CTA uses
+    // `refresh_cad_prep` which re-runs the read-only
+    // diagnostics on the CURRENT workspace. Rebuild is
+    // reserved for the recovery flow (STALE / FAILED).
     var map = {
-      IDLE:                 { label: '开始处理', callback: 'prepare_workspace', enabled: true  },
-      SCANNING:             { label: '正在准备...', callback: 'prepare_workspace', enabled: false },
-      NEEDS_ATTENTION:      { label: '重新检测', callback: 'rebuild_workspace', enabled: true  },
-      READY_FOR_VALIDATION: { label: '重新检测', callback: 'rebuild_workspace', enabled: true  },
-      STALE:                { label: '重新检测', callback: 'rebuild_workspace', enabled: false },
-      FAILED:               { label: '重新检测', callback: 'rebuild_workspace', enabled: true  }
+      IDLE:                 { label: '开始处理',  callback: 'start_cad_prep',    enabled: true  },
+      SCANNING:             { label: '正在准备...', callback: 'start_cad_prep',    enabled: false },
+      NEEDS_ATTENTION:      { label: '重新检测',  callback: 'refresh_cad_prep',  enabled: true  },
+      READY_FOR_VALIDATION: { label: '重新检测',  callback: 'refresh_cad_prep',  enabled: true  },
+      STALE:                { label: '重新检测',  callback: 'refresh_cad_prep',  enabled: false },
+      FAILED:               { label: '重新检测',  callback: 'refresh_cad_prep',  enabled: true  }
     };
     return map[overallState] || map.IDLE;
   }

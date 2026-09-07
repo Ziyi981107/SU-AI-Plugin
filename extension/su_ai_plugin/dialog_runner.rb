@@ -21,6 +21,7 @@ require_relative 'ui_bridge'
 require_relative 'issue_locator'
 require_relative 'core/working_mode_runner'
 require_relative 'core/source_snapshot'
+require_relative 'cad_prep_workflow_orchestrator'
 # V1.4 CodeX V14-RUNTIME-BLOCK-002 (2026-08-22, real-SU2020 Owner
 # evidence): the dialog_runner references the production
 # adapter + fake adapter directly in `_adapter_for`. In a real
@@ -138,6 +139,29 @@ module SUAnalysis
         dialog.add_action_callback('compute_structure_reconstruction') do |_ctx|
           on_compute_structure_reconstruction(dialog, controller)
         end
+        # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+        # §6: two new production callbacks. `start_cad_prep`
+        # is the IDLE primary CTA (one click runs the full
+        # prepare + duplicate batch + planar + gap + structure
+        # pipeline). `refresh_cad_prep` is the NEEDS_ATTENTION /
+        # READY_FOR_VALIDATION primary CTA (re-runs the
+        # read-only diagnostics on the CURRENT prepared
+        # workspace, NO rebuild, NO duplicate mutation). The
+        # handlers route through the bounded orchestrator
+        # (CadPrepWorkflowOrchestrator); the orchestrator
+        # owns the call order, the post-apply invalidation
+        # / recompute, and the gap-ordering safety guard.
+        # Source CAD is NEVER touched. The existing
+        # `prepare_workspace` / `rebuild_workspace` /
+        # `compute_*` / `apply_*` callbacks remain
+        # registered for backward compatibility (A1 UI
+        # contract).
+        dialog.add_action_callback('start_cad_prep') do |_ctx|
+          on_start_cad_prep(dialog, controller)
+        end
+        dialog.add_action_callback('refresh_cad_prep') do |_ctx|
+          on_refresh_cad_prep(dialog, controller)
+        end
         # set_on_closed releases the Loader-side cache so the window
         # can be GC'd after the user closes it.
         dialog.set_on_closed do
@@ -230,31 +254,6 @@ module SUAnalysis
         end
       end
 
-      def on_rebuild_workspace(dialog, controller)
-        _safe_invoke(dialog, controller, 'rebuild_workspace') do
-          src = _source_snapshot_for(controller)
-          if src.nil?
-            _toast(dialog,
-                   'Working Mode: no source snapshot available for this dialog.')
-            next
-          end
-          SUAnalysis::Core::WorkingModeRunner.rebuild
-          # V1.5 Phase 1 production call chain (CodeX BLOCK-002):
-          # Rebuild must RE-RUN the duplicate-repair batch with
-          # the SAME captured IssueRegistry (deterministic
-          # rebuild per master plan §19.1). The registry is
-          # rebuilt from the same source, so the post-rebuild
-          # post-state matches the prior post-repair state.
-          ar = controller.result if controller
-          registry = (ar && ar.respond_to?(:registry)) ? ar.registry : nil
-          if registry
-            SUAnalysis::Core::WorkingModeRunner.run_duplicate_repair_batch(
-              registry: registry
-            )
-          end
-        end
-      end
-
       # V1.6 Planar Normalization / Z Policy: handler for
       # `compute_planar_normalization`. Computes (without
       # mutating) the deterministic safe-batch proposal on the
@@ -269,20 +268,6 @@ module SUAnalysis
         end
       end
 
-      # V1.6 Planar Normalization / Z Policy: handler for
-      # `apply_planar_normalization`. This is the SOLE
-      # user-triggered action that mutates derived geometry.
-      # Per Blueprint §1.4: "User performs one explicit batch
-      # approval: Apply Safe Normalization." Source CAD is
-      # NEVER touched; only derived vertices move; XY is
-      # preserved; outliers remain unchanged; the existing
-      # Discard / Rebuild / host Undo safety remains.
-      def on_apply_planar_normalization(dialog, controller)
-        _safe_invoke(dialog, controller, 'apply_planar_normalization') do
-          SUAnalysis::Core::WorkingModeRunner.apply_planar_normalization
-        end
-      end
-
       # V1.7 Endpoint / Gap Repair + Canonical Topology:
       # handler for `compute_gap_repair`. Computes (without
       # mutating) the conservative gap-bridge proposals on the
@@ -292,19 +277,6 @@ module SUAnalysis
       def on_compute_gap_repair(dialog, controller)
         _safe_invoke(dialog, controller, 'compute_gap_repair') do
           SUAnalysis::Core::WorkingModeRunner.compute_gap_repair
-        end
-      end
-
-      # V1.7 Endpoint / Gap Repair + Canonical Topology:
-      # handler for `apply_gap_repair`. This is the SOLE
-      # user-triggered action that creates V1.7 gap-bridge
-      # derived geometry. The bridge edges live in a
-      # dedicated workspace-owned repair group (Blueprint
-      # §12.1); source-derived endpoints are NEVER moved;
-      # source CAD is NEVER touched.
-      def on_apply_gap_repair(dialog, controller)
-        _safe_invoke(dialog, controller, 'apply_gap_repair') do
-          SUAnalysis::Core::WorkingModeRunner.apply_gap_repair
         end
       end
 
@@ -321,6 +293,123 @@ module SUAnalysis
       def on_compute_structure_reconstruction(dialog, controller)
         _safe_invoke(dialog, controller, 'compute_structure_reconstruction') do
           SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
+        end
+      end
+
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §3.1: handler for `start_cad_prep`. The handler
+      # builds the SourceSnapshot from the controller's
+      # captured source (same path as on_prepare_workspace),
+      # then delegates to the orchestrator's `start` which
+      # runs the full pipeline in frozen order. The
+      # orchestrator is the single source of truth for the
+      # Start call order; the handler is a thin glue layer
+      # that supplies source / adapter / model / registry
+      # and lets the existing _safe_invoke path re-push
+      # the payload after the pipeline completes. Source
+      # CAD is NEVER touched. The handler is fail-closed
+      # on missing source (consistent with
+      # on_prepare_workspace).
+      def on_start_cad_prep(dialog, controller)
+        _safe_invoke(dialog, controller, 'start_cad_prep') do
+          src = _source_snapshot_for(controller)
+          if src.nil?
+            _toast(dialog,
+                   'Working Mode: no source snapshot available for this dialog.')
+            next
+          end
+          ar = controller.result if controller
+          registry = (ar && ar.respond_to?(:registry)) ? ar.registry : nil
+          SUAnalysis::Extension::CadPrepWorkflowOrchestrator.start(
+            source:   src,
+            adapter:  _adapter_for(_host_safety_check: true),
+            model:    _resolve_model_for(controller),
+            registry: registry
+          )
+        end
+      end
+
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §3.2: handler for `refresh_cad_prep`. The handler
+      # delegates to the orchestrator's `refresh` which
+      # validates the current workspace, recomputes
+      # read-only diagnostics, and returns the final
+      # snapshot. NO prepare, NO rebuild, NO duplicate
+      # mutation. The orchestrator is the single source
+      # of truth for the Refresh call order. Source CAD
+      # is NEVER touched. The handler is fail-closed on
+      # stale host state (the orchestrator's `refresh`
+      # already calls validate_host_state_consistency!
+      # and refuses to recompute on stale state).
+      def on_refresh_cad_prep(dialog, controller)
+        _safe_invoke(dialog, controller, 'refresh_cad_prep') do
+          SUAnalysis::Extension::CadPrepWorkflowOrchestrator.refresh
+        end
+      end
+
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §4.1: `apply_planar_normalization` now routes through
+      # the orchestrator's `apply_planar_and_refresh` so the
+      # post-Z invalidation + downstream recompute happens
+      # deterministically in one orchestrator-owned pass. The
+      # callback name is preserved for backward compatibility
+      # (the A1 UI's 修复 Z 轴 button keeps working). The
+      # underlying runner method
+      # `apply_planar_normalization` is unchanged; only the
+      # call site moved from "runner only" to "orchestrator
+      # wrapper" so the orchestrator can run the dispatch
+      # §4.1 invalidation seam + the gap/structure
+      # recompute. Source CAD is NEVER touched.
+      def on_apply_planar_normalization(dialog, controller)
+        _safe_invoke(dialog, controller, 'apply_planar_normalization') do
+          SUAnalysis::Extension::CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+        end
+      end
+
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §4.2: `apply_gap_repair` now routes through the
+      # orchestrator's `apply_gap_and_refresh` so the
+      # post-gap structure recompute happens deterministically
+      # in one orchestrator-owned pass. The orchestrator
+      # ALSO enforces the gap-ordering safety guard (refuse
+      # mutation when planar is still READY_TO_NORMALIZE)
+      # as defense-in-depth against a buggy UI dispatch.
+      # The callback name is preserved for backward
+      # compatibility (the A1 UI's 修复间隙 button keeps
+      # working). Source CAD is NEVER touched.
+      def on_apply_gap_repair(dialog, controller)
+        _safe_invoke(dialog, controller, 'apply_gap_repair') do
+          SUAnalysis::Extension::CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+        end
+      end
+
+      # V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR dispatch
+      # §7: `rebuild_workspace` now routes through the
+      # orchestrator's `rebuild_and_scan` so the post-rebuild
+      # duplicate batch + full diagnostics happen
+      # deterministically in one orchestrator-owned pass. The
+      # callback name is preserved for backward compatibility
+      # (the recovery UI's 重新生成工作副本 button keeps
+      # working). The orchestrator's `rebuild_and_scan`
+      # honors the existing fail-closed Undo / host-state
+      # reconciliation contract (rebuild refuses on stale
+      # host state). Source CAD is NEVER touched.
+      def on_rebuild_workspace(dialog, controller)
+        _safe_invoke(dialog, controller, 'rebuild_workspace') do
+          src = _source_snapshot_for(controller)
+          if src.nil?
+            _toast(dialog,
+                   'Working Mode: no source snapshot available for this dialog.')
+            next
+          end
+          ar = controller.result if controller
+          registry = (ar && ar.respond_to?(:registry)) ? ar.registry : nil
+          SUAnalysis::Extension::CadPrepWorkflowOrchestrator.rebuild_and_scan(
+            source:   src,
+            adapter:  _adapter_for(_host_safety_check: true),
+            model:    _resolve_model_for(controller),
+            registry: registry
+          )
         end
       end
 

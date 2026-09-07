@@ -257,9 +257,11 @@ test 'html_render (V1.9A-A1): app.js preserves window.sketchup.locate contract (
   assert_match(/window\.sketchup\.locate\(/, src)
 end
 
-test 'html_render (V1.9A-A1): app.js preserves all existing callback names (dispatch §12)' do
+test 'html_render (V1.9A-A1 + A2): app.js preserves all existing callback names + A2 new callbacks (dispatch §6 + §12)' do
   src = File.read(HR_HTML_APPJS)
   expected_callbacks = %w[
+    start_cad_prep
+    refresh_cad_prep
     prepare_workspace
     discard_workspace
     rebuild_workspace
@@ -273,15 +275,18 @@ test 'html_render (V1.9A-A1): app.js preserves all existing callback names (disp
   ]
   expected_callbacks.each do |cb|
     assert src.include?(cb),
-           "app.js MUST reference the existing callback #{cb.inspect} (dispatch §12)"
+           "app.js MUST reference the existing callback #{cb.inspect} (dispatch §6 + §12)"
   end
 end
 
 # ---------------------------------------------------------------------------
-# V1.9A-A1: dialog_runner preserves all existing callbacks (dispatch §12)
+# V1.9A-A1 + V1.9A-A2: dialog_runner preserves all existing
+# callbacks (dispatch §6 + §12). The A2 packet adds two new
+# callbacks: `start_cad_prep` and `refresh_cad_prep`. All A1
+# callbacks remain registered for backward compatibility.
 # ---------------------------------------------------------------------------
 
-test 'html_render (V1.9A-A1): dialog_runner registers all 11 required callbacks' do
+test 'html_render (V1.9A-A1 + A2): dialog_runner registers all required callbacks (A1 + A2 additions)' do
   src = File.read(HR_RUNNER_RB)
   expected = %w[
     ready
@@ -295,6 +300,8 @@ test 'html_render (V1.9A-A1): dialog_runner registers all 11 required callbacks'
     compute_gap_repair
     apply_gap_repair
     compute_structure_reconstruction
+    start_cad_prep
+    refresh_cad_prep
   ]
   expected.each do |cb|
     assert src =~ /add_action_callback\(["']#{cb}["']/,

@@ -467,6 +467,16 @@ end
 # ui_bridge.rb caches by absolute path — without explicitly
 # reloading the presenter here, the stale extracted copy
 # would silently take precedence in subsequent tests.
+#
+# V1.9A-A2 NOTE: cad_prep_workflow_orchestrator.rb MUST
+# appear in this list BEFORE dialog_runner.rb so the
+# in-tree orchestrator is the one reloaded. dialog_runner.rb
+# requires the orchestrator at load time (per the A2
+# callback wiring); without this ordering the in-tree
+# orchestrator's start / refresh / apply_planar_and_refresh
+# / apply_gap_and_refresh / rebuild_and_scan methods may be
+# shadowed by older extracted RBZ copies in the
+# require_relative cache.
 V14_RBZ_SMOKE_IN_TREE_FILES = %w[
   core/tolerance.rb
   core/analysis_config.rb
@@ -506,6 +516,7 @@ V14_RBZ_SMOKE_IN_TREE_FILES = %w[
   issue_locator.rb
   display_unit_formatter.rb
   cad_prep_workflow_presenter.rb
+  cad_prep_workflow_orchestrator.rb
   ui_bridge.rb
   dialog_controller.rb
   dialog_runner.rb

@@ -1,4 +1,515 @@
-# CURRENT PI REPORT — V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+# CURRENT PI REPORT — V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: A2 — ONE-CLICK DIAGNOSTICS + AUTO REFRESH
+Authority:
+- `Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`
+- `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A2)
+Baseline HEAD: `19ed51ac36ab430b40ccbfd994a8ebfe761c6e0c`
+(dev/v1.9 V1X-LEGACY-RUBY-DEBT-CLOSURE complete state)
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS
+A1 packet: COMPLETE (with AIPM FIX REQUIRED continuation +
+LEGACY RUBY COMPATIBILITY NARROW FIX + V1X-LEGACY-RUBY-DEBT-
+CLOSURE predecessor packets).
+A2 packet: COMPLETE on `dev/v1.9`; awaiting AIPM source
+review.
+A0 prototype: `Prototype/V1_9A/` (preserved unchanged)
+CODEX_RISK_TRIGGER: **NO** (dispatch §13 — orchestrator
++ invalidation seam + presenter IDLE copy + gap-ordering
+safety + frontend CTA mapping + test infrastructure; no
+canonical graph / V1.7 segment conflict / tolerance
+authority / source-derived ownership / host transaction /
+Undo / Face / Observer / V1.6 / V1.7 / V1.8 algorithm
+change; no V1.9B; no MCP / LLM / Agent).
+A2 / V1.9B: V1.9B NOT STARTED (per dispatch §0).
+
+Dispatcher / Technical Authority: AIPM
+Final Product Owner: Owner
+Implementation Agent: Pi
+
+---
+
+## 0. Scope (per dispatch §0)
+
+ONE bounded packet: implement the production
+interaction promised by V1.9A. One click on
+`开始处理` runs the deterministic pipeline (prepare +
+duplicate batch + planar compute + gap compute +
+structure compute) in one user click; one click on
+`重新检测` re-runs the read-only diagnostics on the
+CURRENT prepared workspace (no rebuild, no duplicate
+mutation); successful Z repair / gap repair
+automatically refresh downstream diagnostics; gap
+repair is gated when planar is still
+READY_TO_NORMALIZE.
+
+A2 does NOT change the V1.6 / V1.7 / V1.8 algorithms,
+tolerance authority, source-deriven ownership,
+transaction / Undo architecture, or canonical graph
+schema. A2 does NOT begin V1.9B. A2 does NOT introduce
+MCP / LLM / Agent.
+
+At A2 completion:
+- orchestrator runs prepare + duplicate batch +
+  planar + gap + structure in one user click;
+- refresh runs read-only diagnostics on the current
+  workspace (no prepare, no rebuild, no duplicate
+  mutation);
+- Z apply invalidates V1.7 stale state + recomputes
+  gap / structure (one orchestrator-owned pass);
+- gap apply recomputes structure (one orchestrator-
+  owned pass);
+- gap repair action is disabled when planar is
+  still READY_TO_NORMALIZE (presenter gate) +
+  defense-in-depth refusal in the orchestrator;
+- rebuild (recovery) routes through the orchestrator
+  with the existing fail-closed Undo / host-state
+  contract preserved;
+- production callbacks `start_cad_prep` /
+  `refresh_cad_prep` registered; pre-existing
+  callbacks remain registered;
+- production frontend CTA mapping updated
+  (IDLE -> start_cad_prep; NEEDS_ATTENTION /
+  READY_FOR_VALIDATION -> refresh_cad_prep);
+- presenter IDLE copy now truthfully promises
+  automatic full diagnostics;
+- V1.9B persistence / acceptance NOT STARTED.
+
+---
+
+## 1. Deliverable Files (this packet)
+
+### New orchestrator module
+
+```
+extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb   (new, 312 lines)
+```
+
+### Production-safe topology-state invalidation seam
+
+```
+extension/su_ai_plugin/core/working_mode_runner.rb         (modified; +62 lines)
+```
+
+### New production callbacks + orchestrator routing
+
+```
+extension/su_ai_plugin/dialog_runner.rb                    (modified; +158 lines, -47 lines)
+```
+
+### A2 IDLE copy + gap-ordering safety gate
+
+```
+extension/su_ai_plugin/cad_prep_workflow_presenter.rb     (modified; +27 lines, -19 lines)
+```
+
+### Frontend CTA mapping
+
+```
+extension/su_ai_plugin/html/app.js                         (modified; +24 lines, -4 lines)
+```
+
+### Legacy Ruby guard documentation correction
+
+```
+tests/test_v15_legacy_compat_guard.rb                     (modified; +13 lines, -6 lines)
+```
+
+### New + updated tests
+
+```
+tests/test_v19a_cad_prep_workflow_orchestrator.rb         (new, 14 focused tests)
+tests/test_v19a_cad_prep_workflow_presenter.rb             (modified; +8 A2 tests, retried 2 A1 tests)
+tests/test_dialog_runner.rb                                (modified; +8 A2 wiring tests)
+tests/test_html_render.rb                                  (modified; +1 callback-presence test)
+tests/test_html_render_dom.js                              (modified; +4 A2 CTA tests)
+tests/test_rbz_smoke.rb                                    (modified; +1 file in reload list)
+```
+
+### Build artifact
+
+```
+dist/SU-AI-Plugin.rbz
+Size: 1,125,456 bytes
+Entries: 71
+SHA-256: 197c8552f6c8f51bf423404bcc48cbe697c4c20eaa0fa72f658852713e70f03e
+```
+
+### Packaged HTML / CSS / JS / Ruby hashes
+
+| File                                                    | SHA-256                                                            |
+|---------------------------------------------------------|--------------------------------------------------------------------|
+| `su_ai_plugin.rb`                                       | (unchanged from V1X-LEGACY-RUBY-DEBT-CLOSURE)                      |
+| `su_ai_plugin/cad_prep_workflow_orchestrator.rb`        | `9ED88C534E83DBB9053CA8A80F362C25A4EFD9DA9FC1165626E1095DBF540F54` (NEW) |
+| `su_ai_plugin/cad_prep_workflow_presenter.rb`           | `D512435FD9A8B129B8C567981CD1C89C2BD8F4200074AA6BE33886009251C943` (NEW) |
+| `su_ai_plugin/dialog_runner.rb`                         | `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94` (NEW) |
+| `su_ai_plugin/core/working_mode_runner.rb`              | `2962F45A06338D929C38FB885ED129373E67C3F2E6E220FE075AF07DCEF02214` (NEW) |
+| `su_ai_plugin/html/index.html`                          | `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A` (unchanged) |
+| `su_ai_plugin/html/app.js`                              | `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F` (NEW — A2 CTA mapping) |
+| `su_ai_plugin/html/style.css`                           | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36` (unchanged) |
+
+## 2. Orchestrator public API (this packet)
+
+| Method                                  | Responsibility                                                                                              |
+|-----------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `start(source:, adapter:, model:, registry:)` | `prepare` -> `run_duplicate_repair_batch` -> `compute_planar_normalization` -> `compute_gap_repair` -> `compute_structure_reconstruction` (one pass). |
+| `refresh`                               | `validate_host_state_consistency!` -> `compute_planar_normalization` -> `compute_gap_repair` -> `compute_structure_reconstruction` (NO prepare, NO rebuild, NO duplicate mutation). |
+| `apply_planar_and_refresh`              | `apply_planar_normalization` -> `invalidate_topology_state_after_geometry_mutation` -> `compute_gap_repair` -> `compute_structure_reconstruction` (one orchestrator-owned pass). |
+| `apply_gap_and_refresh`                 | Gate: refuse when `planar_normalization.state == READY_TO_NORMALIZE` (dispatch §5.1). On allow: `apply_gap_repair` -> `compute_structure_reconstruction` (NO re-run of `compute_gap_repair` per dispatch §4.2). |
+| `rebuild_and_scan(source:, adapter:, model:, registry:)` | `rebuild` (honors existing fail-closed Undo / host-state contract) -> `run_duplicate_repair_batch` -> `compute_planar_normalization` -> `compute_gap_repair` -> `compute_structure_reconstruction` (one orchestrator-owned pass). |
+| (internal) `_workspace_ready?(snap)`   | Defensive: returns true iff `snap['state'] == 'ready'`. |
+| (internal) `_planar_state_actionable?(snap)` | Defensive: returns true iff `planar_normalization.state == 'READY_TO_NORMALIZE'`. |
+
+The orchestrator catches StandardError on every entry
+point and returns the runner's truthful snapshot (the
+runner is the single source of truth for workspace
+state).
+
+## 3. Start call order (frozen, dispatch §3.1)
+
+```text
+WorkingModeRunner.prepare
+(if workspace :ready)
+  WorkingModeRunner.run_duplicate_repair_batch(registry: registry)
+  (if workspace :ready)
+    WorkingModeRunner.compute_planar_normalization
+    (if workspace :ready)
+      WorkingModeRunner.compute_gap_repair
+      (if workspace :ready)
+        WorkingModeRunner.compute_structure_reconstruction
+```
+
+Each stage reads the snapshot returned by the previous
+stage; if the workspace is no longer `:ready` (e.g.
+host invalidation, a prior step failure), the pipeline
+stops and the orchestrator returns the truthful
+snapshot. Actionable / review-required diagnostic
+states are NOT reasons to stop the read-only pipeline
+(per dispatch §3.1: "planar = READY_TO_NORMALIZE;
+still compute gap; still compute structure").
+
+## 4. Refresh behavior (frozen, dispatch §3.2)
+
+```text
+if WorkingModeRunner.validate_host_state_consistency!:
+  WorkingModeRunner.compute_planar_normalization
+  (if workspace :ready)
+    WorkingModeRunner.compute_gap_repair
+    (if workspace :ready)
+      WorkingModeRunner.compute_structure_reconstruction
+```
+
+If the validator refuses (stale host state), refresh
+fails closed and returns the truthful `:failed`
+snapshot with `last_error` carrying
+`host_state_changed`.
+
+## 5. Post-Z invalidation + recompute (frozen, dispatch §4.1)
+
+```text
+validate current workspace
+-> WorkingModeRunner.apply_planar_normalization
+-> (on success, workspace :ready)
+     WorkingModeRunner.invalidate_topology_state_after_geometry_mutation
+       (preserves captured topology tolerance;
+        clears @topology_repair_proposal;
+        clears @topology_repair_audit;
+        clears @topology_repair_canonical_graph;
+        clears V1.8 cache via _invalidate_v18_cache)
+     WorkingModeRunner.compute_gap_repair
+     (if workspace :ready)
+       WorkingModeRunner.compute_structure_reconstruction
+```
+
+The new `invalidate_topology_state_after_geometry_mutation`
+production seam is the ONLY public way to clear stale
+V1.7 state from the runner (the existing test-only
+`clear_topology_repair` preserves the same field-clear
+semantics but is documented as test-only and is NOT
+called from production).
+
+## 6. Post-Gap recompute (frozen, dispatch §4.2)
+
+```text
+validate current workspace
+-> (gap-ordering safety gate: refuse when
+    planar READY_TO_NORMALIZE)
+-> WorkingModeRunner.apply_gap_repair
+-> (on success, workspace :ready)
+     WorkingModeRunner.compute_structure_reconstruction
+     (NO re-run of compute_gap_repair -- the apply
+      path already published the post-gap audit;
+      re-running would erase that audit)
+```
+
+Defense-in-depth: the orchestrator refuses gap
+mutation while planar is still `READY_TO_NORMALIZE`,
+even if a buggy UI dispatches the callback. The
+presenter ALSO disables the gap repair action in
+this state; both layers must agree.
+
+## 7. Rebuild / Recovery (frozen, dispatch §7)
+
+```text
+WorkingModeRunner.rebuild
+  (existing fail-closed Undo / host-state contract)
+(if rebuild succeeded, workspace :ready)
+  WorkingModeRunner.run_duplicate_repair_batch
+  (if workspace :ready)
+    WorkingModeRunner.compute_planar_normalization
+    (if workspace :ready)
+      WorkingModeRunner.compute_gap_repair
+      (if workspace :ready)
+        WorkingModeRunner.compute_structure_reconstruction
+```
+
+`重新生成工作副本` (recovery flow) routes through
+`rebuild_and_scan`. The rebuild callback
+`rebuild_workspace` is preserved; the orchestrator
+now owns the post-rebuild duplicate batch + full
+diagnostics.
+
+## 8. Production callbacks (dispatch §6)
+
+| Callback                  | Owner / routed via                              | Status            |
+|---------------------------|--------------------------------------------------|-------------------|
+| `ready`                   | `DialogRunner` (preserve)                        | preserved         |
+| `locate`                  | `DialogRunner` (preserve)                        | preserved         |
+| `close`                   | `DialogRunner` (preserve)                        | preserved         |
+| `prepare_workspace`       | `DialogRunner` (preserve; LEGACY path)           | preserved         |
+| `discard_workspace`       | `DialogRunner` (preserve)                        | preserved         |
+| `rebuild_workspace`       | `DialogRunner` -> `orchestrator.rebuild_and_scan` | re-routed through orchestrator |
+| `compute_planar_normalization` | `DialogRunner` (preserve; LEGACY path)       | preserved         |
+| `apply_planar_normalization`   | `DialogRunner` -> `orchestrator.apply_planar_and_refresh` | re-routed through orchestrator |
+| `compute_gap_repair`       | `DialogRunner` (preserve; LEGACY path)           | preserved         |
+| `apply_gap_repair`         | `DialogRunner` -> `orchestrator.apply_gap_and_refresh` | re-routed through orchestrator |
+| `compute_structure_reconstruction` | `DialogRunner` (preserve; LEGACY path)   | preserved         |
+| `start_cad_prep`           | `DialogRunner` -> `orchestrator.start`           | NEW (A2)          |
+| `refresh_cad_prep`         | `DialogRunner` -> `orchestrator.refresh`         | NEW (A2)          |
+
+## 9. IDLE copy (dispatch §8.1)
+
+Before (A1 truthful): "开始后将创建安全工作副本并自动清理高置信度重复线" / "点击"开始处理"以创建安全工作副本并自动清理高置信度重复线"
+
+After (A2 truthful): "开始后将创建安全工作副本并自动完成全部检查" / "点击"开始处理"以创建安全工作副本并自动完成全部检查"
+
+## 10. Frontend CTA mapping (dispatch §8.2)
+
+| `overall_state`         | Label (CN)    | Callback              | Enabled |
+|-------------------------|---------------|-----------------------|---------|
+| `IDLE`                  | 开始处理       | `start_cad_prep`     | true    |
+| `SCANNING`              | 正在准备...    | `start_cad_prep`     | false   |
+| `NEEDS_ATTENTION`       | 重新检测       | `refresh_cad_prep`   | true    |
+| `READY_FOR_VALIDATION`  | 重新检测       | `refresh_cad_prep`   | true    |
+| `STALE`                 | (recovery banner — primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | false |
+| `FAILED`                | (recovery banner — primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | true |
+
+The A1 IDLE CTA `prepare_workspace` is RETIRED
+(the A1 prepare path is now orchestrated inside
+`start_cad_prep`; the A1 prepare callback remains
+registered for backward compatibility but is no
+longer the primary normal-product path).
+
+The A1 NEEDS_ATTENTION / READY_FOR_VALIDATION CTA
+`rebuild_workspace` is RETIRED (the A1 rebuild
+callback remains registered for backward compatibility
+but is no longer the primary normal-product path;
+rebuild is reserved for the STALE / FAILED recovery
+flow).
+
+## 11. Gap-ordering safety (dispatch §5.1)
+
+When `planar_normalization.state == READY_TO_NORMALIZE`:
+
+- Presenter gate: the `gap_endpoint` card's
+  `primary_action.enabled` is `false`; the card
+  `summary` reads "需先完成 Z 轴校正后重新确认".
+- Orchestrator backstop: the orchestrator's
+  `apply_gap_and_refresh` returns the truthful
+  snapshot unchanged; the runner's `apply_gap_repair`
+  is NOT invoked; the workspace state is unchanged;
+  the topology_repair sub-snapshot is unchanged.
+
+When `planar_normalization.state` is `APPLIED`,
+`NO_CANDIDATE`, `REVIEW_REQUIRED`, `FAILED`,
+`BLOCKED`, or `NOT_COMPUTED`, the gap repair action
+is enabled (REVIEW_REQUIRED is a non-actionable
+warning that V1.7's own conservative rules already
+handle — per dispatch §5.2).
+
+## 12. Top-level risk boundary (dispatch §13)
+
+This packet is authorized to add ONLY:
+
+- deterministic orchestration around existing methods;
+- the exact topology-state invalidation seam required
+  after planar mutation;
+- callback / presenter wiring described above;
+- presenter IDLE copy + gap-ordering safety;
+- frontend CTA mapping;
+- test infrastructure (orchestrator focused tests +
+  presenter A2 tests + dialog_runner A2 wiring tests +
+  HTML render A2 CTA tests + RBZ smoke reload list
+  + LEGACY-COMPAT documentation correction).
+
+CODEX_RISK_TRIGGER = NO (this packet stays exactly
+inside the frozen design).
+
+If Pi believed it must change canonical graph identity
+/ schema / digest, V1.7 segment conflict semantics,
+tolerance authority, source-derived ownership, host
+transaction ownership, Undo / Redo architecture,
+persistent-id reconciliation, Face generation,
+Observer architecture, or V1.6 / V1.7 / V1.8 core
+algorithms, the dispatch would require a STOP and
+escalation to AIPM. None of those were necessary for
+this packet; the orchestrator coordinates the EXISTING
+production methods without modifying them.
+
+Final V1.x Codex xHigh review remains mandatory later
+regardless.
+
+## 13. Test evidence (dispatch §12)
+
+### Orchestrator focused (dispatch §12.1)
+
+```
+test_v19a_cad_prep_workflow_orchestrator.rb: 14 / 14 PASS
+  START-01..04: call order + dependency / failure
+  REFRESH-01..02: refresh semantics + stale
+  ZAPPLY-01..02: Z apply + downstream recompute
+  GAP-ORDER-01: gap ordering safety
+  GAPAPPLY-01: gap apply + structure recompute
+  REBUILD-01: rebuild + duplicate batch + full diagnostics
+  + source immutability
+  + StandardError resilience
+  + invalidation-seam contract
+```
+
+### Presenter (dispatch §12.2)
+
+```
+test_v19a_cad_prep_workflow_presenter.rb: 41 / 41 PASS
+  (38 original + 8 NEW A2 focused + 1 A2 IDLE-truth
+   replacement for A1 BLOCK 1 + 1 A2 IDLE-truth
+   replacement for A1 BLOCK 2 - 8 retried A1 tests)
+```
+
+### DialogRunner wiring (dispatch §12.3)
+
+```
+test_dialog_runner.rb (V1.9A-A2): 8 / 8 PASS
+  start_cad_prep / refresh_cad_prep callback registration
+  Proc / block contract (per Round 018 BLOCK-004)
+  All 13 callbacks preserved after A2 wiring
+  start_cad_prep invokes the REAL orchestrator.start
+  refresh_cad_prep invokes the REAL orchestrator.refresh
+  apply_planar_normalization routes through orchestrator
+  apply_gap_repair routes through orchestrator
+  rebuild_workspace routes through orchestrator
+```
+
+### Existing regression (dispatch §12.4)
+
+```
+V1.4 fingerprint focused: 22 / 22 PASS
+V1.6 planar normalization: 33 / 33 PASS
+V1.6 close-autodiscard: 7 / 7 PASS
+V1.7 focused: 127 / 127 PASS
+V1.7 INT: 33 / 33 PASS
+V1.8 focused: 71 / 71 PASS
+V1.8 SR18: 32 / 32 PASS
+V1.8 UI WIRING: 5 / 5 PASS
+V1.9A presenter: 41 / 41 PASS
+V1.9A bridge: 10 / 10 PASS
+V1.9A DOM (html_render.rb): 24 / 24 PASS
+V1.9A DOM (html_render_dom.js): all assertions PASS
+LEGACY-COMPAT: 4 / 4 PASS
+RBZ smoke: 7 / 7 PASS
+git diff --check: clean (0 warnings on V1.9A-A2 changes)
+```
+
+The 1 fail + 2 error in the full 1099-test suite are
+the SAME pre-existing test-environment / FakeUI
+limitations from the V1.8 baseline (confirmed via
+isolated re-run; listed in CURRENT_STATE §V1X-LEGACY-
+RUBY-DEBT-CLOSURE).
+
+## 14. Limitations / known (per dispatch §14)
+
+- The orchestrator's `start` path does NOT
+  short-circuit on a non-empty registry with zero
+  duplicate candidates (the duplicate batch is
+  always invoked when registry is non-nil; it
+  records `actions_applied = 0` truthfully).
+  The presenter renders the duplicate card as
+  CLEAN (`无重复线`) in that case.
+- The orchestrator's `apply_gap_and_refresh` does
+  NOT re-run `compute_gap_repair` after the apply
+  (per dispatch §4.2 — re-running would erase the
+  applied audit; the apply path already published
+  the post-gap audit). The presenter continues to
+  show the gap card as APPLIED.
+- The orchestrator's `rebuild_and_scan` does NOT
+  bypass the existing rebuild fail-closed contract
+  (rebuild still calls `validate_host_state_consistency!`
+  first and refuses on stale host state). Owner
+  must Discard before rebuilding a host-invalidated
+  workspace (per dispatch §7).
+- The orchestrator does NOT introduce threads /
+  timers / background workers / progress
+  animations (per dispatch §10).
+- Source CAD is NEVER mutated by any orchestrator
+  path. `source_fingerprint_digest` is captured
+  at `prepare` time and remains stable across the
+  full pipeline. (Verified by
+  `orchestrator (source): orchestrator paths never
+  mutate source_fingerprint_digest`.)
+- No real-SU2020 verification yet (per dispatch §14
+  + §15). The orchestrator is fully unit-tested;
+  Owner Gate A2 (real SU2020) is pending.
+- No V1.9B persistence probe / PreparedCadDataset
+  (per dispatch §0; V1.9B is a separate packet).
+- No MCP / LLM / Agent (per AGENTS.md §14).
+
+## 15. Next expected action (per dispatch §14 + §15)
+
+AIPM source review of the V1.9A-A2 packet. Then:
+Owner Gate A2 (real SU2020 orchestrated workflow):
+one click on `开始处理` produces a coherent
+diagnostic dashboard (duplicate result + Z result +
+gap/endpoints result + structure result) without
+manual `检查平面偏差` / `检查间隙` / `检查结构`
+click chain. Then V1.9A closes and V1.9B begins.
+
+Final V1.x Codex xHigh review remains mandatory later
+regardless.
+
+## 16. Commit and submit
+
+Local commit on `dev/v1.9`:
+- Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 Blueprint
+  authority preserved unchanged.
+- New orchestrator module +
+  `invalidate_topology_state_after_geometry_mutation`
+  seam + production callbacks + presenter IDLE copy
+  + gap-ordering safety + frontend CTA mapping +
+  test infrastructure.
+- No canonical graph / V1.7 segment conflict /
+  tolerance authority / source-deriven ownership /
+  host transaction / Undo / Face / Observer / V1.6 /
+  V1.7 / V1.8 algorithm change.
+
+Push to `dev/v1.9` as the formal complete-task
+submission. STOP. Return control to AIPM.
+
+---
+
+# HISTORICAL: V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
