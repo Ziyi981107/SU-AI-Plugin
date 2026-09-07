@@ -1,19 +1,227 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.9A-A1 AIPM FIX REQUIRED CONTINUATION (THIS UPDATE)
+## V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX (THIS UPDATE)
 
-Updated: 2026-09-04 (V1.9A-A1 AIPM FIX REQUIRED
-CONTINUATION dispatch EXECUTION on assigned `dev/v1.9`
-per the AIPM direct source review of the V1.9A-A1 packet
-@ `a8563e3`). The original V1.9A-A1 dispatch authority
-remains in force; the AIPM FIX REQUIRED continuation adds
-THREE bounded corrections (BLOCK 1 copy + BLOCK 2 overall
-state + non-blocking presenter-fault cleanup) without
-expanding scope, changing frozen architecture, or rewriting
-any V1.x algorithm. A stale-load root cause was diagnosed
-and fixed in-repo (one missing entry in the RBZ-smoke
-reload list). All frozen V1.4–V1.8 Blueprint authority is
+Updated: 2026-09-04 (V1.9A-A1 LEGACY RUBY COMPATIBILITY
+NARROW FIX dispatch EXECUTION on assigned `dev/v1.9`
+per dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the
+AIPM narrow recheck that found the new V1.9A production
+presenter used post-Ruby-2.2 helpers). This packet is a
+bounded compatibility correction ONLY; the original
+V1.9A-A1 packet + AIPM FIX REQUIRED continuation
+authority remain in force. No product semantics, count
+semantics, ordering, card mapping, or visual behavior
+change. All frozen V1.4–V1.8 Blueprint authority is
 preserved unchanged on `dev/v1.9`.
+
+Status (this packet):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged; preserved
+  on `dev/v1.9` from `dev/v1.8 @ bbe423c` baseline).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+  (original packet @ a8563e3)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 AIPM FIX REQUIRED CONTINUATION
+  (@ 3d5c72a)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX (this
+  packet)**: COMPLETE on `dev/v1.9`; awaiting AIPM
+  narrow source recheck of the compatibility corrections.
+- **V1.9A-A2 deterministic full-diagnostics orchestrator**:
+  NOT STARTED (per dispatch §0).
+- **V1.9B PreparedCadDataset / persistence**: NOT STARTED
+  (per dispatch §0).
+- **CODEX_RISK_TRIGGER = NO** (this packet; no
+  algorithm / contract / frontend change).
+- **AIPM_REVIEW = PENDING** (narrow recheck of the
+  compatibility corrections only).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX —
+2026-09-04.
+
+- Starting HEAD for this packet:
+  `3d5c72a15b9b728edaa75aec3e8643d7508e7bfd` (the
+  V1.9A-A1 AIPM FIX REQUIRED continuation complete
+  state on `dev/v1.9`).
+- Implementation SHA: `f77fb53` (this packet's stable
+  commit).
+- Final HEAD on dev/v1.9: `f77fb53631d629e95ab0fa947fa48c9fa3982803`.
+- V1.9A-A1 LEGACY-COMPAT RBZ candidate: size
+  **1,100,317 bytes**; entries **70**; SHA-256
+  **`8F1DA75527A5D5387945FC3594A922C830F122526A4ECEADCC2743E9C1368CDE`**.
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (unchanged from V1.9A-A1 baseline — no HTML change in
+  this packet).
+- Packaged `html/app.js` SHA-256:
+  `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`
+  (unchanged from V1.9A-A1 baseline — no JS change in
+  this packet).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (unchanged from V1.9A-A1 baseline — no CSS change in
+  this packet).
+- Packaged `cad_prep_workflow_presenter.rb` SHA-256:
+  `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`
+  (NEW — Ruby 2.2 compat: `.positive?` → `> 0`;
+  `.sum` → `inject(0) { ... }`).
+- Full Ruby suite: **1071 / 1071 total** / **1068 PASS**
+  / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations present on the
+    V1.8 baseline (confirmed in
+    CURRENT_STATE.md §V1.9A-A1 FIX REQUIRED
+    CONTINUATION):
+      - `capability.HtmlDialog: outside SU returns false
+        (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback ->
+        WorkingModeRunner -> workspace reaches :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately per
+    dispatch §13 reporting rule. These failures
+    reproduce in isolation when run alone (per direct
+    re-run confirmation).
+- V1.9A-A1 focused tests (after this packet):
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    **38 / 38 PASS** (30 original + 8 BLOCK 1 / BLOCK 2
+    regression).
+  - `tests/test_v19a_ui_bridge.rb`: **10 / 10 PASS** (8
+    original + 1 non-blocking presenter-fault cleanup + 1
+    presenter-restoration defensive guard).
+- V1.9A-A1 DOM tests (after this packet):
+  - `tests/test_html_render.rb`: **24 / 24 PASS**.
+  - `tests/test_html_render_dom.js`: 327+ assertions
+    PASS, final line `PASS`.
+- LEGACY-COMPAT tests (after this packet):
+  - **5 / 5 PASS** (4 prior + 1 NEW V19A-A1 scoped
+    guard for `.positive?` / `.negative?` / `.sum` in
+    the new V1.9A presenter file).
+  - Guard teeth verified: temporarily reintroducing
+    `.positive?` and `.sum` to the presenter causes
+    immediate test failure with file:line + match
+    evidence + minimal fix guidance. Reverted before
+    commit.
+- V1.7 focused set: **127 / 127 PASS** (baseline preserved).
+- V1.8 focused set: **71 / 71 PASS** (baseline preserved).
+- V1.8 SR18 set: **32 / 32 PASS**.
+- V1.7 INT set: **33 / 33 PASS**.
+- V1.6 close-autodiscard: **7 / 7 PASS**.
+- RBZ smoke: **9 / 9 PASS** (rebuilt; presenter file
+  present).
+- `git diff --check`: clean (0 warnings).
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.9`. Pi did NOT rewrite any frozen design authority.
+No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No workspace ownership
+change. No host mutation / Face / Observer. No site
+semantics. No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **Ruby 2.2 compatibility correction in the V1.9A
+  presenter**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  — replaced every post-Ruby-2.2 helper with a Ruby 2.2-
+  safe equivalent. The replacements are mechanical /
+  semantics-preserving and DO NOT change the
+  cadPrepWorkflow payload, counts, ordering, labels,
+  card mapping, or visual behavior.
+
+  Replacement map (in
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`):
+
+    chips.length.positive?               -> chips.length > 0
+    chips.map { |c| c['value'].to_i }.sum -> chips.inject(0) { |acc, c| acc + c['value'].to_i }
+    actionable_count.positive?           -> actionable_count > 0
+    applied.positive? (x4 sites)         -> applied > 0
+    skipped.positive?                    -> skipped > 0
+    movable.positive?                    -> movable > 0
+    outliers.positive?                   -> outliers > 0
+    v.positive?                          -> v > 0
+    n.positive?                          -> n > 0
+
+  The headline string format
+  `"发现 N 类 · M 项问题"` is preserved verbatim (M is now
+  computed via `inject(0) { ... }` instead of `.sum`).
+
+- **Repo-local V1.9-introduced compatibility scan
+  (extension/)**: this packet scanned the entire
+  `extension/` tree for V1.9-introduced use of the
+  known post-Ruby-2.2 APIs listed in dispatch §2. Result:
+    `.positive?`       : NONE (after this packet's fix).
+    `.negative?`       : NONE.
+    `.sum`             : NONE V1.9-introduced. PRE-EXISTING
+                          usages remain in
+                          `core/source_fingerprint.rb`
+                          (lines 224, 227, V1.4 era) and
+                          `core/planar_normalization_executor.rb`
+                          (line 343, V1.6 era). These are
+                          explicitly out of scope per
+                          dispatch §4 (Do NOT reopen V1.6
+                          / V1.7 / V1.8 algorithms) and are
+                          documented as known
+                          legacy-baseline debt.
+    `&.`               : NONE.
+    `transform_values` : NONE.
+    `dig`              : NONE.
+    `yield_self` / `then` : NONE.
+    `filter_map`       : NONE.
+    Hash-only `.compact`: NONE (all `.compact` calls in the
+                          production tree are
+                          `Array#compact`, which is
+                          pre-2.2 valid).
+
+- **Focused V1.9A legacy compatibility regression
+  guard**:
+  `tests/test_v15_legacy_compat_guard.rb` — extended the
+  existing LEGACY-COMPAT framework with a NEW test that
+  scopes the regression to the new V1.9A presenter file
+  only. The guard scans `cad_prep_workflow_presenter.rb`
+  for `.positive?` / `.negative?` / `.sum` using the same
+  file-walking + regex approach as the existing
+  endless-range regression test (no new framework). The
+  guard claims ONLY what it actually checks (a focused
+  reintroduction guard) and does NOT touch V1.4 / V1.6
+  pre-existing `.sum` usages (out of scope per dispatch
+  §4).
+
+  Test name:
+    `LEGACY-COMPAT V19A-A1: no .positive? / .negative? /
+    .sum in V1.9A presenter (Ruby 2.2 baseline)`
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the LEGACY
+  RUBY COMPATIBILITY FIX section is appended below the
+  previous V1.9A-A1 packet + FIX REQUIRED continuation
+  sections).
+
+Next expected action: AIPM narrow source recheck of the
+Ruby 2.2 compatibility corrections in
+`cad_prep_workflow_presenter.rb` AND the scoped V19A-A1
+regression guard in
+`tests/test_v15_legacy_compat_guard.rb`. Then: Owner UX
+Gate A2 (real SU2020 orchestrated workflow). V1.9A-A2
+orchestrator NOT STARTED. V1.9B PreparedCadDataset /
+persistence NOT STARTED.
+
+CODEX_GATE: NOT REQUIRED (per AGENTS.md §13 / §10; no
+risk trigger — only the presenter module + one test
+file were touched; no architecture change, no algorithm
+change, no source/provenance change, no
+tolerance/canonical-topology change).
+
+OWNER_GATE: PENDING (A2).
+V1.9A-A2: NOT STARTED.
+V1.9B: NOT STARTED.
+
+## V1.9A-A1 AIPM FIX REQUIRED CONTINUATION (HISTORICAL)
 
 Status (this continuation):
 

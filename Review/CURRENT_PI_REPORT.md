@@ -734,4 +734,247 @@ Per AGENTS.md §13 + dispatch §0:
 STOP. Awaiting AIPM narrow source recheck of the FIX
 REQUIRED continuation only.
 
+---
+
+# CURRENT PI REPORT — V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: **A1 LEGACY COMPATIBILITY NARROW FIX** (AIPM narrow
+recheck follow-up)
+Authority: `Prompt/CURRENT_PI_DISPATCH.md`
+(V1.9A-A1 LEGACY RUBY COMPATIBILITY FIX dated 2026-09-04).
+Baseline HEAD: `3d5c72a15b9b728edaa75aec3e8643d7508e7bfd`
+(V1.9A-A1 AIPM FIX REQUIRED continuation complete state).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Implementation SHA: `f77fb53631d629e95ab0fa947fa48c9fa3982803`
+(HEAD after push).
+CODEX_RISK_TRIGGER: **NO** (per dispatch §0; only the
+V1.9A presenter + one LEGACY-COMPAT test were modified;
+no frozen boundary crossed).
+A2 / V1.9B: NOT STARTED (per dispatch §6).
+
+## Scope of this packet (the ONLY thing Pi changed)
+
+Per dispatch §0 / §1: AIPM narrow recheck found the new
+V1.9A-A1 production presenter
+(`extension/su_ai_plugin/cad_prep_workflow_presenter.rb`)
+used post-Ruby-2.2 helpers (`Integer#positive?` added in
+Ruby 2.3; `Array#sum` / `Enumerable#sum` added in Ruby
+2.4). V1.x is legacy-first and must not silently introduce
+these. This packet is a bounded compatibility correction
+ONLY. No product semantics, no count semantics, no
+ordering, no card mapping, no visual behavior change.
+
+## Exact replacements (in `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`)
+
+| # | Site                                                  | Before                                              | After                                                          |
+|---|-------------------------------------------------------|-----------------------------------------------------|----------------------------------------------------------------|
+| 1 | NEEDS_ATTENTION headline length gate                  | `chips.length.positive?`                            | `chips.length > 0`                                             |
+| 2 | NEEDS_ATTENTION headline chip total                   | `chips.map { |c| c['value'].to_i }.sum`             | `chip_total = chips.inject(0) { |acc, c| acc + c['value'].to_i }` |
+| 3 | NEEDS_ATTENTION headlines — actionable gate           | `actionable_count.positive?`                        | `actionable_count > 0`                                         |
+| 4 | duplicate_cleanup card metrics — applied              | `applied.positive?` (3rd site)                       | `applied > 0`                                                  |
+| 5 | duplicate_cleanup card metrics — skipped              | `skipped.positive?`                                 | `skipped > 0`                                                  |
+| 6 | duplicate_cleanup card — state_label                  | `applied.positive? ? "已自动处理 #{applied} 条" : '无重复线'` | `applied > 0 ? "已自动处理 #{applied} 条" : '无重复线'`         |
+| 7 | duplicate_cleanup card — state field                  | `applied.positive? ? 'APPLIED' : 'CLEAN'`           | `applied > 0 ? 'APPLIED' : 'CLEAN'`                            |
+| 8 | duplicate_cleanup card — summary field                 | `applied.positive? ? '...' : '...'`                  | `applied > 0 ? '...' : '...'`                                  |
+| 9 | planar_safe_summary — movable                         | `movable.is_a?(Integer) && movable.positive?`        | `movable.is_a?(Integer) && movable > 0`                         |
+|10 | planar_safe_summary — outliers                        | `outliers.is_a?(Integer) && outliers.positive?`     | `outliers.is_a?(Integer) && outliers > 0`                      |
+|11 | structure_metrics filter                               | `v.is_a?(Integer) && v.positive?`                   | `v.is_a?(Integer) && v > 0`                                    |
+|12 | other card secondary filter                           | `n.positive?`                                       | `n > 0`                                                        |
+
+Total: 12 mechanical / semantics-preserving replacements
+across 4 separate presenter methods. Zero product-facing
+change. The headline string format
+`"发现 N 类 · M 项问题"` is preserved verbatim (M is now
+computed via `inject(0) { ... }` instead of `.sum`).
+
+## Repo-local V1.9-introduced compatibility scan (extension/)
+
+Per dispatch §2, scanned ONLY `extension/` for V1.9-
+introduced use of the known post-Ruby-2.2 APIs / syntax.
+Result (this packet's authoritative scan):
+
+| Construct               | V1.9-introduced? | Status                                                                                                         |
+|-------------------------|------------------|----------------------------------------------------------------------------------------------------------------|
+| `.positive?`            | NO (after fix)   | All V1.9A presenter sites replaced with `> 0`. NONE elsewhere in `extension/`.                                  |
+| `.negative?`            | NO               | NONE in `extension/`.                                                                                          |
+| `.sum`                  | NO (V1.9 scope)  | NONE V1.9-introduced. PRE-EXISTING usages in V1.4 `core/source_fingerprint.rb` (lines 224, 227) and V1.6 `core/planar_normalization_executor.rb` (line 343). Explicitly out of scope per dispatch §4 (Do NOT reopen V1.6 / V1.7 / V1.8). |
+| `&.` (safe navigation)  | NO               | NONE in `extension/`.                                                                                          |
+| `transform_values`      | NO               | NONE in `extension/`.                                                                                          |
+| `dig`                   | NO               | NONE in `extension/`.                                                                                          |
+| `yield_self` / `then`   | NO               | NONE in `extension/`.                                                                                          |
+| `filter_map`            | NO               | NONE in `extension/`.                                                                                          |
+| Hash-only `.compact`    | NO               | NONE. All `.compact` calls in the production tree are `Array#compact`, which is pre-2.2 valid.                 |
+
+The pre-existing `.sum` usages in V1.4 / V1.6 are
+documented as known legacy-baseline debt. They pre-date
+V1.9 and are not within the scope of this narrow fix;
+reopening them would conflict with dispatch §4's
+"preserve V1.6 / V1.7 / V1.8 algorithms" rule. AIPM may
+choose to address them in a separate, dedicated packet
+if the legacy baseline target is re-examined.
+
+## Regression guard (this packet)
+
+This packet extended the existing LEGACY-COMPAT framework
+(in `tests/test_v15_legacy_compat_guard.rb`) with a NEW
+focused test:
+
+```text
+LEGACY-COMPAT V19A-A1: no .positive? / .negative? / .sum
+in V1.9A presenter (Ruby 2.2 baseline)
+```
+
+Scope: ONLY `cad_prep_workflow_presenter.rb` (the new
+V1.9A-introduced production file). The guard does NOT
+scan V1.4 / V1.6 pre-existing `.sum` usages, which are
+explicitly out of scope per dispatch §4.
+
+Implementation: same file-walking + regex approach as the
+existing endless-range regression test (no new framework).
+Three regex patterns:
+  - `/\.[ ]?positive\?[ ]?/` — `Integer#positive?`
+  - `/\.[ ]?negative\?[ ]?/` — `Integer#negative?`
+  - `/\.[ ]?sum(?![A-Za-z0-9_=!?])/` — `Array#sum` /
+    `Enumerable#sum` (lookahead `(?![A-Za-z0-9_=!?])`
+    ensures no match against identifier-shaped names
+    like `edge_length_sum:` or `consumed`).
+
+Teeth verified in this session: temporarily reintroduced
+both `.positive?` and `.sum` to the presenter and
+confirmed the guard FAILS with file:line + match + minimal
+fix guidance. The temporary additions were reverted
+before commit.
+
+## Test results (this packet, fresh run)
+
+### V1.9A focused
+
+- `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+  **38 / 38 PASS** (30 original + 8 BLOCK 1 / BLOCK 2
+  regression).
+- `tests/test_v19a_ui_bridge.rb`: **10 / 10 PASS**
+  (8 original + 1 non-blocking presenter-fault cleanup +
+  1 presenter-restoration defensive guard).
+
+### V1.9A DOM
+
+- `tests/test_html_render.rb`: **24 / 24 PASS**.
+- `tests/test_html_render_dom.js`: 327+ assertions PASS,
+  final line `PASS`.
+
+### LEGACY-COMPAT (this packet)
+
+- `LEGACY-COMPAT: vendored Ruby parses every production
+  .rb file (current-source syntax/load smoke)`: PASS
+- `LEGACY-COMPAT: Ripper.sexp parses every production .rb
+  file (current-source AST smoke)`: PASS
+- `LEGACY-COMPAT: no known modern-syntax constructs in
+  production source`: PASS
+- `LEGACY-COMPAT: no endless-range [n..] in production
+  source (CONFIRMED-FIX-COMPAT-RANGE)`: PASS
+- `LEGACY-COMPAT V19A-A1: no .positive? / .negative? /
+  .sum in V1.9A presenter (Ruby 2.2 baseline)` (NEW): PASS
+
+Total LEGACY-COMPAT: **5 / 5 PASS** (4 prior + 1 new).
+
+### Regression (per dispatch §5)
+
+- V1.7 focused set: **127 / 127 PASS** (baseline
+  preserved).
+- V1.8 focused set: **71 / 71 PASS** (baseline preserved).
+- V1.8 SR18 set: **32 / 32 PASS**.
+- V1.7 INT set: **33 / 33 PASS**.
+- V1.6 close-autodiscard: **7 / 7 PASS**.
+- RBZ smoke: **9 / 9 PASS** (rebuilt; presenter file
+  present).
+
+### Full Ruby suite
+
+- **1071 / 1071 total / 1068 PASS / 1 fail / 2 error**.
+- The 1 fail + 2 error are the SAME pre-existing
+  test-environment / FakeUI limitations from the V1.8
+  baseline (confirmed via direct re-run of the offending
+  tests in isolation, where they PASS — the failures are
+  test-order-dependent pollution from the larger suite):
+  - `capability.HtmlDialog: outside SU returns false
+    (R002 + S2-BLOCK-006)`
+  - `V14 production call chain: dialog callback ->
+    WorkingModeRunner -> workspace reaches :ready`
+  - `V17-L1: host_state_changed invalidates the workspace
+    via validate-on-next-interaction`
+- None caused by this packet; per dispatch §5 reporting
+  rule, do not relabel them PASS.
+
+### Diff hygiene
+
+- `git diff --check`: clean (0 warnings).
+
+## RBZ (rebuilt because production Ruby changed)
+
+| Metric          | Value                                                                                            |
+|-----------------|--------------------------------------------------------------------------------------------------|
+| Path            | `dist/SU-AI-Plugin.rbz`                                                                          |
+| Size            | **1,100,317 bytes** (delta +281 vs V1.9A-A1 FIX REQUIRED 1,100,036)                            |
+| Entries         | **70** (unchanged)                                                                               |
+| SHA-256         | **`8F1DA75527A5D5387945FC3594A922C830F122526A4ECEADCC2743E9C1368CDE`**                          |
+
+### Packaged asset hashes (this packet)
+
+| File                                | SHA-256                                                              | Status      |
+|-------------------------------------|----------------------------------------------------------------------|-------------|
+| `html/index.html`                   | `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`    | UNCHANGED   |
+| `html/app.js`                       | `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`    | UNCHANGED   |
+| `html/style.css`                    | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`    | UNCHANGED   |
+| `cad_prep_workflow_presenter.rb`    | `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`    | NEW (Ruby 2.2 compat) |
+
+## Confirmation — no A2 / V1.9B / scope creep (this packet)
+
+| Scope item                                                    | Started? | Evidence                                                                          |
+|---------------------------------------------------------------|----------|-----------------------------------------------------------------------------------|
+| `CadPrepWorkflowOrchestrator`                                  | NO       | Not present in any file.                                                          |
+| `start_cad_prep` orchestration callback                         | NO       | Not registered in `dialog_runner.rb`.                                             |
+| Automatic full diagnostics after `prepare_workspace`           | NO       | Presenter logic UNCHANGED beyond the 12 mechanical Ruby 2.2 compat replacements.   |
+| V1.6 / V1.7 / V1.8 algorithm change                            | NO       | `git diff 3d5c72a..HEAD -- extension/su_ai_plugin/core/` shows zero changes to frozen V1.4 / V1.6 / V1.7 / V1.8 algorithm files. |
+| Tolerance / source ownership change                            | NO       | No changes to `Tolerance` / `SourceSnapshot` / `WorkingModeRunner.snapshot` shape. |
+| Face / Observer architecture                                   | NO       | Not present in any file.                                                          |
+| `PreparedCadDataset` / persistence (V1.9B)                     | NO       | Not present in any file; dispatch §6 forbids it.                                  |
+| MCP / LLM / Agent                                              | NO       | Not present in any file; dispatch §6 forbids it.                                  |
+| V1.x product UX redesign                                       | NO       | IA / 4 tabs / 5 cards / existing callbacks / legacy payload keys all UNCHANGED.    |
+| JS / HTML / CSS change                                         | NO       | Packaged `html/index.html` / `html/app.js` / `html/style.css` SHA-256 UNCHANGED.  |
+
+## `CODEX_RISK_TRIGGER` determination (this packet)
+
+Per AGENTS.md §13 / §10 + dispatch §0:
+- Only the V1.9A presenter module (`cad_prep_workflow_presenter.rb`)
+  and the LEGACY-COMPAT test file
+  (`tests/test_v15_legacy_compat_guard.rb`) were touched by
+  the production-data plane.
+- 12 mechanical / semantics-preserving replacements (`> 0`
+  for `.positive?`; `inject(0) { ... }` for `.sum`).
+- One new test added (scoped regression guard).
+- No algorithm change. No schema / contract change.
+- No source / state ownership / transaction / recovery
+  change. No Face / Observer architecture. No source CAD
+  mutation. No canonical-topology / tolerance / segment-
+  conflict semantic change. No RBZ-only release claim.
+
+`CODEX_RISK_TRIGGER = NO`.
+
+## STOP (this packet)
+
+- AIPM_REVIEW = PENDING (narrow recheck of the 12
+  replacements in the V1.9A presenter AND the new
+  scoped V19A-A1 regression guard in LEGACY-COMPAT)
+- CODEX = NOT REQUIRED
+- OWNER_SU2020 = NOT YET
+- A2 = NOT STARTED
+- V1.9B = NOT STARTED
+
+STOP. Awaiting AIPM narrow source recheck of the V1.9A
+Legacy Ruby Compatibility narrow fix only.
+
 END
