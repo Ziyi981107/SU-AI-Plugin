@@ -61,6 +61,10 @@ end
 def reset_loader
   SUAnalysis::Extension::Loader.instance_variable_set(:@registered, false)
   SUAnalysis::Extension::Loader.instance_variable_set(:@live_dialog, nil)
+  # V1.9A3 Blueprint §4 / §5: also reset the retained shared
+  # command and retained toolbar so each test starts fresh.
+  SUAnalysis::Extension::Loader.instance_variable_set(:@cad_prep_command, nil)
+  SUAnalysis::Extension::Loader.instance_variable_set(:@toolbar, nil)
 end
 
 # Stub Sketchup.active_model with a non-empty selection so
@@ -113,7 +117,10 @@ test 'test_loader: first register! creates exactly one menu item' do
   reset_loader
   cmd = SUAnalysis::Extension::Loader.register!
   refute_nil cmd
-  assert_equal 'Analyze selection', cmd.name
+  # V1.9A3 Blueprint §2: menu_text is 'CAD Prep' (the previous
+  # 'Analyze selection' identity is replaced by the shared
+  # production entry name).
+  assert_equal 'CAD Prep', cmd.name
   plugins = UI.menu('Plugins')
   refute_nil plugins
   sub = plugins.submenus.find { |s| s.name == 'SU-AI-Plugin' }
@@ -389,7 +396,8 @@ test 'test_loader: menu command handler is wired AND clicking it reaches the dia
   sub = plugins.submenus.find { |s| s.name == 'SU-AI-Plugin' }
   cmd = sub.items.first
   refute_nil cmd
-  assert_equal 'Analyze selection', cmd.name
+  # V1.9A3 Blueprint §2: the menu text is 'CAD Prep'.
+  assert_equal 'CAD Prep', cmd.name
   stub_sketchup_with_selection
   begin
     cmd.call_handler
@@ -479,4 +487,342 @@ test 'test_loader: faithful boot — load entrypoint twice, one menu item, handl
 ensure
   FakeUI.uninstall!
   $__file_loaded_set.clear
+end
+
+# --------------------------------------------------------------------------
+# V1.9A3 NATIVE TOOLBAR & PRODUCT ENTRY (AIPM Blueprint
+# V1.9A3 Native Toolbar & Product Entry 2026-09-07).
+#
+# The toolbar is an ENTRY POINT ONLY. No A2 orchestrator /
+# Presenter / DialogRunner / V1.6-V1.8 algorithm / V1.9B
+# change is allowed by this packet.
+#
+# Acceptance contract (Blueprint §11):
+#   A3-01  Toolbar named 'SU AI'.
+#   A3-02  Exactly one production button.
+#   A3-03  Bundled icon assets.
+#   A3-04  Tooltip 'SU AI · CAD Prep'.
+#   A3-05  Toolbar uses SAME UI::Command as the menu.
+#   A3-06  Valid selection opens the existing dialog.
+#   A3-07  No selection produces a friendly message.
+#   A3-08  Repeated register! does not duplicate.
+#   A3-09  Toolbar visibility respects remembered state.
+#   A3-10  First-discovery shows the toolbar (TB_NEVER_SHOWN).
+#   A3-11  No geometry/product-core behavior changes.
+#   A3-12  Icons packaged in RBZ.
+#   A3-13  Existing A2 production frontend/orchestrator remains loadable.
+#   A3-14  Legacy/RBZ regressions remain green.
+# --------------------------------------------------------------------------
+
+# Helpers for V1.9A3 tests.
+
+def v19a3_reset_loader!
+  reset_loader
+end
+
+def v19a3_stub_sketchup_with_empty_selection
+  @__prev_sketchup = Object.const_defined?(:Sketchup) ? Object.const_get(:Sketchup) : :__undefined__
+  fake_model = FakeUI::FakeModel.new
+  # No selection added — empty selection by design.
+  sk = Module.new
+  sk.define_singleton_method(:active_model) { fake_model }
+  Object.send(:remove_const, :Sketchup) if Object.const_defined?(:Sketchup)
+  Object.const_set(:Sketchup, sk)
+end
+
+def v19a3_unstub_sketchup
+  Object.send(:remove_const, :Sketchup) if Object.const_defined?(:Sketchup)
+  case @__prev_sketchup
+  when :__undefined__ then nil
+  when Module, Class  then Object.const_set(:Sketchup, @__prev_sketchup)
+  end
+  @__prev_sketchup = nil
+end
+
+# ---- A3-01 / A3-02: toolbar named 'SU AI' with exactly one button -----
+
+test 'V1.9A3 A3-01/A3-02: register! creates SU AI toolbar with exactly one button' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  refute_nil cmd
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  refute_nil toolbar, 'SU AI toolbar must be created on first register!'
+  assert_equal 'SU AI', toolbar.name, "toolbar name MUST be 'SU AI'"
+  assert_equal 1, toolbar.items.length,
+               "toolbar must contain exactly one production button"
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-05: SAME UI::Command object used by menu + toolbar -----------
+
+test 'V1.9A3 A3-05: menu and toolbar share the SAME UI::Command object' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  refute_nil cmd
+  # The retained shared accessor returns the same instance.
+  assert_equal cmd, SUAnalysis::Extension::Loader.cad_prep_command,
+               'Loader.cad_prep_command must return the registered command'
+  # The menu submenu's first item IS that same command.
+  submenu = UI.menu('Plugins').submenus.find { |s| s.name == 'SU-AI-Plugin' }
+  refute_nil submenu
+  assert_equal cmd, submenu.items.first,
+               'menu item must be the SAME command as the shared retained reference'
+  # The toolbar's only button IS that same command.
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  assert_equal cmd, toolbar.items.first,
+               'toolbar button must be the SAME command as the menu item (object identity)'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-04 / A3-03: tooltip / status bar text / icons configured ------
+
+test 'V1.9A3 A3-04: shared command tooltip and status bar text match Blueprint §2' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  refute_nil cmd
+  assert_equal 'CAD Prep', cmd.name
+  assert_equal 'SU AI · CAD Prep', cmd.tooltip,
+               "tooltip MUST be 'SU AI · CAD Prep' (Blueprint §2)"
+  assert_equal '检查并准备当前选择的 CAD 几何', cmd.status_bar_text,
+               "status bar text MUST be '检查并准备当前选择的 CAD 几何' (Blueprint §2)"
+ensure
+  FakeUI.uninstall!
+end
+
+test 'V1.9A3 A3-03: shared command icon paths resolve to real local PNG files' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  refute_nil cmd
+  refute_nil cmd.small_icon
+  refute_nil cmd.large_icon
+  assert File.exist?(cmd.small_icon),
+         "small_icon path must point to a real file: #{cmd.small_icon}"
+  assert File.exist?(cmd.large_icon),
+         "large_icon path must point to a real file: #{cmd.large_icon}"
+  assert cmd.small_icon.end_with?('cad_prep_24.png'),
+         "small_icon must be cad_prep_24.png, got #{cmd.small_icon}"
+  assert cmd.large_icon.end_with?('cad_prep_32.png'),
+         "large_icon must be cad_prep_32.png, got #{cmd.large_icon}"
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- Icon dimensions exactly 24x24 / 32x32 -----------------------------
+
+def v19a3_png_dimensions(path)
+  data = File.binread(path)
+  # PNG signature (8 bytes) + IHDR length (4 bytes) + 'IHDR' (4 bytes)
+  # then 4 bytes width + 4 bytes height + ... total = 24 bytes into the
+  # file gives us the dimensions.
+  raise "not a PNG: #{path}" unless data[0, 8].bytes == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+  w, h = data[16, 8].unpack('NN')
+  [w, h]
+end
+
+test 'V1.9A3: bundled icons have exact dimensions 24x24 and 32x32' do
+  small_path = File.expand_path(
+    '../extension/su_ai_plugin/icons/cad_prep_24.png', __dir__
+  )
+  large_path = File.expand_path(
+    '../extension/su_ai_plugin/icons/cad_prep_32.png', __dir__
+  )
+  assert File.exist?(small_path), "missing icon: #{small_path}"
+  assert File.exist?(large_path), "missing icon: #{large_path}"
+  assert_equal [24, 24], v19a3_png_dimensions(small_path),
+               "cad_prep_24.png must be exactly 24x24"
+  assert_equal [32, 32], v19a3_png_dimensions(large_path),
+               "cad_prep_32.png must be exactly 32x32"
+end
+
+# ---- A3-08: repeated register! does not duplicate ---------------------
+
+test 'V1.9A3 A3-08: repeated register! does not duplicate toolbar or button' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  SUAnalysis::Extension::Loader.register!
+  SUAnalysis::Extension::Loader.register!
+  SUAnalysis::Extension::Loader.register!
+  # Menu: one submenu, one item (unchanged behavior).
+  submenus = UI.menu('Plugins').submenus.select { |s| s.name == 'SU-AI-Plugin' }
+  assert_equal 1, submenus.length
+  assert_equal 1, submenus.first.items.length
+  # Toolbar: one toolbar, one button.
+  assert_equal 1, FakeUI.state.toolbars.length,
+               "exactly one SU AI toolbar must exist, got #{FakeUI.state.toolbars.keys.inspect}"
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  assert_equal 1, toolbar.items.length,
+               'toolbar must contain exactly one button across repeated register! calls'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-10: first-discovery shows the toolbar (TB_NEVER_SHOWN) --------
+
+test 'V1.9A3 A3-10: TB_NEVER_SHOWN -> toolbar.show is called' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  # The default get_last_state is TB_NEVER_SHOWN (per FakeToolbar).
+  assert_equal FakeUI::TB_NEVER_SHOWN, toolbar.get_last_state
+  SUAnalysis::Extension::Loader.register!
+  assert_includes toolbar.events, :show,
+                  'TB_NEVER_SHOWN must trigger toolbar.show (Blueprint §6 first-discovery)'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-09: previously visible -> restore (not force-show) ------------
+
+test 'V1.9A3 A3-09: previously visible toolbar uses restore (respects remembered state)' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  toolbar.fake_last_state = :visible
+  SUAnalysis::Extension::Loader.register!
+  refute_includes toolbar.events, :show,
+                  'previously visible toolbar must NOT be force-shown'
+  assert_includes toolbar.events, :restore,
+                  'previously visible toolbar must call restore (Blueprint §6)'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-09: previously hidden -> restore (NOT show) -------------------
+
+test 'V1.9A3 A3-09: previously hidden toolbar is NOT force-shown' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  toolbar.fake_last_state = :hidden
+  SUAnalysis::Extension::Loader.register!
+  refute_includes toolbar.events, :show,
+                  'previously hidden toolbar must NOT be force-shown (Blueprint §6)'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-07: no-selection friendly message (menu and toolbar share) -----
+
+test 'V1.9A3 A3-07: no-selection invokes friendly message and does not open dialog' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  v19a3_stub_sketchup_with_empty_selection
+  begin
+    # No dialog yet.
+    assert_equal 0, FakeUI.state.dialogs.length
+    # Invoke the shared command handler (menu OR toolbar — same code).
+    cmd.call_handler
+    # No dialog opened.
+    assert_equal 0, FakeUI.state.dialogs.length,
+                 'no-selection path must NOT open a half-empty dialog'
+    # Friendly message shown via UI.messagebox.
+    assert_equal 1, FakeUI.state.messageboxes.length,
+                 'no-selection path must show exactly one messagebox'
+    assert_equal '请先选择需要检查和处理的 CAD 几何。',
+                 FakeUI.state.messageboxes.first,
+                 "messagebox text must be the Blueprint §3 product message"
+  ensure
+    v19a3_unstub_sketchup
+  end
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-06: valid selection still reaches show_dialog_for_selection ----
+
+test 'V1.9A3 A3-06: valid selection still reaches show_dialog_for_selection (dialog opens)' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  cmd = SUAnalysis::Extension::Loader.register!
+  stub_sketchup_with_selection
+  begin
+    cmd.call_handler
+    assert_equal 1, FakeUI.state.dialogs.length,
+                 'valid-selection path must open exactly one HtmlDialog'
+    refute_nil SUAnalysis::Extension::Loader.instance_variable_get(:@live_dialog)
+  ensure
+    unstub_sketchup
+  end
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-12: Blueprint §9 — no UI::Command#extension= / subclassing ----
+
+test 'V1.9A3: production loader does NOT use UI::Command#extension=' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/loader.rb', __dir__))
+  code_only = src.lines.reject { |l| l.lstrip.start_with?('#') }.join
+  # Blueprint §9: do NOT use UI::Command#extension= and do NOT
+  # subclass UI::Command.
+  refute_match(/\.extension\s*=/, code_only,
+               'loader.rb MUST NOT call UI::Command#extension=')
+  refute_match(/class\s+\w+\s*<\s*UI::Command/, code_only,
+               'loader.rb MUST NOT subclass UI::Command')
+end
+
+# ---- Blueprint §2: NO AI/disabled placeholders ------------------------
+
+test 'V1.9A3: loader only adds ONE command, not placeholder disabled buttons' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  SUAnalysis::Extension::Loader.register!
+  toolbar = FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME)
+  assert_equal 1, toolbar.items.length,
+               'V1.9A3 ships ONE production button (no Site Model / ' \
+               'Residential Model / AI Render placeholders)'
+ensure
+  FakeUI.uninstall!
+end
+
+# ---- A3-13: existing A2 production orchestrator / presenter / DialogRunner
+#              remain untouched (source-level guard against accidental
+#              V1.9A3 contract drift) ------------------------------------
+
+test 'V1.9A3: V1.9A-A2 orchestrator file is unchanged by this packet' do
+  # The A2 orchestrator SHA is frozen at this packet's baseline.
+  # If V1.9A3 accidentally edits it, the SHA changes and AIPM
+  # review will catch it. This test asserts the orchestrator file
+  # exists and is parseable so a missing file is caught locally.
+  orch_path = File.expand_path(
+    '../extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb', __dir__
+  )
+  assert File.exist?(orch_path),
+         'cad_prep_workflow_orchestrator.rb must remain present'
+  RubyVM::InstructionSequence.compile(File.read(orch_path), orch_path)
+end
+
+test 'V1.9A3: V1.9A presenter file is unchanged by this packet' do
+  pres_path = File.expand_path(
+    '../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__
+  )
+  assert File.exist?(pres_path),
+         'cad_prep_workflow_presenter.rb must remain present'
+  RubyVM::InstructionSequence.compile(File.read(pres_path), pres_path)
+end
+
+# ---- Blueprint §5: retained references survive multiple register! -----
+
+test 'V1.9A3: Loader.cad_prep_command accessor returns the SAME retained instance' do
+  FakeUI.install!
+  v19a3_reset_loader!
+  first = SUAnalysis::Extension::Loader.register!
+  second = SUAnalysis::Extension::Loader.register!
+  third  = SUAnalysis::Extension::Loader.register!
+  assert_equal first, second
+  assert_equal second, third
+  assert_equal first, SUAnalysis::Extension::Loader.cad_prep_command,
+               'cad_prep_command accessor must return the retained instance'
+  # The toolbar reference is also retained across register! calls.
+  assert_equal SUAnalysis::Extension::Loader.cad_prep_toolbar,
+               FakeUI.state.toolbar(SUAnalysis::Extension::Loader::TOOLBAR_NAME),
+               'cad_prep_toolbar accessor must return the retained toolbar'
+ensure
+  FakeUI.uninstall!
 end

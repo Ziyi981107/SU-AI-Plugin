@@ -29,17 +29,118 @@
 module FakeUI
   # A sketchup::Command stand-in. The block is invoked when the
   # menu item is "clicked" via #call_handler.
+  #
+  # V1.9A3 contract additions (Blueprint §2 + §4 + §6):
+  #   - The constructor wires the block as the handler (matching
+  #     the real UI::Command.new(name) { block } pattern).
+  #   - The fake mirrors the official setters used by the
+  #     production Loader: menu_text=, tooltip=, status_bar_text=,
+  #     small_icon=, large_icon=. These are stable APIs on the
+  #     project's SU2017+ baseline.
+  #   - #extension= is INTENTIONALLY NOT supported (per Blueprint
+  #     §9: do not use UI::Command#extension=).
   class FakeCommand
-    attr_reader :name
-    def initialize(name)
+    attr_reader :name, :tooltip, :status_bar_text,
+                :small_icon, :large_icon
+    def initialize(name, &block)
       @name = name.to_s
+      @tooltip = nil
+      @status_bar_text = nil
+      @small_icon = nil
+      @large_icon = nil
       @handler = nil
+      set_handler(&block) if block
     end
     def set_handler(&block)
       @handler = block
     end
     def call_handler(*args)
       @handler.call(*args) if @handler
+    end
+    def tooltip=(value)
+      @tooltip = value.to_s
+    end
+    def status_bar_text=(value)
+      @status_bar_text = value.to_s
+    end
+    def small_icon=(value)
+      @small_icon = value.to_s
+    end
+    def large_icon=(value)
+      @large_icon = value.to_s
+    end
+    # Blueprint §9: UI::Command#extension= is intentionally NOT
+    # exposed here. If a test reaches for it, the call must fail
+    # loudly so the contract is preserved.
+    def respond_to_missing?(sym, include_private = false)
+      sym == :extension= || sym == :extension || super
+    end
+    def method_missing(sym, *_args)
+      if sym == :extension=
+        raise NoMethodError, "FakeCommand: UI::Command#extension= is forbidden by V1.9A3 Blueprint §9"
+      end
+      super
+    end
+  end
+
+  # Sketchup toolbar visibility state sentinel. Mirrors the real
+  # UI::Toolbar#get_last_state return value (TB_NEVER_SHOWN = 0).
+  # Per Blueprint §6 we must NOT force-show a toolbar the user
+  # has previously hidden.
+  TB_NEVER_SHOWN = 0 unless defined?(TB_NEVER_SHOWN)
+
+  # A sketchup::Toolbar stand-in. Mirrors the official API surface
+  # the V1.9A3 Loader touches:
+  #   - #name               (constructor argument)
+  #   - #add_item(cmd)      (idempotent on the command identity)
+  #   - #show               (forces the toolbar visible)
+  #   - #restore            (respects remembered state)
+  #   - #get_last_state     (returns TB_NEVER_SHOWN or :visible / :hidden)
+  #
+  # State tracking: the fake records every show / restore / hide
+  # call so tests can assert the Blueprint §6 policy was followed.
+  # The default first-state is TB_NEVER_SHOWN; tests can override
+  # via #fake_last_state=.
+  class FakeToolbar
+    attr_reader :name, :items, :events
+    def initialize(name)
+      @name = name.to_s
+      @items = []
+      @events = []
+      @fake_last_state = TB_NEVER_SHOWN
+    end
+    def add_item(cmd)
+      # Idempotent on command identity: the SAME shared command
+      # added twice produces ONE entry. This mirrors the real
+      # UI::Toolbar behavior + the Blueprint §5 idempotency rule.
+      unless @items.any? { |existing| existing.equal?(cmd) }
+        @items << cmd
+      end
+      cmd
+    end
+    def show
+      @events << :show
+      @fake_last_state = :visible
+      true
+    end
+    def restore
+      @events << :restore
+      # If the toolbar was previously hidden, stay hidden.
+      # If previously visible, become visible.
+      @fake_last_state = :visible if @fake_last_state == TB_NEVER_SHOWN
+      true
+    end
+    def hide
+      @events << :hide
+      @fake_last_state = :hidden
+      true
+    end
+    def get_last_state
+      @fake_last_state
+    end
+    # Test hook: drive the toolbar into a specific remembered state.
+    def fake_last_state=(value)
+      @fake_last_state = value
     end
   end
 
@@ -431,18 +532,27 @@ module FakeUI
   # Per-test UI state. Each test calls FakeUI.reset! to get a
   # fresh menu hierarchy and a fresh dialog list.
   class State
-    attr_reader :menus, :dialogs
+    attr_reader :menus, :dialogs, :toolbars, :messageboxes
     def initialize
       @menus = {}
       @dialogs = []
+      @toolbars = {}
+      @messageboxes = []
     end
     def menu(name)
       @menus[name.to_s] ||= FakeMenu.new(name)
+    end
+    def toolbar(name)
+      @toolbars[name.to_s] ||= FakeToolbar.new(name)
     end
     def new_dialog(opts = nil)
       d = FakeHtmlDialog.new(opts)
       @dialogs << d
       d
+    end
+    def messagebox(text, _buttons = nil)
+      @messageboxes << text.to_s
+      text.to_s
     end
   end
 
@@ -484,19 +594,35 @@ module FakeUI
   end
 end
 
-# UIStub singleton methods: per-instance menu / HtmlDialog delegation.
+# UIStub singleton methods: per-instance menu / toolbar /
+# HtmlDialog delegation. Mirrors the real UI module shape: per-
+# session state for menus / toolbars / dialogs.
 module FakeUI::UIStub
   def self.menu(name)
     FakeUI.state.menu(name)
+  end
+
+  def self.toolbar(name)
+    FakeUI.state.toolbar(name)
+  end
+
+  def self.messagebox(text, buttons = nil)
+    FakeUI.state.messagebox(text, buttons)
   end
 end
 
 # UI::Command constant. The loader does UI::Command.new(name) { block }.
 FakeUI::UIStub.const_set(:Command, Class.new do
   def self.new(name, &block)
-    cmd = FakeUI::FakeCommand.new(name)
-    cmd.set_handler(&block) if block
-    cmd
+    FakeUI::FakeCommand.new(name, &block)
+  end
+end)
+
+# UI::Toolbar constant. The loader does UI::Toolbar.new(name).
+# Returns a FakeUI::FakeToolbar recorded in FakeUI.state.toolbars.
+FakeUI::UIStub.const_set(:Toolbar, Class.new do
+  def self.new(name)
+    FakeUI.state.toolbar(name)
   end
 end)
 

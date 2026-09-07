@@ -376,8 +376,8 @@ else
         plugin_menu = FakeUI.state.menu('Plugins')
         submenu = plugin_menu.submenus.find { |s| s.name == 'SU-AI-Plugin' }
         assert !submenu.nil?, 'expected SU-AI-Plugin submenu under Plugins'
-        cmd = submenu.items.find { |i| i.respond_to?(:name) && i.name == 'Analyze selection' }
-        assert !cmd.nil?, "expected menu item 'Analyze selection' to be registered"
+        cmd = submenu.items.find { |i| i.respond_to?(:name) && i.name == 'CAD Prep' }
+        assert !cmd.nil?, "expected menu item 'CAD Prep' to be registered"
 
         # Trigger the command. With no Sketchup constant defined,
         # on_analyze_selection returns nil immediately (no-op
