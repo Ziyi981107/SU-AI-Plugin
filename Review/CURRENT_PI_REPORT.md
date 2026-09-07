@@ -3035,3 +3035,329 @@ review remains mandatory later regardless.
 - V1.9B = NOT STARTED
 
 END
+
+# CURRENT PI REPORT — V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: OWNER UI HIDDEN-SEMANTICS FOLLOW-UP — narrow
+frontend fix (continuation of Owner Gate A2 BLOCK
+fix work).
+Authority: AIPM chat instruction (root-cause traced by
+AIPM) + dispatch-aligned narrow scope continuation of the
+V1.9A-A2 Owner Gate A2 work.
+Baseline HEAD: `1d1f9c821c7050268743a7acd6fe502cd3baddeb`
+(dev/v1.9 V1.9A OWNER UI TAB SWITCH BLOCK docs
+commit).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS (unchanged; prototype preserved).
+A1 packet: COMPLETE on `dev/v1.9`.
+A2 packet (orchestrator + error-boundary narrow correction):
+COMPLETE on `dev/v1.9`.
+A2 SHAs frozen by CURRENT_STATE.md:
+  - cad_prep_workflow_orchestrator.rb:
+    `4e77c1fe47bc72793ba655bb0952abafcc9db7dc5000d407c8b24df01da5238c`
+  - cad_prep_workflow_presenter.rb:
+    `c64c7cd27a4b40a6308e7a6b42750ef402eefefd0b54cef4b683d10e9ad68691`
+  - dialog_runner.rb:
+    `dc3c4042c94e20f996aef49e17908072de337217622de447245449dfc75d7b94`
+A3 packet (NATIVE TOOLBAR & PRODUCT ENTRY): COMPLETE on
+`dev/v1.9`; SHAs frozen by CURRENT_STATE.md:
+  - loader.rb:
+    `3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5`
+  - html/app.js:
+    `50bb92c65c61df7bc645de73f1f3f78257dcb7ac80e90d395a2a3942ad65769f`
+  - html/index.html:
+    `4d488aef5da7e43cc8245cc6d40263e9345422c1a228392a3238373a15d0336a`
+TAB SWITCH BLOCK packet: COMPLETE on `dev/v1.9`;
+style.css SHA-256:
+`ceac7aeec04f5c3aeed88cd768e0ec4794e7656c01644af3419d89386a61c752`
+HIDDEN-SEMANTICS FOLLOW-UP (this packet): COMPLETE on
+`dev/v1.9`; awaiting AIPM source review of the 2 scoped
+CSS rules + the complete audit + the 9 new CSS source-
+level guards + the 8 new DOM click-through assertions +
+RBZ hashes.
+Implementation SHA produced by this packet:
+`09bd5d33033123ac3bab6b669b2676ac83dbd1eb`
+(see `git log -1 --format=%H dev/v1.9`).
+CODEX_RISK_TRIGGER: **NO** (2 scoped CSS rules +
+regression tests only; no algorithm / contract / source-
+ownership / transaction / Undo / Face / Observer / V1.6 /
+V1.7 / V1.8 / A2 / A3 / V1.9B / TAB SWITCH BLOCK /
+host-state validation / WorkingModeRunner change).
+
+## HIDDEN-SEMANTICS FOLLOW-UP — 2026-09-07
+
+- Starting HEAD for this packet:
+  `1d1f9c821c7050268743a7acd6fe502cd3baddeb` (the
+  V1.9A OWNER UI TAB SWITCH BLOCK docs commit on
+  `dev/v1.9`).
+- Implementation SHA:
+  `09bd5d33033123ac3bab6b669b2676ac83dbd1eb` (this
+  packet's stable commit).
+- Final HEAD on dev/v1.9:
+  `09bd5d33033123ac3bab6b669b2676ac83dbd1eb` (see
+  `git rev-parse HEAD` after push).
+- V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP RBZ
+  candidate: size **1,138,324 bytes** (+1,552 vs
+  TAB SWITCH 1,136,772); entries **73** (unchanged);
+  SHA-256
+  **`f82395dd32cdc926ad1bf50abe59ab1d8fb7be8a48091a8cff68792191da42f9`**.
+- Packaged
+  `extension/su_ai_plugin/html/style.css` SHA-256:
+  **`fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c`**
+  (CHANGED — contains both scoped
+  `.recovery-banner[hidden] { display: none; }` and
+  `.tab-badge[hidden] { display: none; }` rules).
+- HTML / JS / Ruby production SHAs UNCHANGED
+  (verified via packaged-RBZ extraction; all 6
+  match the prior TAB SWITCH packet SHAs exactly):
+  - `html/index.html` SHA-256:
+    `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+    (matches V1.9A3 packet SHA exactly).
+  - `html/app.js` SHA-256:
+    `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+    (matches V1.9A3 packet SHA exactly).
+  - `loader.rb` SHA-256:
+    `3B85DFEFE5145113D8CA0A4EE123C1D406E21DA0D54986C524123C9CCB2C0ED5`
+    (matches V1.9A3 packet SHA exactly).
+  - `cad_prep_workflow_orchestrator.rb` SHA-256:
+    `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
+    (matches A2-ERR packet SHA exactly).
+  - `cad_prep_workflow_presenter.rb` SHA-256:
+    `C64C7CD27A4B40A6308E7A6B42750EF402EEFEFD0B54CEF4B683D10E9AD68691`
+    (matches A2-ERR packet SHA exactly).
+  - `dialog_runner.rb` SHA-256:
+    `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+    (matches A2-ERR packet SHA exactly).
+- Full Ruby suite: **1147 / 1147 total** /
+  **1144 PASS** / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations documented
+    in CURRENT_STATE.md (baseline unchanged from
+    TAB SWITCH packet):
+    - `capability.HtmlDialog: outside SU returns false
+      (R002 + S2-BLOCK-006)`
+    - `V14 production call chain: dialog callback ->
+      WorkingModeRunner -> workspace reaches :ready`
+    - `V17-L1: host_state_changed invalidates the
+      workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately
+    per dispatch §13.
+  - Delta vs prior TAB SWITCH packet 1139: +8 tests
+    (the 8 new V1.9A OWNER UI HIDDEN-SEMANTICS
+    FOLLOW-UP focused tests in
+    `tests/test_html_render.rb`).
+- V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP focused
+  tests (NEW this packet):
+  - `tests/test_html_render.rb` — **9 / 9 PASS**:
+    - style.css has the
+      `.recovery-banner[hidden] { display: none }`
+      rule (presence guard).
+    - style.css has the
+      `.tab-badge[hidden] { display: none }` rule
+      (presence guard).
+    - `.recovery-banner[hidden]` rule appears AFTER
+      `.recovery-banner` (cascade-order guard).
+    - `.tab-badge[hidden]` rule appears AFTER
+      `.tab-badge` (cascade-order guard).
+    - CSS structural guard against future
+      `.recovery-banner { display }` / `.tab-badge {
+      display }` regressions (both scoped rules
+      coexist).
+    - Uses scoped selectors, not a global `[hidden]
+      !important` rule (dispatch preference: scoped
+      > global).
+    - COMPLETE audit of all current `[hidden]`
+      elements (panel×4 / recovery-banner /
+      tab-badge / toast) — each is either covered
+      by a scoped override rule OR explicitly marked
+      unaffected because its CSS class does NOT set
+      `display:`.
+    - `recovery-banner` / `tab-issues-badge` static
+      `hidden` attributes present in HTML by
+      default.
+  - `tests/test_html_render_dom.js` — **8 new
+    click-through assertions** (all PASS):
+    - recovery-banner default carries hidden
+      attribute.
+    - tab-issues-badge default carries hidden
+      attribute (count=0).
+    - STALE recovery removes hidden attribute
+      (banner visible).
+    - is-failed recovery removes hidden attribute
+      (banner visible).
+    - READY_FOR_VALIDATION banner re-hidden.
+    - issue count > 0 removes hidden attribute
+      (badge visible).
+    - issue count == 0 keeps hidden attribute
+      (badge hidden).
+    - existing four-tab switching still passes
+      (regression guard against cascade-order
+      breakage).
+- V1.9A presenter (full): **47 / 47 PASS**
+  (unchanged; presenter file SHA matches A2-ERR
+  packet SHA exactly).
+- V1.9A orchestrator (full): **20 / 20 PASS**
+  (unchanged; orchestrator file SHA matches A2-ERR
+  packet SHA exactly; A2-ERR architecture frozen).
+- V1.9A dialog_runner (full): **48 / 48 PASS**
+  (unchanged; dialog_runner file SHA matches A2-ERR
+  packet SHA exactly).
+- V1.9A bridge: **10 / 10 PASS** (unchanged).
+- V1.9A3 Loader / A3: **16 / 16 PASS** (the V1.9A3
+  packet's shared UI::Command + toolbar + icons
+  tests intact; loader.rb SHA matches V1.9A3 packet
+  SHA exactly).
+- V1.9A DOM (`tests/test_html_render.rb`): **39 /
+  39 PASS** (29 prior + 1 Node DOM wrapper + 9 new
+  V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP tests).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS, final line `PASS` (includes the
+  8 new click-through scenarios for recovery-banner
+  / tab-issues-badge).
+- Regression (per dispatch §8):
+  - V1.6 planar normalization: **33 / 33 PASS**.
+  - V1.6 close-autodiscard: **7 / 7 PASS**.
+  - V1.7 focused: **127 / 127 PASS**.
+  - V1.7 INT: **33 / 33 PASS**.
+  - V1.8 focused: **71 / 71 PASS**.
+  - V1.8 SR18: **32 / 32 PASS**.
+  - V1.4 fingerprint focused: **22 / 22 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS** (CSS only; no
+    Ruby syntax change).
+  - RBZ smoke: **9 / 9 PASS** (rebuilt with the 2
+    new scoped CSS rules; all 9 RBZ assertions
+    intact).
+- `git diff --check`: clean (0 warnings on
+  production / test code; the trailing whitespace
+  in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
+  and outside Pi's scope — `Prompt/` is read-only).
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 /
+V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change.
+No host mutation / Face / Observer. No site
+semantics. No A2 orchestrator / Presenter /
+DialogRunner callbacks change. No Loader / A3
+toolbar / V1.9A3 contract change. No host-state
+validation / WorkingModeRunner change. No switchTab
+JS logic change. No index.html tab structure change.
+No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **CSS scoped rules (the fix)**:
+  `extension/su_ai_plugin/html/style.css` — added
+  2 scoped rules immediately after the existing
+  `.recovery-banner { display: flex }` and
+  `.tab-badge { display: inline-flex }` rules:
+
+  ```css
+  .recovery-banner[hidden] {
+    display: none;
+  }
+
+  .tab-badge[hidden] {
+    display: none;
+  }
+  ```
+
+  Specificity: `.X[hidden]` = 0,0,2,0; `.X` =
+  0,0,1,0. The scoped selector wins by both
+  specificity AND cascade order (it appears AFTER
+  the non-scoped rule in the stylesheet).
+
+- **Complete audit result (every CURRENT [hidden]
+  element)**:
+  - `panel-process` / `panel-issues` / `panel-layers`
+    / `panel-details`: `.panel { display: flex }`
+    override → fixed by prior `.panel[hidden]`
+    packet.
+  - `recovery-banner`: `.recovery-banner { display:
+    flex }` override → fixed by THIS packet
+    `.recovery-banner[hidden]`.
+  - `tab-issues-badge`: `.tab-badge { display:
+    inline-flex }` override → fixed by THIS packet
+    `.tab-badge[hidden]`.
+  - `toast`: `.toast { ... }` does NOT set
+    `display:` (only `position` / `padding` /
+    `background` / etc.) → the browser default
+    `[hidden] { display: none }` works correctly
+    for it. NOT AFFECTED. The complete-audit test
+    pins this classification.
+
+- **Focused CSS source-level guards (NEW this
+  packet)**:
+  `tests/test_html_render.rb` — 9 new tests that
+  pin the fix at the CSS source level so future
+  edits cannot silently regress the hidden contract:
+  - The 2 scoped rules MUST be present.
+  - The 2 scoped rules MUST appear AFTER their
+    non-scoped counterparts (cascade-order guard).
+  - The fix MUST NOT use a global `[hidden]
+    !important` (dispatch preference: scoped >
+    global).
+  - Both `.recovery-banner` / `.tab-badge` AND
+    their scoped overrides MUST coexist
+    (structural guard against future `display:`
+    edits).
+  - The COMPLETE audit test enumerates every
+    CURRENT `[hidden]` element and asserts each is
+    either covered by a scoped override rule OR
+    explicitly marked unaffected because its CSS
+    class does NOT set `display:` (the `.toast`
+    case).
+  - The `recovery-banner` / `tab-issues-badge`
+    static `hidden` attributes are present in HTML
+    by default.
+
+- **DOM click-through regression (NEW this
+  packet)**:
+  `tests/test_html_render_dom.js` — 8 new
+  click-through assertions that simulate the Owner
+  Gate A2 BLOCK follow-up scenario end-to-end.
+  Each assertion verifies that:
+  - Default state: recovery-banner / tab-issues-badge
+    carry the `hidden` attribute.
+  - STALE / is-failed recovery: removing `hidden`
+    makes the banner visible (contract flip works).
+  - READY_FOR_VALIDATION: re-hiding the banner
+    succeeds.
+  - Issue count > 0: removing `hidden` makes the
+    badge visible.
+  - Issue count == 0: the badge keeps `hidden`.
+  - Existing four-tab switching still passes
+    (regression guard).
+
+Next expected action: AIPM source review of the
+V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP packet
+(the 2 scoped CSS rules + the complete audit + the
+9 new CSS source-level guards + the 8 new DOM
+click-through assertions + RBZ hashes + A2 / A3 /
+TAB SWITCH / V1.9B confirmation SHAs). Then: Owner
+real-SU2020 re-verification (the gate that originally
+produced this BLOCK follow-up should now PASS).
+V1.9B PreparedCadDataset / persistence NOT STARTED.
+Final V1.x Codex xHigh review remains mandatory
+later regardless.
+
+- AIPM_REVIEW = PENDING
+- OWNER_SU2020 = NOT YET (Owner Gate A2 BLOCK
+  follow-up fix now ready for re-verification per
+  Blueprint §12)
+- V1.9A-A2 orchestrator = FROZEN (architecture +
+  error-boundary narrow correction preserved
+  unchanged by this packet)
+- V1.9A-A3 = FROZEN (NATIVE TOOLBAR & PRODUCT
+  ENTRY preserved unchanged by this packet)
+- V1.9A TAB SWITCH BLOCK = FROZEN (.panel[hidden]
+  fix preserved unchanged by this packet)
+- V1.9B = NOT STARTED
+
+END
