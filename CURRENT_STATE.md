@@ -1,8 +1,217 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX (THIS UPDATE)
+## V1X-LEGACY-RUBY-DEBT-CLOSURE (THIS UPDATE)
 
-Updated: 2026-09-04 (V1.9A-A1 LEGACY RUBY COMPATIBILITY
+Updated: 2026-09-07 (V1X-LEGACY-RUBY-DEBT-CLOSURE dispatch
+EXECUTION on assigned `dev/v1.9` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` and the AIPM narrow recheck
+that found the V1.9A presenter compatibility fix correct but
+3 pre-existing production `.sum` calls (V1.4 / V1.6 era)
+remained incompatible with the SU2017 Ruby 2.2 baseline).
+This packet is a mechanical compatibility closure ONLY —
+three production `.sum` sites replaced with `inject(0)` /
+`inject(0.0)` plus a global LEGACY-COMPAT guard extension.
+No V1.4 / V1.6 / V1.7 / V1.8 algorithm change, no contract
+change, no schema change. All frozen V1.4–V1.8 Blueprint
+authority is preserved unchanged on `dev/v1.9`.
+
+Status (this packet):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged; preserved
+  on `dev/v1.9` from `dev/v1.8 @ bbe423c` baseline).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION MODEL
+  (original packet @ a8563e3)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 AIPM FIX REQUIRED CONTINUATION
+  (@ 3d5c72a)**: COMPLETE on `dev/v1.9`.
+- **V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX
+  (@ e38d6dc)**: COMPLETE on `dev/v1.9`.
+- **V1X-LEGACY-RUBY-DEBT-CLOSURE (this packet)**: COMPLETE
+  on `dev/v1.9`; awaiting AIPM narrow source recheck of
+  the 3 mechanical replacements and the global guard
+  extension.
+- **V1.9A-A2 deterministic full-diagnostics orchestrator**:
+  NOT STARTED (per dispatch §3).
+- **V1.9B PreparedCadDataset / persistence**: NOT STARTED
+  (per dispatch §3).
+- **CODEX_RISK_TRIGGER = NO** (this packet; mechanical
+  replacements, no algorithm / contract / frontend /
+  V1.6-V1.8 algorithm change).
+- **AIPM_REVIEW = PENDING** (narrow recheck of the 3
+  replacements AND the global guard extension).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1X-LEGACY-RUBY-DEBT-CLOSURE — 2026-09-07.
+
+- Starting HEAD for this packet:
+  `e38d6dcc8930b37f0d5e439d628bf4f82426aa54` (the
+  V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX complete
+  state on `dev/v1.9`).
+- Implementation SHA: `9d7b2b3` (this packet's stable
+  commit).
+- Final HEAD on dev/v1.9: `9d7b2b3b...` (see
+  `git rev-parse HEAD`).
+- V1X-LEGACY-RUBY-DEBT-CLOSURE RBZ candidate: size
+  **1,100,586 bytes**; entries **70**; SHA-256
+  **`475052E5D18F870985FCF3D7C6AB0C0552CC7DF963BA9A92A7C3FA61193DADB0`**.
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (unchanged from V1.9A-A1 baseline).
+- Packaged `html/app.js` SHA-256:
+  `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`
+  (unchanged from V1.9A-A1 baseline).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (unchanged from V1.9A-A1 baseline).
+- Packaged `cad_prep_workflow_presenter.rb` SHA-256:
+  `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`
+  (unchanged from V1.9A-A1 LEGACY RUBY COMPAT NARROW FIX
+  baseline).
+- Packaged `core/source_fingerprint.rb` SHA-256:
+  `949CE3FF1E9A05D9FFEB4D5377ED2B2F265C4B62BC464E5573442FB0C6AD6B24`
+  (NEW — `.sum` → `inject(0.0)` / `inject(0)`).
+- Packaged `core/planar_normalization_executor.rb`
+  SHA-256:
+  `7EF4D2DE2C61A305D16278C830438F72EB75B9C363C51AA10162D7F4AA773E9B`
+  (NEW — `.sum` → `inject(0.0)`).
+- Full Ruby suite: **1070 / 1070 total** / **1067 PASS**
+  / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations from the V1.8
+    baseline (confirmed via isolated re-run where each
+    PASSes individually):
+      - `capability.HtmlDialog: outside SU returns false
+        (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback ->
+        WorkingModeRunner -> workspace reaches :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately per
+    dispatch §4 reporting rule.
+- LEGACY-COMPAT tests (after this packet):
+  - **4 / 4 PASS** (3 pre-existing global scanners +
+    1 already-passing endless-range scan; the prior
+    V19A-A1 scoped guard was REMOVED as redundant now
+    that the global `KNOWN_MODERN_SYNTAX` covers the
+    entire `extension/` tree).
+- V1.9A focused tests (unchanged from prior packet):
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    **38 / 38 PASS**.
+  - `tests/test_v19a_ui_bridge.rb`: **10 / 10 PASS**.
+- V1.9A DOM tests (unchanged from prior packet):
+  - `tests/test_html_render.rb`: **24 / 24 PASS**.
+  - `tests/test_html_render_dom.js`: 327+ assertions
+    PASS, final line `PASS`.
+- V1.4 fingerprint focused tests: **22 / 22 PASS**
+  (`grep fingerprint` subset).
+- V1.6 planar normalization: **33 / 33 PASS** (V16 set).
+- V1.7 focused: **127 / 127 PASS** (baseline preserved).
+- V1.8 focused: **71 / 71 PASS** (baseline preserved).
+- V1.8 SR18 set: **32 / 32 PASS**.
+- V1.7 INT set: **33 / 33 PASS**.
+- V1.6 close-autodiscard (V16-H6 + V16-I3): **PASS**.
+- RBZ smoke: **9 / 9 PASS** (rebuilt; presenter file
+  present).
+- `git diff --check`: clean (0 warnings).
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.9`. Pi did NOT rewrite any frozen design authority.
+No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No workspace ownership
+change. No host mutation / Face / Observer. No site
+semantics. No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **3 mechanical production `.sum` → `inject(0)` /
+  `inject(0.0)` replacements** (preserving Float semantics
+  for `edge_length_sum` and `_z_summary` mean):
+
+  1. `extension/su_ai_plugin/core/source_fingerprint.rb`
+     line 224: `edges.map { ... }.sum` →
+     `edges.inject(0.0) { |acc, e| acc + (...) }`.
+     V1.4 fingerprint schema (field names, canonical
+     ordering, digest semantics) UNCHANGED.
+  2. `extension/su_ai_plugin/core/source_fingerprint.rb`
+     line 227: `faces.map { ... }.sum` →
+     `faces.inject(0) { |acc, f| acc + (...) }`.
+     V1.4 fingerprint schema UNCHANGED.
+  3. `extension/su_ai_plugin/core/planar_normalization_executor.rb`
+     line 343: `(floats.sum.to_f / floats.length.to_f)` →
+     `total = floats.inject(0.0) { |acc, z| acc + z }; total /
+     floats.length.to_f`. V1.6 mean semantics UNCHANGED
+     (count / min / max / mean unchanged); V1.6
+     normalization policy, host mutation behavior,
+     tolerance, audit shape all UNCHANGED.
+
+- **Global LEGACY-COMPAT guard extension**: extended
+  `KNOWN_MODERN_SYNTAX` in
+  `tests/test_v15_legacy_compat_guard.rb` with three new
+  entries (`integer_positive_p`, `integer_negative_p`,
+  `enumerable_sum`). The pre-existing global test
+  `LEGACY-COMPAT: no known modern-syntax constructs in
+  production source` now catches any executable-code
+  reintroduction of `.positive?` / `.negative?` / `.sum`
+  anywhere under `extension/`. Comment lines are NOT
+  treated as findings (the scanner already skips pure
+  comment lines via `lstrip.start_with?('#')`).
+
+  The prior V19A-A1 SCOPED guard (which scanned only the
+  new V1.9A presenter file) has been REMOVED as redundant
+  — the global guard covers it with the same precision.
+
+  Teeth verified in this session: temporarily reintroduced
+  `.sum` to `core/source_fingerprint.rb` line 224 and
+  confirmed the global LEGACY-COMPAT test FAILS with
+  file:line + match + minimal fix guidance. Reverted
+  before commit.
+
+Tree-wide compatibility scan (extension/, post-fix):
+
+  `.positive?`       : NONE
+  `.negative?`       : NONE
+  `.sum`             : NONE
+  `&.`               : NONE
+  `transform_values` : NONE
+  `dig`              : NONE
+  `yield_self` / `then`: NONE
+  `filter_map`       : NONE
+  Hash-only `.compact`: NONE
+  Endless range `[a..]`: NONE
+  Beginless range `[..b]`: NONE
+  Numbered block params: NONE
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the
+  V1X-LEGACY-RUBY-DEBT-CLOSURE section is appended below
+  the previous V1.9A-A1 packet + FIX REQUIRED continuation
+  + LEGACY RUBY COMPAT NARROW FIX sections).
+
+Next expected action: AIPM narrow source recheck of the 3
+mechanical replacements in `core/source_fingerprint.rb`
+and `core/planar_normalization_executor.rb` AND the global
+guard extension in
+`tests/test_v15_legacy_compat_guard.rb`. Then: Owner UX
+Gate A2 (real SU2020 orchestrated workflow). V1.9A-A2
+orchestrator NOT STARTED. V1.9B PreparedCadDataset /
+persistence NOT STARTED.
+
+CODEX_GATE: NOT REQUIRED (per AGENTS.md §13 / §10; no
+risk trigger — 3 mechanical `.sum` → `inject(0)` replacements
+in V1.4 fingerprint + V1.6 planar normalization; no algorithm
+change; no contract change; no source / provenance change; no
+tolerance / canonical-topology change; no frontend change).
+
+OWNER_GATE: PENDING (A2).
+V1.9A-A2: NOT STARTED.
+V1.9B: NOT STARTED.
+
+## V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX (HISTORICAL)
 NARROW FIX dispatch EXECUTION on assigned `dev/v1.9`
 per dispatch `Prompt/CURRENT_PI_DISPATCH.md` and the
 AIPM narrow recheck that found the new V1.9A production

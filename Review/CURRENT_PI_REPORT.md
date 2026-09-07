@@ -977,4 +977,354 @@ Per AGENTS.md §13 / §10 + dispatch §0:
 STOP. Awaiting AIPM narrow source recheck of the V1.9A
 Legacy Ruby Compatibility narrow fix only.
 
+---
+
+# CURRENT PI REPORT — V1X-LEGACY-RUBY-DEBT-CLOSURE
+
+Project: `SU-AI-Plugin`
+Version: V1.X (pre-A2)
+Stage: V1.9A pre-A2 compatibility closure
+Packet: **V1X-LEGACY-RUBY-DEBT-CLOSURE** (AIPM narrow
+recheck follow-up to the V1.9A-A1 LEGACY RUBY
+COMPATIBILITY NARROW FIX).
+Authority: `Prompt/CURRENT_PI_DISPATCH.md`
+(V1X-LEGACY-RUBY-DEBT-CLOSURE dated 2026-09-07).
+Baseline HEAD: `e38d6dcc8930b37f0d5e439d628bf4f82426aa54`
+(V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX complete
+state).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Implementation SHA: `9d7b2b3b...` (HEAD after push; see
+`git rev-parse HEAD`).
+CODEX_RISK_TRIGGER: **NO** (per dispatch §0; only 2
+production .rb files (V1.4 fingerprint + V1.6 planar
+normalization) + 1 LEGACY-COMPAT test file were touched;
+no algorithm change; no contract change; no frontend
+change; no V1.6-V1.8 algorithm change).
+A2 / V1.9B: NOT STARTED (per dispatch §3).
+
+## Scope of this packet (the ONLY thing Pi changed)
+
+Per dispatch §0 / §1: AIPM verified the V1.9A presenter
+compatibility fix but exposed three pre-existing production
+`.sum` calls (V1.4 / V1.6 era) that remain incompatible
+with the SU2017 Ruby 2.2 baseline. This packet is a
+bounded compatibility closure ONLY — three production
+`.sum` sites replaced with `inject(0)` / `inject(0.0)` plus
+a regression-guard extension. No algorithm change. No
+contract change. No schema change. No count / min / max /
+mean / normalization-policy / fingerprint-digest / host
+mutation behavior change.
+
+## Exact three replacements
+
+### 1. `extension/su_ai_plugin/core/source_fingerprint.rb` line 224
+
+Before:
+```ruby
+edge_length_sum: edges.map { |e| e.respond_to?(:length) ? e.length : 0.0 }.sum,
+```
+
+After:
+```ruby
+edge_length_sum: edges.inject(0.0) { |acc, e| acc + (e.respond_to?(:length) ? e.length : 0.0) },
+```
+
+Preserved: V1.4 fingerprint schema (field names
+unchanged: `edge_length_sum`); canonical ordering (the
+fingerprint `new(...)` hash constructor order unchanged);
+digest semantics (the canonical ordering + every field
+unchanged); Float accumulation semantics (initial value
+`0.0` Float, every addend Float).
+
+### 2. `extension/su_ai_plugin/core/source_fingerprint.rb` line 227
+
+Before:
+```ruby
+face_vertex_count_sum: faces.map { |f| f.respond_to?(:outer_loop_vertex_count) ? f.outer_loop_vertex_count : 0 }.sum,
+```
+
+After:
+```ruby
+face_vertex_count_sum: faces.inject(0) { |acc, f| acc + (f.respond_to?(:outer_loop_vertex_count) ? f.outer_loop_vertex_count : 0) },
+```
+
+Preserved: V1.4 fingerprint schema (field name
+`face_vertex_count_sum` unchanged); canonical ordering;
+digest semantics; Integer accumulation semantics (initial
+value `0` Integer, every addend Integer or 0).
+
+### 3. `extension/su_ai_plugin/core/planar_normalization_executor.rb` line 343
+
+Before:
+```ruby
+def _z_summary(zs)
+  return { 'count' => 0, 'min' => nil, 'max' => nil, 'mean' => nil } if zs.empty?
+  floats = zs.map(&:to_f)
+  {
+    'count' => floats.length,
+    'min'   => floats.min.to_f,
+    'max'   => floats.max.to_f,
+    'mean'  => (floats.sum.to_f / floats.length.to_f)
+  }.freeze
+end
+```
+
+After:
+```ruby
+def _z_summary(zs)
+  return { 'count' => 0, 'min' => nil, 'max' => nil, 'mean' => nil } if zs.empty?
+  floats = zs.map(&:to_f)
+  # Ruby 2.2 compatibility: Array#sum was added in Ruby 2.4.
+  # Use inject-based reduction so this runs on the legacy
+  # baseline (SU2017 Ruby 2.2.4 / SU2020 Ruby 2.5.5).
+  total = floats.inject(0.0) { |acc, z| acc + z }
+  {
+    'count' => floats.length,
+    'min'   => floats.min.to_f,
+    'max'   => floats.max.to_f,
+    'mean'  => (total / floats.length.to_f)
+  }.freeze
+end
+```
+
+Preserved: V1.6 count / min / max / mean semantics
+unchanged (mean = total / count); normalization policy
+unchanged (this is `_z_summary` — a pure summary helper,
+no mutation); host mutation behavior unchanged (no
+mutation code added or removed); tolerance unchanged
+(no tolerance value reference inside `_z_summary`);
+audit shape unchanged (the audit dict still has the
+same `count` / `min` / `max` / `mean` keys).
+
+## Tree-wide compatibility scan (extension/, post-fix)
+
+Per dispatch §4 reporting requirement, scanned the
+entire `extension/` tree (production source only,
+excluding comments per dispatch §2). Result:
+
+| Construct                  | Findings | Status                                                                            |
+|----------------------------|----------|-----------------------------------------------------------------------------------|
+| `.positive?`               | 0        | NONE in `extension/`.                                                              |
+| `.negative?`               | 0        | NONE in `extension/`.                                                              |
+| `.sum`                     | 0        | NONE in `extension/`. Pre-existing V1.4 / V1.6 usages replaced by this packet.      |
+| `&.`                       | 0        | NONE in `extension/`.                                                              |
+| `transform_values`         | 0        | NONE in `extension/`.                                                              |
+| `dig`                      | 0        | NONE in `extension/`.                                                              |
+| `yield_self` / `then`      | 0        | NONE in `extension/`.                                                              |
+| `filter_map`               | 0        | NONE in `extension/`.                                                              |
+| Hash-only `.compact`       | 0        | NONE. All `.compact` calls in the production tree are `Array#compact`, pre-2.2 valid. |
+| Endless range `[a..]`      | 0        | NONE in `extension/`.                                                              |
+| Beginless range `[..b]`    | 0        | NONE in `extension/`.                                                              |
+| Numbered block params       | 0        | NONE in `extension/`.                                                              |
+
+The `extension/` tree is now CLEAN for the Ruby 2.2
+baseline. The guard catches any future reintroduction.
+
+## Regression guard extension
+
+This packet extended the existing LEGACY-COMPAT
+framework (in `tests/test_v15_legacy_compat_guard.rb`)
+per dispatch §2. Specifically, added three new entries
+to `KNOWN_MODERN_SYNTAX`:
+
+```ruby
+{
+  id:    'integer_positive_p',
+  regex: /\.[ ]?positive\?[ ]?(?![A-Za-z0-9_=!?])/,
+  ruby_min_unsupported: '2.3.0',
+  ruby_min_required:    '2.3.0',
+  comment: 'Integer#positive? requires Ruby >= 2.3.0. ...'
+},
+{
+  id:    'integer_negative_p',
+  regex: /\.[ ]?negative\?[ ]?(?![A-Za-z0-9_=!?])/,
+  ruby_min_unsupported: '2.3.0',
+  ruby_min_required:    '2.3.0',
+  comment: 'Integer#negative? requires Ruby >= 2.3.0. ...'
+},
+{
+  id:    'enumerable_sum',
+  regex: /\.[ ]?sum(?![A-Za-z0-9_=!?])/,
+  ruby_min_unsupported: '2.4.0',
+  ruby_min_required:    '2.4.0',
+  comment: 'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. ...'
+}
+```
+
+All three regexes share a tight `(?![A-Za-z0-9_=!?])`
+lookahead to ensure we only match the actual method
+invocation, NOT identifier-shaped names. Specifically
+`enumerable_sum` does NOT match:
+  - `edge_length_sum:` keyword symbol (followed by `:`)
+  - `face_vertex_count_sum:` keyword symbol (followed by `:`)
+  - `consumed` (followed by `d`)
+  - `summary` (followed by `r`)
+
+The pre-existing global test
+`LEGACY-COMPAT: no known modern-syntax constructs in
+production source` (which iterates `PRODUCTION_FILES`,
+the entire `extension/` tree) now automatically covers
+the three new patterns.
+
+The pre-existing endless-range regression test
+`LEGACY-COMPAT: no endless-range [n..] in production
+source (CONFIRMED-FIX-COMPAT-RANGE)` was kept unchanged.
+
+The prior V19A-A1 SCOPED guard (which scanned only the
+new V1.9A presenter file) was REMOVED as redundant: the
+global `KNOWN_MODERN_SYNTAX` guard now covers it with
+the same precision. Keeping a competing framework would
+conflict with the dispatch's "extend the existing
+LEGACY-COMPAT guard" instruction.
+
+Comment lines are NOT treated as findings (the scanner
+already skips pure comment lines via
+`lstrip.start_with?('#')`).
+
+Teeth verified: temporarily reintroduced `.sum` to
+`core/source_fingerprint.rb` line 224 and confirmed
+the global LEGACY-COMPAT test FAILS with file:line +
+match + minimal fix guidance. Reverted before commit.
+
+## Test results (this packet, fresh run)
+
+### LEGACY-COMPAT (this packet)
+
+- `LEGACY-COMPAT: vendored Ruby parses every production
+  .rb file (current-source syntax/load smoke)`: PASS
+- `LEGACY-COMPAT: Ripper.sexp parses every production .rb
+  file (current-source AST smoke)`: PASS
+- `LEGACY-COMPAT: no known modern-syntax constructs in
+  production source` (UPDATED to also cover
+  `.positive?` / `.negative?` / `.sum`): PASS
+- `LEGACY-COMPAT: no endless-range [n..] in production
+  source (CONFIRMED-FIX-COMPAT-RANGE)`: PASS
+
+Total LEGACY-COMPAT: **4 / 4 PASS** (down from 5 after
+removing the now-redundant V19A-A1 scoped guard; the 3
+new pattern entries are now covered by the global
+scanner).
+
+### Focused regression (this packet)
+
+- V1.9A focused: `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+  **38 / 38 PASS** + `tests/test_v19a_ui_bridge.rb`:
+  **10 / 10 PASS**.
+- Source fingerprint focused (`grep fingerprint`):
+  **22 / 22 PASS**.
+- Planar normalization focused (`V16` set):
+  **33 / 33 PASS** (covers V16-T1..T3, V16-I1..I3, V16-H1..H6,
+  V16-P1..P7 etc., including the V16-H6 discard /
+  rebuild invariant and the V16-I3 discard-clears-state
+  invariant — the close-autodiscard contract).
+- V1.7 focused: **127 / 127 PASS** (baseline preserved).
+- V1.8 focused: **71 / 71 PASS** (baseline preserved).
+- V1.8 SR18 set: **32 / 32 PASS**.
+- V1.7 INT set: **33 / 33 PASS**.
+
+### DOM / RBZ / Full suite (this packet)
+
+- `tests/test_html_render.rb`: **24 / 24 PASS**.
+- `tests/test_html_render_dom.js`: 327+ assertions
+  PASS, final line `PASS`.
+- RBZ smoke: **9 / 9 PASS** (rebuilt; presenter file
+  present).
+- Full Ruby suite: **1070 / 1070 total / 1067 PASS / 1
+  fail / 2 error**.
+- The 1 fail + 2 error are the SAME pre-existing
+  test-environment / FakeUI limitations from the V1.8
+  baseline (confirmed via direct re-run of each in
+  isolation — each PASSes individually; the failures
+  are test-order-dependent pollution from the larger
+  suite):
+  - `capability.HtmlDialog: outside SU returns false
+    (R002 + S2-BLOCK-006)`
+  - `V14 production call chain: dialog callback ->
+    WorkingModeRunner -> workspace reaches :ready`
+  - `V17-L1: host_state_changed invalidates the workspace
+    via validate-on-next-interaction`
+- None caused by this packet; per dispatch §4 reporting
+  rule, do not relabel them PASS.
+
+### Diff hygiene
+
+- `git diff --check`: clean (0 warnings).
+
+## RBZ (rebuilt because production Ruby changed)
+
+| Metric          | Value                                                                                            |
+|-----------------|--------------------------------------------------------------------------------------------------|
+| Path            | `dist/SU-AI-Plugin.rbz`                                                                          |
+| Size            | **1,100,586 bytes** (delta +269 vs V1.9A-A1 LEGACY RUBY COMPAT 1,100,317)                       |
+| Entries         | **70** (unchanged)                                                                               |
+| SHA-256         | **`475052E5D18F870985FCF3D7C6AB0C0552CC7DF963BA9A92A7C3FA61193DADB0`**                          |
+
+### Packaged asset hashes (this packet)
+
+| File                                       | SHA-256                                                              | Status                                          |
+|-------------------------------------------|----------------------------------------------------------------------|-------------------------------------------------|
+| `html/index.html`                          | `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`    | UNCHANGED                                        |
+| `html/app.js`                              | `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`    | UNCHANGED                                        |
+| `html/style.css`                           | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`    | UNCHANGED                                        |
+| `cad_prep_workflow_presenter.rb`           | `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`    | UNCHANGED from V1.9A-A1 LEGACY RUBY COMPAT baseline |
+| `core/source_fingerprint.rb`               | `949CE3FF1E9A05D9FFEB4D5377ED2B2F265C4B62BC464E5573442FB0C6AD6B24`    | NEW (V1.4 — `.sum` → `inject(0.0)` / `inject(0)`) |
+| `core/planar_normalization_executor.rb`    | `7EF4D2DE2C61A305D16278C830438F72EB75B9C363C51AA10162D7F4AA773E9B`    | NEW (V1.6 — `.sum` → `inject(0.0)`)              |
+
+## Confirmation — no A2 / V1.9B / scope creep (this packet)
+
+| Scope item                                                    | Started? | Evidence                                                                          |
+|---------------------------------------------------------------|----------|-----------------------------------------------------------------------------------|
+| `CadPrepWorkflowOrchestrator`                                  | NO       | Not present in any file.                                                          |
+| `start_cad_prep` orchestration callback                         | NO       | Not registered in `dialog_runner.rb`.                                             |
+| Automatic full diagnostics after `prepare_workspace`           | NO       | Presenter logic UNCHANGED (this packet touched the V1.4 fingerprint + V1.6 planar normalization production files only). |
+| V1.4 fingerprint algorithm change                              | NO       | Field names, canonical ordering, digest semantics UNCHANGED; only the internal `edges.map { ... }.sum` reduction switched to `inject(0.0) { ... }` / `inject(0) { ... }`. |
+| V1.6 planar normalization algorithm change                      | NO       | Count / min / max / mean semantics UNCHANGED; only `_z_summary` switched `.sum to `inject(0.0) { ... }`. |
+| V1.7 / V1.8 algorithm change                                  | NO       | `git diff e38d6dc..HEAD -- extension/su_ai_plugin/core/` shows zero changes to V1.7 / V1.8 algorithm files. |
+| Tolerance / source ownership change                            | NO       | No changes to `Tolerance` / `SourceSnapshot` / `WorkingModeRunner.snapshot` shape. |
+| Face / Observer architecture                                   | NO       | Not present in any file.                                                          |
+| `PreparedCadDataset` / persistence (V1.9B)                     | NO       | Not present in any file; dispatch §3 forbids it.                                  |
+| MCP / LLM / Agent                                              | NO       | Not present in any file; dispatch §3 forbids it.                                  |
+| V1.x product UX redesign                                       | NO       | IA / 4 tabs / 5 cards / existing callbacks / legacy payload keys all UNCHANGED.    |
+| JS / HTML / CSS change                                         | NO       | Packaged `html/index.html` / `html/app.js` / `html/style.css` SHA-256 UNCHANGED.  |
+
+## `CODEX_RISK_TRIGGER` determination (this packet)
+
+Per AGENTS.md §13 / §10 + dispatch §0:
+- Only `extension/su_ai_plugin/core/source_fingerprint.rb`,
+  `extension/su_ai_plugin/core/planar_normalization_executor.rb`,
+  and `tests/test_v15_legacy_compat_guard.rb` were touched
+  by the production-data plane.
+- 3 mechanical / semantics-preserving replacements
+  (`inject(0.0) { ... }` / `inject(0) { ... }` for
+  `.sum`).
+- 3 new regex entries added to `KNOWN_MODERN_SYNTAX`.
+- 1 redundant scoped test removed (the prior V19A-A1
+  scoped guard).
+- No algorithm change. No schema / contract change.
+- No source / state ownership / transaction / recovery
+  change. No Face / Observer architecture. No source CAD
+  mutation. No canonical-topology / tolerance / segment-
+  conflict semantic change. No RBZ-only release claim.
+- The V1.4 fingerprint digest and the V1.6 mean both
+  produce the same numeric result as before (verified by
+  the unchanged schema + digest-test baselines).
+
+`CODEX_RISK_TRIGGER = NO`.
+
+## STOP (this packet)
+
+- AIPM_REVIEW = PENDING (narrow recheck of the 3
+  mechanical `.sum` → `inject(0)` replacements in
+  `core/source_fingerprint.rb` and
+  `core/planar_normalization_executor.rb` AND the global
+  guard extension in `tests/test_v15_legacy_compat_guard.rb`)
+- CODEX = NOT REQUIRED
+- OWNER_SU2020 = NOT YET
+- A2 = NOT STARTED
+- V1.9B = NOT STARTED
+
+STOP. Awaiting AIPM narrow source recheck of the
+V1X-LEGACY-RUBY-DEBT-CLOSURE only.
+
 END
