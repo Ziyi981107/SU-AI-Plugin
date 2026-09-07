@@ -2426,3 +2426,340 @@ STOP. Awaiting AIPM narrow source recheck of the
 V1X-LEGACY-RUBY-DEBT-CLOSURE only.
 
 END
+
+# CURRENT PI REPORT — V1.9A3 NATIVE TOOLBAR & PRODUCT ENTRY
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: A3 — NATIVE TOOLBAR & PRODUCT ENTRY
+Authority: `Prompt/CURRENT_PI_DISPATCH.md`
+(V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY, 2026-09-07) +
+`Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A3_NATIVE_TOOLBAR_2026-09-07.md`.
+Baseline HEAD: `1de098b5d3ab8872294ace3fdb504511512faf13`
+(dev/v1.9 V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION
+complete state).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS (unchanged; prototype preserved).
+A1 packet: COMPLETE on `dev/v1.9`.
+A2 packet (orchestrator + error-boundary narrow correction):
+COMPLETE on `dev/v1.9`; architecture + error-boundary
+PASS the prior AIPM source review.
+A2 SHAs frozen by CURRENT_STATE.md:
+  - cad_prep_workflow_orchestrator.rb:
+    `4e77c1fe47bc72793ba655bb0952abafcc9db7dc5000d407c8b24df01da5238c`
+  - cad_prep_workflow_presenter.rb:
+    `c64c7cd27a4b40a6308e7a6b42750ef402eefefd0b54cef4b683d10e9ad68691`
+  - dialog_runner.rb:
+    `dc3c4042c94e20f996aef49e17908072de337217622de447245449dfc75d7b94`
+A3 packet (this packet): COMPLETE on `dev/v1.9`; awaiting
+AIPM source review of the native toolbar / shared
+UI::Command / icons / no-selection UX + regression tests
++ RBZ hashes. Implementation SHA produced by this packet:
+see `git log -1 --format=%H dev/v1.9`.
+CODEX_RISK_TRIGGER: **NO** (Blueprint §10 — toolbar is an
+entry point only; no algorithm / contract / source-
+ownership / transaction / Undo / Face / Observer / V1.6 /
+V1.7 / V1.8 / A2 orchestrator / Presenter / DialogRunner
+callbacks / V1.9B change).
+
+## A3 — 2026-09-07
+
+- Starting HEAD for this packet:
+  `1de098b5d3ab8872294ace3fdb504511512faf13` (the
+  V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION complete
+  state on `dev/v1.9`).
+- Implementation SHA: `d04d0e305261017126da9b89465193c0631b4542`
+  (this packet's stable commit).
+- Final HEAD on dev/v1.9:
+  `d04d0e305261017126da9b89465193c0631b4542` (see
+  `git rev-parse HEAD` after push).
+- V1.9A3 RBZ candidate: size **1,135,782 bytes**
+  (+9,716 vs A2-ERR 1,126,066); entries **73**
+  (+2 icons vs A2-ERR 71);
+  SHA-256 **`b51fd3f2084fbeb83524f220a9cb95d87bdd4f0b0a8e7cdedabf8f376cfa4dca`**.
+- Packaged `extension/su_ai_plugin/loader.rb` SHA-256:
+  **`3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5`**
+  (NEW — V1.9A3 shared command + toolbar + no-selection UX
+  refactor).
+- Packaged icons (NEW this packet):
+  - `extension/su_ai_plugin/icons/cad_prep_24.png`
+    SHA-256:
+    `de3fdb75bccc48c069e60a51e32588d25f0c2b77ca75160bbd16a29a0db8b795`
+    (202 bytes, exactly 24x24, RGBA8).
+  - `extension/su_ai_plugin/icons/cad_prep_32.png`
+    SHA-256:
+    `6f4dfe71743fd0d45f07d25dbd13d41f8cfa7c4c49e0de70be22391a9ed0a765`
+    (225 bytes, exactly 32x32, RGBA8).
+- A2 / V1.9B confirmation (UNTOUCHED this packet):
+  - `extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb`
+    SHA-256:
+    `4e77c1fe47bc72793ba655bb0952abafcc9db7dc5000d407c8b24df01da5238c`
+    (matches CURRENT_STATE.md A2-ERR SHA exactly).
+  - `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+    SHA-256:
+    `c64c7cd27a4b40a6308e7a6b42750ef402eefefd0b54cef4b683d10e9ad68691`
+    (matches CURRENT_STATE.md A2-ERR SHA exactly).
+  - `extension/su_ai_plugin/dialog_runner.rb`
+    SHA-256:
+    `dc3c4042c94e20f996aef49e17908072de337217622de447245449dfc75d7b94`
+    (matches CURRENT_STATE.md A2-ERR SHA exactly).
+- HTML / CSS / JS SHAs (UNCHANGED this packet):
+  - `html/index.html` SHA-256:
+    `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+    (no HTML change in this packet; the toolbar entry is a
+    pure native SU surface, not a UI-tab change).
+  - `html/app.js` SHA-256:
+    `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+    (no JS change; existing
+    `start_cad_prep` / `refresh_cad_prep` callbacks remain
+    the in-app trigger surfaces; the new native toolbar /
+    menu reuses the existing `on_analyze_selection` path).
+  - `html/style.css` SHA-256:
+    `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+    (no CSS change in this packet).
+- Full Ruby suite: **1132 / 1132 total** / **1129 PASS**
+  / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing test-
+    environment / FakeUI limitations documented in
+    CURRENT_STATE.md (baseline unchanged from the A2-ERR
+    packet):
+    - `capability.HtmlDialog: outside SU returns false
+      (R002 + S2-BLOCK-006)`
+    - `V14 production call chain: dialog callback ->
+      WorkingModeRunner -> workspace reaches :ready`
+    - `V17-L1: host_state_changed invalidates the workspace
+      via validate-on-next-interaction`
+    None caused by this packet; reported separately per
+    dispatch §13.
+  - Delta vs prior A2-ERR packet (1116): +16 tests (the
+    V1.9A3 focused tests + 1 PNG dimension test).
+- V1.9A3 focused tests (NEW this packet):
+  - `tests/test_loader.rb` — V1.9A3 section:
+    **17 / 17 PASS** (16 V1.9A3 contract tests + 1 PNG
+    dimension test):
+    - A3-01/A3-02 toolbar named 'SU AI' with exactly one button
+    - A3-05 menu and toolbar share the SAME UI::Command object
+    - A3-04 tooltip / status bar text match Blueprint §2
+    - A3-03 icon paths resolve to real local PNG files
+    - PNG dimension test (exact 24x24 / 32x32)
+    - A3-08 repeated register! does not duplicate toolbar or button
+    - A3-10 TB_NEVER_SHOWN -> toolbar.show
+    - A3-09 previously visible toolbar uses restore
+    - A3-09 previously hidden toolbar is NOT force-shown
+    - A3-07 no-selection invokes friendly messagebox
+    - A3-06 valid selection still reaches show_dialog_for_selection
+    - Blueprint §9 source-level guard (no UI::Command#extension=
+      and no UI::Command subclassing)
+    - Blueprint §2: only ONE production button (no
+      Site Model / Residential Model / AI Render placeholders)
+    - V1.9A-A2 orchestrator file unchanged (parseable)
+    - V1.9A presenter file unchanged (parseable)
+    - Loader.cad_prep_command accessor returns retained instance
+  - Plus the 12 pre-existing `test_loader` tests remain
+    intact (updated where they hard-coded the old
+    'Analyze selection' menu text to 'CAD Prep' per the
+    new Blueprint §2 contract).
+- V1.9A presenter (full): **47 / 47 PASS** (unchanged from
+  A2-ERR packet).
+- V1.9A orchestrator (full): **20 / 20 PASS** (the 14
+  prior + 5 entry-point propagation + 1 source-level
+  guard tests remain intact; A2-ERR architecture frozen
+  unchanged).
+- V1.9A dialog_runner (full): **48 / 48 PASS** (the
+  dialog_runner wiring is untouched; only the
+  `on_analyze_selection` semantics are shared with the
+  new toolbar entry — no callback surface change).
+- V1.9A bridge: **10 / 10 PASS** (unchanged).
+- V1.9A DOM (`tests/test_html_render.rb`): **24 / 24
+  PASS** (unchanged; no HTML change in this packet).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS, final line `PASS` (unchanged).
+- Regression (per dispatch §8):
+  - V1.6 planar normalization: **33 / 33 PASS**.
+  - V1.6 close-autodiscard: **7 / 7 PASS**.
+  - V1.7 focused: **127 / 127 PASS**.
+  - V1.7 INT: **33 / 33 PASS**.
+  - V1.8 focused: **71 / 71 PASS**.
+  - V1.8 SR18: **32 / 32 PASS**.
+  - V1.4 fingerprint focused: **22 / 22 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS** (no `.positive?` /
+    `.negative?` / `.sum` / `&.` / `transform_values` /
+    `dig` / `yield_self` / `filter_map` / endless-range /
+    beginless-range / numbered-block-params in
+    `loader.rb`; the LEGACY-COMPAT scanners confirm).
+  - RBZ smoke: **9 / 9 PASS** (rebuilt with the
+    refactored loader + the 2 new icon assets; the
+    menu-name assertion was updated from
+    'Analyze selection' to 'CAD Prep' to reflect the
+    new Blueprint §2 menu text).
+- `git diff --check`: clean (0 warnings on production /
+  test code; the trailing whitespace in
+  `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing and
+  outside Pi's scope — `Prompt/` is read-only per
+  AGENTS.md §2).
+
+Frozen V1.8 Blueprint preserved unchanged on the assigned
+`dev/v1.9`. Pi did NOT rewrite any frozen design authority.
+No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No workspace ownership
+change. No host mutation / Face / Observer. No site
+semantics. No A2 orchestrator / Presenter / DialogRunner
+callbacks change. No PreparedCadDataset / persistence
+(V1.9B). No MCP / LLM / Agent. No UI-tab / visual design /
+HTML / CSS / JS change.
+
+Corrections / additions by this packet:
+
+- **Shared UI::Command + native toolbar (dispatch §2)**:
+  `extension/su_ai_plugin/loader.rb` — Loader now constructs
+  exactly ONE `@cad_prep_command` (`UI::Command.new('CAD
+  Prep') { on_analyze_selection }`) and attaches the SAME
+  command object to BOTH the existing `SU-AI-Plugin`
+  submenu AND the new `SU AI` toolbar. The menu text,
+  tooltip, status bar text, and icon paths are configured
+  per Blueprint §2:
+  - `menu_text` (the UI::Command name) = `'CAD Prep'`.
+  - `tooltip` = `'SU AI · CAD Prep'`.
+  - `status_bar_text` =
+    `'检查并准备当前选择的 CAD 几何'`.
+  - `small_icon` =
+    `<__dir__>/icons/cad_prep_24.png`.
+  - `large_icon` =
+    `<__dir__>/icons/cad_prep_32.png`.
+
+  Per Blueprint §4: "Do not create one command for menu
+  and a second command for toolbar." This packet does not
+  create a second command. The retained `Loader.cad_prep_command`
+  accessor returns the SAME instance for the menu item AND
+  the toolbar button (object identity asserted by test).
+
+- **Native `SU AI` toolbar (dispatch §3)**:
+  `extension/su_ai_plugin/loader.rb` — Loader now creates
+  `UI::Toolbar.new('SU AI')` (the `TOOLBAR_NAME`
+  constant), retained in `@toolbar`, and adds the SAME
+  `@cad_prep_command` to it. The toolbar contains
+  exactly ONE production button per Blueprint §2 (no
+  Site Model / Residential Model / AI Render
+  placeholders). Loader test confirms exactly one button
+  in the toolbar.
+
+- **Toolbar visibility policy (dispatch §4 + Blueprint §6)**:
+  `extension/su_ai_plugin/loader.rb` —
+  `apply_toolbar_visibility_policy(toolbar)` consults
+  `toolbar.get_last_state`:
+  - If state == `TB_NEVER_SHOWN`, call `toolbar.show`
+    (Blueprint §6 first-discovery path).
+  - Otherwise call `toolbar.restore` (SketchUp's last-
+    state is honored; a previously hidden toolbar is NOT
+    force-shown).
+  - Tolerates hosts that lack `get_last_state` /
+    `show` / `restore` (the registration does not crash
+    on legacy baseline).
+
+- **No-selection UX (dispatch §5 + Blueprint §3)**:
+  `extension/su_ai_plugin/loader.rb` — The shared
+  `on_analyze_selection` now consults the selection. If
+  `selection.nil? || selection.count.zero?`, it calls
+  `show_no_selection_message` which displays the frozen
+  product message `'请先选择需要检查和处理的 CAD 几何。'`
+  via `UI.messagebox(message, buttons)` (with a defensive
+  `UI::MB_OK` constant lookup so the test env / legacy
+  hosts do not NameError). Both menu and toolbar receive
+  this behavior because they share the SAME command
+  block. A valid selection still reaches
+  `show_dialog_for_selection(selection, model)` which
+  invokes the existing `AnalyzersRunner.run` +
+  `DialogRunner.show` path (A2 architecture unchanged).
+
+- **Bundled local PNG icons (dispatch §6 + Blueprint §7)**:
+  - `extension/su_ai_plugin/icons/cad_prep_24.png` —
+    exactly 24x24, RGBA8, blue-violet rounded square +
+    white CAD polyline/loop motif, transparent
+    background.
+  - `extension/su_ai_plugin/icons/cad_prep_32.png` —
+    exactly 32x32, RGBA8, same motif at larger size.
+  - `scripts/gen_icons.rb` — deterministic PNG generator
+    (no external image dependency; no internet download;
+    pure-Ruby Zlib-based PNG encoding).
+  - The PNG dimensions are asserted by
+    `tests/test_loader.rb`'s V1.9A3 PNG dimension test
+    (parses the PNG signature + IHDR chunk directly).
+
+- **Idempotency / retained references (dispatch §3 + Blueprint §5)**:
+  `extension/su_ai_plugin/loader.rb` — Loader retains
+  `@cad_prep_command` and `@toolbar` for the process
+  lifetime. Repeated `register!` calls return the SAME
+  command object (Blueprint §4 idempotency requirement)
+  and produce no duplicate menu item, no duplicate
+  toolbar, and no duplicate toolbar button. The
+  `FakeUI::FakeToolbar#add_item` is idempotent on
+  command identity (same object identity → single entry),
+  matching the production intent.
+
+- **Legacy Ruby compatibility (dispatch §6 + Blueprint §9)**:
+  `extension/su_ai_plugin/loader.rb` does NOT use:
+  - `UI::Command#extension=` (Blueprint §9 explicit
+    prohibition);
+  - `UI::Command` subclassing (Blueprint §9 explicit
+    prohibition);
+  - any post-Ruby-2.2 helper syntax (`.positive?`,
+    `.negative?`, `.sum`, `&.`, `transform_values`,
+    `dig`, `yield_self`, `filter_map`, endless range
+    `[n..]`, beginless range `[..n]`, numbered block
+    params). The LEGACY-COMPAT test suite (4/4 PASS)
+    confirms via the existing global scanner framework
+    (extended with `.positive?` / `.negative?` /
+    `.sum` coverage in the V1X-LEGACY-RUBY-DEBT-CLOSURE
+    packet).
+
+- **FakeUI extensions**:
+  `tests/_fake_ui.rb` — `FakeCommand` extended with the
+  Blueprint §2 setters (`tooltip=`, `status_bar_text=`,
+  `small_icon=`, `large_icon=`); `extension=` is
+  INTENTIONALLY missing — `method_missing` raises
+  `NoMethodError` if a future test reaches for it, so
+  the Blueprint §9 contract is enforced at the test
+  boundary. `FakeToolbar` class added (name, add_item,
+  show, restore, hide, get_last_state, events, fake_last_state=)
+  mirroring the real `UI::Toolbar` API surface. `TB_NEVER_SHOWN`
+  constant added. `FakeUI::State` now tracks toolbars
+  and messageboxes. `UIStub` exposes `UI.toolbar` and
+  `UI.messagebox`.
+
+- **Focused tests (dispatch §8 + Blueprint §11)**:
+  `tests/test_loader.rb` — new V1.9A3 section adds 17
+  tests covering A3-01..A3-13 + Blueprint §2 / §9
+  contracts + frozen orchestrator / presenter
+  parseability guards. The pre-existing 12 loader
+  tests were updated where they hard-coded the old
+  `'Analyze selection'` menu text to `'CAD Prep'`
+  per the new Blueprint §2 contract; the 12 tests
+  remain green.
+
+  `tests/test_rbz_smoke.rb` — one assertion updated
+  from `'Analyze selection'` to `'CAD Prep'` to match
+  the Blueprint §2 menu text inside the extracted-RBZ
+  smoke path. All other RBZ smoke assertions
+  unchanged.
+
+Next expected action: AIPM source review of the V1.9A3
+packet (Loader shared command + SU AI toolbar + no-
+selection UX + icon assets + FakeUI extensions +
+focused tests + RBZ hashes + A2/V1.9B confirmation
+SHAs). Then: Owner real-SU2020 gate A3 (per Blueprint
+§12 Owner Real-SU2020 Gate). V1.9A-A2 orchestrator +
+A2-ERR error boundary + V1.9A-A1 frontend remain
+frozen unchanged. V1.9B PreparedCadDataset / persistence
+NOT STARTED.
+
+- AIPM_REVIEW = PENDING
+- OWNER_SU2020 = NOT YET (Blueprint §12 Owner gate
+  pending AIPM source review)
+- V1.9A-A2 orchestrator = FROZEN (architecture +
+  error-boundary narrow correction preserved
+  unchanged by V1.9A3)
+- V1.9B = NOT STARTED
+
+END
