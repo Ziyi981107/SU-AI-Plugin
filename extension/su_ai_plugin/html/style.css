@@ -299,6 +299,26 @@ h1, h2, h3, h4, p { margin: 0; }
   flex-direction: column;
 }
 
+/* V1.9A OWNER UI TAB SWITCH BLOCK fix (Owner Gate A2 BLOCK):
+   The browser default `[hidden] { display: none }` is OVERRIDDEN
+   by `.panel { display: flex }` because the author rule has the
+   same specificity but appears later. Without this scoped rule,
+   inactive panels (hidden=true) would still render via the flex
+   layout, defeating `switchTab`'s `setAttribute('hidden', '')`.
+   The scoped selector `.panel[hidden]` is preferred over a global
+   `[hidden] !important` rule because:
+     - it preserves the author's `.panel { display:flex }` default
+       for the active panel;
+     - it does not affect non-panel elements that legitimately use
+       the hidden attribute elsewhere;
+     - it is the narrowest possible CSS surface for the fix.
+   Regression-guarded by tests/test_html_render.rb + the Node DOM
+   test tests/test_html_render_dom.js (default visible, click each
+   tab, assert hidden state flips + aria-selected follows). */
+.panel[hidden] {
+  display: none;
+}
+
 /* Panel headers (问题 / 图层 / 详情) */
 .panel-header {
   margin-bottom: var(--sp-5);

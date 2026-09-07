@@ -779,6 +779,69 @@ assert('V1.9A-A1 + A2: READY_FOR_VALIDATION primary CTA = 重新检测 / refresh
        _findById(elements, 'btn-primary-cta-text')._text === '重新检测' &&
        _findById(elements, 'btn-primary-cta').getAttribute('data-action-callback') === 'refresh_cad_prep');
 
+// ----------------------------------------------------------------------
+// V1.9A OWNER UI TAB SWITCH BLOCK — DOM regression (Owner Gate A2).
+//
+// Root cause: `.panel { display: flex }` overrides the browser
+// default `[hidden] { display: none }`, so `switchTab`'s
+// setAttribute('hidden', '') leaves inactive panels VISIBLE.
+// Fix: scoped `.panel[hidden] { display: none }` rule in style.css.
+//
+// This DOM test simulates the exact visible/hidden state that the
+// browser computes by inspecting the `hidden` attribute on each
+// panel after a tab click. The JS contract is unchanged (correct
+// before AND after the fix); this test confirms the DOM state
+// flips on every tab click in the exact order specified by the
+// Owner Gate A2 BLOCK fix.
+// ----------------------------------------------------------------------
+
+// Helper: assert the visible/hidden state of all 4 panels after a
+// click. `visibleId` is the panel id that should be VISIBLE; all
+// others should be HIDDEN.
+function assertPanelsAfterClick(clickedTab, clickedPanel, visibleId) {
+  // Click the tab.
+  clickedTab.fireEvent('click');
+  // The visible panel MUST NOT have the hidden attribute.
+  assert('V1.9A OWNER UI TAB SWITCH BLOCK: clicking ' + clickedPanel +
+         ' shows ' + visibleId,
+         !_findById(elements, visibleId).hasAttribute('hidden'));
+  // The other 3 panels MUST have the hidden attribute.
+  var allPanels = ['panel-process', 'panel-issues', 'panel-layers', 'panel-details'];
+  allPanels.forEach(function (pid) {
+    if (pid === visibleId) return;
+    assert('V1.9A OWNER UI TAB SWITCH BLOCK: clicking ' + clickedPanel +
+           ' hides ' + pid,
+           _findById(elements, pid).hasAttribute('hidden'));
+  });
+  // aria-selected contract: clicked tab = 'true', others = 'false'.
+  var allTabs = [
+    { tab: tabProcess, id: 'tab-process' },
+    { tab: tabIssues,  id: 'tab-issues'  },
+    { tab: tabLayers,  id: 'tab-layers'  },
+    { tab: tabDetails, id: 'tab-details' }
+  ];
+  allTabs.forEach(function (entry) {
+    var clickedTabId = clickedTab.getAttribute('id');
+    var expected = (entry.id === clickedTabId) ? 'true' : 'false';
+    assert('V1.9A OWNER UI TAB SWITCH BLOCK: ' + entry.id +
+           ' aria-selected=' + expected + ' after click on ' +
+           clickedTabId,
+           entry.tab.getAttribute('aria-selected') === expected);
+  });
+}
+
+// Click 问题 tab -> panel-issues visible, others hidden.
+assertPanelsAfterClick(tabIssues, '问题', 'panel-issues');
+
+// Click 图层 tab -> panel-layers visible, others hidden.
+assertPanelsAfterClick(tabLayers, '图层', 'panel-layers');
+
+// Click 详情 tab -> panel-details visible, others hidden.
+assertPanelsAfterClick(tabDetails, '详情', 'panel-details');
+
+// Click 处理 tab -> panel-process visible again.
+assertPanelsAfterClick(tabProcess, '处理', 'panel-process');
+
 // --- Final pass/fail rollup --------------------------------------------
 
 var lines = [];

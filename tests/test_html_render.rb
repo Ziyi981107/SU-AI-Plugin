@@ -379,3 +379,143 @@ test 'html_render (V1.9A-A1): cadPrepWorkflow carries the locked 5-card order' d
   assert_equal %w[duplicate_cleanup planar_normalization gap_endpoint structure_region other],
                wf['cards'].map { |c| c['id'] }
 end
+
+# ---------------------------------------------------------------------------
+# V1.9A OWNER UI TAB SWITCH BLOCK — narrow frontend fix verification.
+#
+# Root cause (AIPM-traced): `.panel { display: flex; ... }` in
+# style.css has higher cascade priority than the browser default
+# `[hidden] { display: none }`. Inactive panels (hidden=true) still
+# rendered via the flex layout, defeating `switchTab`'s
+# `setAttribute('hidden', '')` calls.
+#
+# Fix: a scoped `.panel[hidden] { display: none; }` rule placed
+# immediately after the `.panel` rule (Blueprint-scoped, narrower
+# than a global `[hidden] !important`).
+#
+# These tests pin the fix at three levels:
+#   1. CSS source-level guard: the scoped rule MUST exist and MUST
+#      come after the `.panel` rule (so the cascade wins).
+#   2. CSS structural guard: any future `.panel { display: ... }`
+#      change MUST be paired with `.panel[hidden] { display: none; }`
+#      (the regression guard against future .panel display changes).
+#   3. JS contract: the switchTab DOM contract (set / remove the
+#      `hidden` attribute) is unchanged by this fix (the JS was
+#      correct; the CSS was wrong).
+# ---------------------------------------------------------------------------
+
+# Helper: extract the CSS rules around `.panel` (the production
+# scoped rule and its surrounding context). Used by the structural
+# guard test to verify the cascade order.
+def v19a_panel_css_excerpt(style_src)
+  # Capture everything from the first `.panel {` to the end of the
+  # first rule block AFTER `.panel[hidden]` (or end of file).
+  # We use a simple line-based scan: extract lines from the first
+  # line containing `.panel {` to the first blank line that ends a
+  # rule block following `.panel[hidden]`.
+  lines = style_src.lines
+  start_idx = lines.index { |l| l.strip == '.panel {' }
+  return '' if start_idx.nil?
+  excerpt = lines[start_idx..-1] || []
+  excerpt.join
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): style.css has the .panel[hidden] { display: none } rule' do
+  src = File.read(HR_HTML_CSS)
+  # The scoped rule MUST be present.
+  assert_match(/\.panel\[hidden\]\s*\{\s*display:\s*none\s*;?\s*\}/, src,
+               'style.css MUST contain the scoped `.panel[hidden] { display: none }` rule ' \
+               'that closes the Owner Gate A2 BLOCK')
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): .panel[hidden] rule appears AFTER the .panel rule' do
+  # The cascade-order guard: the scoped rule MUST come AFTER the
+  # `.panel { display: flex }` rule so the higher specificity
+  # `.panel[hidden]` selector (1 class + 1 attribute = 0,0,2,0)
+  # beats `.panel` (1 class = 0,0,1,0) and wins.
+  src = File.read(HR_HTML_CSS)
+  panel_idx = src.index(/\.panel\s*\{/)
+  hidden_idx = src.index(/\.panel\[hidden\]\s*\{/)
+  refute_nil panel_idx, '.panel rule must exist'
+  refute_nil hidden_idx, '.panel[hidden] rule must exist (CSS regression guard)'
+  assert panel_idx < hidden_idx,
+         '.panel[hidden] rule MUST appear AFTER .panel rule for cascade order'
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): switchTab JS DOM contract is unchanged' do
+  # The fix is CSS-only. The JS contract (setAttribute / removeAttribute
+  # of `hidden`) is preserved verbatim. This guards against a future
+  # refactor that might switch to a class-based show/hide pattern and
+  # silently regress the contract.
+  src = File.read(HR_HTML_APPJS)
+  assert_match(/function\s+switchTab\s*\(\s*tabId\s*\)/, src,
+               'switchTab(tabId) function must exist')
+  # Active panel: removeAttribute('hidden').
+  assert_match(/removeAttribute\(\s*['"]hidden['"]\s*\)/, src,
+               'switchTab MUST call removeAttribute("hidden") on the active panel')
+  # Inactive panels: setAttribute('hidden', '').
+  assert_match(/setAttribute\(\s*['"]hidden['"]\s*,\s*['"]['"]\s*\)/, src,
+               'switchTab MUST call setAttribute("hidden", "") on inactive panels')
+  # aria-selected contract.
+  assert_match(/aria-selected['"]\s*,\s*['"]true['"]/, src,
+               'switchTab MUST set aria-selected="true" on the active tab')
+  assert_match(/aria-selected['"]\s*,\s*['"]false['"]/, src,
+               'switchTab MUST set aria-selected="false" on inactive tabs')
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): index.html default panel visibility is correct' do
+  # Default state on page load:
+  #   - panel-process: visible (no `hidden` attr).
+  #   - panel-issues / panel-layers / panel-details: `hidden` attr.
+  src = File.read(HR_HTML_INDEX)
+  # The default-active panel has NO hidden attribute.
+  assert_match(/<section[^>]*id="panel-process"[^>]*role="tabpanel"[^>]*>/, src)
+  # The inactive panels DO have `hidden` as an attribute on the same element.
+  assert_match(/<section[^>]*id="panel-issues"[^>]*\bhidden\b/, src,
+               'panel-issues must carry the hidden attribute by default')
+  assert_match(/<section[^>]*id="panel-layers"[^>]*\bhidden\b/, src,
+               'panel-layers must carry the hidden attribute by default')
+  assert_match(/<section[^>]*id="panel-details"[^>]*\bhidden\b/, src,
+               'panel-details must carry the hidden attribute by default')
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): CSS structural guard against future .panel { display } regressions' do
+  # If a future edit changes `.panel { display: flex }` to ANY
+  # display value, the scoped `.panel[hidden] { display: none }`
+  # rule MUST still be present (the cascade still wins because
+  # `.panel[hidden]` has higher specificity than `.panel`).
+  # This is a structural regression guard: the test reads the
+  # CSS source and asserts both rules exist together.
+  src = File.read(HR_HTML_CSS)
+  # The .panel rule (any display value).
+  assert_match(/\.panel\s*\{[^}]*display\s*:/m, src,
+               '.panel rule with a display property must exist')
+  # The .panel[hidden] override rule.
+  assert_match(/\.panel\[hidden\]\s*\{[^}]*display\s*:\s*none/m, src,
+               '.panel[hidden] { display: none } override rule must exist (regression guard)')
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): the fix uses a scoped selector, not a global !important' do
+  # The dispatch mandates: "Prefer this scoped rule over a global
+  # [hidden] !important rule." Verify the fix did NOT introduce a
+  # global `[hidden] !important` override that would defeat the
+  # project's other `hidden` usages.
+  src = File.read(HR_HTML_CSS)
+  # The scoped rule must use `.panel[hidden]`, NOT just `[hidden]`.
+  refute_match(/^\s*\[hidden\]\s*\{[^}]*!important/m, src,
+               'fix MUST NOT introduce a global [hidden] !important rule; ' \
+               'the dispatch mandates the scoped .panel[hidden] selector')
+end
+
+test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): tab map covers all 4 panels (process/issues/layers/details)' do
+  # The switchTab tabMap MUST cover exactly the 4 production tabs.
+  # If a future edit accidentally drops a tab, the click would
+  # leave a panel in the wrong state.
+  src = File.read(HR_HTML_APPJS)
+  %w[process issues layers details].each do |tab|
+    assert_match(/['"]#{tab}['"]\s*:\s*\{\s*btn\s*:\s*['"]tab-#{tab}['"]/, src,
+                 "switchTab tabMap MUST include '#{tab}' mapping to tab-#{tab}")
+    assert_match(/['"]#{tab}['"]\s*:\s*\{\s*btn\s*:\s*['"]tab-#{tab}['"]\s*,\s*panel\s*:\s*['"]panel-#{tab}['"]/, src,
+                 "switchTab tabMap MUST map '#{tab}' to both tab-#{tab} and panel-#{tab}")
+  end
+end
