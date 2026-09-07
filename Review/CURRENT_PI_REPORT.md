@@ -2763,3 +2763,275 @@ NOT STARTED.
 - V1.9B = NOT STARTED
 
 END
+
+# CURRENT PI REPORT — V1.9A OWNER UI TAB SWITCH BLOCK
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: OWNER UI TAB SWITCH BLOCK — narrow frontend fix
+Authority: AIPM chat instruction (root-cause traced by
+AIPM) + dispatch-aligned narrow scope continuation of the
+V1.9A-A2 Owner Gate A2 work (the A2 packet's "Next
+expected action" explicitly listed Owner UX Gate A2 as
+the next step; this BLOCK is the gate's direct result).
+Baseline HEAD: `e3be03dc343657b1d315dbcc7727eeb23a4ad1db`
+(dev/v1.9 V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY docs
+commit).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS (unchanged; prototype preserved).
+A1 packet: COMPLETE on `dev/v1.9`.
+A2 packet (orchestrator + error-boundary narrow correction):
+COMPLETE on `dev/v1.9`.
+A2 SHAs frozen by CURRENT_STATE.md:
+  - cad_prep_workflow_orchestrator.rb:
+    `4e77c1fe47bc72793ba655bb0952abafcc9db7dc5000d407c8b24df01da5238c`
+  - cad_prep_workflow_presenter.rb:
+    `c64c7cd27a4b40a6308e7a6b42750ef402eefefd0b54cef4b683d10e9ad68691`
+  - dialog_runner.rb:
+    `dc3c4042c94e20f996aef49e17908072de337217622de447245449dfc75d7b94`
+A3 packet (NATIVE TOOLBAR & PRODUCT ENTRY): COMPLETE on
+`dev/v1.9`; SHAs frozen by CURRENT_STATE.md:
+  - loader.rb:
+    `3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5`
+  - html/app.js:
+    `50bb92c65c61df7bc645de73f1f3f78257dcb7ac80e90d395a2a3942ad65769f`
+  - html/index.html:
+    `4d488aef5da7e43cc8245cc6d40263e9345422c1a228392a3238373a15d0336a`
+A3 OWNER UI TAB SWITCH BLOCK (this packet): COMPLETE on
+`dev/v1.9`; awaiting AIPM source review of the scoped
+CSS rule + the 7 new CSS source-level guards + the 4 new
+DOM click-through assertions + RBZ hashes.
+Implementation SHA produced by this packet:
+`ce467c3648445dcc6824d8edd4cf31cb3aaf7f1d`
+(see `git log -1 --format=%H dev/v1.9`).
+CODEX_RISK_TRIGGER: **NO** (1-line scoped CSS rule +
+regression tests only; no algorithm / contract / source-
+ownership / transaction / Undo / Face / Observer / V1.6 /
+V1.7 / V1.8 / A2 / A3 / V1.9B change).
+
+## Owner Gate A2 BLOCK — 2026-09-07
+
+- Starting HEAD for this packet:
+  `e3be03dc343657b1d315dbcc7727eeb23a4ad1db` (the
+  V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY docs
+  commit on `dev/v1.9`).
+- Implementation SHA:
+  `ce467c3648445dcc6824d8edd4cf31cb3aaf7f1d` (this
+  packet's stable commit).
+- Final HEAD on dev/v1.9:
+  `ce467c3648445dcc6824d8edd4cf31cb3aaf7f1d` (see
+  `git rev-parse HEAD` after push).
+- V1.9A OWNER UI TAB SWITCH BLOCK RBZ candidate:
+  size **1,136,772 bytes** (+990 vs V1.9A3
+  1,135,782); entries **73** (unchanged from
+  V1.9A3; no new files);
+  SHA-256
+  **`b0700044d2791ac3c47cc73926bd9aebeda6c504dafc9cbc6e5af0d3343ee540`**.
+- Packaged
+  `extension/su_ai_plugin/html/style.css`
+  SHA-256:
+  **`ceac7aeec04f5c3aeed88cd768e0ec4794e7656c01644af3419d89386a61c752`**
+  (CHANGED — contains the scoped
+  `.panel[hidden] { display: none; }` rule).
+- HTML / JS / Ruby production SHAs UNCHANGED
+  (verified via packaged-RBZ extraction; all 6
+  match the prior packets' SHAs exactly):
+  - `html/index.html` SHA-256:
+    `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+    (matches V1.9A3 packet SHA exactly).
+  - `html/app.js` SHA-256:
+    `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+    (matches V1.9A3 packet SHA exactly).
+  - `loader.rb` SHA-256:
+    `3B85DFEFE5145113D8CA0A4EE123C1D406E21DA0D54986C524123C9CCB2C0ED5`
+    (matches V1.9A3 packet SHA exactly).
+  - `cad_prep_workflow_orchestrator.rb` SHA-256:
+    `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
+    (matches A2-ERR packet SHA exactly).
+  - `cad_prep_workflow_presenter.rb` SHA-256:
+    `C64C7CD27A4B40A6308E7A6B42750EF402EEFEFD0B54CEF4B683D10E9AD68691`
+    (matches A2-ERR packet SHA exactly).
+  - `dialog_runner.rb` SHA-256:
+    `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+    (matches A2-ERR packet SHA exactly).
+- Full Ruby suite: **1139 / 1139 total** /
+  **1136 PASS** / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations documented
+    in CURRENT_STATE.md (baseline unchanged from
+    V1.9A3 packet):
+    - `capability.HtmlDialog: outside SU returns false
+      (R002 + S2-BLOCK-006)`
+    - `V14 production call chain: dialog callback ->
+      WorkingModeRunner -> workspace reaches :ready`
+    - `V17-L1: host_state_changed invalidates the
+      workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately
+    per dispatch §13.
+  - Delta vs prior V1.9A3 packet 1132: +7 tests
+    (the 7 new V1.9A OWNER UI TAB SWITCH BLOCK
+    focused tests in `tests/test_html_render.rb`).
+- V1.9A OWNER UI TAB SWITCH BLOCK focused tests
+  (NEW this packet):
+  - `tests/test_html_render.rb` — **7 / 7 PASS**:
+    - style.css has the `.panel[hidden] { display:
+      none }` rule (presence guard).
+    - `.panel[hidden]` rule appears AFTER the
+      `.panel` rule (cascade-order guard).
+    - switchTab JS DOM contract is unchanged
+      (`removeAttribute('hidden')` /
+      `setAttribute('hidden', '')` /
+      `aria-selected="true"/"false"`).
+    - index.html default panel visibility is
+      correct (panel-process visible; panel-issues
+      / panel-layers / panel-details all carry
+      `hidden`).
+    - CSS structural guard against future `.panel {
+      display }` regressions (both rules coexist).
+    - The fix uses a scoped selector, not a global
+      `[hidden] !important` rule (dispatch
+      preference: scoped > global).
+    - tab map covers all 4 panels (process /
+      issues / layers / details).
+  - `tests/test_html_render_dom.js` — **4 new
+    click-through assertions** (all PASS):
+    - Click 问题 shows panel-issues + hides the
+      other 3 + aria-selected flips.
+    - Click 图层 shows panel-layers + hides the
+      other 3 + aria-selected flips.
+    - Click 详情 shows panel-details + hides the
+      other 3 + aria-selected flips.
+    - Click 处理 shows panel-process again +
+      aria-selected flips back.
+- V1.9A presenter (full): **47 / 47 PASS**
+  (unchanged; presenter file SHA matches A2-ERR
+  packet SHA exactly).
+- V1.9A orchestrator (full): **20 / 20 PASS**
+  (unchanged; orchestrator file SHA matches A2-ERR
+  packet SHA exactly; A2-ERR architecture frozen).
+- V1.9A dialog_runner (full): **48 / 48 PASS**
+  (unchanged; dialog_runner file SHA matches A2-ERR
+  packet SHA exactly).
+- V1.9A bridge: **10 / 10 PASS** (unchanged).
+- V1.9A3 Loader / A3: **16 / 16 PASS** (the V1.9A3
+  packet's shared UI::Command + toolbar + icons
+  tests intact; loader.rb SHA matches V1.9A3 packet
+  SHA exactly).
+- V1.9A DOM (`tests/test_html_render.rb`): **31 /
+  31 PASS** (23 prior + 1 Node DOM wrapper + 7 new
+  V1.9A OWNER UI TAB SWITCH BLOCK tests).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS, final line `PASS` (includes the
+  4 new click-through scenarios).
+- Regression (per dispatch §8):
+  - V1.6 planar normalization: **33 / 33 PASS**.
+  - V1.6 close-autodiscard: **7 / 7 PASS**.
+  - V1.7 focused: **127 / 127 PASS**.
+  - V1.7 INT: **33 / 33 PASS**.
+  - V1.8 focused: **71 / 71 PASS**.
+  - V1.8 SR18: **32 / 32 PASS**.
+  - V1.4 fingerprint focused: **22 / 22 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS** (CSS only; no
+    Ruby syntax change).
+  - RBZ smoke: **9 / 9 PASS** (rebuilt with the
+    scoped CSS rule; all 9 RBZ assertions intact).
+- `git diff --check`: clean (0 warnings on
+  production / test code; the trailing whitespace
+  in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
+  and outside Pi's scope — `Prompt/` is read-only).
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 /
+V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change.
+No host mutation / Face / Observer. No site
+semantics. No A2 orchestrator / Presenter /
+DialogRunner callbacks change. No Loader / A3
+toolbar / V1.9A3 contract change. No switchTab JS
+logic change. No index.html tab structure change.
+No PreparedCadDataset / persistence (V1.9B). No
+MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **CSS scoped rule (the fix)**:
+  `extension/su_ai_plugin/html/style.css` — added
+  one scoped rule immediately after the existing
+  `.panel { display: flex; flex-direction: column; }`
+  rule:
+
+  ```css
+  .panel[hidden] {
+    display: none;
+  }
+  ```
+
+  Specificity: `.panel[hidden]` = 0,0,2,0;
+  `.panel` = 0,0,1,0. The scoped selector wins by
+  BOTH specificity AND cascade order (it appears
+  AFTER `.panel` in the stylesheet). The fix is
+  Blueprint-scoped: it overrides the hidden state
+  for the 4 production panels only (处理 / 问题
+  / 图层 / 详情); non-panel elements that use the
+  `hidden` attribute elsewhere (badges, toasts,
+  banners, etc.) are unaffected.
+
+- **Focused CSS source-level guards (NEW this
+  packet)**:
+  `tests/test_html_render.rb` — 7 new tests that
+  pin the fix at the CSS source level so future
+  edits cannot silently regress the hidden
+  contract. The tests assert:
+  - The scoped rule MUST be present.
+  - The scoped rule MUST appear AFTER `.panel`
+    (cascade-order guard).
+  - The fix MUST NOT use a global `[hidden]
+    !important` (dispatch preference: scoped >
+    global).
+  - Both `.panel` AND `.panel[hidden]` rules MUST
+    coexist (structural guard against future
+    `.panel { display: ... }` edits).
+  - The switchTab JS DOM contract is unchanged
+    (correct before; CSS was wrong).
+  - The tab map covers all 4 production panels.
+  - The index.html default panel visibility
+    (panel-process visible; others hidden) is
+    intact.
+
+- **DOM click-through regression (NEW this packet)**:
+  `tests/test_html_render_dom.js` — 4 new
+  click-through assertions that simulate the Owner
+  Gate A2 BLOCK scenario end-to-end. Each
+  assertion verifies that after the click:
+  (1) the visible panel matches the clicked tab;
+  (2) the other 3 panels carry the `hidden`
+  attribute; (3) `aria-selected="true"` on the
+  clicked tab and `aria-selected="false"` on the
+  inactive tabs. The 4 scenarios are: click
+  问题 / 图层 / 详情 / 处理.
+
+Next expected action: AIPM source review of the
+V1.9A OWNER UI TAB SWITCH BLOCK packet (the scoped
+`.panel[hidden] { display: none; }` CSS rule +
+the 7 new CSS source-level guards + the 4 new DOM
+click-through assertions + RBZ hashes + A2 / A3 /
+V1.9B confirmation SHAs). Then: Owner real-SU2020
+re-verification (the gate that originally produced
+this BLOCK should now PASS). V1.9B PreparedCadDataset
+/ persistence NOT STARTED. Final V1.x Codex xHigh
+review remains mandatory later regardless.
+
+- AIPM_REVIEW = PENDING
+- OWNER_SU2020 = NOT YET (Owner Gate A2 BLOCK fix
+  now ready for re-verification per Blueprint §12)
+- V1.9A-A2 orchestrator = FROZEN (architecture +
+  error-boundary narrow correction preserved
+  unchanged by this packet)
+- V1.9A-A3 = FROZEN (NATIVE TOOLBAR & PRODUCT
+  ENTRY preserved unchanged by this packet)
+- V1.9B = NOT STARTED
+
+END
