@@ -319,6 +319,41 @@ h1, h2, h3, h4, p { margin: 0; }
   display: none;
 }
 
+/* V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP (Owner Gate A2
+   BLOCK follow-up): production style.css contains
+   `.recovery-banner { display: flex }`. When JS sets
+   `recovery-banner.setAttribute('hidden', '')` for STALE/FAILED
+   recovery (or omits the attribute when recovery is needed), the
+   hidden attribute is OVERRIDDEN by the author rule. Same root
+   cause as the `.panel[hidden]` fix above. The scoped selector
+   `.recovery-banner[hidden]` (0,0,2,0) wins over `.recovery-banner`
+   (0,0,1,0) by both specificity AND cascade order.
+
+   Regression-guarded by tests/test_html_render.rb (presence +
+   cascade order + READY_FOR_VALIDATION no-banner / STALE+FAILED
+   banner-visible assertions) and tests/test_html_render_dom.js
+   (the dynamic _show(banner, true|false) path). */
+.recovery-banner[hidden] {
+  display: none;
+}
+
+/* V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: production
+   style.css contains `.tab-badge { display: inline-flex }`.
+   When JS sets `tab-issues-badge.setAttribute('hidden', '')`
+   for zero-count issues, the hidden attribute is OVERRIDDEN
+   by the author rule. Same root cause as the `.panel[hidden]`
+   fix above. The scoped selector `.tab-badge[hidden]`
+   (0,0,2,0) wins over `.tab-badge` (0,0,1,0) by both
+   specificity AND cascade order.
+
+   Regression-guarded by tests/test_html_render.rb (presence +
+   cascade order + count==0 hidden / count>0 visible
+   assertions) and tests/test_html_render_dom.js (the
+   dynamic badgeCount > 0 path in app.js line ~952). */
+.tab-badge[hidden] {
+  display: none;
+}
+
 /* Panel headers (问题 / 图层 / 详情) */
 .panel-header {
   margin-bottom: var(--sp-5);

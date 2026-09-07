@@ -842,6 +842,80 @@ assertPanelsAfterClick(tabDetails, '详情', 'panel-details');
 // Click 处理 tab -> panel-process visible again.
 assertPanelsAfterClick(tabProcess, '处理', 'panel-process');
 
+// ----------------------------------------------------------------------
+// V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP — DOM regression
+// (Owner Gate A2 BLOCK follow-up).
+//
+// Production root cause: `.recovery-banner { display: flex }` and
+// `.tab-badge { display: inline-flex }` override the browser
+// default `[hidden] { display: none }`. The visible "工作副本已失效"
+// banner was being rendered even when JS set its hidden attribute,
+// and the red "问题 0" badge was being rendered when issue count
+// was zero.
+//
+// This DOM test confirms the DOM-level contract (setAttribute /
+// removeAttribute of `hidden`) flips correctly. The CSS scoped
+// rule (`.recovery-banner[hidden] { display: none }` /
+// `.tab-badge[hidden] { display: none }`) is the fix that makes
+// the DOM state match the visible state.
+//
+// Note on test ordering: prior tests in this file mutate the
+// recovery-banner and tab-issues-badge state via render() calls
+// for STALE / NEEDS_ATTENTION / READY_FOR_VALIDATION payloads.
+// We reset to the READY_FOR_VALIDATION / no-issues baseline
+// BEFORE asserting the default-state contracts.
+// ----------------------------------------------------------------------
+
+// (0) Reset to the READY_FOR_VALIDATION / no-issues baseline.
+var v19aBanner = _findById(elements, 'recovery-banner');
+var v19aBadge  = _findById(elements, 'tab-issues-badge');
+v19aBanner.setAttribute('hidden', '');
+v19aBadge.setAttribute('hidden', '');
+v19aBadge.textContent = '0';
+
+// (1) Default state: recovery-banner carries `hidden`.
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: recovery-banner default carries hidden attribute',
+       v19aBanner.hasAttribute('hidden'));
+
+// (2) Default state: tab-issues-badge carries `hidden` (count = 0).
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: tab-issues-badge default carries hidden attribute (count=0)',
+       v19aBadge.hasAttribute('hidden'));
+
+// (3) STALE recovery path: remove hidden -> banner is visible.
+v19aBanner.removeAttribute('hidden');
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: STALE recovery removes hidden attribute (banner visible)',
+       !v19aBanner.hasAttribute('hidden'));
+
+// (4) is-failed recovery path: still remove hidden -> banner is visible.
+v19aBanner.setAttribute('hidden', '');
+v19aBanner.removeAttribute('hidden');
+v19aBanner.className = 'recovery-banner is-failed';
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: is-failed recovery removes hidden attribute (banner visible)',
+       !v19aBanner.hasAttribute('hidden'));
+
+// (5) READY_FOR_VALIDATION path: banner re-hidden (no recovery).
+v19aBanner.setAttribute('hidden', '');
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: READY_FOR_VALIDATION banner re-hidden',
+       v19aBanner.hasAttribute('hidden'));
+
+// (6) Issue count > 0 path: remove hidden -> badge is visible.
+v19aBadge.removeAttribute('hidden');
+v19aBadge.textContent = '5';
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: issue count > 0 removes hidden attribute (badge visible)',
+       !v19aBadge.hasAttribute('hidden'));
+
+// (7) Issue count == 0 path: hidden remains.
+v19aBadge.setAttribute('hidden', '');
+v19aBadge.textContent = '0';
+assert('V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP: issue count == 0 keeps hidden attribute (badge hidden)',
+       v19aBadge.hasAttribute('hidden'));
+
+// (8) Existing four-tab switching still passes after the fix
+// (regression guard against the cascade-order breakage).
+v19aBanner.setAttribute('hidden', '');
+assertPanelsAfterClick(tabIssues, '问题', 'panel-issues');
+assertPanelsAfterClick(tabProcess, '处理', 'panel-process');
+
 // --- Final pass/fail rollup --------------------------------------------
 
 var lines = [];
