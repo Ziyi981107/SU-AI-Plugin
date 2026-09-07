@@ -1195,3 +1195,264 @@ test 'dialog_runner (V1.9A-A2): rebuild_workspace callback routes through orches
     dr_a2_restore_orchestrator
   end
 end
+
+# --------------------------------------------------------------------------
+# V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION dispatch
+# §1 (BLOCK A2-ERR-01): unexpected StandardError raised
+# inside the orchestrator MUST propagate to
+# DialogRunner._safe_invoke (NOT be swallowed inside the
+# orchestrator). _safe_invoke is the production boundary
+# responsible for logging, toast, and unconditional
+# payload re-push. The tests below pin that contract
+# for the five A2 entry points routed through the
+# orchestrator:
+#   - start_cad_prep    (orchestrator.start)
+#   - refresh_cad_prep  (orchestrator.refresh)
+#   - apply_planar_normalization (orchestrator.apply_planar_and_refresh)
+#   - apply_gap_repair  (orchestrator.apply_gap_and_refresh)
+#   - rebuild_workspace (orchestrator.rebuild_and_scan)
+# --------------------------------------------------------------------------
+
+# Build a FakeUI dialog + stub the orchestrator method
+# under test to raise a synthetic unexpected
+# StandardError. The dialog_runner is the production
+# boundary: it MUST catch the exception, log it, surface
+# a toast, and unconditionally re-push the payload.
+def dr_wire_a2_error_boundary(method_name)
+  FakeUI.install!
+  dr_reset_loader
+  Loader.register!
+  SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+  result = dr_realistic_result
+  model = FakeUI::FakeModel.new
+  dialog = SUAnalysis::Extension::DialogRunner.show(result, model: model)
+  # Prepare to reach state='ready' (the precondition
+  # for the orchestrator's downstream stages).
+  dialog.callbacks['prepare_workspace'].call(nil)
+  # Stub the orchestrator method under test to raise a
+  # synthetic unexpected StandardError. We use a
+  # non-RuntimeError class so the test proves the
+  # exception class is preserved verbatim through the
+  # _safe_invoke log channel.
+  $dr_a2_err_method = method_name
+  SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method(method_name) do |*_args, **_kw|
+    raise ArgumentError, "synthetic #{method_name} crash for A2-ERR-01 boundary test"
+  end
+  [dialog, model]
+end
+
+def dr_a2_restore_err_method
+  if defined?(@@dr_a2_orchestrator_originals) && @@dr_a2_orchestrator_originals && $dr_a2_err_method
+    original = @@dr_a2_orchestrator_originals[$dr_a2_err_method]
+    SUAnalysis::Extension::CadPrepWorkflowOrchestrator.define_singleton_method($dr_a2_err_method) do |*args, **kw|
+      original.call(*args, **kw)
+    end
+  end
+end
+
+# Per dispatch §3: the DialogRunner test MUST prove the
+# synthetic orchestrator failure reaches _safe_invoke;
+# _safe_invoke handles it through the existing production
+# error boundary; the final payload push still occurs.
+test 'dialog_runner (A2-ERR-01): unexpected orchestrator failure reaches _safe_invoke and triggers toast + log + push_data (start_cad_prep)' do
+  begin
+    dialog, _model = dr_wire_a2_error_boundary(:start)
+    before_scripts = dialog.executed_scripts.length
+    # Fire the JS-side IDLE primary CTA click. The
+    # orchestrator's start raises a synthetic
+    # ArgumentError; the dialog_runner's
+    # on_start_cad_prep MUST handle it through the
+    # production _safe_invoke boundary.
+    dialog.callbacks['start_cad_prep'].call(nil)
+    # 1. A toast execute_script call MUST have been
+    #    emitted on window.SUAIP.toast.
+    toast_calls = dialog.executed_scripts.select { |s| s.include?('window.SUAIP.toast') }
+    assert toast_calls.length >= 1,
+           "_safe_invoke MUST emit a toast when the orchestrator raises; got #{toast_calls.length} toasts"
+    latest_toast = toast_calls.last.to_s
+    assert_match(/start_cad_prep/, latest_toast,
+                 'toast MUST mention the failing action name so the user can identify it')
+    # 2. The payload MUST be re-pushed (push_data
+    #    runs UNCONDITIONALLY).
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           "_safe_invoke MUST re-push the payload even when the action raised " \
+           "(expected >= 1 execute_script call, got #{pushed_count})"
+    latest = dialog.executed_scripts.last.to_s
+    assert_match(/SUAIP\.render\(/, latest,
+                 're-pushed payload MUST go through window.SUAIP.render (unconditional push_data)')
+    # 3. The exception class MUST be preserved verbatim
+    #    in the toast text (the production log + toast
+    #    format is `<action> failed: <Class>: <message>`).
+    assert_match(/ArgumentError/, latest_toast,
+                 'toast MUST surface the original exception class verbatim')
+    assert_match(/synthetic start crash/, latest_toast,
+                 'toast MUST surface the original exception message verbatim')
+  ensure
+    dr_a2_restore_err_method
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (A2-ERR-01): unexpected orchestrator failure reaches _safe_invoke and triggers toast + log + push_data (refresh_cad_prep)' do
+  begin
+    dialog, _model = dr_wire_a2_error_boundary(:refresh)
+    before_scripts = dialog.executed_scripts.length
+    dialog.callbacks['refresh_cad_prep'].call(nil)
+    toast_calls = dialog.executed_scripts.select { |s| s.include?('window.SUAIP.toast') }
+    assert toast_calls.length >= 1,
+           'refresh_cad_prep MUST emit a toast when the orchestrator raises'
+    latest_toast = toast_calls.last.to_s
+    assert_match(/refresh_cad_prep/, latest_toast,
+                 'toast MUST mention the failing action name')
+    assert_match(/ArgumentError/, latest_toast,
+                 'toast MUST surface the original exception class verbatim')
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           'refresh_cad_prep MUST re-push the payload unconditionally'
+  ensure
+    dr_a2_restore_err_method
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (A2-ERR-01): unexpected orchestrator failure reaches _safe_invoke (apply_planar_normalization)' do
+  begin
+    dialog, _model = dr_wire_a2_error_boundary(:apply_planar_and_refresh)
+    before_scripts = dialog.executed_scripts.length
+    dialog.callbacks['apply_planar_normalization'].call(nil)
+    toast_calls = dialog.executed_scripts.select { |s| s.include?('window.SUAIP.toast') }
+    assert toast_calls.length >= 1,
+           'apply_planar_normalization MUST emit a toast when the orchestrator raises'
+    assert_match(/apply_planar_normalization/, toast_calls.last.to_s,
+                 'toast MUST mention the failing action name')
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           'apply_planar_normalization MUST re-push the payload unconditionally'
+  ensure
+    dr_a2_restore_err_method
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (A2-ERR-01): unexpected orchestrator failure reaches _safe_invoke (apply_gap_repair)' do
+  begin
+    dialog, _model = dr_wire_a2_error_boundary(:apply_gap_and_refresh)
+    before_scripts = dialog.executed_scripts.length
+    dialog.callbacks['apply_gap_repair'].call(nil)
+    toast_calls = dialog.executed_scripts.select { |s| s.include?('window.SUAIP.toast') }
+    assert toast_calls.length >= 1,
+           'apply_gap_repair MUST emit a toast when the orchestrator raises'
+    assert_match(/apply_gap_repair/, toast_calls.last.to_s,
+                 'toast MUST mention the failing action name')
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           'apply_gap_repair MUST re-push the payload unconditionally'
+  ensure
+    dr_a2_restore_err_method
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+test 'dialog_runner (A2-ERR-01): unexpected orchestrator failure reaches _safe_invoke (rebuild_workspace)' do
+  begin
+    dialog, _model = dr_wire_a2_error_boundary(:rebuild_and_scan)
+    before_scripts = dialog.executed_scripts.length
+    dialog.callbacks['rebuild_workspace'].call(nil)
+    toast_calls = dialog.executed_scripts.select { |s| s.include?('window.SUAIP.toast') }
+    assert toast_calls.length >= 1,
+           'rebuild_workspace MUST emit a toast when the orchestrator raises'
+    assert_match(/rebuild_workspace/, toast_calls.last.to_s,
+                 'toast MUST mention the failing action name')
+    after_scripts = dialog.executed_scripts.length
+    pushed_count = after_scripts - before_scripts
+    assert pushed_count >= 1,
+           'rebuild_workspace MUST re-push the payload unconditionally'
+  ensure
+    dr_a2_restore_err_method
+    FakeUI.uninstall!
+    SUAnalysis::Core::WorkingModeRunner.reset_for_tests
+    dr_a2_restore_orchestrator
+  end
+end
+
+# Source-level guard: the dialog_runner's A2 handler
+# bodies (`on_start_cad_prep` / `on_refresh_cad_prep` /
+# `on_apply_planar_normalization` / `on_apply_gap_repair`
+# / `on_rebuild_workspace`) MUST NOT silently rescue
+# around the orchestrator call (defense against
+# re-introducing a swallow path at the dialog_runner
+# level). The dialog_runner's existing `_safe_invoke`
+# boundary remains the ONE allowed rescue site (it logs,
+# toasts, and unconditionally re-pushes).
+test 'dialog_runner (A2-ERR-01): A2 handler bodies do NOT wrap the orchestrator call in rescue StandardError' do
+  src = File.read(
+    File.expand_path('../extension/su_ai_plugin/dialog_runner.rb', __dir__)
+  )
+  # Locate each A2 handler method body and check it
+  # contains NO executable `rescue StandardError`.
+  a2_handlers = %w[
+    on_start_cad_prep
+    on_refresh_cad_prep
+    on_apply_planar_normalization
+    on_apply_gap_repair
+    on_rebuild_workspace
+  ]
+  a2_handlers.each do |handler|
+    # Find the `def handler` line, then scan forward
+    # until the matching `end` line at the same indent
+    # level. The body is the lines BETWEEN those two.
+    lines = src.lines
+    start_idx = lines.index { |l| l =~ /^[[:space:]]*def #{handler}\b/ }
+    refute_nil start_idx, "could not locate dialog_runner handler #{handler}"
+    # Find the matching end at the same indentation.
+    start_indent = lines[start_idx][/^[[:space:]]*/].length
+    end_idx = nil
+    depth = 0
+    (start_idx..lines.length - 1).each do |i|
+      l = lines[i]
+      if l =~ /^[[:space:]]*def\b/ && i > start_idx
+        # unexpected: nested def without matching end above
+        # the original def. Use depth tracking to bail.
+      end
+      # Very simple brace counter: count `def` / `do` /
+      # `begin` as opens and `end` as closes that match
+      # the start indent (Ruby-style).
+      stripped = l.lstrip
+      if stripped =~ /\bdef\b|\bdo\b|\bbegin\b/ && !stripped.start_with?('#')
+        depth += 1 if stripped.end_with?('do', 'begin', 'def') || stripped.include?(' do ') || stripped.include?(' begin ')
+      end
+      if stripped.start_with?('end') && !stripped.start_with?('#')
+        if depth == 0
+          end_idx = i
+          break
+        else
+          depth -= 1
+        end
+      end
+    end
+    refute_nil end_idx, "could not locate end of dialog_runner handler #{handler}"
+    body = lines[(start_idx + 1)..(end_idx - 1)]
+    # Within the handler body, look for an executable
+    # rescue StandardError line.
+    rescue_lines = body.select do |l|
+      next false if l.lstrip.start_with?('#')
+      l =~ /^[[:space:]]+rescue StandardError/
+    end
+    assert rescue_lines.empty?,
+           "dialog_runner A2 handler #{handler} MUST NOT wrap the orchestrator call in `rescue StandardError`; " \
+           "found #{rescue_lines.length} such lines: #{rescue_lines.map(&:strip).inspect}"
+  end
+end

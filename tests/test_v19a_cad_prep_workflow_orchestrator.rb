@@ -816,33 +816,190 @@ test 'orchestrator (source): orchestrator paths never mutate source_fingerprint_
   refute_empty fp_after
 end
 
-# Orchestrator StandardError tolerance: an unexpected
-# exception in the runner does NOT crash the
-# orchestrator; the orchestrator returns the truthful
-# snapshot.
-test 'orchestrator (resilience): StandardError in runner does not crash orchestrator; returns truthful snapshot' do
+# Orchestrator StandardError propagation: an UNEXPECTED
+# StandardError in the runner MUST propagate out of the
+# orchestrator. Per V1.9A-A2 ERROR BOUNDARY NARROW
+# CORRECTION dispatch §1 (BLOCK A2-ERR-01): the
+# orchestrator MUST NOT swallow unexpected exceptions;
+# DialogRunner._safe_invoke is the production boundary
+# responsible for logging, toast, and unconditional
+# payload re-push. The previous A2 implementation
+# returned `WorkingModeRunner.snapshot` on any
+# StandardError; that path silently consumed real
+# production failures before `_safe_invoke` could
+# observe them. The test below pins the corrected
+# contract: the orchestrator's public entry points
+# RE-RAISE the same exception class / message; they do
+# NOT translate to a Hash snapshot.
+test 'orchestrator (resilience A2-ERR-01): unexpected StandardError in runner propagates out of orchestrator.start verbatim' do
   env = v19a_a2_build_ready_env
   runner_mod = SUAnalysis::Core::WorkingModeRunner
   original_prepare = @@v19a_a2_call_originals[:prepare]
+  # Synthetic crash with a NON-RuntimeError class so the
+  # test proves exception class / message are preserved
+  # verbatim (the dispatch explicitly forbids
+  # translation).
   runner_mod.define_singleton_method(:prepare) do |*_args, **_kw|
-    raise 'synthetic runner crash'
+    raise ArgumentError, 'synthetic runner crash for resilience test'
   end
+  raised = nil
   begin
-    snap = CadPrepWorkflowOrchestrator.start(
+    CadPrepWorkflowOrchestrator.start(
       source: env[:source], adapter: env[:adapter], model: env[:model],
       registry: nil
     )
+  rescue StandardError => e
+    raised = e
   ensure
     runner_mod.define_singleton_method(:prepare) do |*args, **kw|
       original_prepare.call(*args, **kw)
     end
   end
-  # The orchestrator MUST NOT raise; it MUST return
-  # the truthful snapshot (the runner's authoritative
-  # state at the time of the crash).
-  refute_nil snap
-  assert snap.is_a?(Hash),
-         'orchestrator MUST return a Hash snapshot (the runner state) on StandardError'
+  # 1. The orchestrator MUST propagate the exception.
+  refute_nil raised,
+             'orchestrator MUST propagate an unexpected StandardError (NOT swallow it into a snapshot Hash)'
+  # 2. Exception class MUST be preserved verbatim (no translation).
+  assert_equal ArgumentError, raised.class,
+               'orchestrator MUST preserve the original exception class verbatim'
+  # 3. Message MUST be preserved verbatim.
+  assert_match(/synthetic runner crash/, raised.message,
+               'orchestrator MUST preserve the original exception message verbatim')
+  # 4. The return value MUST NOT be a normal snapshot Hash.
+  #    (If the orchestrator swallowed the exception it would
+  #    have returned a Hash; here it raised instead.)
+  refute_nil raised, 'orchestrator MUST re-raise; it MUST NOT return a normal Hash snapshot'
+end
+
+# Same contract pinned for the other four public entry
+# points: refresh, apply_planar_and_refresh,
+# apply_gap_and_refresh, rebuild_and_scan. Each MUST
+# propagate an unexpected StandardError out of the
+# orchestrator verbatim — and MUST NOT return a normal
+# snapshot Hash.
+test 'orchestrator (resilience A2-ERR-01): unexpected StandardError propagates out of refresh verbatim' do
+  env = v19a_a2_build_ready_env
+  CadPrepWorkflowOrchestrator.start(
+    source: env[:source], adapter: env[:adapter], model: env[:model],
+    registry: nil
+  )
+  runner_mod = SUAnalysis::Core::WorkingModeRunner
+  original_compute_planar = @@v19a_a2_call_originals[:compute_planar_normalization]
+  runner_mod.define_singleton_method(:compute_planar_normalization) do |*_args, **_kw|
+    raise IOError, 'synthetic refresh crash'
+  end
+  raised = nil
+  begin
+    CadPrepWorkflowOrchestrator.refresh
+  rescue StandardError => e
+    raised = e
+  ensure
+    runner_mod.define_singleton_method(:compute_planar_normalization) do |*args, **kw|
+      original_compute_planar.call(*args, **kw)
+    end
+  end
+  refute_nil raised,
+             'refresh MUST propagate an unexpected StandardError'
+  assert_equal IOError, raised.class,
+               'refresh MUST preserve the original exception class verbatim'
+end
+
+test 'orchestrator (resilience A2-ERR-01): unexpected StandardError propagates out of apply_planar_and_refresh verbatim' do
+  env = v19a_a2_build_ready_env
+  CadPrepWorkflowOrchestrator.start(
+    source: env[:source], adapter: env[:adapter], model: env[:model],
+    registry: nil
+  )
+  runner_mod = SUAnalysis::Core::WorkingModeRunner
+  original_apply = @@v19a_a2_call_originals[:apply_planar_normalization]
+  runner_mod.define_singleton_method(:apply_planar_normalization) do |*_args, **_kw|
+    raise TypeError, 'synthetic apply_planar crash'
+  end
+  raised = nil
+  begin
+    CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+  rescue StandardError => e
+    raised = e
+  ensure
+    runner_mod.define_singleton_method(:apply_planar_normalization) do |*args, **kw|
+      original_apply.call(*args, **kw)
+    end
+  end
+  refute_nil raised,
+             'apply_planar_and_refresh MUST propagate an unexpected StandardError'
+  assert_equal TypeError, raised.class,
+               'apply_planar_and_refresh MUST preserve the original exception class verbatim'
+end
+
+test 'orchestrator (resilience A2-ERR-01): unexpected StandardError propagates out of apply_gap_and_refresh verbatim' do
+  env = v19a_a2_build_ready_env
+  CadPrepWorkflowOrchestrator.start(
+    source: env[:source], adapter: env[:adapter], model: env[:model],
+    registry: nil
+  )
+  runner_mod = SUAnalysis::Core::WorkingModeRunner
+  original_apply_gap = @@v19a_a2_call_originals[:apply_gap_repair]
+  runner_mod.define_singleton_method(:apply_gap_repair) do |*_args, **_kw|
+    raise KeyError, 'synthetic apply_gap crash'
+  end
+  raised = nil
+  begin
+    CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+  rescue StandardError => e
+    raised = e
+  ensure
+    runner_mod.define_singleton_method(:apply_gap_repair) do |*args, **kw|
+      original_apply_gap.call(*args, **kw)
+    end
+  end
+  refute_nil raised,
+             'apply_gap_and_refresh MUST propagate an unexpected StandardError'
+  assert_equal KeyError, raised.class,
+               'apply_gap_and_refresh MUST preserve the original exception class verbatim'
+end
+
+test 'orchestrator (resilience A2-ERR-01): unexpected StandardError propagates out of rebuild_and_scan verbatim' do
+  env = v19a_a2_build_ready_env
+  runner_mod = SUAnalysis::Core::WorkingModeRunner
+  original_rebuild = @@v19a_a2_call_originals[:rebuild]
+  runner_mod.define_singleton_method(:rebuild) do |*_args, **_kw|
+    raise RuntimeError, 'synthetic rebuild crash'
+  end
+  raised = nil
+  begin
+    CadPrepWorkflowOrchestrator.rebuild_and_scan(
+      source: env[:source], adapter: env[:adapter], model: env[:model],
+      registry: nil
+    )
+  rescue StandardError => e
+    raised = e
+  ensure
+    runner_mod.define_singleton_method(:rebuild) do |*args, **kw|
+      original_rebuild.call(*args, **kw)
+    end
+  end
+  refute_nil raised,
+             'rebuild_and_scan MUST propagate an unexpected StandardError'
+  assert_equal RuntimeError, raised.class,
+               'rebuild_and_scan MUST preserve the original exception class verbatim'
+end
+
+# Source-level guard: the orchestrator's public entry
+# points MUST NOT rescue StandardError. Forward-protection
+# against future refactors that re-introduce the swallow
+# path.
+test 'orchestrator (resilience A2-ERR-01): source has NO rescue StandardError at public entry points' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb',
+      __dir__
+    )
+  )
+  # Allow the documenting comment line (which mentions
+  # the rule we are enforcing), but forbid any
+  # executable `rescue StandardError`.
+  stripped = src.lines.reject { |l| l.lstrip.start_with?('#') }.join
+  refute_match(/rescue\s+StandardError/, stripped,
+               'orchestrator source MUST NOT rescue StandardError at any public entry point')
 end
 
 # invalidate_topology_state_after_geometry_mutation:

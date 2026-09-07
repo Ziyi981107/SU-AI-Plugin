@@ -418,12 +418,28 @@ module SUAnalysis
         }.freeze
       end
 
-      def _failure_subtitle(snap)
-        last = snap['last_error'].to_s
-        return '请重试或放弃当前工作副本' if last.empty?
-        # Surface a CONCISE summary of the last_error to the
-        # user; full text remains in 详情.
-        last[0, 80]
+      # V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION dispatch
+      # §4 (A2-UX-01): the primary FAILED copy MUST stay
+      # user-readable. Raw `last_error` strings / exception
+      # class names / backtraces MUST NOT leak into the
+      # product-facing headline / subheadline / issue
+      # summary subtitle / recovery description. Technical
+      # detail remains reachable via the legacy raw payload
+      # (`derivedWorkspace` / 详情 data) and via the Ruby
+      # Console / `_safe_invoke` log channel — those are
+      # the dedicated debugging surfaces, not the primary
+      # product copy.
+      FAILED_SUBTITLE_CN = '检查过程中遇到错误，请重试或查看详情'.freeze
+
+      def _failure_subtitle(_snap)
+        # Primary FAILED copy is the FROZEN generic
+        # Simplified Chinese product message. The technical
+        # `last_error` is NOT surfaced here (it lives in the
+        # raw 详情 payload / Ruby Console log). A snapshot
+        # argument is accepted for backward compatibility
+        # with existing call sites; it is intentionally
+        # ignored.
+        FAILED_SUBTITLE_CN
       end
 
       # Collect error-only chips from the per-card metrics.

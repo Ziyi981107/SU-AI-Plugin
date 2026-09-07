@@ -36,11 +36,16 @@
 #   - introduce threads / timers / background workers /
 #     progress animations (per dispatch §10, no fake
 #     progress architecture);
-#   - raise a different exception class than the
-#     production code; on StandardError, the orchestrator
-#     logs and re-publishes the truthful snapshot so the
-#     UI shows a FAILED recovery state instead of a
-#     silent broken state.
+#   - swallow unexpected StandardError exceptions. Per
+#     V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION dispatch
+#     §1 (BLOCK A2-ERR-01): the orchestrator MUST NOT
+#     rescue StandardError at its public entry points.
+#     Expected runner-state failures continue to return
+#     truthful snapshots via the runner's own state
+#     machine; UNEXPECTED exceptions propagate naturally
+#     to the enclosing `DialogRunner._safe_invoke`
+#     production boundary, which is responsible for
+#     logging, toast, and unconditional payload re-push.
 #
 # Authority:
 #   Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md
@@ -109,11 +114,6 @@ module SUAnalysis
         return snap unless _workspace_ready?(snap)
         snap = SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
         snap
-      rescue StandardError
-        # Defensive: surface the truthful snapshot. The
-        # runner is the single source of truth; the
-        # orchestrator never invents state.
-        SUAnalysis::Core::WorkingModeRunner.snapshot
       end
 
       # Refresh: re-run the read-only diagnostics on the
@@ -138,8 +138,6 @@ module SUAnalysis
         snap = SUAnalysis::Core::WorkingModeRunner.compute_gap_repair
         return snap unless _workspace_ready?(snap)
         SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
-      rescue StandardError
-        SUAnalysis::Core::WorkingModeRunner.snapshot
       end
 
       # Apply Z and refresh: orchestrate the existing
@@ -182,8 +180,6 @@ module SUAnalysis
         # cache on planar apply; this is the explicit
         # refresh path the user-facing contract expects.
         SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
-      rescue StandardError
-        SUAnalysis::Core::WorkingModeRunner.snapshot
       end
 
       # Apply gap and refresh. Per dispatch §4.2:
@@ -234,8 +230,6 @@ module SUAnalysis
         # once so the structure card reflects the
         # post-gap canonical graph.
         SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
-      rescue StandardError
-        SUAnalysis::Core::WorkingModeRunner.snapshot
       end
 
       # Rebuild and scan: existing rebuild authority +
@@ -285,8 +279,6 @@ module SUAnalysis
         snap = SUAnalysis::Core::WorkingModeRunner.compute_gap_repair
         return snap unless _workspace_ready?(snap)
         SUAnalysis::Core::WorkingModeRunner.compute_structure_reconstruction
-      rescue StandardError
-        SUAnalysis::Core::WorkingModeRunner.snapshot
       end
 
       # ---- internals ------------------------------------------------

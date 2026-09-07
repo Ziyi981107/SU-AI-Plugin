@@ -928,3 +928,160 @@ test 'v19a_presenter (A2): post-Start normal snapshot has no UNCOMPUTED stage-bo
   # A2 success state).
   assert_equal 'READY_FOR_VALIDATION', payload['overall_state']
 end
+
+# ===========================================================
+# V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
+# A2-UX-01: primary FAILED copy MUST stay user-readable.
+#
+# Per dispatch §4: raw `last_error` strings / exception
+# class names MUST NOT leak into the product-facing
+# headline / subheadline / issue_summary subtitle /
+# recovery description. The technical detail remains
+# reachable via the legacy raw payload (`derivedWorkspace`
+# / 详情 data) and via the Ruby Console / `_safe_invoke`
+# log channel. The following tests pin that contract.
+# ===========================================================
+
+# The generic product FAILED subtitle MUST be the
+# frozen Simplified-Chinese message; it MUST NOT
+# contain any of the synthetic exception-class names
+# or technical detail strings.
+test 'v19a_presenter (A2-UX-01): FAILED primary copy uses the frozen generic CN message' do
+  snap = {
+    'state' => 'failed',
+    'last_error' => 'RuntimeError: build failed mid-way at adapter.rb:42'
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  # Subheadline for FAILED is the issue_summary.subtitle.
+  assert_equal '检查过程中遇到错误，请重试或查看详情',
+               payload['issue_summary']['subtitle'],
+               'FAILED primary subtitle MUST be the frozen generic CN message'
+  assert_equal 'FAILED', payload['overall_state']
+end
+
+# Synthetic exception-class names + backtrace-like
+# fragments MUST NOT appear in any product-facing
+# headline / subheadline / issue_summary headline /
+# issue_summary subtitle / recovery description.
+test 'v19a_presenter (A2-UX-01): synthetic exception class + backtrace fragment never leak into product copy' do
+  # Realistic synthetic last_error carrying exception
+  # class + backtrace fragment + file:line hint.
+  synthetic_error =
+    'NoMethodError: undefined method `foo` for nil:NilClass at /usr/sketchup/foo.rb:123'
+  snap = {
+    'state' => 'failed',
+    'last_error' => synthetic_error
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  forbidden_substrings = [
+    'NoMethodError',
+    'undefined method',
+    'NilClass',
+    '/usr/sketchup/foo.rb',
+    ':123'
+  ]
+  # All product-facing copy surfaces.
+  surfaces = {
+    'headline'                    => payload['headline'],
+    'subheadline'                 => payload['subheadline'],
+    'issue_summary.headline'      => payload['issue_summary']['headline'],
+    'issue_summary.subtitle'      => payload['issue_summary']['subtitle']
+  }
+  if payload['recovery'].is_a?(Hash)
+    surfaces['recovery.title'] = payload['recovery']['title']
+    surfaces['recovery.desc']  = payload['recovery']['desc']
+  end
+  surfaces.each do |name, text|
+    next if text.nil?
+    forbidden_substrings.each do |frag|
+      refute_includes text.to_s, frag,
+                      "FAILED #{name} MUST NOT contain raw exception detail #{frag.inspect}; " \
+                      "got #{text.inspect}"
+    end
+  end
+end
+
+# Technical `last_error` MUST NOT be sliced into the
+# product copy even when it carries a long technical
+# message (the A1 implementation truncated it to the
+# first 80 chars; that path is RETIRED per dispatch §4).
+test 'v19a_presenter (A2-UX-01): long technical last_error is NOT sliced into the FAILED subtitle' do
+  long_technical_error = 'ArgumentError: ' + ('x' * 200) + ' at some_path.rb:999'
+  snap = { 'state' => 'failed', 'last_error' => long_technical_error }
+  payload = v19a_present(v19a_make_ar, snap)
+  subtitle = payload['issue_summary']['subtitle'].to_s
+  refute_includes subtitle, 'ArgumentError',
+                  'FAILED subtitle MUST NOT contain the technical ArgumentError class'
+  refute_includes subtitle, 'some_path.rb',
+                  'FAILED subtitle MUST NOT contain the technical file path'
+  refute_includes subtitle, 'x' * 50,
+                  'FAILED subtitle MUST NOT contain the truncated body of a long technical message'
+end
+
+# Empty / missing `last_error` MUST still produce the
+# frozen generic FAILED subtitle (no fallback to
+# different per-locale strings).
+test 'v19a_presenter (A2-UX-01): empty last_error still produces the frozen generic FAILED subtitle' do
+  [{ 'state' => 'failed' }, { 'state' => 'failed', 'last_error' => '' }].each do |snap|
+    payload = v19a_present(v19a_make_ar, snap)
+    assert_equal '检查过程中遇到错误，请重试或查看详情',
+                 payload['issue_summary']['subtitle'],
+                 "FAILED subtitle MUST be the frozen generic CN message even when last_error is #{snap.inspect}"
+  end
+end
+
+# The STALE branch's `headline` + `issue_summary.headline`
+# + `issue_summary.subtitle` MUST NOT carry raw exception
+# detail either (defense-in-depth — STALE's `last_error`
+# also carries a technical reason that MUST NOT leak).
+test 'v19a_presenter (A2-UX-01): STALE primary copy never carries raw exception detail either' do
+  snap = {
+    'state' => 'failed',
+    'last_error' => 'host_state_changed: derived handle removed by UndoError at foo.rb:1'
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  assert_equal 'STALE', payload['overall_state']
+  forbidden_substrings = %w[UndoError host_state_changed foo.rb]
+  surfaces = {
+    'headline'               => payload['headline'],
+    'subheadline'            => payload['subheadline'],
+    'issue_summary.headline' => payload['issue_summary']['headline'],
+    'issue_summary.subtitle' => payload['issue_summary']['subtitle']
+  }
+  if payload['recovery'].is_a?(Hash)
+    surfaces['recovery.title'] = payload['recovery']['title']
+    surfaces['recovery.desc']  = payload['recovery']['desc']
+  end
+  surfaces.each do |name, text|
+    next if text.nil?
+    forbidden_substrings.each do |frag|
+      refute_includes text.to_s, frag,
+                      "STALE #{name} MUST NOT contain raw exception detail #{frag.inspect}"
+    end
+  end
+end
+
+# Source-level guard: the presenter's `_failure_subtitle`
+# helper MUST NOT slice `last_error` (the A1 truncation
+# path `last[0, 80]` is RETIRED). Forward-protection so a
+# future refactor cannot re-introduce the leak.
+test 'v19a_presenter (A2-UX-01): presenter source does NOT slice last_error for FAILED copy' do
+  src = File.read(
+    File.expand_path(
+      '../extension/su_ai_plugin/cad_prep_workflow_presenter.rb',
+      __dir__
+    )
+  )
+  # The forbidden A1 truncation pattern. The substring
+  # `last[0, 80]` is the exact leak path the dispatch
+  # §4 retires.
+  forbidden = [
+    'last[0, 80]',
+    "last_error[0, "
+  ]
+  forbidden.each do |frag|
+    refute_includes src, frag,
+                    "presenter source MUST NOT slice last_error for product copy; " \
+                    "found forbidden fragment #{frag.inspect}"
+  end
+end

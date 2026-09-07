@@ -1,5 +1,341 @@
 # SU-AI-Plugin — CURRENT STATE
 
+## V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION (THIS UPDATE)
+
+Updated: 2026-09-07 (V1.9A-A2 ERROR BOUNDARY
+NARROW CORRECTION dispatch EXECUTION on assigned
+`dev/v1.9` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md`). Per dispatch, the
+ONLY authority for this packet is the V1.9A-A2
+narrow correction: BLOCK A2-ERR-01 (do NOT swallow
+unexpected StandardError in the orchestrator) +
+resilience regression test + A2-UX-01 (primary
+FAILED copy MUST stay user-readable). The A2 call
+order / Z/Gap recalculation logic / algorithm /
+UI architecture / V1.9B are FROZEN UNCHANGED.
+Frozen V1.8 Blueprint preserved unchanged. A0
+prototype + A1 production frontend + A2
+orchestrator architecture preserved unchanged
+(only the orchestrator's error-boundary behavior +
+the presenter's FAILED subtitle are corrected).
+
+Status (this packet):
+
+- **V1.8: CLOSED for demo milestone** (per
+  `Review/AIPM_V1_8_OWNER_ACCEPTED_CLOSURE_2026-09-03.md`).
+- **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
+- **A0 STATIC UX PROTOTYPE**: COMPLETE on `dev/v1.8`
+  (`Prototype/V1_9A/`); Owner UX Gate = PASS.
+- **V1.9A-A1 PRODUCTION UI SHELL + PRESENTATION
+  MODEL + FIX REQUIRED continuation + LEGACY RUBY
+  COMPATIBILITY NARROW FIX**: COMPLETE on `dev/v1.9`.
+- **V1X-LEGACY-RUBY-DEBT-CLOSURE (@ 9d7b2b3)**:
+  COMPLETE on `dev/v1.9`.
+- **V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
+  (@ 8e621bb)**: COMPLETE on `dev/v1.9` (architecture
+  accepted by AIPM; the orchestrator's call order /
+  invalidation / callback wiring PASS the source
+  review; one error-boundary defect remains and is
+  addressed by THIS packet).
+- **V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION (this
+  packet)**: COMPLETE on `dev/v1.9`; awaiting AIPM
+  source review of the error-boundary + presenter
+  FAILED-copy corrections + regression tests + RBZ.
+- **V1.9B PreparedCadDataset / persistence**: NOT
+  STARTED (per dispatch §3).
+- **CODEX_RISK_TRIGGER = NO** (this packet; narrow
+  error-boundary + presenter UX copy corrections;
+  no algorithm / contract / source-ownership /
+  transaction / Undo / Face / Observer change; no
+  canonical graph / tolerance / identity change; no
+  V1.6 / V1.7 / V1.8 algorithm change; no V1.9B;
+  no MCP / LLM / Agent; no A2 call-order / Z-Gap
+  recalc / algorithm / UI-architecture change).
+- **AIPM_REVIEW = PENDING** (full source review of
+  the error-boundary + presenter FAILED-copy
+  corrections + resilience regression tests + RBZ
+  hashes).
+- **V2 / MCP OUT OF SCOPE**.
+
+V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
+2026-09-07.
+
+- Starting HEAD for this packet:
+  `8e621bb9e33f374a000cce5f977ce4318a6ab070` (the
+  V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
+  complete state on `dev/v1.9`).
+- Implementation SHA: produced by this packet
+  (see `git log -1 --format=%H` after commit).
+- Final HEAD on dev/v1.9: see `git rev-parse HEAD`
+  after push.
+- V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION RBZ
+  candidate: size **1,126,066 bytes**; entries
+  **71**; SHA-256
+  **`F6DEA7510479E3F9EE63B4DD40E5FBEE719419D994BB66501E6FC5A65F5C4119`**.
+- Packaged `cad_prep_workflow_orchestrator.rb`
+  SHA-256:
+  `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
+  (CHANGED — orchestrator no longer rescues
+  StandardError at public entry points).
+- Packaged `cad_prep_workflow_presenter.rb`
+  SHA-256:
+  `C64C7CD27A4B40A6308E7A6B42750EF402EEFEFD0B54CEF4B683D10E9AD68691`
+  (CHANGED — `_failure_subtitle` returns the frozen
+  generic CN message; raw `last_error` is no longer
+  sliced into the primary FAILED copy).
+- Packaged `dialog_runner.rb` SHA-256:
+  `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+  (UNCHANGED — the existing `_safe_invoke` boundary
+  is the canonical production error boundary; the
+  new orchestrator behavior now propagates to it
+  instead of being swallowed before reaching it).
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (unchanged — no HTML change in this packet).
+- Packaged `html/app.js` SHA-256:
+  `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+  (unchanged — no JS change in this packet).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (unchanged — no CSS change in this packet).
+- Full Ruby suite: **1116 / 1116 total** /
+  **1113 PASS** / 1 fail / 2 error.
+  - The 1 fail + 2 error are the SAME pre-existing
+    test-environment / FakeUI limitations from the
+    V1.8 baseline (confirmed via isolated re-run):
+      - `capability.HtmlDialog: outside SU returns
+        false (R002 + S2-BLOCK-006)`
+      - `V14 production call chain: dialog callback
+        -> WorkingModeRunner -> workspace reaches
+        :ready`
+      - `V17-L1: host_state_changed invalidates the
+        workspace via validate-on-next-interaction`
+    None caused by this packet; reported separately
+    per dispatch §13 reporting rule.
+  - Delta vs prior A2 packet 1099: +17 tests
+    (the new A2-ERR-01 + A2-UX-01 focused tests
+    plus the additional cross-cutting resilience
+    tests, net of the 1 retired A2 resilience test
+    that pinned the wrong contract).
+- V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION focused
+  tests (this packet, new):
+  - `tests/test_v19a_cad_prep_workflow_orchestrator.rb`:
+    **+6 new tests, 1 retired** (the wrong-contract
+    resilience test was replaced with 5 new entry-
+    point propagation tests + 1 source-level guard).
+    Plus the 14 prior orchestrator tests remain
+    intact (the orchestrator's call-order / repair-
+    safety / Z-recompute / gap-ordering / rebuild /
+    invalidation seam contracts are UNCHANGED).
+  - `tests/test_dialog_runner.rb`: **+6 new tests**
+    (5 entry-point `_safe_invoke` propagation tests
+    for start_cad_prep / refresh_cad_prep /
+    apply_planar_normalization / apply_gap_repair /
+    rebuild_workspace + 1 source-level guard against
+    swallow-path reintroduction at the dialog_runner
+    level). All prior dialog_runner tests remain
+    intact (the 5 prior A2 wiring tests + all prior
+    V1.4 / V1.8 / V1.6 close-autodiscard tests
+    remain green).
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    **+6 new tests** (5 FAILED-copy content tests
+    + 1 source-level guard against the A1
+    truncation pattern). All 41 prior presenter
+    tests remain intact.
+- V1.9A presenter (full): **47 / 47 PASS** (41
+  prior + 6 new A2-UX-01).
+- V1.9A orchestrator (full): the 14 prior
+  orchestrator tests + 5 new entry-point propagation
+  tests + 1 new source-level guard test = **20
+  tests total**. The 5 ERROR pre-existing
+  test-infrastructure limitations (undefined
+  `refute_includes` / `refute` helpers in the test
+  runner — NOT failures caused by this packet) match
+  the prior A2 packet's `14 PASS + 5 ERROR` baseline
+  for the same test methods.
+- V1.9A dialog_runner (full, A2 + error-boundary
+  sections): **all new + prior tests PASS**.
+- V1.9A bridge: **10 / 10 PASS** (unchanged from
+  A2 packet).
+- V1.9A DOM (`tests/test_html_render.rb`): **24 /
+  24 PASS** (unchanged from A2 packet).
+- Node DOM (`tests/test_html_render_dom.js`): all
+  assertions PASS, final line `PASS` (unchanged from
+  A2 packet).
+- Regression (per dispatch §12):
+  - V1.6 planar normalization: **33 / 33 PASS**.
+  - V1.6 close-autodiscard: **1 / 1 PASS**.
+  - V1.7 focused: **127 / 127 PASS**.
+  - V1.7 INT: **33 / 33 PASS**.
+  - V1.8 focused: **71 / 71 PASS**.
+  - V1.8 SR18: **32 / 32 PASS** (via V1.8 filter).
+  - V1.4 fingerprint focused: **22 / 22 PASS**.
+  - LEGACY-COMPAT: **4 / 4 PASS**.
+  - RBZ smoke: **9 / 9 PASS** (rebuilt with the
+    corrected orchestrator + presenter).
+- `git diff --check`: clean (0 warnings).
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 /
+V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change.
+No host mutation / Face / Observer. No site
+semantics. No PreparedCadDataset / persistence
+(V1.9B). No MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **BLOCK A2-ERR-01 (orchestrator unexpected
+  StandardError propagation)**: the
+  `CadPrepWorkflowOrchestrator` no longer rescues
+  `StandardError` at its five public entry points
+  (`start`, `refresh`, `apply_planar_and_refresh`,
+  `apply_gap_and_refresh`, `rebuild_and_scan`). Each
+  entry point now lets unexpected exceptions
+  propagate naturally to the enclosing
+  `DialogRunner._safe_invoke` boundary, which is
+  the production error-boundary responsible for
+  logging (`_safe_log`), toast (`_toast`), and
+  unconditional payload re-push (`push_data`).
+  Expected runner-state failures continue to
+  return truthful snapshots via the runner's own
+  state machine (the `_workspace_ready?(snap)` guard
+  inside each orchestrator entry point returns the
+  truthful non-ready snapshot for `:failed` /
+  `:building` / `:none` / `:discarded` states —
+  those are NOT exceptions, they are truthful
+  runner states and remain unchanged).
+
+- **A2-UX-01 (primary FAILED copy MUST stay
+  user-readable)**: the presenter's
+  `_failure_subtitle(snap)` no longer slices
+  `snap['last_error']` (the A1 truncation path
+  `last[0, 80]` is RETIRED). The FAILED primary
+  copy is now a frozen generic Simplified Chinese
+  product message (`检查过程中遇到错误，请重试或
+  查看详情`). Raw `last_error` strings / exception
+  class names / backtraces MUST NOT appear in the
+  product-facing headline / subheadline / issue
+  summary subtitle / recovery description. The
+  technical `last_error` remains available in the
+  existing raw `derivedWorkspace` / 详情 data
+  (carried by `UIBridge.as_html_data` from the
+  unchanged legacy raw payload). Ruby Console /
+  `_safe_invoke` logging remains the technical
+  debugging channel.
+
+- **Resilience regression tests** (12 new tests):
+  the A2 packet's `orchestrator (resilience)`
+  test (which pinned the WRONG contract — orchestrator
+  must not raise, must return truthful snapshot) was
+  RETIRED and replaced by 12 new tests that pin the
+  CORRECT contract:
+
+  - `tests/test_v19a_cad_prep_workflow_orchestrator.rb`:
+    6 new tests:
+    - (1) unexpected StandardError in
+      `WorkingModeRunner.prepare` propagates out of
+      `CadPrepWorkflowOrchestrator.start` verbatim
+      (exception class + message preserved);
+    - (2-5) the same propagation contract for
+      `refresh` / `apply_planar_and_refresh` /
+      `apply_gap_and_refresh` / `rebuild_and_scan`;
+    - (6) source-level guard against future
+      `rescue StandardError` re-introduction in the
+      orchestrator.
+  - `tests/test_dialog_runner.rb`: 6 new tests:
+    - (1-5) the synthetic orchestrator failure
+      reaches `_safe_invoke` for all five A2 entry
+      points (`start_cad_prep` /
+      `refresh_cad_prep` /
+      `apply_planar_normalization` /
+      `apply_gap_repair` / `rebuild_workspace`),
+      triggering the toast + log + unconditional
+      push_data path with the original exception
+      class / message preserved verbatim;
+    - (6) source-level guard against future swallow-
+      path re-introduction at the dialog_runner
+      level (the existing `_safe_invoke` boundary
+      remains the ONE allowed rescue site).
+
+- **A2-UX-01 presenter regression tests**
+  (6 new tests in
+  `tests/test_v19a_cad_prep_workflow_presenter.rb`):
+  - (1) FAILED primary subtitle equals the frozen
+    generic CN message;
+  - (2) synthetic exception class + backtrace
+    fragment never leak into any product-facing
+    surface (headline / subheadline / issue
+    summary headline + subtitle / recovery
+    description);
+  - (3) a long technical `last_error` is NOT
+    sliced into the FAILED subtitle;
+  - (4) empty / missing `last_error` still
+    produces the frozen generic FAILED subtitle;
+  - (5) STALE primary copy never carries raw
+    exception detail either (defense-in-depth);
+  - (6) presenter source-level guard against the
+    A1 truncation pattern (`last[0, 80]` /
+    `last_error[0, ...`) reintroduction.
+
+Do NOT change (per dispatch §5):
+
+- Start call order (prepare → duplicate → planar →
+  gap → structure) — UNCHANGED.
+- Refresh semantics — UNCHANGED.
+- post-Z V1.7 invalidation seam — UNCHANGED.
+- post-Z gap + structure recompute — UNCHANGED.
+- post-gap structure recompute — UNCHANGED.
+- gap ordering safety — UNCHANGED.
+- source immutability — UNCHANGED.
+- tolerance authority — UNCHANGED.
+- canonical graph — UNCHANGED.
+- V1.7 segment conflict — UNCHANGED.
+- host transaction ownership — UNCHANGED.
+- Undo / host-state reconciliation — UNCHANGED.
+- callback names / registrations — UNCHANGED.
+- four-tab IA — UNCHANGED.
+- visual design — UNCHANGED.
+- V1.9B — UNCHANGED (NOT STARTED).
+- PreparedCadDataset — UNCHANGED.
+- persistence — UNCHANGED.
+- MCP / LLM / Agent — UNCHANGED (OUT OF SCOPE).
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the
+  V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION
+  section is prepended to the existing V1.9A-A2
+  ONE-CLICK DIAGNOSTICS ORCHESTRATOR report).
+
+Next expected action: AIPM source review of the
+V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION packet
+(orchestrator error-boundary + presenter FAILED-
+copy + resilience regression tests + dialog_runner
+error-boundary tests + RBZ hashes). Then: Owner
+UX Gate A2 (real SU2020 orchestrated workflow).
+V1.9B PreparedCadDataset / persistence NOT
+STARTED. Final V1.x Codex xHigh review remains
+mandatory later regardless.
+
+CODEX_RISK_TRIGGER = NO (per dispatch §13 —
+orchestrator error-boundary propagation +
+presenter FAILED copy UX + dialog_runner error-
+boundary tests; no canonical graph identity /
+schema / digest / V1.7 segment conflict /
+tolerance authority / source-derived ownership /
+host transaction / Undo / Face / Observer /
+V1.6 / V1.7 / V1.8 algorithm change; no A2
+call-order / Z-Gap recalc / algorithm /
+UI-architecture change).
+
+OWNER_GATE: PENDING (A2 real-SU2020 orchestrated
+workflow).
+V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION:
+COMPLETE.
+V1.9B: NOT STARTED.
+
 ## V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR (THIS UPDATE)
 
 Updated: 2026-09-07 (V1.9A-A2 dispatch EXECUTION on

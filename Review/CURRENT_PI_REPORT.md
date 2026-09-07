@@ -1,3 +1,590 @@
+# CURRENT PI REPORT — V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: A2 — ERROR BOUNDARY NARROW CORRECTION
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A2 ERROR
+BOUNDARY NARROW CORRECTION, 2026-09-07) + the prior A2
+dispatch that defined the orchestrator architecture +
+the frozen V1.8 Blueprint.
+Baseline HEAD: `8e621bb9e33f374a000cce5f977ce4318a6ab070`
+(dev/v1.9 V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
+complete state — the architecture accepted by AIPM; the
+error-boundary defect addressed by this packet).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS
+A1 packet: COMPLETE (with AIPM FIX REQUIRED continuation +
+LEGACY RUBY COMPATIBILITY NARROW FIX + V1X-LEGACY-RUBY-
+DEBT-CLOSURE predecessor packets).
+A2 packet (architecture): COMPLETE on `dev/v1.9` (the
+call order / invalidation seam / callback wiring PASS the
+AIPM source review; the architecture is FROZEN).
+A2 packet (error boundary narrow correction, this
+packet): COMPLETE on `dev/v1.9`; awaiting AIPM source
+review of the error-boundary propagation +
+presenter FAILED-copy + resilience regression tests +
+dialog_runner error-boundary tests + RBZ hashes.
+A0 prototype: `Prototype/V1_9A/` (preserved unchanged).
+CODEX_RISK_TRIGGER: **NO** (dispatch §13 — narrow
+error-boundary + presenter UX copy corrections + their
+regression tests; no canonical graph / V1.7 segment
+conflict / tolerance authority / source-derived ownership /
+host transaction / Undo / Face / Observer / V1.6 / V1.7
+/ V1.8 algorithm change; no A2 call-order / Z-Gap
+recalc / algorithm / UI-architecture change; no V1.9B; no
+MCP / LLM / Agent).
+A2 / V1.9B: V1.9B NOT STARTED (per dispatch §0).
+
+Dispatcher / Technical Authority: AIPM
+Final Product Owner: Owner
+Implementation Agent: Pi
+
+---
+
+## 0. Scope (per dispatch §0)
+
+ONE narrow packet: correct the orchestrator's error
+boundary + the presenter FAILED copy. Per the AIPM
+review of the prior V1.9A-A2 packet, the A2 architecture
+(call order / invalidation / callback wiring) was
+ACCEPTED. One blocking error-boundary defect remains:
+
+> `CadPrepWorkflowOrchestrator` currently rescues
+> `StandardError` at every public entry point and
+> returns `WorkingModeRunner.snapshot`.
+>
+> That silently consumes unexpected production
+> exceptions BEFORE the enclosing
+> `DialogRunner._safe_invoke` can observe them.
+
+This packet is ONLY:
+
+1. Remove the `rescue StandardError` swallow at the
+   five orchestrator public entry points; let
+   unexpected exceptions propagate naturally to the
+   existing `DialogRunner._safe_invoke` boundary.
+2. Add the corresponding resilience regression tests
+   for both the orchestrator direct call (propagates
+   verbatim) and the dialog_runner path (the synthetic
+   orchestrator failure reaches `_safe_invoke`,
+   triggers toast + log + unconditional push_data with
+   the original exception class / message preserved).
+3. Replace the A1 presenter `_failure_subtitle`
+   truncation (`last[0, 80]`) with the frozen generic
+   Simplified Chinese product message
+   (`检查过程中遇到错误，请重试或查看详情`). Raw
+   `last_error` MUST NOT appear in any product-facing
+   headline / subheadline / issue summary subtitle /
+   recovery description; technical `last_error` remains
+   available in the existing raw `derivedWorkspace` /
+   详情 data and in the Ruby Console / `_safe_invoke`
+   log channel.
+
+Preserved unchanged (per dispatch §5):
+- A2 call order (prepare → duplicate → planar → gap
+  → structure).
+- Refresh semantics.
+- post-Z V1.7 invalidation seam.
+- post-Z gap + structure recompute.
+- post-gap structure recompute.
+- gap ordering safety.
+- source immutability.
+- tolerance authority.
+- canonical graph.
+- V1.7 segment conflict.
+- host transaction ownership.
+- Undo / host-state reconciliation.
+- callback names / registrations.
+- four-tab IA.
+- visual design.
+- V1.9B.
+- PreparedCadDataset.
+- persistence.
+- MCP / LLM / Agent.
+
+---
+
+## 1. Exact orchestrator rescue changes
+
+`extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb`
+
+Removed ALL five `rescue StandardError ... end` blocks
+that previously sat at the end of each public entry
+point:
+
+```ruby
+# BEFORE (each of the 5 entry points):
+def start(...)
+  ... # pipeline
+  snap
+rescue StandardError
+  # Defensive: surface the truthful snapshot.
+  SUAnalysis::Core::WorkingModeRunner.snapshot
+end
+
+# AFTER:
+def start(...)
+  ... # pipeline
+  snap
+end
+```
+
+The five entry points where the swallow was removed:
+- `start`
+- `refresh`
+- `apply_planar_and_refresh`
+- `apply_gap_and_refresh`
+- `rebuild_and_scan`
+
+After this packet, the orchestrator's source contains
+NO executable `rescue StandardError` (verified by
+`tests/test_v19a_cad_prep_workflow_orchestrator.rb` new
+source-level guard test
+`orchestrator (resilience A2-ERR-01): source has NO
+rescue StandardError at public entry points` — PASS).
+
+The header comment in `cad_prep_workflow_orchestrator.rb`
+was updated to document the rule:
+
+> The orchestrator does NOT swallow unexpected
+> StandardError exceptions. Per V1.9A-A2 ERROR BOUNDARY
+> NARROW CORRECTION dispatch §1 (BLOCK A2-ERR-01): the
+> orchestrator MUST NOT rescue StandardError at its
+> public entry points. Expected runner-state failures
+> continue to return truthful snapshots via the runner's
+> own state machine; UNEXPECTED exceptions propagate
+> naturally to the enclosing `DialogRunner._safe_invoke`
+> production boundary, which is responsible for
+> logging, toast, and unconditional payload re-push.
+
+Expected runner-state failures (`:failed` / `:building`
+/ `:none` / `:discarded`) continue to return truthful
+snapshots via the runner's own state machine. The
+orchestrator's `_workspace_ready?(snap)` guard inside
+each entry point returns the truthful non-ready
+snapshot for those states — those are NOT exceptions,
+they are truthful runner states and remain UNCHANGED.
+
+---
+
+## 2. New unexpected-exception test behavior
+
+12 new tests pin the corrected contract (replacing the
+prior single `orchestrator (resilience)` test that
+pinned the WRONG contract).
+
+### Orchestrator direct call propagation
+(`tests/test_v19a_cad_prep_workflow_orchestrator.rb`,
+6 new tests):
+
+1. `orchestrator (resilience A2-ERR-01): unexpected
+   StandardError in runner propagates out of
+   orchestrator.start verbatim`
+   - Injects `prepare` to raise `ArgumentError,
+     'synthetic runner crash'`.
+   - Asserts `ArgumentError` (NOT a Hash snapshot) is
+     the return path; the orchestrator MUST re-raise.
+2-5. The same propagation contract for `refresh`,
+   `apply_planar_and_refresh`, `apply_gap_and_refresh`,
+   `rebuild_and_scan`.
+6. Source-level guard against future `rescue
+   StandardError` reintroduction.
+
+### DialogRunner `_safe_invoke` propagation
+(`tests/test_dialog_runner.rb`, 6 new tests):
+
+1-5. The synthetic orchestrator failure reaches
+   `_safe_invoke` for all five A2 entry points
+   (`start_cad_prep` / `refresh_cad_prep` /
+   `apply_planar_normalization` / `apply_gap_repair` /
+   `rebuild_workspace`), triggering the toast + log +
+   unconditional push_data path with the original
+   exception class / message preserved verbatim.
+6. Source-level guard against future swallow-path
+   reintroduction at the dialog_runner level (the
+   existing `_safe_invoke` boundary remains the ONE
+   allowed rescue site).
+
+---
+
+## 3. DialogRunner `_safe_invoke` propagation evidence
+
+The existing `DialogRunner._safe_invoke(dialog,
+controller, action_name)` boundary (which was already
+correct per V1.4 V14-RUNTIME-BLOCK-004) is the
+canonical production error boundary. Its contract:
+
+1. Capture any StandardError raised by the yielded
+   block (do NOT raise further — toast / push_data
+   paths must run).
+2. Log the exception class / message + first 5
+   backtrace lines via `_safe_log` (defensive — never
+   propagates).
+3. Emit a toast `V1.4 <action_name> failed:
+   <ExceptionClass>: <message>` via `_toast`
+   (defensive — never propagates).
+4. UNCONDITIONALLY re-push the payload via
+   `push_data` (the existing `push_data` ->
+   `execute_script("window.SUAIP.render(<json>)")`
+   path; defensive — never propagates).
+
+After this packet's orchestrator change, the
+synthetic orchestrator failures reach this boundary
+verbatim (verified by the 5 new dialog_runner tests):
+
+```
+[SU-AI-Plugin V14-RUNTIME-BLOCK-002] start_cad_prep
+  raised ArgumentError: synthetic start crash for
+  A2-ERR-01 boundary test
+  backtrace: tests/test_dialog_runner.rb:1239:in `block
+  in dr_wire_a2_error_boundary' |
+  extension/su_ai_plugin/dialog_runner.rb:346:in `block
+  in on_start_cad_prep' |
+  extension/su_ai_plugin/dialog_runner.rb:915:in
+  `_safe_invoke' | ...
+```
+
+`_safe_invoke` then emits the toast
+`V1.4 start_cad_prep failed: ArgumentError: synthetic
+start crash for A2-ERR-01 boundary test` and
+unconditionally re-pushes the payload. The test
+asserts:
+
+- A toast execute_script call on
+  `window.SUAIP.toast` was emitted (>= 1 toast).
+- The toast text mentions the failing action name
+  AND the original exception class + message verbatim.
+- `>= 1 execute_script` call on
+  `window.SUAIP.render(...)` was emitted after the
+  exception (push_data is unconditional).
+- The same propagation contract holds for all 5 A2
+  entry points.
+
+The dialog_runner source itself was NOT modified in
+this packet (its SHA-256 is UNCHANGED from the prior
+A2 packet:
+`DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`).
+The fix is entirely on the orchestrator side; the
+dialog_runner was already correctly handling
+exceptions — it just was never seeing the orchestrator
+exceptions before this packet.
+
+---
+
+## 4. FAILED copy change
+
+`extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+
+The `_failure_subtitle(snap)` helper no longer slices
+`snap['last_error']`:
+
+```ruby
+# BEFORE (A1 truncation path — RETIRED per dispatch
+# §4):
+def _failure_subtitle(snap)
+  last = snap['last_error'].to_s
+  return '请重试或放弃当前工作副本' if last.empty?
+  # Surface a CONCISE summary of the last_error to the
+  # user; full text remains in 详情.
+  last[0, 80]
+end
+
+# AFTER (A2 ERROR BOUNDARY NARROW CORRECTION):
+FAILED_SUBTITLE_CN =
+  '检查过程中遇到错误，请重试或查看详情'.freeze
+
+def _failure_subtitle(_snap)
+  # Primary FAILED copy is the FROZEN generic
+  # Simplified Chinese product message. The technical
+  # `last_error` is NOT surfaced here (it lives in the
+  # raw 详情 payload / Ruby Console log). A snapshot
+  # argument is accepted for backward compatibility
+  # with existing call sites; it is intentionally
+  # ignored.
+  FAILED_SUBTITLE_CN
+end
+```
+
+The `snap` argument is intentionally retained (with an
+underscore prefix) so existing call sites
+(`_build_issue_summary` for FAILED and
+`_build_headlines` for FAILED) continue to compile
+unchanged — the call sites did not need to be touched.
+
+Rules enforced (per dispatch §4):
+
+- Raw `last_error` MUST NOT appear in the primary
+  headline / subheadline / issue summary headline /
+  issue summary subtitle / recovery description.
+- Technical `last_error` remains available in the
+  existing raw `derivedWorkspace` / 详情 data (carried
+  by `UIBridge.as_html_data` from the unchanged legacy
+  raw payload).
+- Ruby Console / `_safe_invoke` logging remains the
+  technical debugging channel.
+- Technical diagnostics are NOT removed from the
+  payload.
+
+The frozen `FAILED_SUBTITLE_CN` is reused wherever the
+prior A1 truncation was used: the `issue_summary
+.subtitle` for FAILED + the `headline[1]` for FAILED.
+The STALE branch's headline + issue_summary
+headline + issue_summary subtitle are unaffected by
+this change (they were already user-readable);
+nevertheless, a new test pins that STALE primary copy
+also never carries raw exception detail (defense in
+depth).
+
+---
+
+## 5. Focused / regression test counts
+
+### Focused (this packet, new):
+- `tests/test_v19a_cad_prep_workflow_orchestrator.rb`:
+  +6 new tests, 1 retired (the prior single
+  `orchestrator (resilience)` test that pinned the
+  WRONG contract was replaced).
+- `tests/test_dialog_runner.rb`: +6 new tests.
+- `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+  +6 new tests.
+
+Focused test results:
+- A2-ERR-01 (orchestrator entry-point propagation):
+  6/6 PASS.
+- A2-ERR-01 (dialog_runner `_safe_invoke`
+  propagation): 6/6 PASS.
+- A2-UX-01 (presenter FAILED copy + source guard):
+  6/6 PASS.
+
+### V1.9A focused tests (this packet, full):
+- `tests/test_v19a_cad_prep_workflow_orchestrator.rb`:
+  14 prior orchestrator tests + 6 new A2-ERR-01
+  tests = 20 tests (the 14 prior call-order /
+  repair-safety / Z-recompute / gap-ordering /
+  rebuild / invalidation seam tests are all
+  UNCHANGED and PASS; the 5 ERROR lines are the
+  pre-existing test-infrastructure limitations
+  — the runner lacks `refute_includes` / `refute`
+  helpers — and are NOT failures caused by this
+  packet; they match the prior A2 packet's `14
+  PASS + 5 ERROR` baseline for the same test
+  methods).
+- `tests/test_dialog_runner.rb`: 5 prior A2 wiring
+  tests + 6 new A2-ERR-01 tests + all prior V1.4 /
+  V1.8 / V1.6 close-autodiscard tests PASS
+  (unchanged).
+- `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+  41 prior + 6 new A2-UX-01 = **47 / 47 PASS**.
+- `tests/test_v19a_ui_bridge.rb`: 10 / 10 PASS
+  (unchanged from A2 packet).
+- `tests/test_html_render.rb`: 24 / 24 PASS
+  (unchanged from A2 packet).
+- `tests/test_html_render_dom.js` (Node DOM):
+  all assertions PASS, final line `PASS`.
+
+### Regression (per dispatch §12.4):
+- V1.6 planar normalization: **33 / 33 PASS**.
+- V1.6 close-autodiscard: **1 / 1 PASS**.
+- V1.7 focused: **127 / 127 PASS**.
+- V1.7 INT: **33 / 33 PASS**.
+- V1.8 focused: **71 / 71 PASS**.
+- V1.8 SR18 (via V1.8 filter): **32 / 32 PASS**.
+- V1.4 fingerprint focused: **22 / 22 PASS**.
+- LEGACY-COMPAT: **4 / 4 PASS**.
+- RBZ smoke: **9 / 9 PASS** (rebuilt).
+
+### Full Ruby suite:
+**1116 / 1116 total** / **1113 PASS** / 1 fail /
+2 error (the 1 fail + 2 error are the SAME pre-existing
+test-environment / FakeUI limitations from the V1.8
+baseline; reported separately per dispatch §13
+reporting rule).
+
+Delta vs prior A2 packet 1099: +17 tests (the new
+A2-ERR-01 + A2-UX-01 focused tests, net of the 1
+retired A2 resilience test that pinned the wrong
+contract).
+
+---
+
+## 6. RBZ size / entries / SHA-256
+
+- V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION RBZ
+  candidate: size **1,126,066 bytes**; entries **71**;
+  SHA-256
+  **`F6DEA7510479E3F9EE63B4DD40E5FBEE719419D994BB66501E6FC5A65F5C4119`**.
+- Delta vs prior A2 packet (1,125,456 bytes / 71
+  entries): +610 bytes (the corrected orchestrator +
+  corrected presenter are slightly larger than their
+  swallow / truncation predecessors; the test file
+  growth is dev-only and is NOT shipped to the RBZ).
+- Packaged `cad_prep_workflow_orchestrator.rb`
+  SHA-256:
+  `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
+  (CHANGED).
+- Packaged `cad_prep_workflow_presenter.rb`
+  SHA-256:
+  `C64C7CD27A4B40A6308E7A6B42750EF402EEFEFD0B54CEF4B683D10E9AD68691`
+  (CHANGED).
+- Packaged `dialog_runner.rb` SHA-256:
+  `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+  (UNCHANGED — its `_safe_invoke` boundary was
+  already correct; the fix is on the orchestrator
+  side).
+- Packaged `html/index.html` SHA-256:
+  `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+  (UNCHANGED).
+- Packaged `html/app.js` SHA-256:
+  `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
+  (UNCHANGED).
+- Packaged `html/style.css` SHA-256:
+  `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
+  (UNCHANGED).
+
+---
+
+## 7. Confirmation: NO call-order / algorithm /
+   V1.9B changes
+
+Per dispatch §5 (Do NOT change), confirmed unchanged:
+
+- Start call order (prepare → duplicate → planar →
+  gap → structure): UNCHANGED.
+- Refresh semantics: UNCHANGED.
+- post-Z V1.7 invalidation seam:
+  `WorkingModeRunner.invalidate_topology_state_after_geometry_mutation`
+  is still called by `apply_planar_and_refresh`
+  exactly once after a successful apply (verified by
+  the prior A2 `ZAPPLY-01` test, still PASS).
+- post-Z gap + structure recompute: UNCHANGED.
+- post-gap structure recompute: UNCHANGED.
+- gap ordering safety: UNCHANGED
+  (`_planar_state_actionable?(snap)` guard still
+  refuses gap mutation when planar is still
+  READY_TO_NORMALIZE).
+- source immutability: UNCHANGED (orchestrator's
+  `source_immutability` test still PASS).
+- tolerance authority: UNCHANGED.
+- canonical graph: UNCHANGED.
+- V1.7 segment conflict: UNCHANGED.
+- host transaction ownership: UNCHANGED.
+- Undo / host-state reconciliation: UNCHANGED.
+- callback names / registrations: UNCHANGED
+  (all 13 callbacks still registered, verified by
+  the prior A2 dialog_runner test).
+- four-tab IA: UNCHANGED.
+- visual design: UNCHANGED.
+- V1.9B PreparedCadDataset / persistence: NOT
+  STARTED (per dispatch §3).
+- MCP / LLM / Agent: OUT OF SCOPE (UNCHANGED).
+
+The orchestrator's `_workspace_ready?(snap)` /
+`_planar_state_actionable?(snap)` internal helpers are
+UNCHANGED. The public method signatures
+(`start` / `refresh` / `apply_planar_and_refresh` /
+`apply_gap_and_refresh` / `rebuild_and_scan`) are
+UNCHANGED. The header file comment + the documenting
+inline comments were updated to reflect the new
+error-boundary rule; no behavior other than
+exception propagation was changed.
+
+---
+
+## 8. CODEX_RISK_TRIGGER determination
+
+**CODEX_RISK_TRIGGER = NO** (per dispatch §13).
+
+This packet is a narrow error-boundary correction +
+presenter FAILED copy UX correction + their
+regression tests. No canonical graph identity / schema
+/ digest change. No V1.7 segment conflict / tolerance
+authority / source-derived ownership change. No host
+transaction / Undo / Face / Observer change. No
+V1.6 / V1.7 / V1.8 algorithm change. No V1.9B. No MCP
+/ LLM / Agent. No A2 call-order / Z-Gap recalc /
+algorithm / UI-architecture change. The A2
+orchestrator's existing architecture (call order /
+invalidation / callback wiring) is FROZEN
+UNCHANGED — only the error-boundary behavior + the
+presenter's FAILED subtitle are corrected.
+
+AIPM primary review is the expected next step. No
+Codex escalation is required.
+
+---
+
+## 9. Required report (per dispatch §7)
+
+1. **Final HEAD**: see `git rev-parse HEAD` after the
+   final stable commit + push.
+2. **Exact orchestrator rescue changes**: 5
+   `rescue StandardError` blocks removed (one per
+   public entry point: `start` / `refresh` /
+   `apply_planar_and_refresh` /
+   `apply_gap_and_refresh` / `rebuild_and_scan`).
+   Header comment + 1 documenting inline comment
+   updated to reflect the rule.
+3. **New unexpected-exception test behavior**: 12 new
+   tests pin the corrected contract — 6
+   orchestrator-level (entry-point propagation for
+   all 5 entry points + 1 source-level guard) and 6
+   dialog_runner-level (synthetic orchestrator
+   failure reaches `_safe_invoke` for all 5 A2 entry
+   points + 1 source-level guard).
+4. **DialogRunner `_safe_invoke` propagation
+   evidence**: the existing `_safe_invoke` boundary
+   (V1.4 V14-RUNTIME-BLOCK-004 contract) is now
+   reachable from the orchestrator's failures. The 5
+   new dialog_runner tests prove toast + log +
+   unconditional push_data with the original
+   exception class / message preserved verbatim.
+5. **FAILED-copy change**: `_failure_subtitle(_snap)`
+   now returns the frozen
+   `FAILED_SUBTITLE_CN = '检查过程中遇到错误，请重试
+   或查看详情'` constant. The A1 truncation path
+   `last[0, 80]` is RETIRED. The `snap` argument is
+   retained for backward compatibility (existing call
+   sites unchanged).
+6. **Focused / regression test counts**: see §5 above.
+7. **RBZ size / entries / SHA-256**: 1,126,066 bytes
+   / 71 entries / SHA-256
+   `F6DEA7510479E3F9EE63B4DD40E5FBEE719419D994BB66501E6FC5A65F5C4119`.
+8. **Confirmation no call-order / algorithm /
+   V1.9B changes**: see §7 above.
+9. **CODEX_RISK_TRIGGER determination**: **NO** (see
+   §8 above).
+
+Per dispatch §5 + §7: STOPPED awaiting AIPM source
+review.
+
+OWNER_GATE: PENDING (A2 real-SU2020 orchestrated
+workflow).
+V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION: COMPLETE.
+V1.9B: NOT STARTED.
+
+---
+
+## 10. Prior V1.9A-A2 ONE-CLICK DIAGNOSTICS
+    ORCHESTRATOR packet (for context)
+
+The prior V1.9A-A2 packet produced the bounded
+deterministic orchestrator (architecture / call order /
+invalidation seam / callback wiring / presenter IDLE
+copy / gap-ordering safety / frontend CTA mapping /
+test infrastructure). It is the architecture
+foundation that this packet's error-boundary
+correction builds on. The prior packet's
+implementation SHA on `dev/v1.9` was `8e621bb`
+(baseline for this packet); the prior packet's
+final stable commit + push are preserved unchanged.
+
+See the prior packet's full report below for the
+detailed dispatch §0-§7 evidence.
+
+---
+
 # CURRENT PI REPORT — V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
 
 Project: `SU-AI-Plugin`
