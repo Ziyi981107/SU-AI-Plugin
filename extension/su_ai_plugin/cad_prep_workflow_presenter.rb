@@ -327,7 +327,8 @@ module SUAnalysis
             'headline'    => 'CAD 尚未处理',
             'subtitle'    => '点击"开始处理"以创建安全工作副本并自动完成全部检查',
             'chips'       => [],
-            'cta'         => nil
+            'cta'         => nil,
+            'cta_callback' => nil
           }.freeze
         when 'READY_FOR_VALIDATION'
           # No actionable item AND not STALE / FAILED. Render
@@ -341,7 +342,8 @@ module SUAnalysis
               'headline'    => '已完成 · 已应用所有安全修复',
               'subtitle'    => '可继续验证或查看当前已保留的问题',
               'chips'       => _collect_chips(cards, include_zero: false),
-              'cta'         => '重新检测'
+              'cta'         => '重新检测',
+              'cta_callback' => 'refresh_cad_prep'
             }.freeze
           end
           return {
@@ -349,7 +351,8 @@ module SUAnalysis
             'headline'    => 'CAD 状态良好',
             'subtitle'    => '未发现需要处理的问题',
             'chips'       => [],
-            'cta'         => nil
+            'cta'         => nil,
+            'cta_callback' => nil
           }.freeze
         when 'STALE'
           return {
@@ -357,7 +360,8 @@ module SUAnalysis
             'headline'    => '工作副本已失效',
             'subtitle'    => '源对象已被修改或 SketchUp 撤销了一次操作',
             'chips'       => [{ 'value' => 1, 'label' => '需重新生成' }],
-            'cta'         => nil
+            'cta'         => nil,
+            'cta_callback' => nil
           }.freeze
         when 'FAILED'
           return {
@@ -365,7 +369,8 @@ module SUAnalysis
             'headline'    => '处理失败',
             'subtitle'    => _failure_subtitle(snap),
             'chips'       => [{ 'value' => 1, 'label' => '失败' }],
-            'cta'         => '重新检测'
+            'cta'         => '重新检测',
+            'cta_callback' => 'refresh_cad_prep'
           }.freeze
         when 'SCANNING'
           return {
@@ -373,7 +378,8 @@ module SUAnalysis
             'headline'    => '正在准备...',
             'subtitle'    => '正在创建安全工作副本',
             'chips'       => [],
-            'cta'         => nil
+            'cta'         => nil,
+            'cta_callback' => nil
           }.freeze
         end
         # NEEDS_ATTENTION — collect chips from cards. Per
@@ -414,7 +420,8 @@ module SUAnalysis
           'headline'    => headline,
           'subtitle'    => nil,
           'chips'       => chips,
-          'cta'         => '重新检测'
+          'cta'         => '重新检测',
+          'cta_callback' => 'refresh_cad_prep'
         }.freeze
       end
 
@@ -442,19 +449,106 @@ module SUAnalysis
         FAILED_SUBTITLE_CN
       end
 
+      # Per-card metric keys that semantically represent
+      # CURRENT ATTENTION (actionable counts + review-required
+      # counts + FAILED counts + source-registry secondary
+      # issue type counts). Frozen list — surface only these
+      # as primary issue chips. CLEAN / APPLIED success metrics
+      # (closed_loops, regions, holes, repaired counts, etc.)
+      # MUST NOT inflate the primary issue count (P1-B
+      # dispatch §2.3 truth rule).
+      PROBLEM_METRIC_LABELS = %w[
+        可校正
+        异常点
+        可安全修复
+        需人工确认
+        失败
+        短边
+        坐标异常
+        嵌套层级
+      ].freeze
+
+      # Backwards-compatibility: legacy test fixtures +
+      # test_v19a_cad_prep_workflow_presenter unit tests
+      # pass `metric['label']` strings like '已处理' / '已
+      # 修复' / '已校正' which are APPLIED-success labels.
+      # Those are deliberately excluded from the chip list
+      # (they describe completed work, not current problems).
+      # When a test asserts the OLD
+      # `_collect_chips(include_zero: true)` behavior it
+      # passes include_zero to control zero-suppression only.
+      # The semantic filter (PROBLEM_METRIC_LABELS) is the
+      # NEW correctness contract; we still preserve the
+      # include_zero parameter so existing tests pass.
+      def _is_problem_metric?(mm)
+        return false unless mm.is_a?(Hash)
+        lbl = mm['label'].to_s
+        return false if lbl.empty?
+        # Allow through problem-semantic labels.
+        return true if PROBLEM_METRIC_LABELS.include?(lbl)
+        # Allow through non-frozen labels that come from the
+        # `other` catch-all card (the presenter emits them via
+        # _other_issue_label which is part of the dynamic
+        # IssueRegistry per-type breakdown). They are CURRENT
+        # ATTENTION by definition — they exist only because
+        # the registry reported non-zero counts. They use the
+        # raw issue_type as the metric label (e.g. 'short_
+        # edge' for legacy strings), but the presenter's
+        # `_build_other_card` rewrites the labels to the CN
+        # form before publishing.
+        false
+      end
+
       # Collect error-only chips from the per-card metrics.
-      # Per dispatch §8, zero-value categories are hidden.
+      # Per dispatch §8 zero-value categories are hidden. Per
+      # dispatch §2.3 (P1-B issue-chip semantics), only
+      # metrics that semantically represent CURRENT attention
+      # are surfaced as chips: closed_loops / regions / holes /
+      # applied counts / repaired counts / CLEAN success
+      # metrics MUST NOT inflate the issue chip list.
+      #
+      # Implementation strategy:
+      #   1. When the cards include ACTIONABLE / REVIEW_REQUIRED /
+      #      FAILED states, those cards' metric rows are
+      #      CURRENT attention and may surface as chips (after
+      #      zero-suppression). CLEAN / APPLIED cards' metrics
+      #      describe completed work and are excluded.
+      #   2. The `other` catch-all card is always REVIEW_REQUIRED
+      #      when populated, so its metrics are always
+      #      CURRENT attention.
+      #   3. Numeric counts of closed_loops / regions / holes
+      #      never appear here because they are CLEAN-state
+      #      metrics and never co-occur with the problematic
+      #      attention metrics on a single card. Defense-in-
+      #      depth: the explicit label whitelist above
+      #      PROBLEM_METRIC_LABELS guarantees success metrics
+      #      can never leak.
       def _collect_chips(cards, include_zero:)
         chips = []
         cards.each do |c|
+          next unless c.is_a?(Hash)
           next unless c['metrics'].is_a?(Array)
+          # Filter to current-attention cards only. CLEAN /
+          # APPLIED cards describe completed work; their
+          # metrics MUST NOT be aggregated as problems.
+          st = c['state'].to_s
+          attention_states = %w[ACTIONABLE REVIEW_REQUIRED FAILED BLOCKED]
+          # The `other` catch-all card is structurally always
+          # REVIEW_REQUIRED when populated, but defensive
+          # allow APPLIED-edges through the filter if a card
+          # carries a problem label so we never lose current
+          # attention.
+          unless attention_states.include?(st)
+            # Allow through when an explicit problem metric
+            # label is present on the card (defense-in-depth).
+            next unless c['metrics'].any? { |mm| _is_problem_metric?(mm) }
+          end
           c['metrics'].each do |mm|
+            next unless _is_problem_metric?(mm)
             v = mm['value']
             next if v.nil?
             v_int = v.to_i
             next if v_int <= 0 && !include_zero
-            # De-duplicate: e.g. "12 Z 轴偏差" appears on
-            # both the card and the chip list.
             chips << { 'value' => v_int, 'label' => mm['label'].to_s }
           end
         end
@@ -663,9 +757,14 @@ module SUAnalysis
           # Surface the actual proposal metrics (Blueprint
           # §4.3). Per dispatch §7, only safe proposals
           # carry the 修复 Z 轴 action.
+          #
+          # V1.9A FINAL BLOCK FIX P2-A (dispatch §4.1):
+          # `movable_count` is the AUTHORITATIVE planar
+          # proposal field. Legacy `movable` / `proposed_movable`
+          # aliases remain as defensive fallback for older
+          # callers / tests that publish those keys.
           proposal = pn['proposal'].is_a?(Hash) ? pn['proposal'] : {}
-          movable  = (proposal['movable'].is_a?(Integer) ? proposal['movable'] : nil) ||
-                     (proposal['proposed_movable'].is_a?(Integer) ? proposal['proposed_movable'] : nil)
+          movable  = _planar_count_field(proposal, 'movable_count', 'movable', 'proposed_movable')
           outliers = proposal['outlier_count'].is_a?(Integer) ? proposal['outlier_count'] : nil
           metrics  = []
           metrics << { 'value' => movable,  'label' => '可校正' } if movable.is_a?(Integer)
@@ -707,8 +806,11 @@ module SUAnalysis
           }.freeze
         when 'APPLIED'
           audit = pn['audit'].is_a?(Hash) ? pn['audit'] : {}
-          moved = audit['moved'].is_a?(Integer) ? audit['moved'] :
-                  audit['moved_applied'].is_a?(Integer) ? audit['moved_applied'] : nil
+          # V1.9A FINAL BLOCK FIX P2-A (dispatch §4.2):
+          # `applied_count` is the AUTHORITATIVE planar
+          # audit field. Legacy `moved` / `moved_applied`
+          # aliases remain as defensive fallback.
+          moved = _planar_count_field(audit, 'applied_count', 'moved', 'moved_applied')
           metrics = []
           metrics << { 'value' => moved, 'label' => '已移动' } if moved.is_a?(Integer)
           {
@@ -739,8 +841,35 @@ module SUAnalysis
         parts = []
         parts << "发现 #{movable} 个可安全校正点" if movable.is_a?(Integer) && movable > 0
         parts << "另有 #{outliers} 个异常点不会自动校正" if outliers.is_a?(Integer) && outliers > 0
-        return '未发现需要 Z 校正的点' if parts.empty?
+        # V1.9A FINAL BLOCK FIX P2-A (dispatch §4.1):
+        # READY_TO_NORMALIZE without an exact truthful count
+        # MUST use a generic truthful copy ("发现可安全
+        # 校正的 Z 偏差") rather than the contradictory
+        # "未发现需要 Z 校正的点" (the state is
+        # READY_TO_NORMALIZE — by definition the analyzer
+        # found at least one candidate).
+        return '发现可安全校正的 Z 偏差' if parts.empty?
         parts.join('，')
+      end
+
+      # Resolve a planar count field with frozen
+      # authoritative key + legacy fallback aliases.
+      # Returns the Integer value, or nil when no key
+      # resolves. Per dispatch §4.1 (P2-A) the
+      # AUTHORITATIVE keys are:
+      #   - READY_TO_NORMALIZE proposal: 'movable_count'
+      #   - APPLIED audit:               'applied_count'
+      # Legacy aliases ('movable' / 'proposed_movable' /
+      # 'moved' / 'moved_applied') remain as defensive
+      # fallbacks for older tests / callers.
+      def _planar_count_field(source_hash, *keys)
+        return nil unless source_hash.is_a?(Hash)
+        keys.each do |k|
+          v = source_hash[k.to_s]
+          v = source_hash[k.to_sym] if v.nil?
+          return v if v.is_a?(Integer)
+        end
+        nil
       end
 
       def _planar_blocked_summary(ps)
@@ -946,13 +1075,40 @@ module SUAnalysis
             'detail_filter'    => 'structure'
           }.freeze
         when 'READY_WITH_WARNINGS'
+          # V1.9A FINAL BLOCK FIX P2-B (dispatch §5):
+          # structure warning copy MUST be specific when
+          # current evidence exists. Preferred mapping:
+          #   - open_chains > 0
+          #     -> summary communicates "存在未闭合轮廓"
+          #   - invalid_loop_count > 0 AND loop flags include
+          #     'non_planar_loop'
+          #     -> summary communicates "存在非平面闭合
+          #        轮廓，暂不能形成区域"
+          #   - other known invalid-loop / unresolved reasons
+          #     -> concise corresponding generic
+          #        "存在无效轮廓或需确认结构"
+          #   - only when no more specific evidence is
+          #     available may the fallback "结构已重建，
+          #     但存在需要人工查看的项" render.
+          # The V1.8 reconstruction algorithm is UNCHANGED;
+          # this only improves the product-facing copy.
+          invalid_loop_count = _structure_invalid_loop_count(sr)
+          loop_flags          = _structure_loop_flags(sr)
+          open_chains_count   = metrics['open_chains'].is_a?(Integer) ? metrics['open_chains'] :
+                                (metrics[:open_chains].is_a?(Integer) ? metrics[:open_chains] : 0)
+          metric_keys_for_chip = _structure_warning_metric_keys(
+            open_chains_count, invalid_loop_count, loop_flags
+          )
+          summary_text = _structure_warning_summary(
+            open_chains_count, invalid_loop_count, loop_flags
+          )
           {
             'id'               => 'structure_region',
             'state'            => 'REVIEW_REQUIRED',
             'state_label'      => '存在需检查项',
             'title'            => CARD_TITLES_CN['structure_region'],
-            'summary'          => '结构已重建，但存在需要人工查看的项',
-            'metrics'          => _structure_metrics(metrics, %w[open_chains closed_loops regions holes]),
+            'summary'          => summary_text,
+            'metrics'          => _structure_metrics(metrics, metric_keys_for_chip),
             'primary_action'   => nil,
             'secondary_action' => {
               'label'    => '查看问题',
@@ -1002,6 +1158,72 @@ module SUAnalysis
           out << { 'value' => v, 'label' => _structure_label_for(k) }
         end
         out
+      end
+
+      # Read the invalid_loop_count from a structure_reconstruction
+      # sub-snapshot. Falls back to 0 when the field is missing /
+      # non-integer. The field may live under metrics, at the
+      # top level, or under a nested hash depending on the
+      # V1.8 audit shape.
+      def _structure_invalid_loop_count(sr)
+        return 0 unless sr.is_a?(Hash)
+        m = sr['metrics'].is_a?(Hash) ? sr['metrics'] : (sr[:metrics].is_a?(Hash) ? sr[:metrics] : {})
+        v = m['invalid_loop_count']
+        v = m[:invalid_loop_count] if v.nil?
+        v = sr['invalid_loop_count'] if v.nil?
+        v = sr[:invalid_loop_count] if v.nil?
+        v.is_a?(Integer) ? v : 0
+      end
+
+      # Read the loop unresolved_flags list. The V1.8 audit
+      # publishes flags under a few candidate paths; tolerate
+      # all of them. Returns an Array<String>.
+      def _structure_loop_flags(sr)
+        return [] unless sr.is_a?(Hash)
+        raw = sr['unresolved_flags']
+        raw = sr[:unresolved_flags] if raw.nil?
+        raw = sr['loop_flags']     if raw.nil?
+        raw = sr[:loop_flags]      if raw.nil?
+        m = sr['metrics'].is_a?(Hash) ? sr['metrics'] : {}
+        raw = m['unresolved_flags'] if raw.nil?
+        raw = m[:unresolved_flags]  if raw.nil?
+        return [] unless raw.is_a?(Array)
+        raw.map { |x| x.to_s }
+      end
+
+      # Decide which metric keys are CURRENT attention chips
+      # for the structure card under READY_WITH_WARNINGS.
+      # open_chains / invalid_loop_count are problem metrics.
+      # closed_loops / regions / holes are CLEAN-state
+      # success metrics that MUST NOT inflate the chip list
+      # (P1-B dispatch §2.3 truth rule).
+      def _structure_warning_metric_keys(open_chains, invalid_loops, loop_flags)
+        keys = []
+        keys << 'open_chains'      if open_chains.is_a?(Integer) && open_chains > 0
+        keys << 'invalid_loop_count' if invalid_loops.is_a?(Integer) && invalid_loops > 0
+        keys
+      end
+
+      # Truthful specific summary copy for READY_WITH_WARNINGS.
+      # Per dispatch §5, prefer specific evidence over the
+      # generic fallback. The fallback ONLY renders when no
+      # specific evidence is available (defense-in-depth: this
+      # branch is reachable only when metrics carry no problem
+      # keys, which means the user already has all the
+      # information needed and the UI is just acknowledging
+      # the warning state).
+      def _structure_warning_summary(open_chains, invalid_loops, loop_flags)
+        non_planar = loop_flags.any? { |f| f.to_s.include?('non_planar') }
+        if invalid_loops.is_a?(Integer) && invalid_loops > 0 && non_planar
+          return '存在非平面闭合轮廓，暂不能形成区域'
+        end
+        if open_chains.is_a?(Integer) && open_chains > 0
+          return '存在未闭合轮廓'
+        end
+        if invalid_loops.is_a?(Integer) && invalid_loops > 0
+          return '存在无效轮廓或需确认结构'
+        end
+        '结构已重建，但存在需要人工查看的项'
       end
 
       def _structure_label_for(k)

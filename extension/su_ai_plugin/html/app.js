@@ -332,13 +332,25 @@
 
     if (summary.cta) {
       var right = el('div', { className: 'cta-actions' });
-      var b = el('button', {
-        className: 'btn btn-secondary',
-        attrs: { type: 'button', 'data-action': 'rebuild_workspace' }
-      });
-      b.appendChild(document.createTextNode(summary.cta));
-      right.appendChild(b);
-      container.appendChild(right);
+      // V1.9A FINAL BLOCK FIX P3 (dispatch §3):
+      // The CTA callback is now explicit via
+      // `issue_summary.cta_callback` (additive schema).
+      // The frontend MUST NOT infer the callback from the
+      // CN button text. Default fallback: when
+      // cta_callback is missing, the CTA hides entirely
+      // (the per-card actions remain the user's primary
+      // affordance; the summary CTA is a non-essential
+      // affordance).
+      var cta_cb = summary.cta_callback || null;
+      if (cta_cb) {
+        var b = el('button', {
+          className: 'btn btn-secondary',
+          attrs: { type: 'button', 'data-action': cta_cb }
+        });
+        b.appendChild(document.createTextNode(summary.cta));
+        right.appendChild(b);
+        container.appendChild(right);
+      }
     }
   }
 
@@ -586,13 +598,27 @@
   }
 
   function _buildIssueRows(payload, cadPrep) {
-    // Current unresolved / relevant issues first. Priority:
-    //   1. Cards that are REVIEW_REQUIRED / FAILED (per
-    //      cadPrepWorkflow.cards).
-    //   2. ACTIONABLE items (without a separate issue row;
-    //      the action lives on the card).
-    //   3. Legacy groups (raw issue Registry) for the
-    //      "原始检查记录" block.
+    // V1.9A FINAL BLOCK FIX P1-A (dispatch §2):
+    // Current unresolved / relevant issues come ONLY from
+    // the current cadPrepWorkflow (cards + current state).
+    // Legacy raw groups (`payload.groups`) are
+    // INTENTIONALLY NOT appended to the primary current
+    // Issues list. They are derived from the original
+    // AnalysisResult.registry and remain reachable in the
+    // "原始检查记录" surface under 详情 (see
+    // `_buildLegacySourceRows` / `_buildLegacySourceRows`
+    // below) — they are source evidence / history, NOT
+    // current post-repair issues.
+    //
+    // Source cards that should appear as current issue rows:
+    //   1. REVIEW_REQUIRED cards (one row per card).
+    //   2. FAILED cards (one row per card).
+    //   3. BLOCKED cards (one row per card).
+    // ACTIONABLE cards do NOT produce a separate issue row;
+    // the action lives on the card itself. UNCOMPUTED /
+    // CLEAN / APPLIED cards are also excluded — they
+    // describe pending-not-yet-started or completed work,
+    // not current unresolved problems.
     var rows = [];
     var cards = (cadPrep && cadPrep.cards) || [];
     cards.forEach(function (c) {
@@ -616,36 +642,22 @@
           issue_id: null,
           icon: CARD_ICON_PATHS[c.id] || CARD_ICON_PATHS.other
         });
+      } else if (c.state === 'BLOCKED') {
+        rows.push({
+          severity: 'warn',
+          title:    c.title + ' · 已阻塞',
+          desc:     c.summary,
+          locatable: false,
+          issue_id: null,
+          icon: CARD_ICON_PATHS[c.id] || CARD_ICON_PATHS.other
+        });
       }
     });
-
-    // Legacy raw groups (preserve V1.0-V1.4 issue rows).
-    var groups = payload.groups || [];
-    groups.forEach(function (g) {
-      if (!g || !g.issues) return;
-      g.issues.forEach(function (iss) {
-        if (!iss) return;
-        if (iss.locatable) {
-          rows.push({
-            severity: iss.severity || 'info',
-            title:    iss.message || iss.issue_type || iss.issue_id || '',
-            desc:     iss.issue_type || '',
-            locatable: true,
-            issue_id: iss.issue_id,
-            icon: CARD_ICON_PATHS.other
-          });
-        } else {
-          rows.push({
-            severity: iss.severity || 'info',
-            title:    iss.message || iss.issue_type || iss.issue_id || '',
-            desc:     iss.issue_type || '',
-            locatable: false,
-            issue_id: iss.issue_id,
-            icon: CARD_ICON_PATHS.other
-          });
-        }
-      });
-    });
+    // Raw `payload.groups` (legacy source registry) is
+    // NOT appended to the primary current issue rows. It
+    // is reachable via `_buildLegacySourceRows` under the
+    // "原始检查记录" / 详情 surface, which already renders
+    // it. This split is the P1-A correctness contract.
     return rows;
   }
 
@@ -850,16 +862,29 @@
   }
 
   function _buildIssuesBadgeCount(cadPrep, payload) {
+    // V1.9A FINAL BLOCK FIX P1-A (dispatch §2):
+    // The red tab badge counts CURRENT unresolved cards
+    // only (REVIEW_REQUIRED / FAILED / BLOCKED). Legacy
+    // raw groups (`payload.groups`) describe historical
+    // source findings that are reachable in the 详情
+    // / 原始检查记录 surface. After a workspace is repaired
+    // (Gap applied, closed loop reconstructed), the
+    // historical open_endpoint / gap_candidate rows MUST
+    // NOT inflate the badge count (the user has fixed
+    // them; the source registry is evidence, not a
+    // current unresolved state).
     var n = 0;
     var cards = (cadPrep && cadPrep.cards) || [];
     cards.forEach(function (c) {
       if (!c) return;
-      if (c.state === 'REVIEW_REQUIRED' || c.state === 'FAILED') n++;
+      if (c.state === 'REVIEW_REQUIRED' ||
+          c.state === 'FAILED' ||
+          c.state === 'BLOCKED') {
+        n++;
+      }
     });
-    var groups = payload.groups || [];
-    groups.forEach(function (g) {
-      if (g && g.count) n += Number(g.count) || 0;
-    });
+    // Defensive: payload.groups is NOT counted. Source-
+    // registry rows are reachable through the 详情 surface.
     return n;
   }
 

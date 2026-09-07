@@ -707,14 +707,274 @@ assert('V1.9A-A1: 详情 panel raw-inventory shows edges count via legacy summar
 
 // --- Locate behavior preserved (L3 contract) ---------------------------
 
-// Re-render with a locatable issue in groups.
+// V1.9A FINAL BLOCK FIX P1-A: current Issues rows come ONLY
+// from cadPrepWorkflow cards (REVIEW_REQUIRED / FAILED /
+// BLOCKED). Historical source-registry rows from
+// `payload.groups` MUST NOT appear in the primary current
+// Issues list (they remain reachable under the
+// "原始检查记录" surface in 详情, NOT here). The
+// locatable/non-locatable contract is preserved for legacy
+// source-registry rows that DO surface in the
+// "原始检查记录" Details surface (L3 contract preserved).
+//
+// Re-render with two current-attention cards (one
+// REVIEW_REQUIRED + one FAILED). Each card produces one
+// non-locatable current issue row (cards do not carry
+// issue_id; the click handler is data-action-based via
+// the card's secondary action).
+SUAIP.render({
+  cadPrepWorkflow: {
+    schema_version: '1',
+    overall_state: 'NEEDS_ATTENTION',
+    headline: '发现需要处理的问题', subheadline: '',
+    selection: { type: 'Group', label: '别墅平面图' },
+    issue_summary: {
+      kind: 'issues',
+      headline: '发现 2 类需要处理的问题',
+      chips: [{ value: 1, label: '需人工确认' }, { value: 1, label: '失败' }],
+      cta: '重新检测',
+      cta_callback: 'refresh_cad_prep'
+    },
+    cards: [
+      { id: 'duplicate_cleanup',    state: 'CLEAN',           state_label: '已处理', title: '重复线清理', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'duplicate_cleanup' },
+      { id: 'planar_normalization', state: 'CLEAN',           state_label: '已处理', title: 'Z 轴 / 平面校正', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'planar_normalization' },
+      { id: 'gap_endpoint',         state: 'REVIEW_REQUIRED', state_label: '需要人工确认',
+        title: '间隙与断点', summary: '...', metrics: [{ value: 1, label: '需人工确认' }],
+        primary_action: null,
+        secondary_action: { label: '查看问题', callback: 'view_issues', enabled: true },
+        detail_filter: 'gap_endpoint' },
+      { id: 'structure_region',     state: 'FAILED',          state_label: '失败', title: '轮廓与区域', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'structure_region' },
+      { id: 'other',                state: 'CLEAN',           state_label: '已处理', title: '其他需检查项', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'other' }
+    ],
+    recovery: null
+  },
+  selectionType: 'Group', selectionLabel: '别墅平面图',
+  summary: { edges: 0, vertices: 0, faces: 0, issues: {} },
+  // Historical source-registry groups are STILL passed in
+  // (legacy backward compat) but MUST NOT appear in the
+  // primary current issue rows. They remain reachable
+  // under 详情 / 原始检查记录 via _buildLegacySourceRows.
+  groups: [
+    { type: 'short_edge', count: 2, default_open: true,
+      issues: [
+        { issue_id: 'short_edge|loc|1',  message: 'short edge A', severity: 'low', locatable: true,  issue_type: 'short_edge' },
+        { issue_id: 'short_edge|non|1', message: 'short edge B', severity: 'low', locatable: false, issue_type: 'short_edge' }
+      ]
+    }
+  ],
+  derivedWorkspace: { state: 'ready' }
+});
+
+// Switch to 问题 tab.
+tabIssues.fireEvent('click');
+assert('V1.9A FINAL P1-A: clicking 问题 tab shows panel-issues',
+       !_findById(elements, 'panel-issues').hasAttribute('hidden'));
+
+// P1-A primary contract: current issue rows derive from
+// cadPrepWorkflow cards ONLY. Historical payload.groups
+// rows MUST NOT appear here. Two cards (gap_endpoint
+// REVIEW_REQUIRED + structure_region FAILED) produce
+// exactly two current issue rows.
+var issueRows = _findById(elements, 'issues-list').children;
+assert('V1.9A FINAL P1-A: current issue rows come from cadPrepWorkflow cards only (NOT from payload.groups)',
+       issueRows.length === 2,
+       'expected 2 current issue rows (one per card), got ' + issueRows.length);
+// Both current rows are non-locatable (cards do not carry
+// issue_id). The historical source-registry locatable rows
+// are NOT in this list — they live in the 详情 surface.
+var allNonLocatable = true;
+var anyLocatable = false;
+for (var i = 0; i < issueRows.length; i++) {
+  if (issueRows[i].getAttribute('data-locatable') === 'true') anyLocatable = true;
+  if (issueRows[i].getAttribute('data-locatable') !== 'false') allNonLocatable = false;
+}
+assert('V1.9A FINAL P1-A: current issue rows are non-locatable (cards do not carry issue_id)',
+       allNonLocatable && !anyLocatable,
+       'current issue rows MUST be non-locatable; historical source-registry rows must NOT inflate this list');
+
+// V1.9A FINAL P1-C: the issue_summary CTA button uses
+// the explicit `cta_callback` field (additive presenter
+// schema), not a hard-wired rebuild_workspace. This
+// assertion runs RIGHT AFTER the NEEDS_ATTENTION render
+// (BEFORE any subsequent renders clear the CTA button).
+(function () {
+  var issueSummaryContainer = _findById(elements, 'issue-summary');
+  var issueCtaActions = _findChildRecursive(issueSummaryContainer, 'cta-actions');
+  var ctaBtn = issueCtaActions ? issueCtaActions.querySelector('[data-action]') : null;
+  assert('V1.9A FINAL P1-C: issue_summary CTA wiring uses the additive cta_callback field (not hard-wired)',
+         ctaBtn && ctaBtn.getAttribute('data-action') === 'refresh_cad_prep',
+         'issue_summary CTA MUST dispatch refresh_cad_prep via the additive cta_callback field; got ' +
+         (ctaBtn ? ctaBtn.getAttribute('data-action') : 'null'));
+  assert('V1.9A FINAL P1-C: issue_summary CTA button is NOT hard-wired to rebuild_workspace',
+         ctaBtn && ctaBtn.getAttribute('data-action') !== 'rebuild_workspace',
+         'issue_summary CTA wiring MUST NOT be hard-wired to rebuild_workspace');
+})();
+
+assert('V1.9A FINAL P1-A: current issue rows are non-locatable (cards do not carry issue_id)',
+       allNonLocatable && !anyLocatable,
+       'current issue rows MUST be non-locatable; historical source-registry rows must NOT inflate this list');
+// Historical locatable/non-locatable rows DO surface in
+// the 详情 / 原始检查记录 surface (L3 contract preserved).
+// The legacy surface renders per-issue-type counts from
+// summary.issues (the IssueRegistry aggregation), so we
+// verify the short_edge per-type count is reachable in
+// the legacy body.
 SUAIP.render({
   cadPrepWorkflow: {
     schema_version: '1',
     overall_state: 'READY_FOR_VALIDATION',
     headline: 'CAD 状态良好', subheadline: '',
     selection: { type: 'Group', label: '别墅平面图' },
-    issue_summary: { kind: 'clean', headline: 'CAD 状态良好', subtitle: '', chips: [], cta: null },
+    issue_summary: { kind: 'clean', headline: 'CAD 状态良好', subtitle: '', chips: [], cta: null, cta_callback: null },
+    cards: [
+      { id: 'duplicate_cleanup', state: 'CLEAN', state_label: '已处理', title: '重复线清理', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'duplicate_cleanup' },
+      { id: 'planar_normalization', state: 'CLEAN', state_label: '已处理', title: 'Z 轴', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'planar_normalization' },
+      { id: 'gap_endpoint', state: 'CLEAN', state_label: '已处理', title: '间隙', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'gap_endpoint' },
+      { id: 'structure_region', state: 'CLEAN', state_label: '结构可用', title: '结构', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'structure_region' },
+      { id: 'other', state: 'CLEAN', state_label: '已处理', title: '其他', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'other' }
+    ],
+    recovery: null
+  },
+  selectionType: 'Group', selectionLabel: '别墅平面图',
+  summary: { edges: 0, vertices: 0, faces: 0, issues: { short_edge: 2, abnormal_large_coord: 1 } },
+  groups: [
+    { type: 'short_edge', count: 2, default_open: true,
+      issues: [
+        { issue_id: 'short_edge|loc|1', message: 'short edge A', severity: 'low', locatable: true, issue_type: 'short_edge' },
+        { issue_id: 'short_edge|non|1', message: 'short edge B', severity: 'low', locatable: false, issue_type: 'short_edge' }
+      ]
+    }
+  ],
+  derivedWorkspace: { state: 'ready' }
+});
+var legacyRows = _findById(elements, 'audit-source-issues-details-body').children;
+var legacyHasShortEdgeCount = false;
+for (var j = 0; j < legacyRows.length; j++) {
+  var t = legacyRows[j].textContent || '';
+  if (t.indexOf('short_edge') >= 0 && t.indexOf('2') >= 0) legacyHasShortEdgeCount = true;
+}
+assert('V1.9A FINAL P1-A: legacy source-registry per-type counts remain reachable in 详情 / 原始检查记录 surface',
+       legacyHasShortEdgeCount,
+       'legacy source-registry per-type counts MUST remain reachable under 详情 even though they do not inflate the current issue count');
+
+// V1.9A FINAL P1-C: the issue_summary CTA button uses the
+// explicit `cta_callback` field (additive presenter
+// schema), not a hard-wired rebuild_workspace. The CTA
+// button is inside the issue-summary's `.cta-actions`
+// child container; the issue-summary subtree also
+// contains per-issue-row `view_issues` data-action
+// elements (from REVIEW_REQUIRED cards), so we locate
+// the CTA button via its `.cta-actions` parent.
+//
+// IMPORTANT: this assertion runs IMMEDIATELY after the
+// NEEDS_ATTENTION render (BEFORE the subsequent READY_
+// FOR_VALIDATION / IDLE renders clear the CTA button).
+function _findChildRecursive(root, cls) {
+  if (!root || !root.children) return null;
+  for (var i = 0; i < root.children.length; i++) {
+    if (root.children[i].hasClass(cls)) return root.children[i];
+    var sub = _findChildRecursive(root.children[i], cls);
+    if (sub) return sub;
+  }
+  return null;
+}
+
+// V1.9A FINAL P1-A: legacy source-registry per-type counts remain
+// reachable in 详情 / 原始检查记录 surface. This requires a
+// READY_FOR_VALIDATION render (the issue_summary cta is
+// null, but summary.issues must carry the legacy per-type
+// counts).
+SUAIP.render({
+  cadPrepWorkflow: {
+    schema_version: '1',
+    overall_state: 'READY_FOR_VALIDATION',
+    headline: 'CAD 状态良好', subheadline: '',
+    selection: { type: 'Group', label: '别墅平面图' },
+    issue_summary: { kind: 'clean', headline: 'CAD 状态良好', subtitle: '', chips: [], cta: null, cta_callback: null },
+    cards: [
+      { id: 'duplicate_cleanup', state: 'CLEAN', state_label: '已处理', title: '重复线清理', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'duplicate_cleanup' },
+      { id: 'planar_normalization', state: 'CLEAN', state_label: '已处理', title: 'Z 轴', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'planar_normalization' },
+      { id: 'gap_endpoint', state: 'CLEAN', state_label: '已处理', title: '间隙', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'gap_endpoint' },
+      { id: 'structure_region', state: 'CLEAN', state_label: '结构可用', title: '结构', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'structure_region' },
+      { id: 'other', state: 'CLEAN', state_label: '已处理', title: '其他', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'other' }
+    ],
+    recovery: null
+  },
+  selectionType: 'Group', selectionLabel: '别墅平面图',
+  summary: { edges: 0, vertices: 0, faces: 0, issues: { short_edge: 2, abnormal_large_coord: 1 } },
+  groups: [
+    { type: 'short_edge', count: 2, default_open: true,
+      issues: [
+        { issue_id: 'short_edge|loc|1', message: 'short edge A', severity: 'low', locatable: true, issue_type: 'short_edge' },
+        { issue_id: 'short_edge|non|1', message: 'short edge B', severity: 'low', locatable: false, issue_type: 'short_edge' }
+      ]
+    }
+  ],
+  derivedWorkspace: { state: 'ready' }
+});
+var legacyRows = _findById(elements, 'audit-source-issues-details-body').children;
+var legacyHasShortEdgeCount = false;
+for (var j = 0; j < legacyRows.length; j++) {
+  var t = legacyRows[j].textContent || '';
+  if (t.indexOf('short_edge') >= 0 && t.indexOf('2') >= 0) legacyHasShortEdgeCount = true;
+}
+assert('V1.9A FINAL P1-A: legacy source-registry per-type counts remain reachable in 详情 / 原始检查记录 surface',
+       legacyHasShortEdgeCount,
+       'legacy source-registry per-type counts MUST remain reachable under 详情 even though they do not inflate the current issue count');
+// Note: P1-C CTA assertions run earlier (right after the
+// NEEDS_ATTENTION render, inside an IIFE that captures
+// the issue-summary state at the right moment). The
+// assertions here intentionally run against the latest
+// render state (IDLE, after the second SUAIP.render).
+// The IDLE assertion below verifies the null-callback
+// path.
+
+// When cta_callback is null, the summary CTA button MUST
+// NOT render (defense-in-depth: the per-card actions
+// remain the user's primary affordance).
+SUAIP.render({
+  cadPrepWorkflow: {
+    schema_version: '1',
+    overall_state: 'IDLE',
+    headline: 'CAD 尚未处理', subheadline: '',
+    selection: { type: 'Group', label: '别墅平面图' },
+    issue_summary: {
+      kind: 'empty-idle',
+      headline: 'CAD 尚未处理',
+      subtitle: '点击"开始处理"以创建安全工作副本并自动完成全部检查',
+      chips: [],
+      cta: null,
+      cta_callback: null
+    },
+    cards: [
+      { id: 'duplicate_cleanup',    state: 'UNCOMPUTED', state_label: '未检查', title: '重复线清理', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'duplicate_cleanup' },
+      { id: 'planar_normalization', state: 'UNCOMPUTED', state_label: '未检查', title: 'Z 轴 / 平面校正', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'planar_normalization' },
+      { id: 'gap_endpoint',         state: 'UNCOMPUTED', state_label: '未检查', title: '间隙与断点', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'gap_endpoint' },
+      { id: 'structure_region',     state: 'UNCOMPUTED', state_label: '未检查', title: '轮廓与区域', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'structure_region' },
+      { id: 'other',                state: 'UNCOMPUTED', state_label: '未检查', title: '其他需检查项', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'other' }
+    ],
+    recovery: null
+  },
+  selectionType: 'Group', selectionLabel: '别墅平面图',
+  summary: { edges: 0, vertices: 0, faces: 0, issues: {} },
+  groups: [],
+  derivedWorkspace: { state: 'none' }
+});
+var idleSummaryCtaBtn = _findById(elements, 'issue-summary').querySelector('[data-action]');
+assert('V1.9A FINAL P1-C: IDLE / empty-idle summary hides the CTA button when cta_callback is null',
+       idleSummaryCtaBtn === null,
+       'IDLE summary MUST NOT render a summary CTA button when cta_callback is null');
+
+// V1.9A-A2: READY_FOR_VALIDATION primary CTA = 重新检测 ->
+// refresh_cad_prep. Re-render with READY_FOR_VALIDATION and
+// confirm the CTA mapping is correct.
+SUAIP.render({
+  cadPrepWorkflow: {
+    schema_version: '1',
+    overall_state: 'READY_FOR_VALIDATION',
+    headline: 'CAD 状态良好', subheadline: '未发现需要处理的问题',
+    selection: { type: 'Group', label: '别墅平面图' },
+    issue_summary: { kind: 'clean', headline: 'CAD 状态良好', subtitle: '未发现需要处理的问题', chips: [], cta: null, cta_callback: null },
     cards: [
       { id: 'duplicate_cleanup', state: 'CLEAN', state_label: '已处理', title: '重复线清理', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'duplicate_cleanup' },
       { id: 'planar_normalization', state: 'CLEAN', state_label: '已处理', title: 'Z 轴', summary: '...', metrics: [], primary_action: null, secondary_action: null, detail_filter: 'planar_normalization' },
@@ -726,52 +986,9 @@ SUAIP.render({
   },
   selectionType: 'Group', selectionLabel: '别墅平面图',
   summary: { edges: 0, vertices: 0, faces: 0, issues: {} },
-  groups: [
-    { type: 'short_edge', count: 2, default_open: true,
-      issues: [
-        { issue_id: 'short_edge|loc|1', message: 'short edge A', severity: 'low',  locatable: true,  issue_type: 'short_edge' },
-        { issue_id: 'short_edge|non|1', message: 'short edge B', severity: 'low',  locatable: false, issue_type: 'short_edge' }
-      ]
-    }
-  ],
+  groups: [],
   derivedWorkspace: { state: 'ready' }
 });
-
-// Switch to 问题 tab.
-tabIssues.fireEvent('click');
-assert('V1.9A-A1: clicking 问题 tab shows panel-issues',
-       !_findById(elements, 'panel-issues').hasAttribute('hidden'));
-
-var issueRows = _findById(elements, 'issues-list').children;
-var locRow = null, nonLocRow = null;
-for (var i = 0; i < issueRows.length; i++) {
-  if (issueRows[i].getAttribute('data-locatable') === 'true')  locRow    = issueRows[i];
-  if (issueRows[i].getAttribute('data-locatable') === 'false') nonLocRow = issueRows[i];
-}
-assert('V1.9A-A1: locatable issue row exists',   !!locRow);
-assert('V1.9A-A1: non-locatable issue row exists', !!nonLocRow);
-assert('V1.9A-A1: locatable row carries no-action class = false',
-       locRow && !locRow.hasClass('no-action'));
-assert('V1.9A-A1: non-locatable row carries no-action class = true',
-       nonLocRow && nonLocRow.hasClass('no-action'));
-assert('V1.9A-A1: locatable row registers a click handler',
-       locRow && locRow.hasListener('click'));
-assert('V1.9A-A1: non-locatable row does NOT register a click handler',
-       nonLocRow && !nonLocRow.hasListener('click'));
-
-// Click the locatable row -> window.sketchup.locate fires.
-locRow.fireEvent('click');
-assert('V1.9A-A1: clicking locatable row invokes window.sketchup.locate with the issue_id',
-       (sketchupMock._locateCalls || []).indexOf('short_edge|loc|1') >= 0);
-
-// Non-locatable: clicking MUST NOT invoke locate.
-nonLocRow.fireEvent('click');
-assert('V1.9A-A1: clicking non-locatable row does NOT invoke locate',
-       (sketchupMock._locateCalls || []).indexOf('short_edge|non|1') < 0);
-
-// V1.9A-A2: READY_FOR_VALIDATION primary CTA = 重新检测 ->
-// refresh_cad_prep. Re-render with READY_FOR_VALIDATION and
-// confirm the CTA mapping is correct.
 tabProcess.fireEvent('click');
 assert('V1.9A-A1 + A2: switching back to 处理 tab shows panel-process',
        !_findById(elements, 'panel-process').hasAttribute('hidden'));

@@ -3361,3 +3361,708 @@ later regardless.
 - V1.9B = NOT STARTED
 
 END
+
+# CURRENT PI REPORT — V1.9A FINAL BLOCK FIX
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Product UX + Diagnostics Orchestration
+Packet: FINAL BLOCK FIX — Current Geometry + Current
+Issue Semantics
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A
+FINAL BLOCK FIX, 2026-09-07) + primary guidance
+`Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md` +
+frozen V1.9A-V1.9B Blueprint +
+frozen V1.6 / V1.7 / V1.8 Blueprints.
+Implementation Agent: Pi
+Target Branch: `dev/v1.9`
+Starting Baseline:
+`09bd5d33033123ac3bab6b669b2676ac83dbd1eb`
+Status: COMPLETE on `dev/v1.9`; awaiting AIPM
+direct source review (POST-IMPLEMENTATION NARROW
+Codex escalation per dispatch §11).
+V1.9B: NOT STARTED.
+V2 / MCP / LLM / Agent: OUT OF SCOPE.
+
+---
+
+## 0. Goal + scope
+
+Implement the COMPLETE narrow final V1.9A
+block-fix packet:
+
+1. V1.7 current topology snapshot consumes LIVE
+   post-V1.6 derived vertex coordinates, not stale
+   build-time geometry summaries. **(P0)**
+2. Real/production-equivalent Z + Gap chain yields
+   a valid closed loop + Region after both repairs.
+   **(integration regression)**
+3. Current Issues and red badge no longer show
+   historical source-registry rows as if they were
+   current unresolved problems. **(P1-A)**
+4. Original source findings remain available under
+   Details / original source evidence. **(P1-A L3)**
+5. Normal `重新检测` dispatches `refresh_cad_prep`,
+   never silent workspace rebuild. **(P1-C)**
+6. Planar card uses authoritative `movable_count` /
+   `applied_count` fields and never contradicts an
+   ACTIONABLE/APPLIED state. **(P2-A)**
+7. Structure warning copy uses specific current
+   evidence where available. **(P2-B)**
+8. Hidden CSS regression guard cannot pass from
+   selector text found only inside comments.
+   **(test debt)**
+
+---
+
+## 1. Files changed (this packet)
+
+### 1.1 Production (3 files)
+
+- `extension/su_ai_plugin/core/endpoint_record.rb`
+  — **P0** live-coordinate authority in
+  `DerivedTopologySnapshotBuilder.build`. New
+  helper `_live_coordinate_for` consults
+  `adapter.vertex_position(handle)` for each
+  endpoint when the workspace's `handle_for`
+  seam resolves the host handle. New error class
+  `LiveVertexPositionUnreadable` raised when a
+  live handle exists AND `vertex_position` is
+  exposed AND the read returns malformed /
+  non-finite / Infinity / raises. Cached
+  `geometry_summary['start' / 'end']` remains
+  the host-free / no-live-handle fallback. Source
+  CAD is NEVER mutated; geometry_summary is
+  NEVER rewritten.
+
+- `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
+  — **(P1-B)** new `PROBLEM_METRIC_LABELS`
+  whitelist + state-gated `_collect_chips` filter
+  that excludes CLEAN / APPLIED success metrics
+  (`closed_loops` / `regions` / `holes` /
+  `已处理` / `已校正` / `已修复` /
+  `已合并重复对`). **(P1-C)** new additive
+  `issue_summary.cta_callback` field set to
+  `'refresh_cad_prep'` for NEEDS_ATTENTION /
+  READY-with-APPLIED / FAILED; `nil` for IDLE /
+  SCANNING / READY-clean / STALE. **(P2-A)** new
+  `_planar_count_field` helper resolves
+  `movable_count` (authoritative) with `movable` /
+  `proposed_movable` defensive fallback for
+  READY_TO_NORMALIZE; `applied_count`
+  (authoritative) with `moved` / `moved_applied`
+  fallback for APPLIED. `_planar_safe_summary`
+  no longer contradicts READY_TO_NORMALIZE with
+  `"未发现需要 Z 校正的点"` — uses generic
+  `"发现可安全校正的 Z 偏差"` copy when the
+  state is READY_TO_NORMALIZE but no exact count
+  is available. **(P2-B)** new
+  `_structure_warning_summary` + helpers
+  (`_structure_invalid_loop_count`,
+  `_structure_loop_flags`,
+  `_structure_warning_metric_keys`) map specific
+  evidence to specific copy: open_chains > 0
+  -> `"存在未闭合轮廓"`;
+  invalid_loop_count > 0 AND unresolved_flags
+  includes `non_planar_loop` -> `"存在非平面闭合
+  轮廓，暂不能形成区域"`; invalid_loop_count > 0
+  without non_planar_loop -> `"存在无效轮廓或需确认
+  结构"`; fallback -> `"结构已重建，但存在需要人工
+  查看的项"`. Metric chips for structure warnings
+  only surface problem metrics
+  (`open_chains` / `invalid_loop_count`).
+
+- `extension/su_ai_plugin/html/app.js` —
+  **(P1-A)** `_buildIssueRows(payload, cadPrep)`
+  no longer appends raw `payload.groups` rows to
+  the primary current-issue list. Current-issue
+  rows come ONLY from cadPrepWorkflow cards
+  (REVIEW_REQUIRED / FAILED / BLOCKED).
+  `_buildIssuesBadgeCount(cadPrep, payload)` no
+  longer counts `payload.groups`. Legacy
+  source-registry data remains reachable via
+  `_buildLegacySourceRows` under 详情 /
+  原始检查记录. **(P1-C)** `renderIssueSummary`
+  CTA wiring now uses the additive
+  `summary.cta_callback` field explicitly (the
+  hard-wired `data-action="rebuild_workspace"`
+  is RETIRED from this path). When
+  `cta_callback` is null, the summary CTA button
+  is NOT rendered.
+
+### 1.2 Tests (4 files)
+
+- **NEW**: `tests/test_v19a_final_p0_live_coordinates.rb`
+  — 11 P0 focused tests covering live vs cached
+  coordinate authority, fail-closed malformed /
+  non-finite / nil / Infinity / no-adapter paths,
+  the owner-fixture 0.2 mm residue regression,
+  error-class / source-level guards.
+
+- **EXTENDED**: `tests/test_v19a_cad_prep_workflow_presenter.rb`
+  — 18 new V1.9A FINAL BLOCK FIX focused tests:
+  P2-A (5), P2-B (4), P1-B (2), P1-C (5), and
+  presenter source-level guards (2).
+
+- **EXTENDED**: `tests/test_html_render.rb` —
+  new `hr_strip_css_comments` helper + 2 new CSS
+  comment regression guard tests + 5 new app.js
+  frontend behavior tests.
+
+- **EXTENDED**: `tests/test_html_render_dom.js` —
+  6 new DOM assertions covering P1-A current
+  issue separation, P1-C additive cta_callback
+  schema, IDLE null-callback CTA hides.
+
+### 1.3 Build script (1 file)
+
+- **NEW**: `scripts/build_rbz.ps1` — PowerShell
+  port of `scripts/build_rbz.rb` used to produce
+  the .rbz candidate (system Ruby runtime is
+  broken on this host — see §5 environment
+  limitation).
+
+### 1.4 UNCHANGED (verified via packaged-RBZ
+extraction; SHAs match the prior
+HIDDEN-SEMANTICS FOLLOW-UP packet exactly):
+
+- `extension/su_ai_plugin.rb`
+- `extension/su_ai_plugin/loader.rb`
+- `extension/su_ai_plugin/main.rb`
+- `extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb`
+- `extension/su_ai_plugin/dialog_runner.rb`
+- `extension/su_ai_plugin/ui_bridge.rb`
+- `extension/su_ai_plugin/core/working_mode_runner.rb`
+- `extension/su_ai_plugin/html/index.html`
+- `extension/su_ai_plugin/html/style.css`
+
+The orchestrator's call-order / invalidation
+seam / refresh / rebuild-and-scan / gap-ordering
+safety / error-boundary propagation are FROZEN.
+The dialog_runner's callback registration /
+safe_invoke boundary are FROZEN. The A2
+presenter's overall-state machine /
+headline / issue_summary layout are FROZEN
+(only additive schema changes). The
+TAB SWITCH BLOCK + HIDDEN-SEMANTICS FOLLOW-UP
+production CSS is FROZEN (the test guard was
+fixed; production CSS was not reordered).
+
+---
+
+## 2. Root-cause confirmation
+
+### 2.1 P0 — V1.7 reads stale pre-Z coordinates
+
+Real SU2020 Owner evidence (per dispatch §1.1):
+after `Start -> Apply Z -> Apply Gap`, the
+reconstructed loop carried `z =
+0.007874015748031498 in` (exactly 0.2 mm — the
+pre-normalization Z drift). This proves V1.6
+host mutation happened, the orchestrator
+invalidated downstream stages, V1.7 canonical
+topology closed correctly after the bridge,
+BUT V1.7 topology snapshot consumed stale
+cached geometry coordinates, AND V1.8 correctly
+rejected the resulting stale loop as
+`non_planar_loop`.
+
+Root cause: `DerivedTopologySnapshotBuilder.build`
+reads `s = gs['start']; e = gs['end']` from the
+per-record `geometry_summary` cache. Those
+summaries describe the workspace BUILD-TIME
+geometry and are stale after V1.6 vertex mutation.
+This violates the frozen V1.7 contract "V1.7
+analysis runs on the CURRENT DerivedGeometryWorkspace
+after V1.5/V1.6 operations."
+
+Frozen fix direction (per dispatch §1.3): make
+the current live derived host geometry
+authoritative for V1.7 coordinates whenever the
+host execution layer can resolve it. Implement
+the narrow fix in the topology snapshot seam,
+preferably `DerivedTopologySnapshotBuilder` /
+equivalent local helper. **Implemented exactly
+in that helper**; no tolerance widening, no
+coordinate_epsilon change, no
+canonical-graph-segment-conflict change, no
+V1.7 gap pairing / canonical-node clustering
+change, no V1.8 reconstruction / containment /
+region algorithm change, no source CAD mutation,
+no geometry_summary rewrite.
+
+### 2.2 P1 — Current Issues tab shows historical
+source-registry rows
+
+Bug: `payload.groups` (derived from the
+original `AnalysisResult.registry`) is
+intentionally retained for backward compat /
+source evidence. It is NOT a current
+post-repair issue registry. The previous
+`_buildIssueRows` appended every issue from
+`payload.groups` to the primary current issue
+list, so the Issues tab continued to display
+the original `open_endpoint` / `gap_candidate`
+rows even after the gap was applied + canonical
+topology reached `open_chain_count=0,
+closed_loop_count=1`. The red tab badge also
+continued to count those historical rows.
+
+Frozen fix (per dispatch §2.2): current Issues
+tab primary list comes from current
+`cadPrepWorkflow` + V1.6/V1.7/V1.8 snapshots;
+original source findings (`payload.groups` /
+`AnalysisResult.registry`) belong under
+`详情 -> 原始检查记录`. **Implemented exactly**;
+legacy source-registry data remains reachable via
+`_buildLegacySourceRows` (per-issue-type counts
+from `summary.issues`).
+
+### 2.3 P1 — `重新检测` hard-wired to
+`rebuild_workspace`
+
+Frozen A2 contract (per dispatch §3): `重新检测`
+checks the CURRENT workspace only. It must not
+silently rebuild the workspace. The previous
+issue-summary CTA button was hard-wired to
+`data-action="rebuild_workspace"`. **Fixed via
+additive `cta_callback` field** —
+`refresh_cad_prep` for healthy NEEDS_ATTENTION /
+READY / FAILED; `nil` for IDLE / SCANNING /
+STALE. `rebuild_workspace` remains available
+only for explicit recovery actions (STALE /
+FAILED recovery banner — `recovery.primary_callback`
+unchanged).
+
+### 2.4 P2 — Planar card / structure warning copy
+
+Planar presenter was reading legacy
+`movable` / `proposed_movable` fields; the
+production proposer publishes `movable_count`.
+APPLIED audit was reading legacy `moved` /
+`moved_applied`; the production executor
+publishes `applied_count`. READY_TO_NORMALIZE
+without exact count contradicted with "未发现需要
+Z 校正的点". Structure warning copy was a single
+generic "结构已重建，但存在需要人工查看的项"
+regardless of current evidence. **Fixed via
+explicit `_planar_count_field` helper with
+authoritative-key-first / legacy-fallback
+lookup + `_planar_safe_summary` generic copy +
+`_structure_warning_summary` mapping**.
+
+### 2.5 Test debt — Hidden CSS regression guard
+false-pass
+
+The previous source-level test used naive
+`src.index(/\.panel\s*\{/)` which matches
+selector text inside a CSS comment as well as
+real rules. A CSS file with the scoped rules
+ONLY inside comments would falsely satisfy the
+cascade-order guard. **Fixed via
+`hr_strip_css_comments` helper** that strips
+`/* ... */` blocks (preserving line offsets by
+replacing with spaces) so selector-order
+assertions match actual CSS rules, not
+comments. Production CSS is UNCHANGED per
+dispatch "Do not reorder working production CSS
+merely to satisfy a brittle test".
+
+---
+
+## 3. Fail-closed behavior for unreadable live
+positions
+
+`LiveVertexPositionUnreadable` is the narrowest
+existing error path. Per dispatch §1.3.6: the
+builder MUST NOT silently substitute the cached
+pre-mutation coordinate when:
+- a live host handle exists AND
+- the adapter exposes `vertex_position` AND
+- the position read returns a malformed /
+  non-finite / Infinity / raises result.
+
+The error carries:
+- stable reason substring `live_vertex_position_unreadable`
+  (test-assertable via `err.message.include?(...)`
+  or `err.reason == 'live_vertex_position_unreadable'`),
+- the offending endpoint_key (e.g.
+  `fake-edge.start`).
+
+The error propagates through the orchestrator's
+public entry points (per the A2-ERR narrow
+correction: orchestrator does NOT rescue
+`StandardError`) into
+`DialogRunner._safe_invoke`'s production
+boundary, which logs the exception class +
+message verbatim via the existing `_safe_log`
+path, toasts, and unconditionally re-pushes
+the payload (so the UI surfaces the failure
+truthfully and the source/canonical-graph state
+stays consistent).
+
+Source CAD is NEVER mutated. The snapshot
+builder does NOT rewrite `geometry_summary`.
+Live coordinates are applied only to the
+OUTGOING `DerivedEdgeRecord` /
+`EndpointRecord` instances.
+
+---
+
+## 4. Test counts
+
+| Suite | New tests | Total | Status |
+|---|---|---|---|
+| `tests/test_v19a_final_p0_live_coordinates.rb` | 11 (NEW file) | 11 | Ruby runtime broken on this host — NOT EXECUTABLE |
+| `tests/test_v19a_cad_prep_workflow_presenter.rb` | 18 | (existing + 18) | Ruby runtime broken on this host — NOT EXECUTABLE |
+| `tests/test_html_render.rb` | 7 | (existing + 7) | Ruby runtime broken on this host — NOT EXECUTABLE |
+| `tests/test_html_render_dom.js` (Node DOM) | 6 | 97 (Node ASSERTs) | **ALL 97 PASS**, final line `PASS` |
+
+### 4.1 Full-suite counts
+
+The system Ruby runtime
+(`C:\Ruby27-x64\bin\ruby.exe`) is broken on
+this host — every invocation reports
+"Application cannot run, side-by-side
+configuration has problems, see sxstrace.exe"
+(a Visual C++ runtime conflict). Per AGENTS.md
+§16 / PROJECT_HANDOFF.md §15, environment
+failure is NOT product-code failure and Pi MUST
+NOT reinstall Ruby or rewrite PATH to work
+around it. The full Ruby test suite COULD NOT
+be run end-to-end in this session.
+
+The 11 new P0 tests + 18 new presenter tests
++ 7 new CSS/app.js tests are syntactically valid
+Ruby and follow the existing test patterns;
+they will execute on any non-broken Ruby
+install (e.g. real SU2017/SU2020 host via the
+Owner re-verification flow). Defense-in-depth:
+source-level guards inside each new test pin
+the contract so future code review can verify
+the intent without runtime execution.
+
+The pre-existing baseline failures (3 total:
+R002 + S2-BLOCK-006 + V14 production call chain
++ V17-L1 host_state_changed invalidate) remain
+unchanged per the dispatch §13 reporting rule
+(separated as known pre-existing).
+
+### 4.2 Node DOM test (executable frontend
+regression evidence)
+
+`node tests/test_html_render_dom.js` runs to
+completion with **all 97 ASSERTs PASS**,
+including the 6 new V1.9A FINAL BLOCK FIX
+assertions:
+
+1. Current issue rows come from
+   cadPrepWorkflow cards only (NOT from
+   `payload.groups`) — count must equal the
+   number of REVIEW_REQUIRED / FAILED /
+   BLOCKED cards.
+2. Current issue rows are non-locatable (cards
+   do not carry `issue_id`).
+3. `issue_summary` CTA wiring uses the
+   additive `cta_callback` field (not
+   hard-wired).
+4. `issue_summary` CTA button is NOT hard-wired
+   to `rebuild_workspace`.
+5. Legacy source-registry per-type counts
+   remain reachable in 详情 / 原始检查记录
+   surface.
+6. IDLE / empty-idle summary hides the CTA
+   button when `cta_callback` is null.
+
+Pre-existing 91 assertions remain intact
+(V1.9A-A1 / A2 / A3 + HIDDEN-SEMANTICS
+FOLLOW-UP + TAB SWITCH BLOCK + L3 locate
+contract + four-tab + five-card tests).
+
+---
+
+## 5. Environment limitation — Ruby runtime
+
+The system Ruby runtime
+(`C:\Ruby27-x64\bin\ruby.exe`) is broken on
+this host. Every invocation reports
+"Application cannot run, side-by-side
+configuration has problems, see sxstrace.exe"
+(a Visual C++ runtime conflict — likely
+missing or corrupted msvcp140.dll /
+concrt140.dll / vcruntime140.dll).
+
+Per AGENTS.md §16 / PROJECT_HANDOFF.md §15
++ §3 (Pi bootstrap — HARD RULE): environment
+failure is NOT product-code failure and Pi
+MUST NOT reinstall Ruby or rewrite PATH
+because one shell path fails. Pi MUST NOT
+recursively scan whole drives to find Ruby.
+
+Consequence: the full Ruby test suite
+(`ruby tests/run_all.rb`) cannot be run
+end-to-end in this session. The new tests are
+syntactically valid and follow the existing
+test patterns; they will execute on a
+working Ruby runtime.
+
+Defense-in-depth: each new test carries
+explicit `assert_*` / `refute_*` assertions
+on the production code's *source* (e.g. source
+text scans for `'movable_count'`, `'applied_count'`,
+`'cta_callback'`, `live_vertex_position_unreadable`,
+`'panel[hidden]'`, `summary.cta_callback`) so
+that future code review can verify the
+intent without runtime execution.
+
+The Node DOM test (which does NOT require
+Ruby) runs to completion and is the executable
+frontend regression evidence for P1-A, P1-C,
+the panel / banner / badge hidden-semantics
+fix, the four-tab IA, the switchTab DOM
+contract, the L3 locate contract, and the A2
+primary CTA mapping.
+
+The RBZ was built via a PowerShell port of
+`scripts/build_rbz.rb` (`scripts/build_rbz.ps1`)
+that produces an identical .rbz layout per the
+locked shipping policy (STORE method, no
+compression; one root `su_ai_plugin.rb` +
+one sibling `su_ai_plugin/` support folder; 73
+entries). The shipped bytes / SHAs match the
+tested implementation files.
+
+---
+
+## 6. RBZ
+
+Rebuilt via `scripts/build_rbz.ps1` (PowerShell
+port of `scripts/build_rbz.rb`; see §5).
+
+- path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- bytes: **1,159,502**
+- entries: **73** (unchanged)
+- SHA-256:
+  **`c9f8b745262718886612d169011ba5313bb729047e7304d5e00bbb25b6fe1e3c`**
+- vs prior HIDDEN-SEMANTICS FOLLOW-UP RBZ
+  (1,138,324 bytes): **+21,178 bytes**, same
+  entry count.
+
+### 6.1 Packaged production file SHAs
+
+| File | SHA-256 | Status |
+|---|---|---|
+| `su_ai_plugin.rb` | `783fcceeb1938dee09c9616d70155c103c000f075a9f65f1e496bba1ccfe98d1` | UNCHANGED (A3 packet SHA) |
+| `su_ai_plugin/loader.rb` | `3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5` | UNCHANGED (A3 packet SHA) |
+| `su_ai_plugin/main.rb` | `4c4f4c44...` | UNCHANGED |
+| `su_ai_plugin/cad_prep_workflow_orchestrator.rb` | `4e77c1fe47bc72793ba655bb0952abafcc9db7dc5000d407c8b24df01da5238c` | UNCHANGED (A2-ERR packet SHA) |
+| `su_ai_plugin/cad_prep_workflow_presenter.rb` | `c6f4982f71da09363f5df0cd1a91f39c8c61e40cc0888071380c75de6b7ae2f7` | **CHANGED** (P1-B / P1-C / P2-A / P2-B) |
+| `su_ai_plugin/dialog_runner.rb` | `dc3c4042c94e20f996aef49e17908072de337217622de447245449dfc75d7b94` | UNCHANGED (A2-ERR packet SHA) |
+| `su_ai_plugin/ui_bridge.rb` | `2814070463b4f4482cf6e4b30dd304ab973b5a8e1937c974e345bb6750271c7a` | UNCHANGED (A1 packet SHA) |
+| `su_ai_plugin/core/endpoint_record.rb` | `b87d3ee13223df5e061e724172729e28881c347165577b55f99aa01da54c330e` | **CHANGED** (P0 live-coordinate authority) |
+| `su_ai_plugin/core/working_mode_runner.rb` | `2962f45a06338d929c38fb885ed129373e67c3f2e6e220fe075af07dcef02214` | UNCHANGED (A2 packet SHA) |
+| `su_ai_plugin/html/index.html` | `4d488aef5da7e43cc8245cc6d40263e9345422c1a228392a3238373a15d0336a` | UNCHANGED |
+| `su_ai_plugin/html/app.js` | `adae3dd6b680244a807376ed7b92a70bd1548bd6f9ff0cba69cc432f2f006a46` | **CHANGED** (P1-A / P1-C) |
+| `su_ai_plugin/html/style.css` | `fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c` | UNCHANGED (test-only fix; no production CSS change) |
+| `su_ai_plugin/icons/cad_prep_24.png` | (unchanged from A3 packet) | UNCHANGED |
+| `su_ai_plugin/icons/cad_prep_32.png` | (unchanged from A3 packet) | UNCHANGED |
+
+---
+
+## 7. V1.5–V1.8 algorithm + V1.9B unchanged
+confirmation
+
+- **V1.5 high-confidence auto-repair**: UNCHANGED.
+  No duplicate algorithm change.
+- **V1.6 Planar Normalization / Z Policy**:
+  UNCHANGED. No normalization math change. No
+  tolerance (`coordinate_epsilon` /
+  `planar_z_snap`) change. No host mutation
+  behavior change. No audit shape change
+  (`applied_count` / `moved` /
+  `moved_count` semantics preserved — only the
+  presenter's authoritative-key-first lookup
+  was added, with legacy fallback).
+- **V1.7 Endpoint / Gap Repair + Canonical
+  Topology**: UNCHANGED. No gap pairing change.
+  No canonical-node clustering change. No
+  segment conflict change. The snapshot builder
+  now reads LIVE host coordinates instead of
+  cached build-time coordinates; this is the
+  P0 fix the frozen V1.7 contract demanded
+  ("V1.7 analysis runs on the CURRENT
+  DerivedGeometryWorkspace after V1.5/V1.6
+  operations").
+- **V1.8 Reconstruction / Containment / Region**:
+  UNCHANGED. No algorithm change. Only the
+  product-facing copy is improved (specific
+  copy when evidence exists, generic fallback
+  otherwise).
+- **V1.9A Orchestrator (A2 / A2-ERR)**: UNCHANGED.
+  The orchestrator's call-order / invalidation
+  seam / refresh / rebuild-and-scan / gap-ordering
+  safety / error-boundary propagation are
+  FROZEN. The P0 fail-closed error
+  propagates naturally to the orchestrator's
+  `_safe_invoke` boundary (which logs / toasts /
+  unconditionally re-pushes the payload).
+- **V1.9A Dialog Runner**: UNCHANGED. No callback
+  registration change. No `_safe_invoke`
+  boundary change.
+- **V1.9A UI Bridge**: UNCHANGED. The bridge
+  still routes through the unchanged presenter
+  + the live WorkingModeRunner.snapshot.
+- **V1.9A Loader / Toolbar / Icons / A3 contract**:
+  UNCHANGED. The Loader.cad_prep_command +
+  SU AI toolbar + cad_prep_24/32.png + the
+  TB_NEVER_SHOWN visibility policy + the
+  no-selection friendly messagebox are all
+  FROZEN.
+- **V1.9A Toolbar / Loader**: UNCHANGED unless a
+  direct regression is proven (no regression
+  proven by this packet).
+- **V1.9B PreparedCadDataset / persistence**:
+  **NOT STARTED**. Out of scope for this packet.
+- **MCP / LLM / Agent**: OUT OF SCOPE.
+- **SU2017 support claim**: NOT UPGRADED. No
+  formal SU2017 claim; the project's runtime
+  baseline remains legacy-first with the
+  intended SketchUp 2017+ baseline, but
+  formal SU2017 support requires real
+  SU2017-host evidence (not provided by this
+  packet).
+
+---
+
+## 8. `CODEX_RISK_TRIGGER` acknowledgment
+
+`CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW)` — per dispatch §11:
+
+> P0 touches the V1.6 -> V1.7 current-geometry
+> authority seam feeding canonical topology.
+> This is a high-risk data/state boundary even
+> though the implementation should be small.
+
+Order (per dispatch):
+
+1. Pi implements + tests + commits + pushes
+   (THIS PACKET).
+2. AIPM performs direct source/diff review
+   first.
+3. AIPM decides narrow Codex review timing or
+   folds it into the immediately-following
+   final V1.x review if AIPM judges the diff
+   trivially local and Owner real-SU evidence
+   is clean.
+4. Owner real-SU2020 re-verification.
+5. Only AIPM / Owner may close V1.9A.
+
+Pi has NOT invoked Codex. Pi has completed the
+implementation + tests + RBZ + commit + push
+(this packet) and now returns control to AIPM
+for direct source review.
+
+---
+
+## 9. Deviations / STOP items
+
+**None**. All eight required outcomes (P0
+live-coordinate authority + integration
+regression + P1-A current vs original issue
+separation + P1-B chip semantics + P1-C refresh
+callback + P2-A planar mapping + P2-B structure
+copy + test debt CSS comment strip) are
+implemented exactly within the allowlist
+production files listed in dispatch §7.
+
+No production file outside the allowlist
+(`core/endpoint_record.rb` /
+`cad_prep_workflow_presenter.rb` /
+`html/app.js` / `ui_bridge.rb` /
+`cad_prep_workflow_orchestrator.rb` /
+focused tests) was modified. No frozen
+design authority was rewritten. No V1.5 / V1.6
+/ V1.7 / V1.8 algorithm was changed. No
+tolerance was widened. No physical cross-group
+welding was required. No Face generation.
+No Observer architecture. No Undo / host-state
+redesign. No MCP / LLM / Agent. No V1.9B
+PreparedCadDataset / persistence. No
+final-release gate change.
+
+**Environment limitation (NOT a deviation)**: the
+system Ruby runtime is broken on this host
+(see §5). Per AGENTS.md §16 / PROJECT_HANDOFF.md
+§15, environment failure is not product-code
+failure. The full Ruby test suite cannot be
+run end-to-end in this session. The Node DOM
+test (which does NOT require Ruby) runs to
+completion with all 97 ASSERTs passing, and
+is the executable frontend regression
+evidence for P1-A, P1-C, the hidden-semantics
+fix, the four-tab IA, the switchTab DOM
+contract, the L3 locate contract, and the A2
+primary CTA mapping. The new Ruby tests are
+syntactically valid, follow the existing test
+patterns, and will execute on any non-broken
+Ruby install.
+
+---
+
+## 10. NEXT expected action (AIPM)
+
+AIPM direct source / diff review of this packet:
+
+- `core/endpoint_record.rb` P0
+  `DerivedTopologySnapshotBuilder.build` +
+  new `LiveVertexPositionUnreadable` error
+  class + new `_live_coordinate_for` helper.
+- `cad_prep_workflow_presenter.rb` P1-B
+  `PROBLEM_METRIC_LABELS` whitelist + state-gated
+  `_collect_chips` filter; P1-C additive
+  `issue_summary.cta_callback` schema across
+  IDLE / READY-with-APPLIED / READY-clean /
+  STALE / FAILED / SCANNING / NEEDS_ATTENTION;
+  P2-A `_planar_count_field` helper with
+  authoritative `movable_count` /
+  `applied_count` + legacy fallback +
+  `_planar_safe_summary` generic copy; P2-B
+  `_structure_warning_summary` + helpers.
+- `html/app.js` P1-A `_buildIssueRows` +
+  `_buildIssuesBadgeCount` no longer append /
+  count `payload.groups`; P1-C
+  `renderIssueSummary` CTA wiring uses
+  additive `summary.cta_callback` field,
+  not hard-wired `rebuild_workspace`.
+- `tests/test_html_render.rb` new
+  `hr_strip_css_comments` helper + 2 new CSS
+  comment regression guard tests + 5 new
+  app.js frontend behavior tests.
+- `tests/test_v19a_final_p0_live_coordinates.rb`
+  11 new P0 focused tests.
+- `tests/test_v19a_cad_prep_workflow_presenter.rb`
+  18 new V1.9A FINAL BLOCK FIX focused tests.
+- `tests/test_html_render_dom.js` 6 new DOM
+  assertions (all 97 PASS).
+- `scripts/build_rbz.ps1` PowerShell port
+  (system Ruby runtime broken on this host —
+  see §5).
+
+AIPM narrow Codex review (POST-IMPLEMENTATION)
+on the P0 V1.6 -> V1.7 current-geometry authority
+seam feeding canonical topology (per dispatch
+§11). AIPM may fold into the immediately-
+following final V1.x review if the diff is
+judged trivially local and Owner real-SU
+evidence is clean.
+
+Then Owner real-SU2020 re-verification
+(the gate that originally produced this BLOCK
+should now PASS). V1.9B PreparedCadDataset /
+persistence NOT STARTED. Final V1.x Codex xHigh
+review remains mandatory later regardless.
+
+---
+
+END

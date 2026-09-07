@@ -253,13 +253,87 @@ module SUAnalysis
     # Build EndpointRecord + DerivedEdgeRecord arrays from a
     # DerivedGeometryWorkspace. Pure read of the workspace's
     # entities; resolves host vertex handles via the adapter for
-    # safety evidence (curve / face adjacency).
+    # safety evidence (curve / face adjacency) AND for LIVE
+    # current-coordinate authority (per V1.9A FINAL BLOCK FIX P0).
     #
     # The `host_vertex_handles` map (keyed by endpoint_key) is
     # populated as a side effect; the proposer / executor
     # consult this map WITHOUT serializing it.
+    #
+    # V1.9A FINAL BLOCK FIX — P0 live-coordinate authority:
+    #
+    #   Per dispatch §1.3 + Blueprint §6: "V1.7 analysis runs
+    #   on the CURRENT DerivedGeometryWorkspace after V1.5 /
+    #   V1.6 operations." When V1.6 mutates derived host
+    #   vertices (PlanarNormalizationExecutor's
+    #   transform_vertices_by_vectors), the per-record
+    #   `geometry_summary['start' / 'end']` cache remains the
+    #   BUILD-TIME coordinate and becomes stale.
+    #
+    #   Therefore the current live derived host geometry is
+    #   AUTHORITATIVE for V1.7 coordinates whenever the host
+    #   execution layer can resolve it:
+    #
+    #     1. Preserve DerivedEntityRecord identity /
+    #        provenance / layer / origin semantics (no change).
+    #     2. Preserve the existing endpoint_key / derived_edge_id
+    #        contract (no change).
+    #     3. Resolve each endpoint's host vertex handle through
+    #        the already-supplied host map (the workspace's
+    #        handle_for(derived_id) seam).
+    #     4. When adapter.vertex_position(handle) is available
+    #        AND returns a finite [x, y, z], use that LIVE
+    #        position as the endpoint's world_coordinate AND
+    #        the matching slot in the parent edge's
+    #        world_endpoints.
+    #     5. Cached geometry_summary['start' / 'end'] is allowed
+    #        only as the host-free / no-live-handle fallback
+    #        for pure tests or contexts that genuinely have no
+    #        live coordinate authority.
+    #     6. If a live host handle exists AND the adapter
+    #        exposes vertex_position BUT the position read is
+    #        malformed / non-finite / unreadable, DO NOT
+    #        silently substitute the cached pre-mutation
+    #        coordinate. Fail closed by raising a specific
+    #        error with stable reason containing
+    #        `live_vertex_position_unreadable` (endpoint key
+    #        appended). The orchestrator's _safe_invoke
+    #        boundary logs / toasts the failure and the UI
+    #        surfaces it truthfully; source / canonical graph
+    #        state stay consistent.
+    #     7. The snapshot builder MUST NOT mutate SketchUp.
+    #     8. The snapshot builder MUST NOT rewrite
+    #        geometry_summary (the cache remains the
+    #        build-time snapshot; live coordinates are
+    #        applied to the OUTGOING EdgeRecord /
+    #        EndpointRecord only).
     module DerivedTopologySnapshotBuilder
       module_function
+
+      # Stable fail-closed reason string. The orchestrator's
+      # _safe_invoke boundary logs the exception class +
+      # message verbatim; the UI's FAILED copy uses a
+      # frozen generic CN message that does NOT expose this
+      # string (per A2-UX-01 narrow correction). This
+      # constant exists so the substring is grep-able for
+      # tests + source-level guards.
+      LIVE_POSITION_UNREADABLE_REASON = 'live_vertex_position_unreadable'.freeze
+
+      # Custom error class carrying the fail-closed reason.
+      # Carries the endpoint_key as data (not in the message
+      # string) so callers can recover the offending key
+      # without parsing.
+      class LiveVertexPositionUnreadable < StandardError
+        attr_reader :endpoint_key, :reason
+        def initialize(endpoint_key:, underlying: nil)
+          @endpoint_key = endpoint_key.to_s
+          @reason       = LIVE_POSITION_UNREADABLE_REASON
+          suffix        = @endpoint_key.empty? ? '' : " (endpoint_key=#{@endpoint_key})"
+          base          = "#{LIVE_POSITION_UNREADABLE_REASON}#{suffix}"
+          msg           = underlying.nil? ? base : "#{base}: #{underlying.class}: #{underlying.message}"
+          super(msg)
+        end
+      end
 
       # Snapshot the workspace's :edge entities into a pure
       # logical topology.
@@ -294,12 +368,16 @@ module SUAnalysis
           next if edid.empty?
           gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
           next unless gs.is_a?(Hash)
-          s = gs['start']
-          e = gs['end']
-          unless s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
+          cached_s = gs['start']
+          cached_e = gs['end']
+          # Cached fallback path (host-free / no-live-handle):
+          # the cached summary MUST itself be a finite 3-Float
+          # Array, otherwise this edge is not snapshot-able.
+          unless cached_s.is_a?(Array) && cached_s.length == 3 &&
+                 cached_e.is_a?(Array) && cached_e.length == 3
             next
           end
-          unless _is_finite_point?(s) && _is_finite_point?(e)
+          unless _is_finite_point?(cached_s) && _is_finite_point?(cached_e)
             next
           end
           # V17-AIPM-EVIDENCE-INTEGRATION-FINAL-2026-09-01 R5 fix:
@@ -329,10 +407,41 @@ module SUAnalysis
                     else
                       nil
                     end
+          # P0 live-coordinate authority:
+          # Resolve each endpoint's CURRENT world coordinate.
+          #   - If both the workspace's handle_for(derived_id)
+          #     seam AND adapter.vertex_position are available
+          #     AND the read returns a finite 3-Float Array,
+          #     the LIVE coordinate wins (this is the
+          #     post-mutation truth after V1.6).
+          #   - Otherwise we fall back to the cached
+          #     geometry_summary coordinate (pure-test path /
+          #     host-free contexts that genuinely have no live
+          #     coordinate authority).
+          #   - A live handle + adapter.vertex_position that
+          #     yields a malformed / non-finite result MUST
+          #     fail closed (raise LiveVertexPositionUnreadable
+          #     with the offending endpoint_key). Silently
+          #     substituting the cached pre-mutation coordinate
+          #     is the bug P0 closes.
           host_handle = nil
           if adapter && workspace.respond_to?(:handle_for)
             host_handle = workspace.handle_for(edid)
           end
+          live_s = _live_coordinate_for(
+            adapter:           adapter,
+            host_handle:       host_handle,
+            endpoint_key:      "#{edid}.start",
+            cached_coordinate: cached_s
+          )
+          live_e = _live_coordinate_for(
+            adapter:           adapter,
+            host_handle:       host_handle,
+            endpoint_key:      "#{edid}.end",
+            cached_coordinate: cached_e
+          )
+          start_coord = live_s || cached_s
+          end_coord   = live_e || cached_e
           curve_membership      = nil
           face_adjacency_count  = 0
           if adapter && host_handle
@@ -384,7 +493,8 @@ module SUAnalysis
             derived_edge_id:      edid,
             endpoint_a_key:       "#{edid}.start",
             endpoint_b_key:       "#{edid}.end",
-            world_endpoints:      [[s[0], s[1], s[2]], [e[0], e[1], e[2]]],
+            world_endpoints:      [[start_coord[0], start_coord[1], start_coord[2]],
+                                   [end_coord[0],   end_coord[1],   end_coord[2]]],
             source_occurrence_id: occ_id,
             source_occurrence_ids: occ_ids_plural,
             layer_name:           layer_name,
@@ -402,7 +512,7 @@ module SUAnalysis
             endpoint_key:              "#{edid}.start",
             derived_edge_id:           edid,
             role:                      EndpointRecord::ROLE_START,
-            world_coordinate:          [s[0], s[1], s[2]],
+            world_coordinate:          [start_coord[0], start_coord[1], start_coord[2]],
             layer_name:                layer_name,
             source_occurrence_id:      occ_id,
             source_occurrence_ids:     occ_ids_plural,
@@ -416,7 +526,7 @@ module SUAnalysis
             endpoint_key:              "#{edid}.end",
             derived_edge_id:           edid,
             role:                      EndpointRecord::ROLE_END,
-            world_coordinate:          [e[0], e[1], e[2]],
+            world_coordinate:          [end_coord[0], end_coord[1], end_coord[2]],
             layer_name:                layer_name,
             source_occurrence_id:      occ_id,
             source_occurrence_ids:     occ_ids_plural,
@@ -434,6 +544,73 @@ module SUAnalysis
           'edges'           => edges,
           'host_vertex_map' => host_vertex_map
         }
+      end
+
+      # Resolve the CURRENT world coordinate for one
+      # endpoint. Returns:
+      #   - A live 3-Float Array (the live coordinate), when
+      #     adapter + host_handle + vertex_position are all
+      #     available AND the read succeeds with a finite
+      #     result.
+      #   - nil, when the adapter or host_handle is missing /
+      #     vertex_position is not exposed (cached fallback
+      #     is the caller's authority).
+      # Raises:
+      #   - LiveVertexPositionUnreadable when a live handle
+      #     exists AND the adapter exposes vertex_position
+      #     AND the read returns a malformed / non-finite
+      #     result. This is the P0 fail-closed behavior; the
+      #     orchestrator's _safe_invoke boundary propagates
+      #     the exception to the dialog_runner error
+      #     boundary (log + toast + payload re-push).
+      #
+      # The host edge exposes a SINGLE handle (the group
+      # wrapper). For endpoint-level live coordinates the
+      # builder assumes the adapter's vertex_position can be
+      # invoked with the edge handle (the production
+      # FakeDerivedWorkspaceAdapter + the production
+      # SkuDerivedWorkspaceAdapter both implement this seam;
+      # for endpoints that genuinely need per-vertex
+      # disambiguation the helper accepts a per-endpoint
+      # host_vertex_handle override via the optional
+      # `per_endpoint_handle` keyword).
+      def _live_coordinate_for(adapter:, host_handle:, endpoint_key:,
+                                cached_coordinate:, per_endpoint_handle: nil)
+        handle = per_endpoint_handle || host_handle
+        return nil if adapter.nil? || handle.nil?
+        return nil unless adapter.respond_to?(:vertex_position)
+        begin
+          pos = adapter.vertex_position(handle)
+        rescue StandardError => e
+          # The adapter is required to return a coordinate OR
+          # nil; an exception means the live read is genuinely
+          # broken. Fail closed.
+          raise LiveVertexPositionUnreadable.new(
+            endpoint_key: endpoint_key, underlying: e
+          )
+        end
+        # Adapter returned nil => no live coordinate authority.
+        # Fall back to the cached coordinate (the caller's
+        # authority).
+        return nil if pos.nil?
+        unless pos.is_a?(Array) && pos.length >= 3 &&
+               pos[0].is_a?(Numeric) && pos[1].is_a?(Numeric) && pos[2].is_a?(Numeric)
+          raise LiveVertexPositionUnreadable.new(
+            endpoint_key: endpoint_key,
+            underlying:   nil
+          )
+        end
+        finite =
+          (!pos[0].respond_to?(:finite?) || pos[0].finite?) &&
+          (!pos[1].respond_to?(:finite?) || pos[1].finite?) &&
+          (!pos[2].respond_to?(:finite?) || pos[2].finite?)
+        unless finite
+          raise LiveVertexPositionUnreadable.new(
+            endpoint_key: endpoint_key,
+            underlying:   nil
+          )
+        end
+        [pos[0].to_f, pos[1].to_f, pos[2].to_f]
       end
 
       def _origin_kind_for(rec)

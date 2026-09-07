@@ -420,6 +420,34 @@ def v19a_panel_css_excerpt(style_src)
   excerpt.join
 end
 
+# V1.9A FINAL BLOCK FIX §6 (test debt — CSS regression
+# guard false-pass): strip standard CSS `/* ... */`
+# block comments from a CSS source string. The strip is
+# intentionally conservative (it does NOT understand CSS
+# strings, escapes, or nested comments because CSS has
+# neither). This is used by the selector-order assertions
+# so a comment mentioning a selector cannot accidentally
+# satisfy the cascade-order guard.
+#
+# Returns the CSS source with all `/* ... */` blocks
+# replaced by spaces (preserving byte offsets so position-
+# based assertions remain meaningful).
+def hr_strip_css_comments(css_src)
+  out = css_src.dup
+  loop do
+    start_idx = out.index('/*')
+    break if start_idx.nil?
+    end_idx = out.index('*/', start_idx + 2)
+    break if end_idx.nil?
+    # Replace the comment with spaces (preserving line
+    # breaks so byte offsets remain comparable for
+    # downstream line-based assertions).
+    pre_end = end_idx + 2
+    out[start_idx...pre_end] = out[start_idx...pre_end].gsub(/[^\n]/, ' ')
+  end
+  out
+end
+
 test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): style.css has the .panel[hidden] { display: none } rule' do
   src = File.read(HR_HTML_CSS)
   # The scoped rule MUST be present.
@@ -428,15 +456,88 @@ test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): style.css has the .panel[hi
                'that closes the Owner Gate A2 BLOCK')
 end
 
+# V1.9A FINAL BLOCK FIX §6: regression test proving a
+# CSS comment alone cannot satisfy the selector check. We
+# construct a synthetic CSS where `.panel[hidden]` and
+# `.recovery-banner[hidden]` appear ONLY inside CSS
+# comments; the helper `hr_strip_css_comments` MUST strip
+# them so the cascade-order assertion correctly identifies
+# the missing rules.
+test 'html_render (V1.9A FINAL CSS COMMENT GUARD): strip helper removes all /* ... */ comments' do
+  src = <<~CSS
+    /* .panel[hidden] { display: none; } */
+    .panel { display: flex; }
+    /*
+       .recovery-banner[hidden] { display: none; }
+       .tab-badge[hidden] { display: none; }
+    */
+  CSS
+  stripped = hr_strip_css_comments(src)
+  refute_match(/\.panel\[hidden\]\s*\{/, stripped,
+               'strip helper MUST remove selectors inside comments')
+  refute_match(/\.recovery-banner\[hidden\]\s*\{/, stripped,
+               'strip helper MUST remove multi-line comment selectors')
+  refute_match(/\.tab-badge\[hidden\]\s*\{/, stripped,
+               'strip helper MUST remove selectors inside multi-line comments')
+  # The real .panel rule is preserved.
+  assert_match(/\.panel\s*\{/, stripped,
+               'strip helper MUST preserve real CSS rules')
+  # Newline count is preserved (line offsets remain
+  # comparable).
+  assert_equal src.count("\n"), stripped.count("\n"),
+               'strip helper MUST preserve line offsets (replace comments with spaces)'
+end
+
+test 'html_render (V1.9A FINAL CSS COMMENT GUARD): regression — a comment-only CSS fails the cascade-order guard' do
+  # Build a synthetic CSS where the SCOPED rules exist
+  # ONLY inside comments. The cascade-order assertions
+  # MUST fail when using the comment-stripped source.
+  fake_css = <<~CSS
+    /* cascade order notes (do NOT add rules here)
+       .panel { display: flex; }
+       .panel[hidden] { display: none; }
+       .recovery-banner { display: flex; }
+       .recovery-banner[hidden] { display: none; }
+       .tab-badge { display: inline-flex; }
+       .tab-badge[hidden] { display: none; }
+    */
+  CSS
+  stripped = hr_strip_css_comments(fake_css)
+  # After stripping, the cascade-order index checks return
+  # nil because no actual rules exist. This proves the
+  # comment-stripping helper is what makes the guard
+  # meaningful (without it, the guard would falsely PASS).
+  assert_nil stripped.index(/\.panel\s*\{/),
+             'cascade-order guard MUST fail when scoped rule is only inside a CSS comment'
+  assert_nil stripped.index(/\.panel\[hidden\]\s*\{/),
+             'cascade-order guard MUST fail when .panel[hidden] is only inside a CSS comment'
+  assert_nil stripped.index(/\.recovery-banner\s*\{/),
+             'cascade-order guard MUST fail when .recovery-banner is only inside a CSS comment'
+end
+
 test 'html_render (V1.9A OWNER UI TAB SWITCH BLOCK): .panel[hidden] rule appears AFTER the .panel rule' do
   # The cascade-order guard: the scoped rule MUST come AFTER the
   # `.panel { display: flex }` rule so the higher specificity
   # `.panel[hidden]` selector (1 class + 1 attribute = 0,0,2,0)
   # beats `.panel` (1 class = 0,0,1,0) and wins.
+  #
+  # V1.9A FINAL BLOCK FIX §6 (test debt — CSS
+  # regression guard false-pass): the naive
+  # `src.index(/\.panel\s*\{/)` could match selector text
+  # inside a CSS comment, making the guard pass for the
+  # wrong reason. We MUST strip CSS comments BEFORE the
+  # selector-order assertions. The regex strip is
+  # intentionally conservative: it removes `/* ... */`
+  # blocks (including multi-line) and is anchored on the
+  # standard CSS comment delimiters. The dispatcher
+  # explicitly says: "Do not reorder working production
+  # CSS merely to satisfy a brittle test" — so we fix the
+  # test only.
   src = File.read(HR_HTML_CSS)
-  panel_idx = src.index(/\.panel\s*\{/)
-  hidden_idx = src.index(/\.panel\[hidden\]\s*\{/)
-  refute_nil panel_idx, '.panel rule must exist'
+  code = hr_strip_css_comments(src)
+  panel_idx = code.index(/\.panel\s*\{/)
+  hidden_idx = code.index(/\.panel\[hidden\]\s*\{/)
+  refute_nil panel_idx, '.panel rule must exist (in CSS code, NOT inside comments)'
   refute_nil hidden_idx, '.panel[hidden] rule must exist (CSS regression guard)'
   assert panel_idx < hidden_idx,
          '.panel[hidden] rule MUST appear AFTER .panel rule for cascade order'
@@ -602,20 +703,30 @@ test 'html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP): style.css has the .tab-bad
 end
 
 test 'html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP): .recovery-banner[hidden] rule appears AFTER .recovery-banner' do
+  # V1.9A FINAL BLOCK FIX §6: CSS comments MUST be stripped
+  # before the selector-order assertion so a comment that
+  # mentions the scoped selector cannot accidentally satisfy
+  # the cascade-order guard.
   src = File.read(HR_HTML_CSS)
-  base_idx = src.index(/\.recovery-banner\s*\{/)
-  scoped_idx = src.index(/\.recovery-banner\[hidden\]\s*\{/)
-  refute_nil base_idx, '.recovery-banner rule must exist'
+  code = hr_strip_css_comments(src)
+  base_idx = code.index(/\.recovery-banner\s*\{/)
+  scoped_idx = code.index(/\.recovery-banner\[hidden\]\s*\{/)
+  refute_nil base_idx, '.recovery-banner rule must exist (in CSS code, NOT inside comments)'
   refute_nil scoped_idx, '.recovery-banner[hidden] rule must exist (CSS regression guard)'
   assert base_idx < scoped_idx,
          '.recovery-banner[hidden] rule MUST appear AFTER .recovery-banner rule for cascade order'
 end
 
 test 'html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP): .tab-badge[hidden] rule appears AFTER .tab-badge' do
+  # V1.9A FINAL BLOCK FIX §6: CSS comments MUST be stripped
+  # before the selector-order assertion so a comment that
+  # mentions the scoped selector cannot accidentally satisfy
+  # the cascade-order guard.
   src = File.read(HR_HTML_CSS)
-  base_idx = src.index(/\.tab-badge\s*\{/)
-  scoped_idx = src.index(/\.tab-badge\[hidden\]\s*\{/)
-  refute_nil base_idx, '.tab-badge rule must exist'
+  code = hr_strip_css_comments(src)
+  base_idx = code.index(/\.tab-badge\s*\{/)
+  scoped_idx = code.index(/\.tab-badge\[hidden\]\s*\{/)
+  refute_nil base_idx, '.tab-badge rule must exist (in CSS code, NOT inside comments)'
   refute_nil scoped_idx, '.tab-badge[hidden] rule must exist (CSS regression guard)'
   assert base_idx < scoped_idx,
          '.tab-badge[hidden] rule MUST appear AFTER .tab-badge rule for cascade order'
@@ -695,4 +806,107 @@ test 'html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP): recovery-banner / tab-issu
                'recovery-banner must carry the hidden attribute by default in HTML')
   assert_match(/<span[^>]*class="tab-badge"[^>]*\bid="tab-issues-badge"[^>]*\bhidden\b/, src,
                'tab-issues-badge must carry the hidden attribute by default in HTML')
+end
+
+# ===============================================================
+# V1.9A FINAL BLOCK FIX — frontend behavior tests.
+#
+# Per dispatch Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md:
+#   - P1-A: current Issues tab MUST NOT append historical
+#     source-registry rows.
+#   - P1-C: 重新检测 dispatch uses issue_summary.cta_callback
+#     (explicit field) — frontend MUST NOT infer the callback
+#     from CN button text.
+#   - Tab badge MUST NOT count payload.groups rows.
+#
+# Source-level guards pin the contract so a future refactor
+# cannot silently regress it.
+# ===============================================================
+
+test 'html_render (V1.9A FINAL P1-A): app.js does NOT append payload.groups to _buildIssueRows current-issue list' do
+  # The current-issue builder MUST consult cadPrepWorkflow
+  # cards only. Historical groups (`payload.groups`) are
+  # reachable in the 原始检查记录 surface, NOT in the
+  # primary current issue rows.
+  src = File.read(HR_HTML_APPJS)
+  # The function name MUST exist.
+  assert_match(/function\s+_buildIssueRows\b/, src,
+               'app.js MUST define _buildIssueRows')
+  # Locate the body of the function (single-line tolerant).
+  fn_match = src.match(/function\s+_buildIssueRows\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/)
+  refute_nil fn_match,
+             'could not locate _buildIssueRows body'
+  body = fn_match[1]
+  # The body MUST NOT iterate `payload.groups` / `groups`
+  # when populating current-issue rows.
+  refute_match(/payload\.groups/, body,
+               '_buildIssueRows MUST NOT read payload.groups (current issues come from cards only)')
+  refute_match(/var\s+groups\s*=\s*payload\.groups/, body,
+               '_buildIssueRows MUST NOT introduce a `var groups = payload.groups` loop')
+end
+
+test 'html_render (V1.9A FINAL P1-A): app.js exposes payload.groups only under the legacy/原始检查记录 surface' do
+  # The 原始检查记录 surface is rendered via _buildLegacySourceRows
+  # (or equivalent) and is reachable through the 详情 tab.
+  src = File.read(HR_HTML_APPJS)
+  # _buildLegacySourceRows is the canonical legacy render.
+  assert_match(/function\s+_buildLegacySourceRows\b/, src,
+               'app.js MUST expose _buildLegacySourceRows (原始检查记录 surface)')
+  # The body iterates payload.groups (this is OK; it's the
+  # legacy / details surface).
+  fn_match = src.match(/function\s+_buildLegacySourceRows\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/)
+  refute_nil fn_match
+  body = fn_match[1]
+  assert_match(/payload\.groups|payload\['groups'\]|\.groups/, body,
+               '_buildLegacySourceRows MAY read payload.groups (legacy/原始检查记录 surface)')
+end
+
+test 'html_render (V1.9A FINAL P1-A): app.js badge count does NOT count payload.groups rows' do
+  # The red tab badge MUST count current unresolved cards
+  # only (REVIEW_REQUIRED / FAILED / BLOCKED). Historical
+  # source-registry rows MUST NOT inflate the badge.
+  src = File.read(HR_HTML_APPJS)
+  fn_match = src.match(/function\s+_buildIssuesBadgeCount\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/)
+  refute_nil fn_match,
+             'could not locate _buildIssuesBadgeCount body'
+  body = fn_match[1]
+  refute_match(/payload\.groups/, body,
+               '_buildIssuesBadgeCount MUST NOT read payload.groups (badge counts current cards only)')
+  refute_match(/var\s+groups\s*=\s*payload\.groups/, body,
+               '_buildIssuesBadgeCount MUST NOT introduce a `var groups = payload.groups` accumulator')
+end
+
+test 'html_render (V1.9A FINAL P1-C): app.js uses issue_summary.cta_callback explicitly (not hard-wired rebuild_workspace)' do
+  # Per dispatch §3: prefer the explicit presenter field
+  # `issue_summary.cta_callback`. The frontend MUST NOT
+  # hard-wire `data-action="rebuild_workspace"` for the
+  # issue_summary CTA.
+  src = File.read(HR_HTML_APPJS)
+  # Locate the renderIssueSummary CTA wiring (the button
+  # creation block).
+  cta_match = src.match(/renderIssueSummary[^}]*?summary\.cta[^}]*?\}/m)
+  refute_nil cta_match,
+             'could not locate the renderIssueSummary CTA button creation block'
+  cta_body = cta_match[0]
+  # The CTA wiring MUST consult `summary.cta_callback` (the
+  # additive presenter field).
+  assert_match(/summary\.cta_callback/, cta_body,
+               'renderIssueSummary CTA wiring MUST consult summary.cta_callback (additive schema)')
+  # The CTA wiring MUST NOT hard-wire `rebuild_workspace`
+  # for the issue_summary button. The CTA callback MAY
+  # still be `rebuild_workspace` at runtime; we just
+  # verify the wiring is data-driven, not hard-coded.
+  refute_match(/['"]rebuild_workspace['"]/, cta_body,
+               'renderIssueSummary CTA wiring MUST NOT hard-wire data-action="rebuild_workspace"')
+end
+
+test 'html_render (V1.9A FINAL P1-C): renderIssueSummary CTA falls back to invisible when cta_callback is missing' do
+  # Defense-in-depth: when cta_callback is null, the
+  # CTA button MUST NOT render (the per-card actions
+  # remain the user's primary affordance).
+  src = File.read(HR_HTML_APPJS)
+  assert_match(/var\s+cta_cb\s*=\s*summary\.cta_callback\s*\|\|\s*null/, src,
+               'app.js MUST read summary.cta_callback with null fallback')
+  assert_match(/if\s*\(\s*cta_cb\s*\)\s*\{/, src,
+               'app.js MUST conditionally render the CTA button only when cta_cb is truthy')
 end

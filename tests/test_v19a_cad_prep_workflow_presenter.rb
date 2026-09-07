@@ -1085,3 +1085,365 @@ test 'v19a_presenter (A2-UX-01): presenter source does NOT slice last_error for 
                     "found forbidden fragment #{frag.inspect}"
   end
 end
+
+# ===========================================================
+# V1.9A FINAL BLOCK FIX — focused presenter tests.
+#
+# Per dispatch Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md
+# §9 (Required automated tests):
+#   - P2-A: planar presenter mapping (movable_count /
+#     applied_count authoritative; legacy aliases
+#     accepted; READY_TO_NORMALIZE without exact count ->
+#     generic truthful copy, NEVER "未发现").
+#   - P2-B: structure warning copy specificity (open
+#     chain / non-planar invalid loop / generic).
+#   - P1-B: issue-chip semantics (CLEAN/APPLIED success
+#     metrics MUST NOT inflate the issue count).
+#   - P1-C: issue_summary.cta_callback field added
+#     (additive schema).
+# ===========================================================
+
+# --- P2-A: planar presenter mapping ---------------------------
+
+test 'v19a_presenter (FINAL P2-A): READY_TO_NORMALIZE uses movable_count as authoritative (with movable legacy fallback)' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'movable_count' => 8, 'outlier_count' => 2, 'state' => 'READY_TO_NORMALIZE' }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  assert_equal 'ACTIONABLE', planar['state']
+  # movable_count is the authoritative field.
+  mov = planar['metrics'].find { |m| m['label'] == '可校正' }
+  refute_nil mov, 'planar ACTIONABLE MUST carry the 可校正 metric'
+  assert_equal 8, mov['value'], 'movable_count MUST be authoritative'
+  # Summary uses the truthful exact count.
+  assert_match(/发现 8 个可安全校正点/, planar['summary'])
+  # Issue chips include the movable count.
+  chips = payload['issue_summary']['chips']
+  assert chips.any? { |c| c['label'] == '可校正' && c['value'] == 8 },
+         'issue chips MUST surface movable_count from the authoritative field'
+end
+
+test 'v19a_presenter (FINAL P2-A): legacy movable alias still accepted as fallback (no regression)' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'movable' => 12, 'outlier_count' => 0 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  mov = planar['metrics'].find { |m| m['label'] == '可校正' }
+  refute_nil mov
+  assert_equal 12, mov['value'], 'legacy movable alias MUST remain as fallback'
+end
+
+test 'v19a_presenter (FINAL P2-A): READY_TO_NORMALIZE without exact count uses generic truthful copy, NEVER "未发现"' do
+  # Proposal present but movable_count / movable / proposed_movable
+  # all missing. The state is READY_TO_NORMALIZE so at least one
+  # candidate exists by definition. The summary MUST truthfully
+  # communicate that without inventing a numeric count.
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'state' => 'READY_TO_NORMALIZE' }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  assert_equal 'ACTIONABLE', planar['state']
+  # No "未发现" — that copy is reserved for the NO_CANDIDATE state.
+  refute_match(/未发现/, planar['summary'],
+               'READY_TO_NORMALIZE without exact count MUST NOT use "未发现" copy')
+  # The truthful generic copy is exposed.
+  assert_includes planar['summary'], '可安全校正',
+                  'READY_TO_NORMALIZE without exact count MUST truthfully describe discoverable Z drift'
+end
+
+test 'v19a_presenter (FINAL P2-A): APPLIED audit uses applied_count as authoritative (with moved legacy fallback)' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'applied_count' => 7 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  assert_equal 'APPLIED', planar['state']
+  mv = planar['metrics'].find { |m| m['label'] == '已移动' }
+  refute_nil mv
+  assert_equal 7, mv['value'], 'applied_count MUST be authoritative for the planar APPLIED audit'
+  assert_match(/已对 7 个顶点完成 Z 校正/, planar['summary'])
+end
+
+test 'v19a_presenter (FINAL P2-A): legacy moved alias still accepted for APPLIED audit (no regression)' do
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'moved' => 5 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  mv = planar['metrics'].find { |m| m['label'] == '已移动' }
+  refute_nil mv
+  assert_equal 5, mv['value'], 'legacy moved alias MUST remain as fallback for APPLIED audit'
+end
+
+# --- P2-B: structure warning copy specificity -------------------
+
+test 'v19a_presenter (FINAL P2-B): READY_WITH_WARNINGS + open_chains>0 -> "存在未闭合轮廓"' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => { 'open_chains' => 2, 'closed_loops' => 5, 'regions' => 3 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal 'REVIEW_REQUIRED', sr['state']
+  assert_equal '存在未闭合轮廓', sr['summary'],
+               'open_chains > 0 MUST drive the "存在未闭合轮廓" specific copy'
+  # Metric chip is the open_chains count (problem metric).
+  assert sr['metrics'].any? { |m| m['label'] == '开放链' && m['value'] == 2 },
+         'open_chains metric MUST surface as a current-attention chip'
+  # closed_loops / regions are NOT surfaced as chips (CLEAN/APPLIED
+  # success metrics MUST NOT inflate the issue count).
+  refute sr['metrics'].any? { |m| m['label'] == '闭合轮廓' },
+         'closed_loops MUST NOT inflate the chip list (P1-B)'
+  refute sr['metrics'].any? { |m| m['label'] == '区域' },
+         'regions MUST NOT inflate the chip list (P1-B)'
+end
+
+test 'v19a_presenter (FINAL P2-B): READY_WITH_WARNINGS + invalid_loop with non_planar_loop -> "存在非平面闭合轮廓，暂不能形成区域"' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => { 'invalid_loop_count' => 1, 'closed_loops' => 3 },
+      'unresolved_flags' => ['non_planar_loop']
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal 'REVIEW_REQUIRED', sr['state']
+  assert_equal '存在非平面闭合轮廓，暂不能形成区域', sr['summary'],
+               'invalid_loop + non_planar_loop flag MUST drive the specific copy'
+end
+
+test 'v19a_presenter (FINAL P2-B): READY_WITH_WARNINGS + invalid_loop without non_planar -> generic "存在无效轮廓或需确认结构"' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => { 'invalid_loop_count' => 2, 'closed_loops' => 1 }
+      # No unresolved_flags.
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal 'REVIEW_REQUIRED', sr['state']
+  assert_equal '存在无效轮廓或需确认结构', sr['summary'],
+               'invalid_loop without non_planar_loop MUST use the generic specific copy'
+end
+
+test 'v19a_presenter (FINAL P2-B): READY_WITH_WARNINGS + no specific evidence -> fallback copy' do
+  # Defense-in-depth: the fallback copy ONLY renders when no
+  # specific evidence is available. The fixture here has no
+  # open_chains and no invalid_loop_count — so the fallback
+  # is reachable.
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => { 'closed_loops' => 5, 'regions' => 3 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal '结构已重建，但存在需要人工查看的项', sr['summary'],
+               'no specific evidence MUST fall back to the generic copy'
+end
+
+# --- P1-B: issue-chip semantics -------------------------------
+
+test 'v19a_presenter (FINAL P1-B): APPLIED metrics (已处理/已校正/已修复) MUST NOT inflate issue chips' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 4, 'duplicate_pairs_before' => 8, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'applied_count' => 12 }
+    },
+    'topology_repair' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'applied' => 3 }
+    },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  labels = payload['issue_summary']['chips'].map { |c| c['label'] }
+  forbidden_labels = %w[已处理 已校正 已修复 已合并重复对]
+  forbidden_labels.each do |lbl|
+    refute_includes labels, lbl,
+                    "issue chip list MUST NOT carry the APPLIED-success label #{lbl.inspect}"
+  end
+end
+
+test 'v19a_presenter (FINAL P1-B): CLEAN structure metrics (closed_loops/regions/holes) MUST NOT inflate issue chips' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => { 'open_chains' => 1, 'closed_loops' => 18, 'regions' => 12, 'holes' => 4 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  labels = payload['issue_summary']['chips'].map { |c| c['label'] }
+  forbidden_labels = %w[闭合轮廓 区域 洞]
+  forbidden_labels.each do |lbl|
+    refute_includes labels, lbl,
+                    "issue chip list MUST NOT carry the CLEAN-state label #{lbl.inspect}"
+  end
+  # Only the open_chains count surfaces (the problem metric).
+  assert_includes labels, '开放链',
+                  'open_chains MUST surface as a current-attention chip'
+end
+
+# --- P1-C: cta_callback additive schema -----------------------
+
+test 'v19a_presenter (FINAL P1-C): NEEDS_ATTENTION issue_summary carries cta_callback=refresh_cad_prep' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'movable_count' => 5 }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  issue = payload['issue_summary']
+  assert_equal '重新检测', issue['cta']
+  assert_equal 'refresh_cad_prep', issue['cta_callback'],
+               'NEEDS_ATTENTION summary CTA MUST carry the explicit cta_callback=refresh_cad_prep'
+end
+
+test 'v19a_presenter (FINAL P1-C): READY_FOR_VALIDATION-with-APPLIED carries cta_callback=refresh_cad_prep' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 4 },
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'APPLIED',
+      'audit' => { 'applied_count' => 12 }
+    },
+    'topology_repair'      => { 'computed' => true, 'state' => 'APPLIED', 'audit' => { 'applied' => 3 } },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  issue = payload['issue_summary']
+  assert_equal '重新检测', issue['cta']
+  assert_equal 'refresh_cad_prep', issue['cta_callback']
+end
+
+test 'v19a_presenter (FINAL P1-C): FAILED carries cta_callback=refresh_cad_prep' do
+  snap = { 'state' => 'failed', 'last_error' => 'SomeError: build failed' }
+  payload = v19a_present(v19a_make_ar, snap)
+  issue = payload['issue_summary']
+  assert_equal '重新检测', issue['cta']
+  assert_equal 'refresh_cad_prep', issue['cta_callback']
+end
+
+test 'v19a_presenter (FINAL P1-C): STALE carries cta_callback=nil (recovery flow owns rebuild)' do
+  snap = {
+    'state' => 'failed',
+    'last_error' => 'host_state_changed: prior derived handle removed by SketchUp Undo'
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  issue = payload['issue_summary']
+  assert_nil issue['cta'],
+             'STALE issue_summary MUST NOT carry a generic recheck CTA; ' \
+             'recovery is via the recovery banner (rebuild_workspace)'
+  assert_nil issue['cta_callback'],
+             'STALE issue_summary MUST NOT carry a cta_callback'
+end
+
+test 'v19a_presenter (FINAL P1-C): IDLE / clean carries cta_callback=nil' do
+  payload = v19a_present(v19a_make_ar, { 'state' => 'none' })
+  assert_nil payload['issue_summary']['cta_callback']
+  assert_nil payload['issue_summary']['cta']
+  # All-clean READY_FOR_VALIDATION also carries nil.
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload2 = v19a_present(v19a_make_ar, snap)
+  assert_nil payload2['issue_summary']['cta_callback']
+  assert_nil payload2['issue_summary']['cta']
+end
+
+# --- Presenter source-level guards for the new mapping -------
+
+test 'v19a_presenter (FINAL P2-A): presenter reads movable_count as the authoritative planar proposal field' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  assert_includes src, "'movable_count'",
+                  'presenter source MUST consult movable_count (authoritative planar field)'
+  assert_includes src, "'applied_count'",
+                  'presenter source MUST consult applied_count (authoritative planar audit field)'
+end
+
+test 'v19a_presenter (FINAL P2-A): presenter NO LONGER contradicts READY_TO_NORMALIZE with "未发现需要 Z 校正的点"' do
+  # Defense-in-depth: the contradictory copy is reachable only
+  # under the NO_CANDIDATE branch (which is the legitimate
+  # place for "未发现"). Verify the READY_TO_NORMALIZE helper
+  # never produces it.
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => {
+      'computed' => true, 'state' => 'READY_TO_NORMALIZE',
+      'proposal' => { 'state' => 'READY_TO_NORMALIZE' }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  planar = payload['cards'].find { |c| c['id'] == 'planar_normalization' }
+  refute_match(/未发现/, planar['summary'],
+               'READY_TO_NORMALIZE summary MUST NOT contradict with "未发现" copy')
+end
+
+test 'v19a_presenter (FINAL P1-C): presenter source exposes issue_summary.cta_callback in the locked paths' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  # All branches where cta_callback is set must carry
+  # the explicit mapping. Pin the dispatch §3 contract by
+  # counting occurrences.
+  occurrences = src.scan(/cta_callback/).length
+  assert occurrences >= 6,
+         "presenter source MUST carry cta_callback across the locked branches " \
+         "(IDLE / READY-with-APPLIED / clean / STALE / FAILED / SCANNING / NEEDS); " \
+         "got #{occurrences} occurrence(s)"
+end

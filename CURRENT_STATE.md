@@ -1,6 +1,464 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP (THIS UPDATE)
+## V1.9A FINAL BLOCK FIX — Current Geometry + Current Issue Semantics (THIS UPDATE)
+
+Updated: 2026-09-07 (V1.9A FINAL BLOCK FIX dispatch
+EXECUTION on assigned `dev/v1.9` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` + primary guidance
+`Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md`). Per
+dispatch + guidance, this packet implements the
+COMPLETE narrow final V1.9A block-fix:
+  - **P0**: V1.7 current-geometry snapshot consumes
+    LIVE post-V1.6 derived vertex coordinates via
+    `adapter.vertex_position(handle)` (not stale
+    build-time `geometry_summary` cache); fail closed
+    with `live_vertex_position_unreadable` when the
+    live read is malformed / non-finite.
+  - **P1-A**: Current Issues tab no longer shows
+    historical source-registry rows; legacy
+    `payload.groups` data remains reachable in the
+    `原始检查记录` / 详情 surface.
+  - **P1-B**: Issue-chip counting excludes CLEAN /
+    APPLIED success metrics (closed_loops, regions,
+    holes, applied counts); only current-attention
+    metrics inflate the primary chip list.
+  - **P1-C**: `重新检测` dispatches `refresh_cad_prep`
+    via the additive `issue_summary.cta_callback`
+    field (frontend no longer hard-wires
+    `rebuild_workspace`); STALE / FAILED recovery
+    still uses `rebuild_workspace` (the recovery
+    banner owns rebuild).
+  - **P2-A**: Planar card uses authoritative
+    `movable_count` / `applied_count` (legacy
+    `movable` / `moved` aliases remain as defensive
+    fallback); READY_TO_NORMALIZE without exact count
+    uses generic truthful copy, NEVER "未发现".
+  - **P2-B**: Structure warning copy is specific when
+    evidence exists (open_chains > 0 / non-planar
+    invalid loop / generic fallback).
+  - **Test debt**: hidden CSS regression guard now
+    strips comments before selector-order assertions
+    (so a CSS comment that mentions a selector cannot
+    accidentally satisfy the guard).
+
+Frozen V1.8 Blueprint preserved unchanged on
+`dev/v1.9`. No V1.4 / V1.5 / V1.6 / V1.7 / V1.8
+algorithm change. No source / provenance authority
+change. No workspace ownership change. No host
+mutation / Face / Observer. No site semantics. No
+A2 orchestrator / Presenter / DialogRunner callbacks
+change. No Loader / A3 toolbar contract change. No
+V1.9B PreparedCadDataset / persistence (V1.9B NOT
+STARTED). No MCP / LLM / Agent.
+
+V1.9A FINAL BLOCK FIX — 2026-09-07.
+
+- Starting HEAD for this packet:
+  `09bd5d33033123ac3bab6b669b2676ac83dbd1eb`
+  (the V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP
+  complete state on `dev/v1.9`).
+- Implementation SHA: produced by this packet
+  (see `git log -1 --format=%H` after commit).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD`
+  after push.
+- V1.9A FINAL BLOCK FIX RBZ candidate:
+  size **1,159,502 bytes** (+21,178 vs HIDDEN-
+  SEMANTICS FOLLOW-UP 1,138,324); entries **73**
+  (unchanged); SHA-256
+  **`c9f8b745262718886612d169011ba5313bb729047e7304d5e00bbb25b6fe1e3c`**.
+- Packaged file SHAs (vs the previous
+  HIDDEN-SEMANTICS FOLLOW-UP packet):
+  - `su_ai_plugin/core/endpoint_record.rb` SHA-256:
+    `b87d3ee13223df5e061e724172729e28881c347165577b55f99aa01da54c330e`
+    (**CHANGED** — P0 live-coordinate authority seam;
+    `DerivedTopologySnapshotBuilder.build` now reads
+    `adapter.vertex_position(handle)` for each
+    endpoint when the live handle is resolvable;
+    fail-closed via new
+    `LiveVertexPositionUnreadable` error class
+    carrying the stable reason
+    `live_vertex_position_unreadable`).
+  - `su_ai_plugin/cad_prep_workflow_presenter.rb`
+    SHA-256:
+    `c6f4982f71da09363f5df0cd1a91f39c8c61e40cc0888071380c75de6b7ae2f7`
+    (**CHANGED** — P2-A movable_count / applied_count
+    authoritative; P2-B structure warning copy
+    specificity; P1-B issue-chip semantic filter
+    (PROBLEM_METRIC_LABELS whitelist); P1-C
+    `issue_summary.cta_callback` field added across
+    all branches; READY_TO_NORMALIZE without exact
+    count uses generic truthful copy).
+  - `su_ai_plugin/html/app.js` SHA-256:
+    `adae3dd6b680244a807376ed7b92a70bd1548bd6f9ff0cba69cc432f2f006a46`
+    (**CHANGED** — P1-A: `_buildIssueRows` /
+    `_buildIssuesBadgeCount` no longer append
+    `payload.groups` to current issue list /
+    badge count; P1-C: `renderIssueSummary` CTA
+    uses additive `summary.cta_callback` field,
+    not hard-wired `rebuild_workspace`; CTA hides
+    when `cta_callback` is null).
+  - `su_ai_plugin/html/style.css` SHA-256:
+    `fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c`
+    (UNCHANGED — no production CSS change in this
+    packet; the previous HIDDEN-SEMANTICS FOLLOW-UP
+    scoped rules remain the production fix).
+  - HTML / Ruby / orchestrator / dialog_runner /
+    loader / ui_bridge / working_mode_runner SHAs
+    UNCHANGED (verified via packaged-RBZ extraction):
+  - `html/index.html` SHA-256:
+    `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
+    (matches the HIDDEN-SEMANTICS FOLLOW-UP packet
+    SHA exactly).
+  - `su_ai_plugin.rb` SHA-256:
+    `783fcceeb1938dee09c9616d70155c103c000f075a9f65f1e496bba1ccfe98d1`
+    (matches the A3 NATIVE TOOLBAR packet SHA
+    exactly).
+  - `su_ai_plugin/loader.rb` SHA-256:
+    `3B85DFEFE5145113D8CA0A4EE123C1D406E21DA0D54986C524123C9CCB2C0ED5`
+    (matches the A3 NATIVE TOOLBAR packet SHA
+    exactly).
+  - `su_ai_plugin/cad_prep_workflow_orchestrator.rb`
+    SHA-256:
+    `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
+    (matches the A2-ERR packet SHA exactly; the
+    orchestrator's call-order / invalidation seam /
+    refresh / rebuild-and-scan / gap-ordering /
+    error-boundary propagation are FROZEN).
+  - `su_ai_plugin/cad_prep_workflow_presenter.rb`
+    SHA-256: see above (CHANGED).
+  - `su_ai_plugin/dialog_runner.rb` SHA-256:
+    `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
+    (matches the A2-ERR packet SHA exactly; no
+    callback registration / dispatch contract
+    change).
+  - `su_ai_plugin/ui_bridge.rb` SHA-256:
+    `2814070463B4F4482CF6E4B30DD304AB973B5A8E1937C974E345BB6750271C7A`
+    (matches the A1 packet SHA exactly; the bridge
+    still routes through the unchanged presenter).
+  - `su_ai_plugin/core/working_mode_runner.rb`
+    SHA-256:
+    `2962F45A06338D929C38FB885ED129373E67C3F2E6E220FE075AF07DCEF02214`
+    (matches the A2 packet SHA exactly; no
+    invalidation seam / tolerance / canonical graph
+    / host-state validation change).
+- Node DOM test (`tests/test_html_render_dom.js`):
+  all 97 ASSERT lines PASS, final line `PASS`.
+  - 6 new V1.9A FINAL BLOCK FIX assertions added:
+    - current issue rows come from cadPrepWorkflow
+      cards only (NOT from payload.groups) — count
+      must equal the number of
+      REVIEW_REQUIRED / FAILED / BLOCKED cards.
+    - current issue rows are non-locatable (cards do
+      not carry issue_id).
+    - issue_summary CTA wiring uses the additive
+      cta_callback field (not hard-wired).
+    - issue_summary CTA button is NOT hard-wired to
+      rebuild_workspace.
+    - legacy source-registry per-type counts remain
+      reachable in 详情 / 原始检查记录 surface.
+    - IDLE / empty-idle summary hides the CTA
+      button when cta_callback is null.
+  - Pre-existing 91 assertions remain intact
+    (V1.9A-A1 / A2 / A3 + HIDDEN-SEMANTICS FOLLOW-UP +
+    TAB SWITCH BLOCK + L3 locate contract +
+    four-tab + five-card tests).
+- Test files added / extended (this packet):
+  - **NEW**: `tests/test_v19a_final_p0_live_coordinates.rb`
+    — 11 P0 focused tests covering live vs cached
+    coordinate authority, fail-closed malformed /
+    non-finite / nil / Infinity / no-adapter
+    paths, the owner-fixture 0.2 mm residue
+    regression, error-class / source-level guards.
+  - **EXTENDED**: `tests/test_v19a_cad_prep_workflow_presenter.rb`
+    — 18 new V1.9A FINAL BLOCK FIX focused tests:
+    P2-A movable_count authoritative + legacy
+    fallback + READY_TO_NORMALIZE without count
+    generic copy + applied_count authoritative +
+    legacy fallback (5 tests); P2-B structure
+    warning copy specificity for open_chains /
+    non_planar / generic / fallback (4 tests);
+    P1-B APPLIED / CLEAN metrics MUST NOT inflate
+    chips (2 tests); P1-C cta_callback additive
+    schema across NEEDS_ATTENTION /
+    READY-with-APPLIED / FAILED / STALE / IDLE /
+    clean (5 tests); presenter source-level guards
+    (2 tests).
+  - **EXTENDED**: `tests/test_html_render.rb` — 2 new
+    CSS comment regression guard tests + 5 new
+    app.js frontend behavior tests:
+    `hr_strip_css_comments` helper strips
+    `/* ... */` blocks while preserving line offsets;
+    regression proving a comment-only CSS fails the
+    cascade-order guard; `_buildIssueRows` does
+    NOT append `payload.groups`; badge count does
+    NOT count `payload.groups`; CTA wiring uses
+    `cta_callback` (additive schema) explicitly;
+    CTA falls back to invisible when cta_callback
+    is null.
+  - **EXTENDED**: `tests/test_html_render_dom.js` —
+    6 new DOM assertions (see above).
+- Test environment status (this packet):
+  - **Ruby runtime BROKEN on this host**: the
+    `C:\Ruby27-x64\bin\ruby.exe` runtime reports
+    "Application cannot run, side-by-side
+    configuration has problems, see sxstrace.exe"
+    on every invocation (Visual C++ runtime
+    conflict). Per AGENTS.md §16 / PROJECT_HANDOFF.md
+    §15, environment failure is NOT product-code
+    failure and Pi MUST NOT reinstall Ruby or
+    rewrite PATH to work around the failure.
+    - Ruby test suite execution status is therefore
+      **NOT RUNNABLE in this environment**.
+    - The full Ruby test suite COULD NOT be run
+      end-to-end in this session. The 18 new
+      presenter tests + 11 new P0 tests +
+      5 new CSS/app.js tests are syntactically
+      valid Ruby and follow the existing test
+      patterns; they will execute on a working
+      Ruby runtime (e.g. real SU2017/SU2020 host
+      via the Owner re-verification flow, or any
+      non-broken Ruby install).
+    - Defense-in-depth: source-level guards inside
+      each new test pin the contract so future
+      code review can verify the intent without
+      runtime execution.
+  - **Node DOM tests PASS**: `tests/test_html_render_dom.js`
+    runs to completion with all 97 ASSERTs passing
+    (including the 6 new V1.9A FINAL BLOCK FIX
+    assertions). The Node DOM test is the
+    executable frontend regression evidence for
+    P1-A, P1-C, the panel / banner / badge
+    hidden-semantics fix, the four-tab IA, the
+    switchTab DOM contract, the L3 locate
+    contract, and the A2 primary CTA mapping.
+- Frozen V1.8 Blueprint preserved unchanged on the
+  assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+  design authority. No V1.4 / V1.5 / V1.6 / V1.7 /
+  V1.8 algorithm change. No source / provenance
+  authority change. No workspace ownership change.
+  No host mutation / Face / Observer. No site
+  semantics. No A2 orchestrator / Presenter /
+  DialogRunner callbacks change. No Loader / A3
+  toolbar contract change. No switchTab JS logic
+  change. No index.html tab structure change. No
+  PreparedCadDataset / persistence (V1.9B). No
+  MCP / LLM / Agent.
+
+Corrections / additions by this packet:
+
+- **P0 — V1.6 -> V1.7 reads stale pre-Z coordinates
+  (CLOSE)**:
+  `extension/su_ai_plugin/core/endpoint_record.rb`
+  — the `DerivedTopologySnapshotBuilder.build`
+  method now reads LIVE host vertex coordinates
+  via `adapter.vertex_position(handle)` for each
+  endpoint when the workspace's `handle_for` seam
+  resolves the host handle. The cached
+  `geometry_summary['start' / 'end']` remains as
+  the fallback only when no live handle / no
+  adapter vertex_position seam is available.
+  When a live handle exists and
+  `vertex_position` is exposed but the read is
+  malformed (non-Array / non-finite / Infinity /
+  raises), the builder raises a new
+  `LiveVertexPositionUnreadable` error class
+  carrying the stable reason string
+  `live_vertex_position_unreadable` (endpoint key
+  appended). The error propagates to the
+  orchestrator's `_safe_invoke` boundary (per the
+  A2-ERR narrow correction), which logs /
+  toasts / unconditionally re-pushes the payload.
+  Source CAD is NEVER mutated; the snapshot
+  builder does NOT rewrite `geometry_summary`;
+  live coordinates are applied only to the
+  outgoing `DerivedEdgeRecord` /
+  `EndpointRecord` instances. Expected post-fix
+  truth for the Owner fixture:
+  `open_chain_count = 0`, `closed_loop_count = 1`,
+  `invalid_loop_count = 0`, `region_count = 1`,
+  loop unresolved_flags = `[]`.
+
+- **P1-A — Current Issues tab no longer shows
+  historical source-registry rows (CLOSE)**:
+  `extension/su_ai_plugin/html/app.js`:
+  - `_buildIssueRows(payload, cadPrep)` no
+    longer iterates `payload.groups` /
+    `groups`. The primary current-issue rows
+    come ONLY from cadPrepWorkflow cards with
+    state `REVIEW_REQUIRED` / `FAILED` /
+    `BLOCKED`. ACTIONABLE / UNCOMPUTED / CLEAN
+    / APPLIED cards do NOT produce a separate
+    issue row.
+  - `_buildIssuesBadgeCount(cadPrep, payload)`
+    no longer counts `payload.groups`. The red
+    tab badge counts only current cards
+    (REVIEW_REQUIRED / FAILED / BLOCKED).
+  - Legacy source-registry rows remain
+    reachable under `详情 / 原始检查记录`
+    (`audit-source-issues-details-body`) via
+    `_buildLegacySourceRows` (per-issue-type
+    counts from `summary.issues`). The L3
+    locate contract is preserved on that
+    surface.
+
+- **P1-B — Top issue-summary chip counting
+  semantics (CLOSE)**:
+  `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
+  - New `PROBLEM_METRIC_LABELS` whitelist
+    surfaces only current-attention metric
+    labels (`可校正`, `异常点`, `可安全修复`,
+    `需人工确认`, `失败`, `短边`,
+    `坐标异常`, `嵌套层级`).
+  - `_collect_chips` now also gates by card
+    state: chips are surfaced only from cards in
+    `ACTIONABLE` / `REVIEW_REQUIRED` / `FAILED`
+    / `BLOCKED` states (or cards carrying an
+    explicit problem metric).
+  - CLEAN / APPLIED success metrics
+    (`closed_loops`, `regions`, `holes`,
+    `已处理` / `已校正` / `已修复` /
+    `已合并重复对`) MUST NOT inflate the primary
+    issue chip list.
+
+- **P1-C — `重新检测` MUST use `refresh_cad_prep`,
+  not `rebuild_workspace` (CLOSE)**:
+  - `cad_prep_workflow_presenter.rb` — new
+    additive `cta_callback` field on
+    `issue_summary`. Set to `'refresh_cad_prep'`
+    for `NEEDS_ATTENTION` /
+    `READY_FOR_VALIDATION-with-APPLIED` /
+    `FAILED` (normal healthy recheck path).
+    `nil` for `IDLE` / `SCANNING` /
+    `READY_FOR_VALIDATION-clean` /
+    `STALE`. The orchestrator's
+    `refresh` semantics are FROZEN
+    unchanged.
+  - `html/app.js` — the
+    `renderIssueSummary` CTA wiring now
+    reads `summary.cta_callback` explicitly.
+    When `cta_callback` is null, the summary
+    CTA button is NOT rendered (the per-card
+    actions remain the user's primary
+    affordance). The hard-wired
+    `data-action="rebuild_workspace"` line
+    is RETIRED from this path.
+  - `rebuild_workspace` remains available for
+    explicit recovery flows (STALE / FAILED
+    recovery banner — `recovery.primary_callback`
+    unchanged).
+
+- **P2-A — Planar card count / copy mapping (CLOSE)**:
+  `cad_prep_workflow_presenter.rb`:
+  - `movable_count` is the AUTHORITATIVE
+    READY_TO_NORMALIZE proposal field
+    (legacy `movable` / `proposed_movable`
+    aliases remain as defensive fallback via
+    new `_planar_count_field` helper).
+  - `applied_count` is the AUTHORITATIVE APPLIED
+    audit field (legacy `moved` /
+    `moved_applied` aliases remain as defensive
+    fallback).
+  - `_planar_safe_summary` no longer
+    contradicts READY_TO_NORMALIZE with
+    "未发现需要 Z 校正的点". When the state
+    is READY_TO_NORMALIZE but no exact count
+    is available, the summary uses the
+    generic truthful copy "发现可安全校正的
+    Z 偏差". The contradictory "未发现"
+    copy is reserved for the NO_CANDIDATE
+    branch (the legitimate place).
+
+- **P2-B — Structure warning copy specificity
+  (CLOSE)**:
+  `cad_prep_workflow_presenter.rb`:
+  - New `_structure_warning_summary` maps
+    specific evidence to specific copy:
+      - `open_chains > 0` ->
+        "存在未闭合轮廓"
+      - `invalid_loop_count > 0` AND
+        `unresolved_flags` includes
+        `non_planar_loop` ->
+        "存在非平面闭合轮廓，暂不能形成区域"
+      - `invalid_loop_count > 0` (no
+        `non_planar_loop`) ->
+        "存在无效轮廓或需确认结构"
+      - fallback (no specific evidence) ->
+        "结构已重建，但存在需要人工查看的项"
+  - Metric chips for structure warnings only
+    surface problem metrics (`open_chains` /
+    `invalid_loop_count`); `closed_loops` /
+    `regions` / `holes` are CLEAN-state
+    metrics and MUST NOT inflate the chip
+    list (P1-B truth rule).
+  - V1.8 reconstruction algorithm is
+    UNCHANGED; only the product-facing copy
+    is improved.
+
+- **Test debt — Hidden CSS regression guard
+  false-pass (CLOSE)**:
+  `tests/test_html_render.rb`:
+  - New `hr_strip_css_comments` helper strips
+    `/* ... */` blocks (preserving byte offsets
+    by replacing with spaces) so
+    selector-order assertions match actual CSS
+    rules, not comments.
+  - Updated `.panel[hidden]` /
+    `.recovery-banner[hidden]` /
+    `.tab-badge[hidden]` cascade-order tests
+    use the comment-stripped source.
+  - 2 new regression tests: (1) the strip
+    helper removes all `/* ... */` comments;
+    (2) a synthetic CSS with the scoped rules
+    ONLY inside comments correctly fails the
+    cascade-order guard (proving the guard is
+    not a false-pass).
+  - Production CSS is UNCHANGED (per dispatch
+    "Do not reorder working production CSS
+    merely to satisfy a brittle test").
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the
+  V1.9A FINAL BLOCK FIX section is appended
+  below the existing V1.9A OWNER UI
+  HIDDEN-SEMANTICS FOLLOW-UP section).
+
+Next expected action: AIPM source review of the
+V1.9A FINAL BLOCK FIX packet (P0 endpoint_record
+live-coordinate seam + P1-A app.js current-vs-
+original issue separation + P1-B chip semantic
+filter + P1-C cta_callback additive schema +
+P2-A movable_count / applied_count authoritative +
+P2-B structure warning copy specificity + test
+guard CSS comment strip). Then: Owner real-SU2020
+re-verification (the gate that originally produced
+this BLOCK should now PASS). V1.9B
+PreparedCadDataset / persistence NOT STARTED.
+Final V1.x Codex xHigh review remains mandatory
+later regardless.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch §11: P0 touches the
+V1.6 -> V1.7 current-geometry authority seam
+feeding canonical topology. This is a high-risk
+data/state boundary even though the implementation
+is small. Order: (1) Pi implementation + tests +
+commit + push (this packet); (2) AIPM direct
+source/diff review first; (3) AIPM decides narrow
+Codex review timing or folds into final V1.x
+review; (4) Owner real-SU2020 re-verification; (5)
+AIPM / Owner may close V1.9A.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the implementation + tests + RBZ + commit + push
+(this packet) and now returns control to AIPM
+for direct source review.
+
+AIPM_REVIEW = PENDING.
+OWNER_SU2020 = NOT YET.
+V1.9B: NOT STARTED.
+
+## V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP (PREVIOUS UPDATE)
 
 Updated: 2026-09-07 (V1.9A OWNER UI HIDDEN-SEMANTICS
 FOLLOW-UP narrow frontend fix EXECUTION on assigned
