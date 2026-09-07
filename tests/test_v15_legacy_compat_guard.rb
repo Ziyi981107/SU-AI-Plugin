@@ -317,3 +317,102 @@ end
 # construct and never were. The prior rule was a false
 # positive. Removed; do not re-add without strong
 # version-introduction evidence.
+
+# ---- V1.9A legacy compatibility source guard ----------------------
+#
+# Per dispatch V19A-A1-LEGACY-RUBY-COMPATIBILITY-FIX-2026-09-04:
+#   AIPM narrow recheck found that the new V1.9A production
+#   presenter (cad_prep_workflow_presenter.rb) introduced
+#   Ruby APIs newer than the project's legacy-first Ruby 2.2
+#   baseline:
+#     - Integer#positive? (Ruby >= 2.3)
+#     - Array / Enumerable#sum (Ruby >= 2.4)
+#   V1.x targets SU2017+ (Ruby 2.2.4) and must not silently
+#   use these. The packet already replaced every
+#   `.positive?` / `.sum` site in the presenter with Ruby
+#   2.2-safe equivalents (`> 0` and `inject(0) { ... }`).
+#
+# This guard scopes the regression specifically to the new
+# V1.9A presenter file (per dispatch §3: "focused V1.9A legacy
+# compatibility source guard that fails if the new production
+# presenter reintroduces at least: .positive?, .negative?, .sum").
+# It does NOT scan V1.6 / V1.7 / V1.8 files: those have
+# pre-existing `.sum` usages that are explicitly out of scope
+# per dispatch §4 (Do NOT reopen V1.6 / V1.7 / V1.8 algorithms).
+# Those pre-existing usages are documented as known
+# legacy-baseline debt and will be addressed by a separate
+# packet (if/when the legacy baseline target changes).
+#
+# The guard uses the same file-walking + regex approach as the
+# existing endless-range regression test (no new framework).
+V19A_PRESENTER_LEGACY_TARGETS = [
+  {
+    id:           'integer_positive_p',
+    regex:        /\.[ ]?positive\?[ ]?/,
+    ruby_introduced: '2.3.0',
+    comment:      'Integer#positive? requires Ruby >= 2.3.0. Use `> 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+  },
+  {
+    id:           'integer_negative_p',
+    regex:        /\.[ ]?negative\?[ ]?/,
+    ruby_introduced: '2.3.0',
+    comment:      'Integer#negative? requires Ruby >= 2.3.0. Use `< 0` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+  },
+  {
+    id:           'enumerable_sum',
+    # Tight pattern: `.sum` as a method invocation. Matches
+    # `arr.sum`, `arr.map { ... }.sum`, `(expr).sum`. Does
+    # NOT match `foo_summary`, `consumed`, or
+    # `edge_length_sum:` keyword symbols (the `:` is required
+    # to bound the match against identifier-shaped names).
+    # A safe match boundary: lookbehind for `.` and the
+    # identifier is `sum` followed by NOT an identifier char.
+    regex:        /\.[ ]?sum(?![A-Za-z0-9_=!?])/,
+    ruby_introduced: '2.4.0',
+    comment:      'Array#sum / Enumerable#sum requires Ruby >= 2.4.0. Use `inject(0) { |acc, x| acc + x }` for SU2017 (Ruby 2.2.4) / SU2020 (Ruby 2.5.5) compat.'
+  }
+].freeze
+
+V19A_PRESENTER_PRODUCTION_FILES = [
+  File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__)
+].freeze
+
+def v19a_legacy_compat_findings
+  findings = []
+  V19A_PRESENTER_PRODUCTION_FILES.each do |f|
+    next unless File.file?(f)
+    text = File.binread(f).force_encoding(Encoding::UTF_8)
+    V19A_PRESENTER_LEGACY_TARGETS.each do |spec|
+      text.each_line.with_index(1) do |line, n|
+        line_to_check = line.sub(/\r?\n\z/, '')
+        stripped = line_to_check.lstrip
+        next if stripped.start_with?('#')
+        m = line_to_check.match(spec[:regex])
+        next unless m
+        findings << {
+          file:       f,
+          line_no:    n,
+          line:       line_to_check,
+          id:         spec[:id],
+          ruby_introduced: spec[:ruby_introduced],
+          match_text: m.to_s,
+          comment:    spec[:comment]
+        }
+      end
+    end
+  end
+  findings
+end
+
+test 'LEGACY-COMPAT V19A-A1: no .positive? / .negative? / .sum in V1.9A presenter (Ruby 2.2 baseline)' do
+  findings = v19a_legacy_compat_findings
+  if findings.any?
+    base = File.expand_path('..', __dir__)
+    msg = "V1.9A presenter reintroduced post-Ruby-2.2 helper(s) (SU2017 Ruby 2.2.4 / SU2020 Ruby 2.5.5 may fail at runtime):\n" +
+          findings.map do |f|
+            rel = f[:file].sub(base, '').sub(/^\//, '')
+            "  #{rel}:#{f[:line_no]}  [#{f[:id]}]  match=#{f[:match_text].inspect}  (Ruby >= #{f[:ruby_introduced]})  -- #{f[:comment]}"
+          end.join("\n")
+    assert false, msg
+  end
+end

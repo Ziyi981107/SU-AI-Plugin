@@ -397,9 +397,15 @@ module SUAnalysis
                                             %w[BLOCKED FAILED].include?(c['state']) }
         has_review       = cards.any? { |c| c['state'] == 'REVIEW_REQUIRED' }
         has_actionable   = cards.any? { |c| c['state'] == 'ACTIONABLE' }
+        # Ruby 2.2 compatibility: Integer#positive? and
+        # Array#sum were added in Ruby 2.3 / 2.4 respectively.
+        # Use explicit `> 0` and inject-based reduction so the
+        # presenter stays parseable on the project's legacy
+        # baseline (SU2017 Ruby 2.2.4 / SU2020 Ruby 2.5.5).
+        chip_total = chips.inject(0) { |acc, c| acc + c['value'].to_i }
         headline =
-          if chips.length.positive?
-            "发现 #{chips.length} 类 · #{chips.map { |c| c['value'].to_i }.sum} 项问题"
+          if chips.length > 0
+            "发现 #{chips.length} 类 · #{chip_total} 项问题"
           elsif stage_uncomputed
             '仍有未检查项'
           elsif stage_blocked
@@ -479,7 +485,7 @@ module SUAnalysis
         #   - stage-bound BLOCKED / FAILED =>
         #                      configuration / host issue
         actionable_count = cards.count { |c| c['state'] == 'ACTIONABLE' }
-        if actionable_count.positive?
+        if actionable_count > 0
           return ['发现需要处理的问题', nil]
         end
         stage_bound_ids = %w[duplicate_cleanup planar_normalization
@@ -564,10 +570,10 @@ module SUAnalysis
           before  = summary['duplicate_pairs_before']
           after   = summary['duplicate_pairs_after']
           metrics = []
-          if applied.positive?
+          if applied > 0
             metrics << { 'value' => applied, 'label' => '已处理' }
           end
-          if skipped.positive?
+          if skipped > 0
             metrics << { 'value' => skipped, 'label' => '跳过' }
           end
           # Surface the pre / post pair counts only when they
@@ -575,17 +581,17 @@ module SUAnalysis
           if before.is_a?(Integer) && after.is_a?(Integer)
             metrics << { 'value' => [before - after, 0].max, 'label' => '已合并重复对' }
           end
-          state_label = if applied.positive?
+          state_label = if applied > 0
                           "已自动处理 #{applied} 条"
                         else
                           '无重复线'
                         end
           return {
             'id'               => 'duplicate_cleanup',
-            'state'            => applied.positive? ? 'APPLIED' : 'CLEAN',
+            'state'            => applied > 0 ? 'APPLIED' : 'CLEAN',
             'state_label'      => state_label,
             'title'            => CARD_TITLES_CN['duplicate_cleanup'],
-            'summary'          => applied.positive? ? '高置信度自动修复已应用于工作副本' : '未检测到需要清理的重复线',
+            'summary'          => applied > 0 ? '高置信度自动修复已应用于工作副本' : '未检测到需要清理的重复线',
             'metrics'          => metrics,
             'primary_action'   => nil,
             'secondary_action' => nil,
@@ -719,8 +725,8 @@ module SUAnalysis
 
       def _planar_safe_summary(movable, outliers)
         parts = []
-        parts << "发现 #{movable} 个可安全校正点" if movable.is_a?(Integer) && movable.positive?
-        parts << "另有 #{outliers} 个异常点不会自动校正" if outliers.is_a?(Integer) && outliers.positive?
+        parts << "发现 #{movable} 个可安全校正点" if movable.is_a?(Integer) && movable > 0
+        parts << "另有 #{outliers} 个异常点不会自动校正" if outliers.is_a?(Integer) && outliers > 0
         return '未发现需要 Z 校正的点' if parts.empty?
         parts.join('，')
       end
@@ -942,7 +948,7 @@ module SUAnalysis
         keys.each do |k|
           v = metrics[k.to_s]
           v = metrics[k] if v.nil?
-          next unless v.is_a?(Integer) && v.positive?
+          next unless v.is_a?(Integer) && v > 0
           out << { 'value' => v, 'label' => _structure_label_for(k) }
         end
         out
@@ -1000,7 +1006,7 @@ module SUAnalysis
         issues.each do |type, count|
           next if exclude.include?(type.to_s)
           n = count.to_i
-          secondary[type.to_s] = n if n.positive?
+          secondary[type.to_s] = n if n > 0
         end
         if secondary.empty?
           return _card_skeleton('other', 'CLEAN',
