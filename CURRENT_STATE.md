@@ -65,7 +65,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
   size **1,159,502 bytes** (+21,178 vs HIDDEN-
   SEMANTICS FOLLOW-UP 1,138,324); entries **73**
   (unchanged); SHA-256
-  **`c9f8b745262718886612d169011ba5313bb729047e7304d5e00bbb25b6fe1e3c`**.
+  **`06a54af0b11264b43c3f4af8a024d989ec75ff563222a2f72d190c25d48f3de1`**.
 - Packaged file SHAs (vs the previous
   HIDDEN-SEMANTICS FOLLOW-UP packet):
   - `su_ai_plugin/core/endpoint_record.rb` SHA-256:
