@@ -1,174 +1,172 @@
-# CURRENT PI DISPATCH — V1.9A FINAL BLOCK FIX
+# CURRENT PI DISPATCH — HOLD / CODEX REVIEW PENDING
 
 Project: SU-AI-Plugin
-Stage: V1.9A — Product UX + Diagnostics Orchestration
-Packet: FINAL BLOCK FIX — Current Geometry + Current Issue Semantics
-Date: 2026-09-07
+Stage: V1.9A — Final Block Fix Source Review
+Date: 2026-09-08
 Authority: ChatGPT / AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 TARGET_BRANCH: `dev/v1.9`
-STARTING_BASELINE: `d4c4bc06e590dc4c4825fdbe20f07c2b1bc4db80`
-STATUS: ACTIVE
+AIPM_REVIEW: FIX REQUIRED
+PI_IMPLEMENTATION: HOLD
+CODEX_REVIEW: REQUIRED — NARROW P0 BOUNDARY
 V1.9B: NOT AUTHORIZED / NOT STARTED
 
-Primary technical guidance:
+Current reviewed HEAD before AIPM review-doc commits:
+
+`23a6dc51288e22e536760b045479632bc2561d4c`
+
+Codex review packet:
+
+`Prompt/CODEX_V1_9A_P0_CURRENT_GEOMETRY_SHARED_VERTEX_REVIEW_2026-09-08.md`
+
+Prior implementation guidance remains historical authority for intended outcomes:
 
 `Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md`
 
-Also authoritative for unchanged stage boundaries:
+---
 
-`Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`
+## 0. STATUS
 
-Relevant frozen upstream contracts:
+STOP implementation.
 
-- `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`
-- `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_7_GAP_TOPOLOGY_2026-09-01.md`
-- `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_8_LOOP_REGION_2026-09-02.md`
+Pi MUST NOT continue changing production code until AIPM receives the narrow Codex review and issues a new ACTIVE implementation dispatch.
+
+Reason: AIPM direct source review found that the submitted P0 live-coordinate fix does not follow the actual GROUP -> endpoint VERTEX host-handle contract, and source inspection exposed a second-order V1.6 shared-logical-vertex / multiple-physical-vertex mutation risk.
+
+This is a high-risk deterministic geometry / host-ownership boundary. Per project governance it requires narrow Codex review before further Pi implementation.
 
 ---
 
-## 0. Owner Gate status
+## 1. AIPM SOURCE REVIEW — CONFIRMED BLOCKS
 
-Already PASS in real SketchUp 2020:
+### BLOCK P0-A — wrong handle passed to `vertex_position`
 
-- A3 native Toolbar;
-- no-selection prompt;
-- production V1.9A UI;
-- four tabs;
-- hidden-semantics fixes for panel / recovery banner / issue badge;
-- one-click A2 diagnostics;
-- combined Z + Gap detection;
-- Gap repair disabled while Z is ACTIONABLE;
-- Apply Z automatically recomputes/unlocks Gap;
-- Apply Gap automatically recomputes Structure;
-- repaired canonical topology reaches `open_chain_count=0`, `closed_loop_count=1`.
+Current `DerivedTopologySnapshotBuilder.build` uses:
 
-V1.9A remains BLOCKED only by the issues in the referenced Final Block Fix guidance.
+```ruby
+host_handle = workspace.handle_for(edid)
+```
 
-Do NOT rerun or redesign already-passed host-state / hidden-semantics work.
+for both start/end live-coordinate reads.
 
----
+That handle is the derived GROUP / edge-level wrapper. `adapter.vertex_position` expects an endpoint Vertex handle.
 
-## 1. Goal
+The actual endpoint handles are already resolved through:
 
-Implement the COMPLETE narrow final V1.9A block-fix packet in:
+```text
+adapter.edge_endpoints(group_handle)
+-> endpoint_key => host_vertex_handle map
+-> build(... vertex_keys_by_edge: host_vertex_map)
+```
 
-`Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md`
+The correction must use the endpoint-key Vertex handle for each endpoint. Keep the group handle only for group/edge-level adapter operations such as curve/face safety and host provenance.
 
-The required outcomes are:
+### BLOCK P0-B — nil live read incorrectly falls back
 
-1. V1.7 current topology snapshot consumes LIVE post-V1.6 derived vertex coordinates, not stale build-time geometry summaries.
-2. Real/production-equivalent Z + Gap chain yields a valid closed loop + Region after both repairs.
-3. Current Issues and red badge no longer show historical source-registry rows as if they were current unresolved problems.
-4. Original source findings remain available under Details / original source evidence.
-5. Normal `重新检测` dispatches `refresh_cad_prep`, never silent workspace rebuild.
-6. Planar card uses authoritative `movable_count` / `applied_count` fields and never contradicts an ACTIONABLE/APPLIED state.
-7. Structure warning copy uses specific current evidence where available.
-8. Hidden CSS regression guard cannot pass from selector text found only inside comments.
+If a live endpoint handle exists and adapter exposes `vertex_position`, then `nil` is unreadable live authority and must fail closed with stable reason `live_vertex_position_unreadable`.
 
-Complete the whole packet before formal submission.
+Cached geometry fallback is allowed only when there is genuinely no live endpoint authority.
 
----
+### BLOCK P0-C — submitted P0 tests do not model the real handle contract
 
-## 2. Hard implementation boundary
+Current new P0 tests were not executed because the local Ruby runtime failed. AIPM source review found concrete fixture errors:
 
-Follow the detailed allowed/forbidden file and architecture boundaries in the referenced guidance.
+- `adapter.created_handles` contains FakeGroup handles, not the FakeEdge the test searches for;
+- some tests call `adapter.handle_for`, but `handle_for` is a workspace method;
+- one test explicitly expects `vertex_position == nil` to fall back despite a live handle, contradicting the frozen fail-closed contract;
+- the so-called Owner fixture is only a topology-snapshot assertion, not the required full Z + Gap -> Structure -> Region integration regression.
 
-Key prohibitions:
-
-- no Source CAD mutation;
-- no tolerance widening;
-- no change to V1.6 normalization math;
-- no change to V1.7 gap-pairing / canonical-node semantics;
-- no change to V1.8 reconstruction/containment algorithm;
-- no physical cross-group welding requirement;
-- no Face generation;
-- no Observer architecture;
-- no Undo/host-state redesign;
-- no Toolbar/loader changes unless a direct regression is proven;
-- no MCP / LLM / Agent;
-- no V1.9B / PreparedCadDataset.
-
-For P0 specifically, do NOT hide the stale-coordinate bug by widening `coordinate_epsilon` or accepting the old 0.2 mm Z value.
-
-If implementation requires changing production files outside the allowlist in the guidance, STOP and report before proceeding.
+Do not repair these tests until AIPM re-dispatches after Codex review.
 
 ---
 
-## 3. Test obligation
+## 2. HIGH-RISK SECOND-ORDER FINDING — CODEX REVIEW REQUIRED
 
-Implement every focused regression defined in the Final Block Fix guidance, including:
+AIPM source inspection shows:
 
-- live-coordinate-over-cached-coordinate topology snapshot;
-- unreadable live coordinate fail-closed behavior;
-- combined Z + Gap -> Closed Loop + Region integration;
-- current-vs-original issue separation;
-- issue badge semantics;
-- issue-chip semantics;
-- `重新检测` -> `refresh_cad_prep` + workspace identity preservation;
-- Planar `movable_count` / `applied_count` presenter mapping;
-- structure warning copy specificity;
-- hidden CSS comment false-pass regression.
+- derived edges are independently owned and may have separate physical endpoint Vertex handles for the same logical CAD coordinate;
+- `PlanarNormalizationProposer` dedupes logical positions by coordinate, which is appropriate for analysis;
+- but the candidate record currently retains only ONE physical `vertex_handle` for the first occurrence of a logical coordinate;
+- later occurrences append `derived_id` but not their physical endpoint handles;
+- executor mutates only `proposal[:unique_vertex_handles]`;
+- production adapter documents that a single `Entities#transform_by_vectors` call expects vertices sharing one `Sketchup::Entities` collection.
 
-Then run the existing focused and full regression suites listed in the guidance.
+Therefore correcting V1.7 to read true live coordinates may expose that V1.6 only normalized one physical copy of a shared logical vertex.
 
-Known pre-existing failures must be reported separately. Do not call the aggregate suite PASS if failures/errors remain.
+Pi is NOT authorized to redesign V1.6 under the current packet.
 
----
+Codex must review the proposed correction in:
 
-## 4. RBZ
-
-This task changes production behavior/UI, so rebuild:
-
-`D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
-
-Report:
-
-- path;
-- bytes;
-- entry count;
-- SHA-256;
-- relevant packaged production file hashes when practical.
-
-This remains a V1.9A Owner re-verification candidate, not a final V1.x release.
+`Prompt/CODEX_V1_9A_P0_CURRENT_GEOMETRY_SHARED_VERTEX_REVIEW_2026-09-08.md`
 
 ---
 
-## 5. CODEX
+## 3. NARROW NON-P0 MISSES TO PRESERVE FOR THE NEXT DISPATCH
 
-`CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION, NARROW)` because P0 touches the V1.6 -> V1.7 current-geometry authority seam feeding canonical topology.
+Do not implement yet; these will be included after Codex review.
 
-Pi MUST NOT invoke Codex.
+### P2-B — structure warning reads wrong V1.8 snapshot paths
 
-Order is:
+Real V1.8 metrics use keys including:
 
-1. Pi implementation/tests/build/commit/push;
-2. AIPM direct source/diff review;
-3. AIPM decides narrow Codex review timing;
-4. Owner SU2020 re-verification;
-5. only AIPM/Owner may close V1.9A.
+- `open_chain_count`
+- `closed_loop_count`
+- `region_count`
+- `hole_count`
+- `invalid_loop_count`
+
+and per-loop flags live inside `closed_loops[].unresolved_flags`.
+
+Current presenter looks for `open_chains` and top-level/metrics-level `unresolved_flags`, so specific warning copy can miss real evidence.
+
+Next correction must read the actual frozen V1.8 shape, using compatibility aliases only as fallback. Do not change V1.8.
+
+### P1-C — FAILED issue-summary CTA
+
+Current FAILED issue_summary emits:
+
+```text
+cta = 重新检测
+cta_callback = refresh_cad_prep
+```
+
+The final-fix contract requires FAILED/STALE to rely on explicit recovery actions rather than a normal issue-summary CTA.
+
+Next correction: FAILED issue_summary should have no normal CTA; existing recovery banner remains authoritative.
 
 ---
 
-## 6. Required return
+## 4. SOURCE-REVIEW PASS ITEMS — FREEZE
 
-Update:
+Do NOT reopen without concrete evidence:
 
-- `CURRENT_STATE.md`
-- `Review/CURRENT_PI_REPORT.md`
+- Current Issues primary list no longer appends raw `payload.groups`.
+- Red issue badge no longer counts historical source-registry rows.
+- Original/source inspection evidence remains under Details / 原始检查记录.
+- Healthy ready-state `重新检测` routes to `refresh_cad_prep`, not rebuild.
+- Planar presenter uses authoritative `movable_count` / `applied_count` with legacy fallback.
+- READY_TO_NORMALIZE no longer says `未发现需要 Z 校正的点`.
+- Hidden CSS production rules remain unchanged; CSS source guard now strips comments.
 
-Return exactly the evidence required by section 12 of:
+---
 
-`Prompt/AIPM_V1_9A_FINAL_BLOCK_FIX_2026-09-07.md`
+## 5. PI ACTION NOW
 
-Then:
+NONE.
 
-- create final stable commit;
-- push only `origin/dev/v1.9`;
-- `AIPM_REVIEW = PENDING`;
-- `OWNER_SU2020 = NOT YET`;
-- `V1.9B = NOT STARTED`;
-- STOP and return control to AIPM.
+Pi must STOP and wait.
+
+Do not:
+- edit production source;
+- edit tests to accommodate the current incorrect implementation;
+- change V1.6 / V1.7 / V1.8 algorithms;
+- widen tolerance;
+- change source/derived ownership;
+- modify Undo / host-state behavior;
+- begin V1.9B;
+- invoke Codex.
+
+AIPM will issue the next ACTIVE dispatch after the Codex review is returned.
 
 END
