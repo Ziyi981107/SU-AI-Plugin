@@ -1,206 +1,155 @@
-# AIPM V1.8 NARROW RECHECK — FINAL RESIDUALS
+# CURRENT AIPM REVIEW — V1.9A P0 SHARED-VERTEX CORRECTION
 
-PROJECT: SU-AI-Plugin
-STAGE: V1.8
-DATE: 2026-09-03
-REVIEWED_HEAD: ab3e0c8a573052598ebba6fa0b483341408a660f
-PRIOR_PACKET: V18-AIPM-SOURCE-REVIEW-CORRECTION-2026-09-02
-REVIEWER: AIPM
+Project: SU-AI-Plugin
+Stage: V1.9A — Final Block Fix
+Date: 2026-09-08
+Reviewer: ChatGPT / AIPM
+Final Product Owner: Owner
+Reviewed implementation: `dev/v1.9` P0 shared-vertex correction (`d72c188e1b3e32d3109ee504aea4166025c86ca2` production merge; later docs-only commits do not change reviewed production files)
+Prior authority:
+- `Prompt/AIPM_V1_9A_P0_SHARED_VERTEX_IMPLEMENTATION_AMENDMENT_2026-09-08.md`
+- `Prompt/CODEX_V1_9A_P0_CURRENT_GEOMETRY_SHARED_VERTEX_REVIEW_2026-09-08.md`
 
-VERDICT: BLOCK — FOUR FINAL RESIDUALS ONLY
-CODEX_RISK_TRIGGER: NO
+VERDICT: **FIX REQUIRED — NARROW RESIDUALS ONLY**
+CODEX_RISK_TRIGGER: **YES, but defer recheck until these residuals are fixed**
+OWNER_SU2020: **NOT YET**
+V1.9B: **NOT STARTED**
 
 ## Owner Summary
 
-The bounded correction packet substantially succeeded.
+The main shared-vertex direction is now substantially correct:
 
-PASS:
-- SR18-01 Ruby 2.2 `.sum` correction
-- SR18-03 conservative non-adjacent segment conflict detection
-- SR18-05 V1.8 cache invalidation
-- SR18-06 truthful READY_WITH_WARNINGS state
+- V1.7 no longer uses the derived Group as endpoint coordinate authority;
+- logical vertex dedupe now retains identity-distinct physical endpoint Vertex occurrences;
+- one logical move fans out to multiple physical Vertices;
+- executor uses one outer operation + one single-Vertex primitive per physical occurrence;
+- logical vs physical count domains are separated.
 
-PARTIAL / residual correction required:
-- SR18-02 coordinate_epsilon exact authority
-- SR18-04 O(V+E) traversal implementation
-- SR18-07 true deep immutability
-- SR18-08 complete adjacency contract validation
+However, direct source review found residual contract gaps that still block the Owner SU2020 re-test. These are narrow and do not require redesign.
 
-This is NOT another broad V1.8 review.
-Fix exactly the four residuals below and stop.
+Authoritative correction guidance:
+
+`Prompt/AIPM_V1_9A_P0_NARROW_RECHECK_FIX_2026-09-08.md`
 
 ---
 
-## FR18-01 — SR18-02 RESIDUAL — exact coordinate_epsilon authority
+## BLOCK AIPM-P0-R1 — executor preflight does not validate live positions before mutation
 
-Current `_resolve_coordinate_eps` has two contract violations:
+Current executor reads `pre_positions`, but opens the operation without first proving every physical position is readable, exactly 3-number, finite, and consistent with the target.
 
-1. A valid explicit `coordinate_epsilon: 1.0e-6` is NOT treated as authoritative because the code only immediately returns the keyword when `kw != 1.0e-6`.
+This violates amendment §4.1.
 
-2. When per-node epsilon values disagree, the code chooses a deterministic median.
-
-Frozen correction authority required:
-- ANY explicit finite positive keyword value wins verbatim, including exactly `1.0e-6`;
-- when no explicit value exists, per-node epsilon may be used ONLY when all relevant node values are finite, positive, and consistent;
-- inconsistent per-node epsilon is not an authority and must fail conservatively instead of selecting median/min/max/first;
-- no silent product-tolerance invention.
-
-Preferred behavior for inconsistent node epsilon:
-return FAILED V1.8 result with a stable reason such as:
-`invalid_graph:coordinate_epsilon_mismatch`
-
-Do not change V1.7 Tolerance or CanonicalGeometryGraph schema.
-
-Required regression:
-A. explicit 1e-6 + conflicting node eps -> explicit 1e-6 wins.
-B. no explicit eps + conflicting node eps -> FAILED stable mismatch reason.
-C. no explicit eps + consistent node eps -> uses that exact value.
+Required: validate every physical occurrence BEFORE `begin_operation`, including target/vector numeric-finite shape and `abs((pre_z + vector_z) - target_z) <= coordinate_epsilon`.
 
 ---
 
-## FR18-02 — SR18-04 RESIDUAL — traversal still contains O(V) membership checks per step
+## BLOCK AIPM-P0-R2 — postvalidation host-read exception can escape while operation is open
 
-The new edge index is directionally correct, but primary traversal still calls Array#include? repeatedly:
+Current postvalidation maps `adapter.vertex_position(handle)` outside a rescue boundary.
 
-- degree computation checks `comp.include?(other)`;
-- chain traversal checks `comp.include?(other)`;
-- loop-neighbor traversal checks `comp.include?(n)` on every step.
+If one post-read raises after mutation, the exception may escape before `end_operation(commit: false)`, violating the atomicity contract.
 
-Therefore a long simple chain/loop can still degrade toward O(V^2).
-
-There is also a new process-global `comp_set` cache keyed by `arr.object_id`.
-That cache:
-- is unnecessary;
-- grows across reconstructions;
-- can be unsafe if object IDs are eventually reused after GC.
-
-Required correction:
-- create ONE local `Set.new(comp)` per component classification/traversal context;
-- pass/reuse that Set through degree computation, edge collection, chain walk, loop walk;
-- remove process-global object_id-based component-set cache;
-- no Array#include? on `comp` inside repeated edge/traversal loops;
-- keep deterministic ID/order behavior unchanged.
-
-Also make primary rebuilt adjacency construction linear:
-avoid repeated `array.include?` insertion scans where practical; use local Set/hash accumulation then publish sorted Arrays.
-
-Required regression/source guard:
-- no repeated production `comp.include?` in traversal methods;
-- no `@_comp_set_cache` / object_id membership cache;
-- large chain/loop smoke must remain comfortably bounded.
-
-No geometry algorithm redesign.
+Required: nil/malformed/non-finite/raised post-read must all abort the single outer operation once, publish FAILED, and publish zero committed success.
 
 ---
 
-## FR18-03 — SR18-07 RESIDUAL — Strings are still mutable
+## BLOCK AIPM-P0-R3 — endpoint fallback is stricter than the frozen guidance
 
-Current `deep_freeze` recursively freezes Hashes and Arrays but its scalar branch does nothing.
+Frozen amendment §6.2 allows cached fallback when there is no usable live-read capability, including an adapter that genuinely lacks `vertex_position`.
 
-Ruby String is mutable.
+Current helper raises when a per-endpoint handle exists but the adapter lacks that method.
 
-Therefore public fields such as:
-- loop_id
-- chain_id
-- region_id
-- canonical_graph_digest
-- source_snapshot_id
-- workspace_id
-- reason strings
-- source_occurrence_id strings
-can still be modified in-place after the result digest has been computed.
+Required: no adapter / no endpoint handle / no live-read capability => cached fallback. Endpoint handle + live-read capability + unreadable result => fail closed.
 
-This violates the Blueprint's deeply immutable published-result contract.
-
-Required correction:
-- recursively freeze Hash keys AND values;
-- recursively freeze Array members;
-- freeze String scalar values;
-- JSON primitive numerics/true/false/nil are already effectively immutable but may safely receive `.freeze`;
-- do not mutate/rewrite the digest after publication.
-
-Required regression:
-attempt all of:
-- `result['digest'] << 'x'`
-- `result['loops'].first['loop_id'] << 'x'`
-- `result['loops'].first['source_occurrence_ids'].first << 'x'`
-Each must raise / be impossible and digest/payload remain unchanged.
+Also require exactly 3 values; do not accept a 4-element position Array as valid.
 
 ---
 
-## FR18-04 — SR18-08 RESIDUAL — omitted adjacency keys can pass validation
+## BLOCK AIPM-P0-R4 — presenter still reads non-production V1.8 keys
 
-Current adjacency validation:
-- detects unknown provided keys;
-- compares given vs expected neighbors only while iterating keys actually present in `adj_h`.
+AIPM rechecked `CanonicalStructureReconstructor` directly. Production V1.8 publishes:
 
-If an edge-backed canonical node's adjacency key is omitted entirely, the method does not necessarily compare that missing key against expected neighbors.
+- `result['loops']`
+- `metrics['open_chain_count']`
+- `metrics['closed_loop_count']`
+- `metrics['region_count']`
+- `metrics['hole_count']`
+- `metrics['invalid_loop_count']`
 
-Required correction:
-- normalize expected adjacency for ALL canonical node IDs;
-- normalize supplied adjacency for ALL canonical node IDs;
-- every canonical node must be represented logically (missing key = empty list);
-- compare expected vs supplied for every known node;
-- an omitted edge-backed node key must report `missing_neighbor` / adjacency mismatch;
-- unknown keys/neighbors and extra neighbors remain failures;
-- adjacency values must be Arrays (do not silently coerce an arbitrary scalar into a valid adjacency list).
+Current presenter still uses `sr['closed_loops']` for loop flags and READY metric keys `closed_loops` / `regions`.
 
-Required regressions:
-A. remove an entire edge-backed adjacency key -> FAILED.
-B. scalar/non-Array adjacency value -> FAILED.
-C. isolated known node with an explicit or normalized empty adjacency remains valid if the graph otherwise supports isolated-node policy.
+Required:
+- preferred loop flag path = `loops[].unresolved_flags`;
+- READY metrics = `closed_loop_count`, `region_count`, optional `hole_count`;
+- legacy aliases may remain fallback only.
 
-Do not modify V1.7 CanonicalGeometryGraph.
+Do not modify V1.8.
 
 ---
 
-## Already PASS — DO NOT REWORK
+## BLOCK AIPM-P0-R5 — current E2E test is not the frozen orchestrated Owner-equivalent flow
 
-SR18-01:
-PASS. `.sum` production incompatibility removed.
+The current test manually calls WorkingModeRunner compute/apply steps.
 
-SR18-03:
-PASS. Existing V1.7 SegmentConflict is reused without semantic changes.
+It does not prove in one fixture:
 
-SR18-05:
-PASS. Cache invalidation seam is present on the required mutation/failure paths.
+- orchestrator start;
+- Gap disabled while Planar actionable;
+- Planar apply auto-recomputes/unlocks Gap;
+- BOTH identity-distinct physical B Vertices reach target Z;
+- Gap apply auto-recomputes Structure without manual structure compute.
 
-SR18-06:
-PASS. Warning-bearing result publishes READY_WITH_WARNINGS.
-
-Do NOT reopen these areas except mechanical test compatibility.
+Required: exercise `CadPrepWorkflowOrchestrator.start`, `apply_planar_and_refresh`, `apply_gap_and_refresh` and assert presenter lock/unlock states plus final 0/1/0/1 structure metrics.
 
 ---
 
-## Final Regression
+## BLOCK AIPM-P0-R6 — completion evidence incomplete: no fresh RBZ and no true full suite
 
-Run fresh:
-- final residual focused tests;
-- all V1.8 tests;
-- V1.7 suite;
-- V1.6 close-autodiscard;
-- V1.5 BLOCK-005;
-- LEGACY-COMPAT;
-- full Ruby;
-- Node DOM;
-- RBZ smoke;
-- git diff --check.
+Pi restored a working vendored Ruby, which is good. But the packet used a custom synthetic runner excluding RBZ-dependent tests and did not rebuild the RBZ.
 
-Rebuild RBZ.
+The current `dist/SU-AI-Plugin.rbz` is explicitly reported stale/corrupted and must NOT be used for Owner testing.
 
-Report exact counts + final RBZ identity.
+Required after R1–R5:
+
+- rebuild RBZ from reviewed source;
+- run normal full Ruby suite;
+- run RBZ smoke against rebuilt artifact;
+- run P0 + V1.6/V1.7/V1.8 + presenter/DOM regressions;
+- report exact Ruby path/version, counts, RBZ bytes/entries/SHA-256;
+- clean diff.
 
 ---
 
-## Gate
+## PASS / PRESERVE
 
-AIPM_REVIEW: BLOCK — FINAL FOUR RESIDUALS
-CODEX: NOT REQUIRED
-OWNER_SU2020: NOT YET
-V1.9: NOT STARTED
+Do not reopen these parts unless a new direct regression proves it:
 
-After Pi:
-AIPM checks ONLY FR18-01..04.
-If PASS, proceed directly to Owner SU2020 A-D.
+- Group -> endpoint Vertex live-read authority direction;
+- physical occurrence identity dedupe in proposer;
+- one single-Vertex primitive per occurrence;
+- logical/physical count split;
+- V1.5 duplicate algorithm;
+- V1.6 analysis math / tolerance authority;
+- V1.7 pairing / canonical clustering;
+- V1.8 reconstruction algorithm;
+- current Issues / badge / healthy refresh behavior;
+- toolbar / UI tab fixes;
+- Source CAD immutability;
+- Undo / host-state architecture;
+- V1.9B.
+
+---
+
+## NEXT
+
+Pi executes only the new narrow correction dispatch.
+
+After Pi returns:
+
+1. AIPM direct source recheck;
+2. narrow Codex xHigh recheck on the shared-vertex / transaction boundary;
+3. fresh RBZ confirmation;
+4. Owner SU2020 same Z + Gap fixture;
+5. only then V1.9A closure decision.
 
 END
