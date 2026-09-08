@@ -101,35 +101,69 @@ module SUAnalysis
                               reason: 'proposal_missing_handles',
                               proposal_hash: proposal_hash)
         end
-        target_z = proposal[:target_z].to_f
-        unless target_z.respond_to?(:finite?) ? target_z.finite? : (target_z.is_a?(Numeric) && !target_z.nan? && !target_z.infinite?)
+        # BLOCK-P0-04 (AIPM source review):
+        # Validate target_z as Numeric + finite FIRST. Do NOT
+        # call .to_f first to disguise malformed input (e.g.
+        # nil, "1.5", Float::NAN would all become 0.0 under
+        # .to_f and pass the naive finite? check).
+        raw_target_z = proposal[:target_z]
+        unless raw_target_z.is_a?(Numeric) &&
+               (raw_target_z.respond_to?(:finite?) ? raw_target_z.finite? :
+                (!raw_target_z.nan? && !raw_target_z.infinite?))
           return _fail_result(workspace: workspace,
-                              reason: 'non_finite_target_z',
+                              reason: 'preflight_target_z_not_numeric_or_nonfinite',
                               proposal_hash: proposal_hash)
         end
-        # ---- Preflight: handle liveness ----
+        target_z = raw_target_z
+        # ---- Preflight: every physical live position + vector ----
         #
-        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §4.1):
-        # preflight EVERY physical occurrence before opening
-        # the operation. A failure here aborts BEFORE any
-        # mutation; we never publish a partial logical
-        # success.
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §4.1 +
+        # BLOCK-P0-04 AIPM source review): preflight EVERY
+        # physical occurrence's LIVE position AND vector AND
+        # handle identity BEFORE opening any SketchUp
+        # operation. A failure here aborts BEFORE
+        # begin_operation; we never publish a partial logical
+        # success, and the host sees ZERO begin_operation
+        # calls + ZERO transform_vertices_by_vectors calls.
         handles = proposal[:unique_vertex_handles]
         vectors = proposal[:vectors]
         unless vectors.is_a?(Array) && vectors.length == handles.length
           return _fail_result(workspace: workspace,
-                              reason: 'vector_length_mismatch',
+                              reason: 'preflight_vector_length_mismatch',
                               proposal_hash: proposal_hash)
         end
-        # Preflight: handle presence, identity-uniqueness,
-        # vector shape + Z-only + finite, target_z finite.
+        # The adapter MUST expose the vertex_position seam.
+        # Without it we cannot read the live current Z; any
+        # mutation here would be a guess against the cached
+        # pre-V1.6 coordinate, which the amendment forbids.
+        unless adapter.respond_to?(:vertex_position)
+          return _fail_result(workspace: workspace,
+                              reason: 'preflight_no_vertex_position_seam',
+                              proposal_hash: proposal_hash)
+        end
+        # Per-occurrence preflight: handle presence +
+        # identity-uniqueness + vector shape + Z-only +
+        # Numeric-Z + finite-Z + live vertex_position success
+        # + Array-of-3-Numeric + finite-XYZ + consistency
+        # with the logical move target within
+        # coordinate_epsilon.
+        eps = tolerance.coordinate_epsilon
+        unless eps.is_a?(Numeric) &&
+               (eps.respond_to?(:finite?) ? eps.finite? : (!eps.nan? && !eps.infinite?))
+          return _fail_result(workspace: workspace,
+                              reason: 'preflight_epsilon_invalid',
+                              proposal_hash: proposal_hash)
+        end
         seen_handle_ids = {}
+        pre_positions = []
         handles.each_with_index do |h, i|
+          # 1. Handle presence.
           if h.nil?
             return _fail_result(workspace: workspace,
                                 reason: "preflight_nil_handle:#{i}",
                                 proposal_hash: proposal_hash)
           end
+          # 2. Handle identity uniqueness.
           id = h.object_id
           if seen_handle_ids.key?(id)
             return _fail_result(workspace: workspace,
@@ -137,27 +171,102 @@ module SUAnalysis
                                 proposal_hash: proposal_hash)
           end
           seen_handle_ids[id] = true
+          # 3. Vector shape (Array length 3).
           vec = vectors[i]
           unless vec.is_a?(Array) && vec.length == 3
             return _fail_result(workspace: workspace,
-                                reason: "vector_malformed:#{i}",
+                                reason: "preflight_vector_malformed:#{i}",
                                 proposal_hash: proposal_hash)
           end
-          if vec[0] != 0.0 || vec[1] != 0.0
+          # 4. Vector X / Y must be Numeric + numeric zero
+          #    (NOT vec[0].to_f == 0 — that would let nil /
+          #    "1.5" / Float::NAN sneak through).
+          unless vec[0].is_a?(Numeric) && vec[0] == 0
             return _fail_result(workspace: workspace,
-                                reason: "vector_not_z_only:#{i}",
+                                reason: "preflight_vector_x_not_numeric_zero:#{i}",
                                 proposal_hash: proposal_hash)
           end
-          dz = vec[2].to_f
-          unless (dz.respond_to?(:finite?) ? dz.finite? : (dz.is_a?(Numeric) && !dz.nan? && !dz.infinite?))
+          unless vec[1].is_a?(Numeric) && vec[1] == 0
             return _fail_result(workspace: workspace,
-                                reason: "vector_nonfinite:#{i}",
+                                reason: "preflight_vector_y_not_numeric_zero:#{i}",
                                 proposal_hash: proposal_hash)
           end
-        end
-        # Capture pre-mutation positions for post-validation.
-        pre_positions = handles.map do |h|
-          adapter.respond_to?(:vertex_position) ? adapter.vertex_position(h) : nil
+          # 5. Vector Z must be Numeric + finite. Validate
+          #    type FIRST, then convert only if Numeric.
+          dz_raw = vec[2]
+          unless dz_raw.is_a?(Numeric)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_vector_z_not_numeric:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          unless dz_raw.respond_to?(:finite?) ? dz_raw.finite? :
+                   (!dz_raw.nan? && !dz_raw.infinite?)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_vector_z_nonfinite:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          dz = dz_raw.to_f
+          # 6. Live vertex_position read MUST succeed.
+          begin
+            pos = adapter.vertex_position(h)
+          rescue StandardError => e
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_vertex_position_raised:#{i}:#{e.class}",
+                                proposal_hash: proposal_hash)
+          end
+          # 7. Live position must be Array of exactly 3.
+          unless pos.is_a?(Array) && pos.length == 3
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_not_array3:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          # 8. Live position must be 3 Numeric values.
+          unless pos[0].is_a?(Numeric) && pos[1].is_a?(Numeric) && pos[2].is_a?(Numeric)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_not_numeric:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          # 9. Live position XYZ must all be finite. Use
+          #    `.to_f` only after Numeric + finite is
+          #    confirmed (so nil / non-Numeric are rejected
+          #    by the Numeric gate above).
+          unless pos[0].respond_to?(:finite?) ? pos[0].finite? :
+                   (!pos[0].nan? && !pos[0].infinite?)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_x_nonfinite:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          unless pos[1].respond_to?(:finite?) ? pos[1].finite? :
+                   (!pos[1].nan? && !pos[1].infinite?)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_y_nonfinite:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          unless pos[2].respond_to?(:finite?) ? pos[2].finite? :
+                   (!pos[2].nan? && !pos[2].infinite?)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_z_nonfinite:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          # 10. Consistency: current physical Z must agree
+          #    with the logical-move target within
+          #    coordinate_epsilon. The proposal carries
+          #    target_z + per-physical dz; the expected
+          #    from_z is reconstructed as
+          #    target_z - dz (the proposer's
+          #    cluster-level from_z maps 1:1 onto every
+          #    physical occurrence of the same logical
+          #    cluster, so this is exact arithmetic on
+          #    proposal-derived Numeric values).
+          expected_from_z = target_z - dz
+          unless (pos[2] - expected_from_z).abs <= eps
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_position_inconsistent:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          # All preflight checks pass. Capture the validated
+          # Numeric position for post-validation reuse.
+          pre_positions << [pos[0].to_f, pos[1].to_f, pos[2].to_f]
         end
         # ---- Open operation + mutate (V1.9A P0) ----
         #

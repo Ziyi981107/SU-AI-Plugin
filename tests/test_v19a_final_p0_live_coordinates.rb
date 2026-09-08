@@ -604,6 +604,359 @@ ensure
 end
 
 # ===========================================================
+# §10.4a -Executor preflight fail-closed (BLOCK-P0-04)
+# ===========================================================
+
+# Per AIPM source review BLOCK-P0-04: the executor MUST
+# preflight EVERY physical occurrence's live position
+# AND vector AND handle identity BEFORE opening any
+# SketchUp operation. A preflight failure MUST:
+#   - return fail-closed (no mutation, no commit);
+#   - open ZERO begin_operations;
+#   - invoke ZERO transform_vertices_by_vectors calls;
+#   - preserve the one-outer-operation /
+#     one-primitive-per-occurrence architecture for the
+#     success path.
+#
+# The six focused regressions below cover each
+# BLOCK-P0-04 failure mode in isolation, using a spy
+# adapter that counts begin / abort / commit /
+# transform calls + a per-mode vertex_position override.
+#
+# The seventh regression (valid fan-out path) lives in
+# §10.4 EXECUTOR-FANOUT above.
+
+# Per-occurrence live position preflight: vertex_position
+# returns nil -> 0 begin / 0 mutation / fail closed.
+test 'V19A-P0 §10.4a (PREFLIGHT-NIL): vertex_position returns nil -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  begin_count = 0
+  transform_count = 0
+  spied = Class.new(adapter.class) do
+    define_method(:vertex_position) do |_h|
+      nil
+    end
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status],
+               'preflight vertex_position => nil MUST fail closed'
+  assert_equal 0, begin_count,
+               'preflight failure MUST NOT call begin_operation'
+  assert_equal 0, transform_count,
+               'preflight failure MUST NOT call transform_vertices_by_vectors'
+  audit = result[:audit]
+  assert_equal 0, audit[:applied_count],
+               'no physical success may be published on preflight failure'
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  # The audit reason MUST identify the preflight failure
+  # mode (not a generic host_mutation_failed).
+  assert(audit[:reason].to_s.start_with?('preflight_'),
+         "audit reason MUST identify the preflight failure mode; got #{audit[:reason].inspect}")
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# Per-occurrence live position preflight: vertex_position
+# returns a malformed Array (length != 3) -> 0 begin / 0
+# mutation / fail closed.
+test 'V19A-P0 §10.4a (PREFLIGHT-MALFORMED-ARRAY): vertex_position returns malformed Array -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  begin_count = 0
+  transform_count = 0
+  spied = Class.new(adapter.class) do
+    define_method(:vertex_position) do |_h|
+      [0.0, 0.0] # malformed: length 2 instead of 3
+    end
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  assert_equal 0, begin_count
+  assert_equal 0, transform_count
+  assert_equal 0, result[:audit][:applied_count]
+  assert(result[:audit][:reason].to_s.start_with?('preflight_'),
+         "audit reason MUST identify the preflight failure mode; got #{result[:audit][:reason].inspect}")
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# Per-occurrence live position preflight: vertex_position
+# returns a non-Numeric coordinate -> 0 begin / 0
+# mutation / fail closed. Validates the type-before-coerce
+# constraint (BLOCK-P0-04: do NOT .to_f first).
+test 'V19A-P0 §10.4a (PREFLIGHT-NON-NUMERIC): vertex_position returns non-Numeric coordinate -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  begin_count = 0
+  transform_count = 0
+  spied = Class.new(adapter.class) do
+    define_method(:vertex_position) do |_h|
+      [0.0, 'not-a-number', 0.0]  # y is a String, not Numeric
+    end
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status],
+               'non-Numeric vertex_position coordinate MUST fail closed'
+  assert_equal 0, begin_count
+  assert_equal 0, transform_count
+  assert_equal 0, result[:audit][:applied_count]
+  assert(result[:audit][:reason].to_s.start_with?('preflight_'),
+         "audit reason MUST identify the preflight failure mode; got #{result[:audit][:reason].inspect}")
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# Per-occurrence live position preflight: vertex_position
+# returns NaN / Infinity -> 0 begin / 0 mutation / fail
+# closed. Validates the finite-after-Numeric constraint.
+test 'V19A-P0 §10.4a (PREFLIGHT-NAN-INFINITY): vertex_position returns Float::NAN / Float::INFINITY -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  begin_count = 0
+  transform_count = 0
+  counter = 0
+  spied = Class.new(adapter.class) do
+    define_method(:vertex_position) do |_h|
+      counter += 1
+      # Alternate NaN and Infinity so the test
+      # covers both failure modes.
+      if counter.odd?
+        [0.0, 0.0, Float::NAN]
+      else
+        [0.0, 0.0, Float::INFINITY]
+      end
+    end
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status],
+               'NaN / Infinity vertex_position MUST fail closed'
+  assert_equal 0, begin_count
+  assert_equal 0, transform_count
+  assert_equal 0, result[:audit][:applied_count]
+  assert(result[:audit][:reason].to_s.start_with?('preflight_'),
+         "audit reason MUST identify the preflight failure mode; got #{result[:audit][:reason].inspect}")
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# Per-occurrence live position preflight: vertex_position
+# raises -> 0 begin / 0 mutation / fail closed.
+test 'V19A-P0 §10.4a (PREFLIGHT-RAISED): vertex_position raises -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  begin_count = 0
+  transform_count = 0
+  spied = Class.new(adapter.class) do
+    define_method(:vertex_position) do |_h|
+      raise StandardError, 'synthetic preflight live-read failure'
+    end
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status],
+               'vertex_position raise MUST fail closed'
+  assert_equal 0, begin_count
+  assert_equal 0, transform_count
+  assert_equal 0, result[:audit][:applied_count]
+  assert(result[:audit][:reason].to_s.start_with?('preflight_vertex_position_raised'),
+         "audit reason MUST identify vertex_position raise; got #{result[:audit][:reason].inspect}")
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# Per-occurrence vector preflight: vector Z is non-Numeric
+# (e.g. String '1.5') -> 0 begin / 0 mutation / fail
+# closed. Validates the Numeric-Z BEFORE .to_f coercion
+# (BLOCK-P0-04: do NOT call .to_f first to disguise
+# malformed input).
+test 'V19A-P0 §10.4a (PREFLIGHT-NON-NUMERIC-VECTOR-Z): vector Z is non-Numeric String -> 0 begin, 0 mutation' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  # Tamper with the proposal's first vector so that
+  # vec[2] is a non-Numeric String. Naive .to_f would
+  # turn that into 1.5 and pass; the production
+  # preflight must reject it as non-Numeric FIRST.
+  proposal = proposal_hash[:proposal]
+  tampered_vectors = proposal[:vectors].map.with_index do |v, i|
+    if i.zero?
+      [0.0, 0.0, '1.5']
+    else
+      v
+    end
+  end
+  tampered_proposal = proposal.merge(vectors: tampered_vectors)
+  tampered_proposal_hash = proposal_hash.merge(
+    proposal: tampered_proposal
+  )
+  begin_count = 0
+  transform_count = 0
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      begin_count += 1
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      transform_count += 1
+      adapter.transform_vertices_by_vectors(handles, vectors)
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace: ws, adapter: spied,
+    proposal_hash: tampered_proposal_hash,
+    tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status],
+               'non-Numeric vector Z MUST fail closed (do NOT .to_f disguise)'
+  assert_equal 0, begin_count
+  assert_equal 0, transform_count
+  assert_equal 0, result[:audit][:applied_count]
+  assert_equal 'preflight_vector_z_not_numeric:0',
+               result[:audit][:reason],
+               'audit reason MUST specifically identify the non-Numeric vector Z at index 0'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# ===========================================================
 # §10.5 -Mid-mutation failure atomicity
 # ===========================================================
 
@@ -699,17 +1052,15 @@ test 'V19A-P0 §10.6 (POSTVALIDATION-FAILURE): one post-mutation Z drift -> one 
   proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
     workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
   )
-  # Subclass: the first vertex_position call after
-  # the first transform call returns a wrong Z
-  # (postvalidate failure).
+  # Subclass: the first vertex_position call AFTER
+  # any transform_vertices_by_vectors call returns a
+  # wrong Z (postvalidation failure). Preflight
+  # (which runs BEFORE any transform) still reads the
+  # truthful pre-mutation Z, so preflight passes and
+  # only post-validation detects the drift.
   hvm = v19a_fp_host_vertex_map(ws, adapter)
-  # We want to inject a wrong Z for the FIRST
-  # physical Vertex only, so postvalidation
-  # detects dx/dy/dz drift.
-  # Simplest: just return a different Z for the
-  # first physical handle after the mutation.
   first_handle = hvm.values.first
-  post_count = 0
+  mutated = false
   spied = Class.new(adapter.class) do
     define_method(:begin_operation) do |model, label:|
       adapter.begin_operation(model, label: label)
@@ -719,12 +1070,13 @@ test 'V19A-P0 §10.6 (POSTVALIDATION-FAILURE): one post-mutation Z drift -> one 
     end
     define_method(:transform_vertices_by_vectors) do |handles, vectors|
       adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
     end
     define_method(:vertex_position) do |h|
-      if h.object_id == first_handle.object_id
-        # Return the current position but with a
-        # bogus large Z so postvalidation fails
-        # (dz exceeds coordinate_epsilon).
+      if mutated && h.object_id == first_handle.object_id
+        # Return a bogus large Z so postvalidation
+        # fails (dz exceeds coordinate_epsilon).
         [h.x, h.y, 1.0e6]
       else
         adapter.vertex_position(h)

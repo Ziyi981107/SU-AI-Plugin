@@ -376,23 +376,56 @@ fake adapter to count `begin_operation` /
 
 ## 8. preflight + postvalidation rules
 
-### Preflight (amendment §4.1, BEFORE any mutation)
+### Preflight (amendment §4.1 + BLOCK-P0-04, BEFORE any mutation)
 
 For every physical occurrence in the proposal:
 
-- handle present (`preflight_nil_handle:i` reason on fail).
-- handle set is identity-unique
-  (`preflight_duplicate_handle:i` reason on fail).
-- `adapter.vertex_position(handle)` returns a
-  finite, 3-Array numeric (fail closed otherwise).
-- vector shape is exactly `[0.0, 0.0, dz]` (Z-only)
-  (`vector_not_z_only:i` reason on fail).
-- vector `[2]` is finite (NaN / Infinity fail closed)
-  (`vector_nonfinite:i` reason on fail).
+1. Handle present
+   (`preflight_nil_handle:i` reason on fail).
+2. Handle identity uniqueness (by `object_id`)
+   (`preflight_duplicate_handle:i` reason on fail).
+3. Adapter MUST expose `vertex_position`
+   (`preflight_no_vertex_position_seam` reason
+   on fail).
+4. `adapter.vertex_position(handle)` MUST succeed
+   (any exception fails closed with
+   `preflight_vertex_position_raised:i:<ErrorClass>`).
+5. Live position MUST be an `Array` of exactly 3
+   (`preflight_position_not_array3:i` reason on
+   fail).
+6. Live position MUST be 3 Numeric values
+   (validate Numeric type FIRST, do NOT call `.to_f`
+   first to disguise malformed input).
+7. Live position XYZ MUST all be finite
+   (`preflight_position_x_nonfinite:i` /
+   `preflight_position_y_nonfinite:i` /
+   `preflight_position_z_nonfinite:i`).
+8. Vector MUST be Array length 3
+   (`preflight_vector_malformed:i` reason on fail).
+9. Vector X / Y MUST be Numeric + numeric zero
+   (NOT `vec[0].to_f == 0`; validate type then
+   `== 0`).
+10. Vector Z MUST be Numeric + finite
+    (`preflight_vector_z_not_numeric:i` /
+    `preflight_vector_z_nonfinite:i`).
+11. **Consistency** with the logical move target:
+    current physical Z must agree with
+    `target_z - vectors[i][2]` (the proposer's
+    reconstructed expected from Z) within
+    `coordinate_epsilon`
+    (`preflight_position_inconsistent:i`).
+12. `target_z` itself MUST be Numeric + finite
+    (`preflight_target_z_not_numeric_or_nonfinite`).
+13. `coordinate_epsilon` MUST be Numeric + finite
+    (`preflight_epsilon_invalid`).
 
 All preflight failures return `_fail_result(...)`
-WITHOUT opening the outer operation. No mutation
-can leak to the host.
+WITHOUT opening any SketchUp operation. The host
+sees ZERO `begin_operation` calls and ZERO
+`transform_vertices_by_vectors` calls on any
+preflight failure path. The one-outer-operation /
+one-primitive-per-physical-occurrence architecture
+is preserved for the successful preflight path.
 
 ### Postvalidation (amendment §4.4, AFTER all
 primitives but BEFORE commit)
@@ -412,16 +445,109 @@ Any failure:
   `_mark_workspace_failed` path.
 - publish zero committed logical success.
 
-Tests:
+### BLOCK-P0-04 fix (AIPM source review)
+
+The previous preflight implementation only
+validated `handle presence` + `identity uniqueness`
++ `vector shape + Z-only + finite`, but did NOT
+actually validate `adapter.vertex_position`
+results (it merely captured them for post-
+validation). The current correction (this
+section) replaces that preflight with the 13-step
+matrix above.
+
+The key invariant change:
+`pre_positions = handles.map { adapter.vertex_position(h) || nil }`
+becomes an inline preflight where each live read
+is fully validated BEFORE the next iteration and
+BEFORE `begin_operation`. On any preflight failure,
+the function returns `_fail_result(...)` without
+ever opening the operation.
+
+The `BLOCK-P0-04` constraint "Do NOT call `.to_f`
+first to turn malformed input into apparently-
+valid numeric data. Validate Numeric type first,
+then convert only if needed." is honored for:
+- `raw_target_z` (no `.to_f` before `is_a?(Numeric)`)
+- `vec[0]` / `vec[1]` (Numeric + `== 0` check)
+- `vec[2]` (`is_a?(Numeric)` checked BEFORE `.to_f`)
+- `pos[0]` / `pos[1]` / `pos[2]` (Numeric + finite
+  checked BEFORE `.to_f`)
+
+The `BLOCK-P0-04` constraint "open ZERO SketchUp
+operations; perform ZERO transform calls" on
+preflight failure is verified by 6 new focused
+regressions (see §10.4a below).
+
+### Tests (§10.4a — BLOCK-P0-04 focused regressions)
+
+Six new focused regressions (in addition to the
+two previously-existing `§10.5 MID-MUTATION-FAILURE`
++ `§10.6 POSTVALIDATION-FAILURE`):
+
+- `§10.4a PREFLIGHT-NIL`: `vertex_position`
+  returns `nil` for every physical handle ->
+  status `:failed`; spy `begin_count == 0`;
+  spy `transform_count == 0`; audit
+  `applied_count == 0`; audit reason starts with
+  `preflight_`.
+- `§10.4a PREFLIGHT-MALFORMED-ARRAY`: `vertex_position`
+  returns `[0.0, 0.0]` (length 2, not 3) -> 0
+  begin / 0 mutation; audit reason identifies
+  `preflight_position_not_array3`.
+- `§10.4a PREFLIGHT-NON-NUMERIC`: `vertex_position`
+  returns `[0.0, 'not-a-number', 0.0]` (a String
+  in slot Y) -> 0 begin / 0 mutation; audit reason
+  identifies `preflight_position_not_numeric`.
+  Validates the type-before-coerce constraint (a
+  naive `.to_f` would have turned `'not-a-number'`
+  into `0.0` and silently passed).
+- `§10.4a PREFLIGHT-NAN-INFINITY`: `vertex_position`
+  alternates `Float::NAN` and `Float::INFINITY` Z
+  values across physical handles -> 0 begin /
+  0 mutation; audit reason identifies the
+  non-finite Z failure mode.
+- `§10.4a PREFLIGHT-RAISED`: `vertex_position`
+  raises `StandardError` -> 0 begin / 0 mutation;
+  audit reason identifies `preflight_vertex_position_raised`.
+- `§10.4a PREFLIGHT-NON-NUMERIC-VECTOR-Z`: the
+  proposal is tampered so `vectors[0][2]` is the
+  String `'1.5'` (a non-Numeric vector Z) -> 0
+  begin / 0 mutation; audit reason specifically
+  equals `'preflight_vector_z_not_numeric:0'`.
+  Validates the Numeric-Z BEFORE `.to_f` coercion
+  constraint (a naive `.to_f` would have turned
+  `'1.5'` into `1.5` and passed the naive finite
+  check).
+
+The successful fan-out path is verified by the
+existing `§10.4 EXECUTOR-FANOUT` test:
+- 1 `begin_operation` + N
+  `transform_vertices_by_vectors` (one per
+  physical handle, NOT one batched cross-group
+  call) + 1 `end_operation(commit: true)`.
+- `logical_applied_count == 1` +
+  `physical_applied_count == 2` +
+  `applied_count == 2` (legacy alias).
+
+### Pre-existing tests (still passing)
+
 - `V19A-P0 §10.5 MID-MUTATION-FAILURE`: second
   primitive raises -> exactly 1 `begin_operation`,
   1 successful primitive, 1 `end_operation(commit: false)`,
-  status `:failed`, `applied_count == 0`.
+  status `:failed`, `applied_count == 0`. This
+  test required a one-line correction (spy adapter
+  flag `mutated = true` AFTER `transform_vertices_by_vectors`)
+  to distinguish the truthful preflight read from
+  the drifted post-validation read; that correction
+  is purely test-side and does not change the
+  production source.
 - `V19A-P0 §10.6 POSTVALIDATION-FAILURE`: one
   post-mutation Z drift -> exactly 1
   `begin_operation`, all primitives invoke, 1
   `end_operation(commit: false)`, status
-  `:failed`, `applied_count == 0`.
+  `:failed`, `applied_count == 0`. Same test-side
+  spy correction as `§10.5`.
 
 ---
 
