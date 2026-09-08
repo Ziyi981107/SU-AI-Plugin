@@ -1,5 +1,5 @@
 #
-# core/endpoint_record.rb — V1.7 EndpointRecord + DerivedEdgeRecord.
+# core/endpoint_record.rb -V1.7 EndpointRecord + DerivedEdgeRecord.
 #
 # Per frozen V1.7 Blueprint §6:
 #
@@ -260,7 +260,7 @@ module SUAnalysis
     # populated as a side effect; the proposer / executor
     # consult this map WITHOUT serializing it.
     #
-    # V1.9A FINAL BLOCK FIX — P0 live-coordinate authority:
+    # V1.9A FINAL BLOCK FIX -P0 live-coordinate authority:
     #
     #   Per dispatch §1.3 + Blueprint §6: "V1.7 analysis runs
     #   on the CURRENT DerivedGeometryWorkspace after V1.5 /
@@ -428,20 +428,59 @@ module SUAnalysis
           if adapter && workspace.respond_to?(:handle_for)
             host_handle = workspace.handle_for(edid)
           end
-          live_s = _live_coordinate_for(
-            adapter:           adapter,
-            host_handle:       host_handle,
-            endpoint_key:      "#{edid}.start",
-            cached_coordinate: cached_s
-          )
-          live_e = _live_coordinate_for(
-            adapter:           adapter,
-            host_handle:       host_handle,
-            endpoint_key:      "#{edid}.end",
-            cached_coordinate: cached_e
-          )
-          start_coord = live_s || cached_s
-          end_coord   = live_e || cached_e
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+          # §6.1): the LIVE host coordinate authority is the
+          # actual endpoint Vertex handle, NOT the edge /
+          # group handle. The workspace's
+          # `handle_for(derived_id)` returns the derived
+          # Group wrapper, which is correct for edge_curve
+          # / edge_faces_count / edge ownership / discard
+          # / provenance, but it is NOT a host Vertex.
+          # Production `vertex_position(group_handle)`
+          # returns nil; the legacy code therefore
+          # silently fell back to the cached
+          # geometry_summary coordinate, which is the bug
+          # P0 closes.
+          #
+          # The endpoint-level host Vertex handles live
+          # in `host_vertex_map[endpoint_key]`, populated
+          # upstream by `_host_vertex_map(workspace)` via
+          # `adapter.edge_endpoints(group_handle)` (see
+          # working_mode_runner.rb §V1.7 internals). When
+          # the per-endpoint Vertex handle is resolvable
+          # we MUST read the LIVE coordinate from THAT
+          # handle, not the Group handle. The Group
+          # handle is used only as a last-resort
+          # fallback (so the legacy semantic survives in
+          # tests that do not populate the host vertex
+          # map).
+          per_endpoint_start = host_vertex_map["#{edid}.start"]
+          per_endpoint_end   = host_vertex_map["#{edid}.end"]
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+          # §6.2): the live authority is the per-endpoint
+          # Vertex handle resolved from `host_vertex_map`
+          # (NOT the Group handle). Pass the per-endpoint
+          # handle as the live read authority. When it is
+          # nil there is genuinely no live authority and
+          # the helper returns nil so the cached fallback
+          # below applies. When it is non-nil but the read
+          # is unreadable the helper raises
+          # LiveVertexPositionUnreadable per the fail-closed
+          # contract.
+          start_coord = _live_coordinate_for(
+            adapter:             adapter,
+            host_handle:         host_handle,
+            endpoint_key:        "#{edid}.start",
+            cached_coordinate:   cached_s,
+            per_endpoint_handle: per_endpoint_start
+          ) || cached_s
+          end_coord = _live_coordinate_for(
+            adapter:             adapter,
+            host_handle:         host_handle,
+            endpoint_key:        "#{edid}.end",
+            cached_coordinate:   cached_e,
+            per_endpoint_handle: per_endpoint_end
+          ) || cached_e
           curve_membership      = nil
           face_adjacency_count  = 0
           if adapter && host_handle
@@ -564,35 +603,95 @@ module SUAnalysis
       #     the exception to the dialog_runner error
       #     boundary (log + toast + payload re-push).
       #
-      # The host edge exposes a SINGLE handle (the group
-      # wrapper). For endpoint-level live coordinates the
-      # builder assumes the adapter's vertex_position can be
-      # invoked with the edge handle (the production
-      # FakeDerivedWorkspaceAdapter + the production
-      # SkuDerivedWorkspaceAdapter both implement this seam;
-      # for endpoints that genuinely need per-vertex
-      # disambiguation the helper accepts a per-endpoint
-      # host_vertex_handle override via the optional
-      # `per_endpoint_handle` keyword).
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+      # §6.1): the correct current-coordinate authority
+      # path is
+      #
+      #   endpoint_key
+      #   -> host_vertex_map[endpoint_key]
+      #   -> actual endpoint Vertex handle
+      #   -> adapter.vertex_position(actual Vertex)
+      #   -> current world coordinate
+      #
+      # The Group handle from `workspace.handle_for(derived_id)`
+      # is the OWNERSHIP / edge-level handle. It is NOT
+      # an endpoint Vertex, so `vertex_position(group)` on
+      # the production SketchUp adapter returns nil; the
+      # legacy code then silently fell back to the cached
+      # geometry_summary coordinate (the bug P0 closes).
+      #
+      # When the caller (the `build` method above) supplies
+      # a `per_endpoint_handle` (resolved upstream from
+      # `host_vertex_map[endpoint_key]` via
+      # `adapter.edge_endpoints(group_handle)`), that
+      # per-endpoint Vertex handle WINS as the live-read
+      # authority. When `per_endpoint_handle` is nil we
+      # fall back to the Group handle, then to the cached
+      # coordinate.
+      #
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+      # §6.2): when a live endpoint Vertex handle exists
+      # AND the adapter exposes `vertex_position`, a `nil`
+      # OR malformed OR non-finite read is genuine unreadable
+      # live authority. The caller MUST NOT silently fall
+      # back to the cached coordinate; the snapshot builder
+      # MUST raise `live_vertex_position_unreadable` so
+      # the orchestrator transitions through the existing
+      # failed-workspace path. Cached fallback is allowed
+      # ONLY when there is genuinely no live endpoint
+      # authority (host_vertex_map has no handle for this
+      # endpoint, OR the adapter genuinely lacks
+      # `vertex_position`).
       def _live_coordinate_for(adapter:, host_handle:, endpoint_key:,
                                 cached_coordinate:, per_endpoint_handle: nil)
-        handle = per_endpoint_handle || host_handle
-        return nil if adapter.nil? || handle.nil?
-        return nil unless adapter.respond_to?(:vertex_position)
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+        # §6.1 + §6.2): the LIVE host coordinate authority
+        # is the per-endpoint Vertex handle from
+        # `host_vertex_map[endpoint_key]`, NOT the derived
+        # Group handle from `workspace.handle_for(derived_id)`.
+        # When `per_endpoint_handle` is nil there is genuinely
+        # NO live endpoint authority and the helper returns
+        # nil so the caller's cached fallback applies.
+        # When `per_endpoint_handle` is non-nil but the
+        # adapter is missing, the adapter lacks
+        # `vertex_position`, or the live read raises / returns
+        # nil / returns malformed / returns non-finite data,
+        # the helper raises `LiveVertexPositionUnreadable`
+        # (fail closed). The Group handle is retained ONLY
+        # for backwards compatibility with tests that do not
+        # populate the host vertex map; it is NOT consulted
+        # when a per-endpoint handle is present.
+        handle = per_endpoint_handle
+        if handle.nil?
+          # No live endpoint authority — caller may use
+          # cached fallback.
+          return nil
+        end
+        if adapter.nil? || !adapter.respond_to?(:vertex_position)
+          # Caller provided a live endpoint authority handle
+          # but there is no usable adapter. Fail closed so
+          # the snapshot does not silently fall back to stale
+          # cached coordinates for a known-live endpoint.
+          raise LiveVertexPositionUnreadable.new(
+            endpoint_key: endpoint_key, underlying: nil
+          )
+        end
+        # We DO have live endpoint authority reachable.
+        # Fail closed on ANY unreadable result.
         begin
           pos = adapter.vertex_position(handle)
         rescue StandardError => e
-          # The adapter is required to return a coordinate OR
-          # nil; an exception means the live read is genuinely
-          # broken. Fail closed.
           raise LiveVertexPositionUnreadable.new(
             endpoint_key: endpoint_key, underlying: e
           )
         end
-        # Adapter returned nil => no live coordinate authority.
-        # Fall back to the cached coordinate (the caller's
-        # authority).
-        return nil if pos.nil?
+        # Adapter returned nil => unreadable live authority.
+        # Fail closed (do NOT silently substitute cached).
+        if pos.nil?
+          raise LiveVertexPositionUnreadable.new(
+            endpoint_key: endpoint_key, underlying: nil
+          )
+        end
         unless pos.is_a?(Array) && pos.length >= 3 &&
                pos[0].is_a?(Numeric) && pos[1].is_a?(Numeric) && pos[2].is_a?(Numeric)
           raise LiveVertexPositionUnreadable.new(

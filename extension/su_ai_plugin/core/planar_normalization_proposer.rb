@@ -1,5 +1,5 @@
 #
-# core/planar_normalization_proposer.rb — V1.6 Planar Normalization
+# core/planar_normalization_proposer.rb -V1.6 Planar Normalization
 # proposal builder.
 #
 # Per frozen V1.6 Blueprint §3 / §6 / §8:
@@ -331,31 +331,74 @@ module SUAnalysis
         #       shared-vertex scope is ambiguous).
         # We process each edge's two vertices; we dedupe by
         # position_key.
+        #
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §3):
+        # each logical candidate retains ALL eligible physical
+        # endpoint Vertex occurrences that share its logical
+        # coordinate. One logical CAD vertex may have 1..N
+        # physical derived host Vertex handles (one per
+        # independently-owned derived edge). The analyzer still
+        # counts one logical candidate per coordinate cluster
+        # (so `movable_count` stays a LOGICAL count), but the
+        # host mutation plan fans out to every eligible
+        # physical occurrence. Physical handle dedupe is by
+        # OBJECT IDENTITY (object_id / equal?), NEVER by
+        # value equality -two host Vertex handles at the
+        # same world coordinate may still be independent
+        # physical occurrences.
         candidate_positions = []
-        candidate_records = []   # parallel: per-position, the list of edge derived_ids
+        candidate_records = []   # parallel: per-position, the list of physical occurrences
         seen_keys = {}
         edge_data.each do |ed|
           next if unsafe_lookup[ed[:derived_id]]
           next if ed[:shared_with_unsafe]
           ed[:positions].each_with_index do |pos, vi|
             k = pos_key.call(pos)
+            vertex_handle = ed[:vertex_handles][vi]
+            endpoint_key  = (vi == 0) ? "#{ed[:derived_id]}.start" : "#{ed[:derived_id]}.end"
+            source_occ_ids = (ed[:record].respond_to?(:source_occurrence_ids) ?
+                                Array(ed[:record].source_occurrence_ids) :
+                                []).map { |v| v.nil? ? '' : v.to_s }.reject { |s| s.empty? }
+            # Build the per-edge physical-occurrence record.
+            # All callers downstream MUST dedupe by object
+            # identity, not by value equality.
+            physical_occurrence = {
+              vertex_handle:         vertex_handle,
+              derived_id:            ed[:derived_id],
+              endpoint_key:          endpoint_key,
+              source_occurrence_ids: source_occ_ids
+            }
             if seen_keys.key?(k)
-              # Already a candidate; record the second edge's
-              # derived_id for audit (mutable list, dedup).
-              existing_ids = candidate_records[seen_keys[k]][:derived_ids]
-              unless existing_ids.include?(ed[:derived_id])
-                existing_ids << ed[:derived_id]
+              # Logical cluster already seen: append the
+              # new physical occurrence by OBJECT IDENTITY.
+              # The legacy `derived_ids` / `source_occurrence_ids`
+              # aggregator fields are kept for backward
+              # compatibility with existing audit consumers.
+              idx = seen_keys[k]
+              rec = candidate_records[idx]
+              unless _physical_occurrence_present?(rec[:physical_occurrences], vertex_handle)
+                rec[:physical_occurrences] << physical_occurrence
+              end
+              unless rec[:derived_ids].include?(ed[:derived_id])
+                rec[:derived_ids] << ed[:derived_id]
+              end
+              source_occ_ids.each do |soid|
+                rec[:source_occurrence_ids] << soid unless rec[:source_occurrence_ids].include?(soid)
               end
               next
             end
             seen_keys[k] = candidate_positions.length
             candidate_positions << pos
             candidate_records << {
-              vertex_handle:  ed[:vertex_handles][vi],
-              derived_ids:    [ed[:derived_id]],
-              source_occurrence_ids: (ed[:record].respond_to?(:source_occurrence_ids) ?
-                                        Array(ed[:record].source_occurrence_ids) :
-                                        []).map(&:to_s)
+              # First-seen vertex handle (legacy field; the
+              # first physical occurrence by identity).
+              vertex_handle:           vertex_handle,
+              derived_ids:             [ed[:derived_id]],
+              source_occurrence_ids:   source_occ_ids.dup,
+              # V1.9A P0 SHARED-VERTEX CORRECTION: every
+              # eligible physical host Vertex handle for
+              # this logical coordinate cluster.
+              physical_occurrences:    [physical_occurrence]
             }
           end
         end
@@ -390,41 +433,110 @@ module SUAnalysis
         target_z = analyzer_result[:target_z].to_f
         proposed_moves = analyzer_result[:proposed_moves]
         # Each proposed_move carries `vertex_index` (index into
-        # candidate_positions). Resolve to vertex_handle +
-        # affected derived ids.
-        unique_vertex_handles = []
-        unique_vertex_records = []
-        vectors = []
+        # candidate_positions). Resolve to the full set of
+        # eligible physical host Vertex handles and their
+        # matching Z-only translation vectors.
+        #
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §3.5
+        # + §5): the analyzer counts one LOGICAL move per
+        # coordinate cluster. The host mutation plan must
+        # fan out that single logical move to EVERY
+        # eligible physical occurrence belonging to the
+        # cluster. Physical handle dedupe is by OBJECT
+        # IDENTITY (object_id / equal?) so two host Vertices
+        # at the same world coordinate are NOT collapsed.
+        if proposed_moves.nil? || proposed_moves.empty?
+          # Defensive: analyzer reported READY_TO_NORMALIZE
+          # with no moves. The contract is that a READY
+          # result MUST carry at least one move. Treat as
+          # REVIEW_REQUIRED with a stable reason so the UI
+          # can surface a truthful empty state.
+          return _wrap_review_required(
+            { state: PlanarNormalizationAnalyzer::STATE_REVIEW_REQUIRED,
+              reason: 'no_logical_moves' },
+            tolerance,
+            shared_vertex_skipped: edge_data.count { |ed| ed[:shared_with_unsafe] },
+            unsafe_edge_count:     unsafe_edge_count
+          )
+        end
+        physical_handles = []
+        physical_occurrences = []
+        physical_vectors = []
+        physical_records_by_handle = {}  # identity-keyed
         affected_derived_ids = []
         affected_source_occurrence_ids = []
+        logical_move_count = 0
         proposed_moves.each do |m|
           idx = m[:vertex_index]
           vrec = candidate_records[idx]
-          vh = vrec[:vertex_handle]
-          next if vh.nil?
-          # Dedup the vertex handles by identity (the analyzer
-          # already deduped positions; we mirror).
-          if unique_vertex_handles.include?(vh)
-            # Still record the additional derived ids for the
-            # audit row.
-            vrec[:derived_ids].each do |did|
-              affected_derived_ids << did unless affected_derived_ids.include?(did)
+          next if vrec.nil?
+          dz = (target_z - m[:from_z].to_f).to_f
+          vec = [0.0, 0.0, dz]
+          cluster_physicals = Array(vrec[:physical_occurrences])
+          # The legacy vrec[:vertex_handle] is already
+          # represented in physical_occurrences (it is the
+          # first occurrence), so we iterate the full
+          # physical_occurrences list only.
+          next if cluster_physicals.empty?
+          logical_move_count += 1
+          cluster_physicals.each do |occ|
+            vh = occ[:vertex_handle]
+            next if vh.nil?
+            key = vh.object_id
+            # Identity dedupe: do not push the same physical
+            # Vertex twice even if the same logical move is
+            # reached via multiple analyzer proposed_moves
+            # (defense-in-depth).
+            next if physical_records_by_handle.key?(key)
+            physical_records_by_handle[key] = occ
+            physical_handles << vh
+            physical_occurrences << occ
+            physical_vectors << vec
+            # Provenance union.
+            unless affected_derived_ids.include?(occ[:derived_id])
+              affected_derived_ids << occ[:derived_id]
             end
-            vrec[:source_occurrence_ids].each do |soid|
-              affected_source_occurrence_ids << soid unless affected_source_occurrence_ids.include?(soid)
+            Array(occ[:source_occurrence_ids]).each do |soid|
+              next if soid.nil? || soid.to_s.empty?
+              unless affected_source_occurrence_ids.include?(soid.to_s)
+                affected_source_occurrence_ids << soid.to_s
+              end
             end
-            next
-          end
-          unique_vertex_handles << vh
-          unique_vertex_records << vrec
-          vectors << [0.0, 0.0, (target_z - m[:from_z].to_f).to_f]
-          vrec[:derived_ids].each do |did|
-            affected_derived_ids << did unless affected_derived_ids.include?(did)
-          end
-          vrec[:source_occurrence_ids].each do |soid|
-            affected_source_occurrence_ids << soid unless affected_source_occurrence_ids.include?(soid)
           end
         end
+        # Legacy / backward-compatibility aliases: the
+        # existing audit / executor consumers read
+        # `unique_vertex_handles` / `unique_vertex_records` /
+        # `vectors`. Map the new physical-occurrence fields
+        # onto the legacy shape so the existing executor and
+        # presenter code paths keep working.
+        unique_vertex_handles = physical_handles.dup
+        unique_vertex_records = physical_occurrences.map do |occ|
+          # Adapt the per-occurrence shape to the legacy
+          # `unique_vertex_records` shape (Array of Hash
+          # with `vertex_handle` + `derived_ids` +
+          # `source_occurrence_ids`). The legacy consumers
+          # use `vertex_handle` for host mutation and the
+          # aggregate fields for audit; per-occurrence
+          # physical_occurrences field is new in V1.9A.
+          {
+            'vertex_handle'           => occ[:vertex_handle],
+            'derived_ids'             => [occ[:derived_id]],
+            'source_occurrence_ids'   => Array(occ[:source_occurrence_ids]).map(&:to_s),
+            'endpoint_key'            => occ[:endpoint_key],
+            'physical_occurrences'    => [occ]
+          }
+        end
+        vectors = physical_vectors.dup
+        # Movable / applied counts (LOGICAL): the analyzer
+        # already produced `movable_count` (a logical
+        # cluster count) and `outlier_count`. Carry them
+        # through. `unique_vertex_handles.length` is the
+        # PHYSICAL count (after fan-out); `movable_count`
+        # is the LOGICAL count (per amendment §5.1).
+        movable_count_logical = analyzer_result[:movable_count].to_i
+        physical_count = physical_handles.length
+        logical_applied_count_target = logical_move_count
         # Outlier audit: list the derived_ids of edges that
         # belong to the outlier positions.
         outlier_indices = analyzer_result[:outliers].map { |o| o[:vertex_index] }
@@ -448,6 +560,20 @@ module SUAnalysis
           eligible_count:                analyzer_result[:eligible_count],
           already_planar:                analyzer_result[:already_planar],
           movable_count:                 analyzer_result[:movable_count],
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §5):
+          # publish the per-logical-cluster physical-occurrence
+          # shape so the executor can preflight + mutate every
+          # physical handle without reconstructing provenance.
+          logical_moves:                 logical_move_count,
+          physical_count:                physical_count,
+          physical_occurrences:          physical_occurrences.map { |o|
+            {
+              'vertex_handle'         => o[:vertex_handle],
+              'derived_id'            => o[:derived_id].to_s,
+              'endpoint_key'          => o[:endpoint_key].to_s,
+              'source_occurrence_ids' => Array(o[:source_occurrence_ids]).map(&:to_s)
+            }
+          }.freeze,
           max_movement:                   analyzer_result[:max_movement].to_f,
           tolerance_used:                analyzer_result[:tolerance_used].to_f
         }.freeze
@@ -542,6 +668,23 @@ module SUAnalysis
         DEFAULT_TIMESTAMP
       end
       DEFAULT_TIMESTAMP = '1970-01-01T00:00:00Z'.freeze
+
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §3.3):
+      # physical-handle dedupe MUST be by OBJECT IDENTITY
+      # (object_id), not by value equality. Two host
+      # Vertex handles at the same world coordinate may
+      # still be independent physical occurrences. Returns
+      # true when the supplied list already contains a
+      # physical-occurrence record whose vertex_handle is
+      # the same object as the supplied candidate.
+      def _physical_occurrence_present?(occurrences, candidate_handle)
+        return false unless candidate_handle
+        return false unless occurrences.is_a?(Array)
+        occurrences.any? do |occ|
+          occ.is_a?(Hash) && occ[:vertex_handle] &&
+            occ[:vertex_handle].object_id == candidate_handle.object_id
+        end
+      end
     end
   end
 end

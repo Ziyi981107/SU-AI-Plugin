@@ -931,7 +931,6 @@ end
 
 # ===========================================================
 # V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
-# A2-UX-01: primary FAILED copy MUST stay user-readable.
 #
 # Per dispatch §4: raw `last_error` strings / exception
 # class names MUST NOT leak into the product-facing
@@ -1369,12 +1368,22 @@ test 'v19a_presenter (FINAL P1-C): READY_FOR_VALIDATION-with-APPLIED carries cta
   assert_equal 'refresh_cad_prep', issue['cta_callback']
 end
 
-test 'v19a_presenter (FINAL P1-C): FAILED carries cta_callback=refresh_cad_prep' do
+test 'v19a_presenter (FINAL P1-C): FAILED has no normal CTA (recovery flow owns rebuild)' do
+  # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+  # §7.2): FAILED issue_summary has cta=nil and
+  # cta_callback=nil. The recovery banner owns
+  # explicit recovery (`閲嶆柊鐢熸垚宸ヤ綔鍓湰` /
+  # `鏀惧純宸ヤ綔鍓湰`). The prior FINAL BLOCK FIX test
+  # `FAILED carries cta_callback=refresh_cad_prep`
+  # is REPLACED by this test (amendment overrides
+  # the prior packet on the FAILED CTA).
   snap = { 'state' => 'failed', 'last_error' => 'SomeError: build failed' }
   payload = v19a_present(v19a_make_ar, snap)
   issue = payload['issue_summary']
-  assert_equal '重新检测', issue['cta']
-  assert_equal 'refresh_cad_prep', issue['cta_callback']
+  assert_nil issue['cta'],
+             'FAILED issue_summary MUST NOT carry a normal CTA'
+  assert_nil issue['cta_callback'],
+             'FAILED issue_summary MUST NOT carry a refresh_cad_prep callback'
 end
 
 test 'v19a_presenter (FINAL P1-C): STALE carries cta_callback=nil (recovery flow owns rebuild)' do

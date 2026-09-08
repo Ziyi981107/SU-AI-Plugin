@@ -364,13 +364,18 @@ module SUAnalysis
             'cta_callback' => nil
           }.freeze
         when 'FAILED'
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+          # §7.2): FAILED issue summary has NO normal
+          # `閲嶆柊妫€娴媊 CTA. The existing recovery banner
+          # owns explicit recovery (`重新生成工作副本` /
+          # `放弃工作副本`).
           return {
             'kind'        => 'issues',
             'headline'    => '处理失败',
             'subtitle'    => _failure_subtitle(snap),
             'chips'       => [{ 'value' => 1, 'label' => '失败' }],
-            'cta'         => '重新检测',
-            'cta_callback' => 'refresh_cad_prep'
+            'cta'         => nil,
+            'cta_callback' => nil
           }.freeze
         when 'SCANNING'
           return {
@@ -465,13 +470,11 @@ module SUAnalysis
         失败
         短边
         坐标异常
-        嵌套层级
       ].freeze
 
       # Backwards-compatibility: legacy test fixtures +
       # test_v19a_cad_prep_workflow_presenter unit tests
       # pass `metric['label']` strings like '已处理' / '已
-      # 修复' / '已校正' which are APPLIED-success labels.
       # Those are deliberately excluded from the chip list
       # (they describe completed work, not current problems).
       # When a test asserts the OLD
@@ -705,7 +708,6 @@ module SUAnalysis
           }.freeze
         end
         # Ready but no duplicate repair has run (unusual —
-        # e.g. if Prepare was followed by an immediate
         # compute_gap_repair without the auto-batch). Surface
         # as UNCOMPUTED rather than CLEAN: truth rule from
         # dispatch §6.
@@ -806,11 +808,22 @@ module SUAnalysis
           }.freeze
         when 'APPLIED'
           audit = pn['audit'].is_a?(Hash) ? pn['audit'] : {}
-          # V1.9A FINAL BLOCK FIX P2-A (dispatch §4.2):
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
           # `applied_count` is the AUTHORITATIVE planar
-          # audit field. Legacy `moved` / `moved_applied`
-          # aliases remain as defensive fallback.
-          moved = _planar_count_field(audit, 'applied_count', 'moved', 'moved_applied')
+          # display the LOGICAL corrected-point count.
+          # Prefer `logical_applied_count` (the new frozen
+          # field); fall back to legacy `applied_count` only
+          # when `logical_applied_count` is absent. The
+          # frozen count schema (amendment §5) keeps
+          # `applied_count` as a physical-count alias for
+          # backward compatibility with audit consumers.
+          moved = _planar_count_field(
+            audit,
+            'logical_applied_count',
+            'applied_count',
+            'moved',
+            'moved_applied'
+          )
           metrics = []
           metrics << { 'value' => moved, 'label' => '已移动' } if moved.is_a?(Integer)
           {
@@ -845,8 +858,7 @@ module SUAnalysis
         # READY_TO_NORMALIZE without an exact truthful count
         # MUST use a generic truthful copy ("发现可安全
         # 校正的 Z 偏差") rather than the contradictory
-        # "未发现需要 Z 校正的点" (the state is
-        # READY_TO_NORMALIZE — by definition the analyzer
+        # READY_TO_NORMALIZE -by definition the analyzer
         # found at least one candidate).
         return '发现可安全校正的 Z 偏差' if parts.empty?
         parts.join('，')
@@ -1083,7 +1095,6 @@ module SUAnalysis
           #   - invalid_loop_count > 0 AND loop flags include
           #     'non_planar_loop'
           #     -> summary communicates "存在非平面闭合
-          #        轮廓，暂不能形成区域"
           #   - other known invalid-loop / unresolved reasons
           #     -> concise corresponding generic
           #        "存在无效轮廓或需确认结构"
@@ -1094,8 +1105,11 @@ module SUAnalysis
           # this only improves the product-facing copy.
           invalid_loop_count = _structure_invalid_loop_count(sr)
           loop_flags          = _structure_loop_flags(sr)
-          open_chains_count   = metrics['open_chains'].is_a?(Integer) ? metrics['open_chains'] :
-                                (metrics[:open_chains].is_a?(Integer) ? metrics[:open_chains] : 0)
+          # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+          # §7.1): prefer the frozen V1.8 key
+          # `open_chain_count`; legacy `open_chains` remains
+          # as a defensive backward-compatibility fallback.
+          open_chains_count   = _structure_open_chain_count(metrics)
           metric_keys_for_chip = _structure_warning_metric_keys(
             open_chains_count, invalid_loop_count, loop_flags
           )
@@ -1120,7 +1134,7 @@ module SUAnalysis
         when 'FAILED'
           _card_skeleton('structure_region', 'FAILED',
                         _failure_summary_text(sr, '结构重建失败'),
-                        _structure_metrics(metrics, %w[open_chains]))
+                        _structure_metrics(metrics, %w[open_chain_count]))
         when 'NOT_COMPUTED'
           _card_with_primary_action(
             'structure_region', 'UNCOMPUTED',
@@ -1137,7 +1151,7 @@ module SUAnalysis
             'state_label'      => '存在需检查项',
             'title'            => CARD_TITLES_CN['structure_region'],
             'summary'          => '当前结构存在需要人工查看的项',
-            'metrics'          => _structure_metrics(metrics, %w[open_chains]),
+            'metrics'          => _structure_metrics(metrics, %w[open_chain_count]),
             'primary_action'   => nil,
             'secondary_action' => {
               'label'    => '查看问题',
@@ -1149,15 +1163,62 @@ module SUAnalysis
         end
       end
 
+      # Build the structure card's metric chips. The keys
+      # list is the preferred V1.8 names
+      # (`open_chain_count` / `invalid_loop_count` /
+      # `closed_loops` / `regions` / `holes`). Each
+      # preferred name has a small set of legacy alias
+      # names that may appear in older fixtures / test
+      # payloads. The chip is surfaced under the PREFERRED
+      # name (so the UI label is consistent) but the
+      # VALUE is read from whichever alias carries data.
+      #
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+      # §7.1): the frozen V1.8 metric keys win; legacy
+      # aliases remain as defensive backward-compatibility
+      # fallbacks only.
       def _structure_metrics(metrics, keys)
         out = []
         keys.each do |k|
-          v = metrics[k.to_s]
-          v = metrics[k] if v.nil?
+          v = _metric_value_with_aliases(metrics, k, *_structure_legacy_aliases(k))
           next unless v.is_a?(Integer) && v > 0
           out << { 'value' => v, 'label' => _structure_label_for(k) }
         end
         out
+      end
+
+      # Read a metric value with legacy-alias fallback.
+      # Tries the preferred key (String + Symbol), then
+      # each legacy alias (String + Symbol). Returns the
+      # first Integer-typed value found, or nil when no
+      # alias carries an Integer.
+      def _metric_value_with_aliases(metrics, preferred_key, *legacy_aliases)
+        return nil unless metrics.is_a?(Hash)
+        candidates = [preferred_key].concat(legacy_aliases)
+        candidates.each do |k|
+          v = metrics[k.to_s]
+          v = metrics[k.to_sym] if v.nil?
+          return v if v.is_a?(Integer)
+        end
+        nil
+      end
+
+      # Legacy alias map for the structure card's metric
+      # chips. Each frozen V1.8 preferred key may have
+      # older aliases (pre-amendment fixtures /
+      # pre-amendment callers) that are tolerated for
+      # backward compatibility.
+      #
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+      # §7.1): legacy aliases are read-only fallbacks;
+      # the UI chip always uses the preferred key's
+      # label.
+      def _structure_legacy_aliases(preferred_key)
+        case preferred_key.to_s
+        when 'open_chain_count' then ['open_chains'].freeze
+        when 'invalid_loop_count' then [].freeze
+        else [].freeze
+        end
       end
 
       # Read the invalid_loop_count from a structure_reconstruction
@@ -1175,31 +1236,77 @@ module SUAnalysis
         v.is_a?(Integer) ? v : 0
       end
 
-      # Read the loop unresolved_flags list. The V1.8 audit
-      # publishes flags under a few candidate paths; tolerate
-      # all of them. Returns an Array<String>.
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §7.1):
+      # Read the open-chain metric. The actual V1.8 frozen
+      # key is `open_chain_count` (singular + `_count`).
+      # Legacy `open_chains` (plural) remains as a defensive
+      # backward-compatibility fallback for older test
+      # fixtures and pre-amendment callers. Returns 0 when
+      # no key resolves.
+      def _structure_open_chain_count(metrics)
+        return 0 unless metrics.is_a?(Hash)
+        v = metrics['open_chain_count']
+        v = metrics[:open_chain_count] if v.nil?
+        # Legacy alias -defensively tolerated.
+        v = metrics['open_chains']      if v.nil?
+        v = metrics[:open_chains]       if v.nil?
+        v.is_a?(Integer) ? v : 0
+      end
+
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §7.1):
+      # Read the loop unresolved_flags list. The actual V1.8
+      # frozen shape publishes flags inside each
+      # `closed_loops[]` record's `unresolved_flags` Array.
+      # Older fixtures may carry `unresolved_flags` at the
+      # top level or under metrics; tolerate those as
+      # backward-compatibility fallbacks. The flattened flag
+      # list is the union of ALL per-loop flag Arrays plus
+      # any legacy top-level / metrics-level fallback. Returns
+      # an Array<String>.
       def _structure_loop_flags(sr)
         return [] unless sr.is_a?(Hash)
-        raw = sr['unresolved_flags']
-        raw = sr[:unresolved_flags] if raw.nil?
-        raw = sr['loop_flags']     if raw.nil?
-        raw = sr[:loop_flags]      if raw.nil?
+        flags = []
+        # Preferred shape: closed_loops[].unresolved_flags.
+        closed_loops = sr['closed_loops']
+        closed_loops = sr[:closed_loops] if closed_loops.nil?
+        if closed_loops.is_a?(Array)
+          closed_loops.each do |loop|
+            next unless loop.is_a?(Hash)
+            raw = loop['unresolved_flags']
+            raw = loop[:unresolved_flags] if raw.nil?
+            next unless raw.is_a?(Array)
+            raw.each { |x| flags << x.to_s }
+          end
+        end
+        # Backward-compatibility fallbacks (older fixtures
+        # and pre-amendment V1.8 audit shapes).
+        legacy = sr['unresolved_flags']
+        legacy = sr[:unresolved_flags] if legacy.nil?
+        legacy = sr['loop_flags']      if legacy.nil?
+        legacy = sr[:loop_flags]       if legacy.nil?
         m = sr['metrics'].is_a?(Hash) ? sr['metrics'] : {}
-        raw = m['unresolved_flags'] if raw.nil?
-        raw = m[:unresolved_flags]  if raw.nil?
-        return [] unless raw.is_a?(Array)
-        raw.map { |x| x.to_s }
+        legacy = m['unresolved_flags'] if legacy.nil?
+        legacy = m[:unresolved_flags]  if legacy.nil?
+        if legacy.is_a?(Array)
+          legacy.each { |x| flags << x.to_s }
+        end
+        flags.uniq
       end
 
       # Decide which metric keys are CURRENT attention chips
       # for the structure card under READY_WITH_WARNINGS.
-      # open_chains / invalid_loop_count are problem metrics.
-      # closed_loops / regions / holes are CLEAN-state
-      # success metrics that MUST NOT inflate the chip list
-      # (P1-B dispatch §2.3 truth rule).
+      # open_chain_count / invalid_loop_count are problem
+      # metrics. closed_loops / regions / holes are CLEAN-
+      # state success metrics that MUST NOT inflate the
+      # chip list (P1-B dispatch §2.3 truth rule).
+      #
+      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §7.1):
+      # prefer the frozen V1.8 key `open_chain_count` (with
+      # legacy `open_chains` fallback) for the chip
+      # selection. Returns Array<String> of preferred keys.
       def _structure_warning_metric_keys(open_chains, invalid_loops, loop_flags)
         keys = []
-        keys << 'open_chains'      if open_chains.is_a?(Integer) && open_chains > 0
+        keys << 'open_chain_count'   if open_chains.is_a?(Integer) && open_chains > 0
         keys << 'invalid_loop_count' if invalid_loops.is_a?(Integer) && invalid_loops > 0
         keys
       end
@@ -1228,7 +1335,13 @@ module SUAnalysis
 
       def _structure_label_for(k)
         case k.to_s
-        when 'open_chains'   then '开放链'
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
+        # §7.1): prefer the frozen V1.8 key
+        # `open_chain_count` (singular + `_count`); legacy
+        # `open_chains` is tolerated as a defensive alias
+        # for older fixtures.
+        when 'open_chain_count', 'open_chains' then '开放链'
+        when 'invalid_loop_count'             then '无效轮廓'
         when 'closed_loops'  then '闭合轮廓'
         when 'regions'       then '区域'
         when 'holes'         then '洞'
