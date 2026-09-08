@@ -1,5 +1,5 @@
 #
-# core/planar_normalization_executor.rb — V1.6 Planar Normalization
+# core/planar_normalization_executor.rb -V1.6 Planar Normalization
 # host mutation executor.
 #
 # Per frozen V1.6 Blueprint §8 + §9:
@@ -108,6 +108,12 @@ module SUAnalysis
                               proposal_hash: proposal_hash)
         end
         # ---- Preflight: handle liveness ----
+        #
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §4.1):
+        # preflight EVERY physical occurrence before opening
+        # the operation. A failure here aborts BEFORE any
+        # mutation; we never publish a partial logical
+        # success.
         handles = proposal[:unique_vertex_handles]
         vectors = proposal[:vectors]
         unless vectors.is_a?(Array) && vectors.length == handles.length
@@ -115,12 +121,23 @@ module SUAnalysis
                               reason: 'vector_length_mismatch',
                               proposal_hash: proposal_hash)
         end
-        # Capture pre-mutation positions for post-validation.
-        pre_positions = handles.map do |h|
-          adapter.respond_to?(:vertex_position) ? adapter.vertex_position(h) : nil
-        end
-        # Pre-validate every vector.
-        vectors.each_with_index do |vec, i|
+        # Preflight: handle presence, identity-uniqueness,
+        # vector shape + Z-only + finite, target_z finite.
+        seen_handle_ids = {}
+        handles.each_with_index do |h, i|
+          if h.nil?
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_nil_handle:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          id = h.object_id
+          if seen_handle_ids.key?(id)
+            return _fail_result(workspace: workspace,
+                                reason: "preflight_duplicate_handle:#{i}",
+                                proposal_hash: proposal_hash)
+          end
+          seen_handle_ids[id] = true
+          vec = vectors[i]
           unless vec.is_a?(Array) && vec.length == 3
             return _fail_result(workspace: workspace,
                                 reason: "vector_malformed:#{i}",
@@ -132,24 +149,32 @@ module SUAnalysis
                                 proposal_hash: proposal_hash)
           end
           dz = vec[2].to_f
-          unless dz.respond_to?(:finite?) ? dz.finite? : true
+          unless (dz.respond_to?(:finite?) ? dz.finite? : (dz.is_a?(Numeric) && !dz.nan? && !dz.infinite?))
             return _fail_result(workspace: workspace,
                                 reason: "vector_nonfinite:#{i}",
                                 proposal_hash: proposal_hash)
           end
         end
-        # ---- Expected post-state ----
-        expected_post = handles.each_with_index.map do |h, i|
-          pre = pre_positions[i]
-          next [0.0, 0.0, target_z] if pre.nil?
-          [pre[0], pre[1], target_z]
+        # Capture pre-mutation positions for post-validation.
+        pre_positions = handles.map do |h|
+          adapter.respond_to?(:vertex_position) ? adapter.vertex_position(h) : nil
         end
-        # ---- Open operation + mutate ----
-        moved = 0
+        # ---- Open operation + mutate (V1.9A P0) ----
+        #
+        # Per amendment §4.2: open the existing single
+        # outer operation ONCE. For each physical
+        # occurrence, call the existing adapter primitive
+        # with one handle / one vector. Do not pass a
+        # cross-group mixed Vertex array to one primitive
+        # call. Do not open nested SketchUp operations.
+        moved_count_physical = 0
         new_workspace = workspace
         begin
           adapter.begin_operation(workspace_model_for(workspace), label: OPERATION_LABEL)
-          moved = adapter.transform_vertices_by_vectors(handles, vectors)
+          handles.each_with_index do |h, i|
+            adapter.transform_vertices_by_vectors([h], [vectors[i]])
+            moved_count_physical += 1
+          end
         rescue StandardError => e
           # Abort + record failure. Workspace transitions to :failed
           # via the helper.
@@ -252,20 +277,39 @@ module SUAnalysis
           }.freeze
         end
         # ---- Build the audit row + return ----
+        #
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §5):
+        # publish the frozen count schema:
+        #   logical_applied_count   = logical moves fully applied
+        #                             (always == 1 on a successful
+        #                             overall apply, per the
+        #                             atomic-transaction contract)
+        #   physical_applied_count  = physical Vertex occurrences
+        #                             mutated + postvalidated
+        #   applied_count           = backward-compat alias of
+        #                             physical_applied_count
+        #   moved_vertex_count      = physical count (legacy
+        #                             consumer surface)
+        logical_applied = (proposal.is_a?(Hash) && proposal[:logical_moves].is_a?(Integer) ?
+                              proposal[:logical_moves] :
+                              1) # legacy fallback
+        physical_applied = moved_count
         audit = _audit_row(
-          proposal_hash:   proposal_hash,
-          workspace:       workspace,
-          applied_count:   moved_count,
-          failed_count:    0,
-          before_zs:       before_zs,
-          after_zs:        after_zs,
-          max_movement:    max_movement.to_f,
-          status:          :applied
+          proposal_hash:             proposal_hash,
+          workspace:                 workspace,
+          applied_count:             physical_applied,
+          failed_count:              0,
+          logical_applied_count:     logical_applied,
+          physical_applied_count:    physical_applied,
+          before_zs:                 before_zs,
+          after_zs:                  after_zs,
+          max_movement:              max_movement.to_f,
+          status:                    :applied
         )
         {
           status: :applied,
           post_workspace: workspace,
-          moved_vertex_count: moved_count,
+          moved_vertex_count: physical_applied,
           max_movement: max_movement.to_f,
           audit: audit
         }.freeze
@@ -313,8 +357,17 @@ module SUAnalysis
 
       def _audit_row(proposal_hash:, workspace:, applied_count:, failed_count:,
                      before_zs: [], after_zs: [], max_movement: 0.0,
-                     status: nil, reason: nil)
+                     status: nil, reason: nil,
+                     logical_applied_count: nil,
+                     physical_applied_count: nil)
         proposal = proposal_hash.is_a?(Hash) ? proposal_hash[:proposal] : nil
+        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §5):
+        # freeze the count schema. The successful apply
+        # path passes logical + physical counts explicitly.
+        # The fail path does not need to (logical = 0,
+        # physical = 0 on failure).
+        logical_count   = logical_applied_count.nil? ? 0 : logical_applied_count
+        physical_count  = physical_applied_count.nil? ? applied_count : physical_applied_count
         {
           rule_id:         proposal_hash.is_a?(Hash) ? proposal_hash[:rule_id] : nil,
           rule_version:    proposal_hash.is_a?(Hash) ? proposal_hash[:rule_version] : nil,
@@ -326,7 +379,10 @@ module SUAnalysis
           before_z_summary: _z_summary(before_zs),
           after_z_summary:  _z_summary(after_zs),
           max_movement:     max_movement.to_f,
-          applied_count:    applied_count,
+          # FROZEN count schema (amendment §5):
+          applied_count:    physical_count,             # legacy alias
+          logical_applied_count:  logical_count,
+          physical_applied_count: physical_count,
           failed_count:     failed_count,
           status:           status,
           reason:           reason
