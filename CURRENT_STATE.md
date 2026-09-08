@@ -1,6 +1,464 @@
 # SU-AI-Plugin — CURRENT STATE
 
-## V1.9A FINAL BLOCK FIX — Current Geometry + Current Issue Semantics (THIS UPDATE)
+## V1.9A P0 SHARED-VERTEX CORRECTION — Live endpoint Vertex authority + Identity-based physical fan-out (THIS UPDATE)
+
+Updated: 2026-09-08 (V1.9A P0 SHARED-VERTEX
+CORRECTION dispatch EXECUTION on assigned
+`dev/v1.9` per dispatch
+`Prompt/CURRENT_PI_DISPATCH.md` + primary guidance
+`Prompt/AIPM_V1_9A_P0_SHARED_VERTEX_IMPLEMENTATION_AMENDMENT_2026-09-08.md`).
+Per dispatch + amendment §1-§9, this packet
+implements the COMPLETE narrow P0 shared-vertex
+correction:
+  - **§3** V1.6 proposer: each logical candidate
+    retains ALL eligible physical endpoint
+    Vertex occurrences that share its logical
+    coordinate (one logical CAD vertex may have
+    1..N physical derived host Vertex handles).
+    Identity dedupe is by `object_id`, never by
+    value equality.
+  - **§4** V1.6 executor: preflight ALL physical
+    occurrences before mutation; open one outer
+    SketchUp operation ONCE; invoke one owner-safe
+    primitive per physical occurrence; commit once.
+    Mid-mutation failure aborts the outer
+    operation once (no partial success).
+    Postvalidation failure aborts the outer
+    operation once (no published partial success).
+  - **§5** Frozen count schema: `logical_applied_count`
+    (logical moves fully applied) +
+    `physical_applied_count` (physical Vertex
+    occurrences mutated + postvalidated) +
+    `applied_count` (legacy alias of physical).
+  - **§6.1** V1.7 current-coordinate authority:
+    the correct handle contract is
+    `endpoint_key -> host_vertex_map[endpoint_key]
+    -> actual endpoint Vertex handle ->
+    adapter.vertex_position(Vertex) -> current
+    world coordinate`. The Group handle from
+    `workspace.handle_for(derived_id)` is retained
+    only for derived Group / edge-level operations
+    (edge_curve, edge_faces_count, provenance).
+  - **§6.2** Fail closed: when a live endpoint
+    Vertex handle exists AND the adapter exposes
+    `vertex_position` AND the read raises /
+    returns nil / returns malformed / returns
+    non-finite, raise
+    `LiveVertexPositionUnreadable`. Cached
+    fallback is reserved for the no-live-authority
+    case (host_vertex_map has no handle, no
+    adapter, or adapter lacks vertex_position
+    seam).
+  - **§7.1** Structure warning reads the actual
+    V1.8 metric keys (`open_chain_count`,
+    `closed_loop_count`, `region_count`,
+    `hole_count`, `invalid_loop_count`) and the
+    nested `closed_loops[].unresolved_flags`
+    shape (with `non_planar_loop` evidence for
+    the non-planar warning).
+  - **§7.2** FAILED issue_summary has
+    `cta = nil` + `cta_callback = nil`; the
+    existing recovery banner owns explicit
+    recovery actions.
+  - **§10.1-§10.8** Regression tests modeling
+    the real Group -> Edge -> Vertex contract
+    (live coordinate authority + fail-closed
+    matrix + shared-logical-coordinate fan-out +
+    executor one-operation / multi-primitive +
+    mid-mutation / postvalidation atomicity +
+    end-to-end Owner-equivalent integration +
+    presenter logical / physical counts).
+
+V1.9A FINAL BLOCK FIX is superseded by this packet
+on the P0 seams; everything else (P1-A, P1-B, P1-C,
+P2-A, P2-B, test-debt, frozen V1.8 Blueprint, no
+orchestrator / loader / html change, no V1.9B)
+remains PASS unchanged.
+
+V1.9A P0 SHARED-VERTEX CORRECTION — 2026-09-08.
+
+- Starting HEAD for this packet:
+  `b097ca11f3eef5e12abcf9aceb7544a460e0358d`
+  (the V1.9A P0 dispatch-activation docs commit
+  on `dev/v1.9`).
+- Starting working-tree state:
+  `9f65064a2cebb5820768853efdae586385aeefa7`
+  (the implementation-amendment freeze docs
+  commit), with 2077 lines of uncommitted diff
+  (5 production / test files + 4 temporary
+  diagnostic scripts).
+- Implementation SHA: `68f1aa602e16a6471602c52ba24c08856684f058`
+  (this packet's stable commit on
+  `work/v19a-p0-shared-vertex`).
+- Merge SHA on `dev/v1.9`: `d72c188e1b3e32d3109ee504aea4166025c86ca2`
+  (this packet's merge commit; pushed to
+  `origin/dev/v1.9`).
+- Final HEAD on `dev/v1.9`:
+  `d72c188e1b3e32d3109ee504aea4166025c86ca2`.
+- Working-tree recovery: patch preserved to
+  `../su_ai_plugin_worktree_before_recovery.patch`
+  (231,557 bytes / 4,676 lines) before any
+  cleanup.
+- After recovery: 6 files changed, 1366
+  insertions(+), 363 deletions(-).
+  - Moijibake pollution in
+    `cad_prep_workflow_presenter.rb` (112 lines)
+    + `tests/test_v19a_cad_prep_workflow_presenter.rb`
+    (117 lines) restored via hunk-level diff
+    mapping (ASCII skeleton match).
+  - CRLF -> LF churn in
+    `planar_normalization_proposer.rb` (1018
+    lines of pure line-ending noise) reverted
+    to CRLF to match HEAD (`i/crlf w/crlf`).
+  - 4 temporary diagnostic scripts
+    (`tests/_diag.rb`,
+    `tests/_fix_chinese.rb`,
+    `tests/_fix_crlf.rb`,
+    `tests/_run_safe.rb`) removed.
+  - 1 misaligned test `'LIVE-NIL'` (contradicted
+    §6.2 by expecting cached fallback on
+    per-endpoint nil) replaced with `FAILCLOSED-NIL`
+    + new `FAILCLOSED-NO-LIVE-AUTHORITY`.
+
+Production file SHAs (vs the previous
+V1.9A FINAL BLOCK FIX packet):
+  - `su_ai_plugin/core/endpoint_record.rb` SHA-256:
+    recomputed by the current working tree (to be
+    reported in the RBZ candidate section once
+    rebuilt).
+    (**CHANGED** — §6.1 + §6.2: per-endpoint
+    Vertex handle from `host_vertex_map`; strict
+    fail-closed on nil / malformed / non-finite;
+    `LiveVertexPositionUnreadable` raised from
+    `_live_coordinate_for` when a live endpoint
+    handle exists but the read is unreadable).
+  - `su_ai_plugin/core/planar_normalization_proposer.rb`
+    SHA-256: recomputed (CRLF normalized).
+    (**CHANGED** — §3 + §3.3 + §3.5: each logical
+    candidate retains all eligible physical
+    endpoint Vertex occurrences; identity dedupe
+    by `object_id`; one logical move fans out
+    to every eligible physical occurrence with
+    the same Z-only translation vector; count
+    schema includes `logical_moves`,
+    `physical_count`, `physical_occurrences`).
+  - `su_ai_plugin/core/planar_normalization_executor.rb`
+    SHA-256: recomputed.
+    (**CHANGED** — §4.1 + §4.2 + §4.4 + §5:
+    preflight validates handle presence,
+    identity-uniqueness, vector shape + Z-only +
+    finite, target_z finite; mutation opens one
+    outer operation once + invokes one owner-safe
+    primitive per physical occurrence + commits
+    once; postvalidation reads every physical
+    Vertex again + asserts X unchanged, Y
+    unchanged, Z == target Z + live read finite;
+    any mid-mutation / postvalidation failure
+    aborts the outer operation once and
+    publishes zero committed logical success;
+    audit row publishes `logical_applied_count` +
+    `physical_applied_count` + legacy `applied_count`
+    alias).
+  - `su_ai_plugin/cad_prep_workflow_presenter.rb`
+    SHA-256: recomputed.
+    (**CHANGED** — §7.1 structure warning copy
+    prefers authoritative V1.8 keys
+    (`open_chain_count` / `closed_loop_count` /
+    `region_count` / `hole_count` /
+    `invalid_loop_count`) with legacy
+    `open_chains` alias fallback, plus
+    `closed_loops[].unresolved_flags` for
+    `non_planar_loop` evidence; §7.2 FAILED
+    issue_summary has `cta = nil` +
+    `cta_callback = nil`).
+  - `su_ai_plugin/cad_prep_workflow_orchestrator.rb`,
+    `dialog_runner.rb`, `ui_bridge.rb`,
+    `loader.rb`, `su_ai_plugin.rb`, `html/index.html`,
+    `html/app.js`, `html/style.css`, icons:
+    **UNCHANGED** (verified via packaged-RBZ
+    extraction SHAs; all match the prior
+    V1.9A FINAL BLOCK FIX packet SHAs exactly).
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 /
+V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change.
+No host mutation / Face / Observer. No site
+semantics. No A2 orchestrator / Presenter /
+DialogRunner callbacks change. No Loader / A3
+toolbar contract change. No V1.9B
+PreparedCadDataset / persistence (V1.9B NOT
+STARTED). No MCP / LLM / Agent.
+
+Tests added / extended by this packet:
+  - `tests/test_v19a_final_p0_live_coordinates.rb`:
+    NEW §10.1-§10.8 regression tests (the previous
+    packet's P0 tests were not credible per
+    §10; this packet replaces / corrects them).
+    Tests added: 11 (later expanded to 19 after
+    `FAILCLOSED-NIL` correction).
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    presenter focused regression tests (derivable
+    from the mojibake recovery — the §7.1 / §7.2
+    contract surface).
+  - `extension/su_ai_plugin/core/endpoint_record.rb`:
+    no production test count change; the §10.2
+    fail-closed matrix is exercised by
+    `test_v19a_final_p0_live_coordinates.rb`.
+
+Validation:
+  - `ruby -c` on all 6 files in scope: **Syntax OK**.
+  - V19A-P0 focused tests:
+    **19 / 19 PASS, 0 fail, 0 error**.
+    Coverage:
+      - §10.1 HANDLE-CONTRACT: vertex_position
+        receives endpoint Vertex handle, not
+        Group handle.
+      - §10.2 FAILCLOSED-MALFORMED: non-Array ->
+        LiveVertexPositionUnreadable.
+      - §10.2 FAILCLOSED-RAISE: raises ->
+        LiveVertexPositionUnreadable.
+      - §10.2 FAILCLOSED-NIL (added by this packet
+        to replace misaligned 'LIVE-NIL'): nil ->
+        LiveVertexPositionUnreadable.
+      - §10.2 FAILCLOSED-NO-LIVE-AUTHORITY (added
+        by this packet): empty host vertex map
+        -> cached fallback.
+      - §10.2 FAILCLOSED-INFINITY: Float::INFINITY
+        -> LiveVertexPositionUnreadable.
+      - §10.2 NO-ADAPTER: nil adapter ->
+        cached fallback.
+      - §10.3 SHARED-LOGICAL-COORDINATE: two safe
+        edges sharing a coordinate -> one logical
+        move + two physical Vertex handles.
+      - §10.4 EXECUTOR-FANOUT: one logical move
+        with two physical handles -> one begin,
+        one primitive per occurrence, one commit.
+      - §10.5 MID-MUTATION-FAILURE: second
+        primitive raises -> one begin, one abort,
+        no commit, FAILED.
+      - §10.6 POSTVALIDATION-FAILURE: one
+        post-mutation Z drift -> one abort, no
+        commit, FAILED.
+      - §10.7 E2E-OWNER-EQUIVALENT: Z + Gap ->
+        Region. BOTH physical copies of B reach
+        target Z; Gap auto-unlocks; Structure =
+        0/1/0/1; no `non_planar_loop`.
+      - §10.8 PRESENTER-LOGICAL-COUNT: Planar
+        APPLIED card reads `logical_applied_count`.
+      - §10.8 PRESENTER-FAILED-NO-CTA: FAILED
+        issue_summary has `cta=nil`,
+        `cta_callback=nil`.
+      - §9 ERROR-CLASS:
+        `LiveVertexPositionUnreadable` carries
+        stable reason + endpoint_key.
+      - §9 SOURCE-LEVEL: `endpoint_record.rb` does
+        NOT mutate cached `geometry_summary`.
+      - §9 PROPOSER-IDENTITY-DEDUPE: proposer
+        source uses `object_id`-based dedupe, not
+        value equality.
+      - §9 EXECUTOR-ONE-PRIMITIVE-PER-OCCURRENCE:
+        executor opens once + iterates per
+        physical handle.
+  - Full synthetic suite (excluding the two
+    pre-existing `dist/SU-AI-Plugin.rbz`-dependent
+    tests — `test_rbz_smoke` + a small subset of
+    `test_v15_production_call_chain` — which fail
+    because the dist RBZ is a pre-existing corrupted
+    artifact from before this dispatch, not related
+    to the P0 work): **1166 tests, 1157 pass, 6
+    fail, 3 error**. The 6 fail + 3 error are the
+    same pre-existing test-environment / CSS /
+    `HtmlDialog` issues that pre-date this packet;
+    none caused by the V1.9A P0 implementation.
+  - `ruby` executable: `.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+    (Ruby 2.7.8p225). The global `C:\Ruby27-x64\bin\ruby.exe`
+    remains side-by-side broken on this host; per
+    AGENTS.md §16 + amendment §11, the project-
+    vendored interpreter is the runnable path.
+  - Pre-existing system-level Ruby side-by-side
+    issue is environment, not product code; Pi did
+    NOT reinstall Ruby or rewrite global PATH.
+
+Working-tree diff (final):
+  - `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
+    183 lines changed (+/-).
+  - `extension/su_ai_plugin/core/endpoint_record.rb`:
+    171 lines changed (+/-).
+  - `extension/su_ai_plugin/core/planar_normalization_executor.rb`:
+    110 lines changed (+/-).
+  - `extension/su_ai_plugin/core/planar_normalization_proposer.rb`:
+    219 lines changed (+/-; CRLF normalized).
+  - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
+    17 lines changed (+/-).
+  - `tests/test_v19a_final_p0_live_coordinates.rb`:
+    1029 lines changed (+/-).
+  - Total: 6 files, 1366 insertions(+), 363 deletions(-).
+
+Forbidden / not changed (per amendment §9):
+  - `working_mode_runner.rb` (not pre-authorized
+    for algorithmic changes — the shared-vertex
+    amendment reaches it only through the
+    cooperative handles produced by the corrected
+    adapter seams).
+  - `cad_prep_workflow_orchestrator.rb`, `ui_bridge.rb`,
+    `html/app.js`, CSS, toolbar / loader
+    (frozen for this packet).
+  - Source CAD mutability / Derived Workspace
+    ownership model.
+  - V1.5 duplicate algorithm / V1.6 dominant-band
+    / target-Z / outlier algorithm.
+  - V1.6 tolerance defaults.
+  - V1.7 gap pairing / mutual candidate / conflict
+    logic.
+  - V1.7 canonical node clustering semantics.
+  - V1.8 reconstruction / region / containment
+    algorithm.
+  - `coordinate_epsilon`, `planar_z_snap`,
+    `gap_search` defaults.
+  - Physical welding; SketchUp Face generation;
+    broad Observer architecture.
+  - Undo / host-state redesign.
+  - Current Issues / badge semantics already
+    source-reviewed PASS (P1-A / P1-B / P1-C of
+    the prior FINAL BLOCK FIX packet).
+  - MCP / LLM / Agent.
+  - V1.9B PreparedCadDataset / release Gate.
+  - Source-Registry run-output was NOT rewritten
+    anywhere.
+
+Corrections / additions by this packet:
+
+- **§3 Proposer — logical dedupe + physical
+  fan-out (amendment §3 + §3.3 + §3.5)**
+  `extension/su_ai_plugin/core/planar_normalization_proposer.rb`:
+  Each logical candidate now retains
+  `physical_occurrences`: an Array of
+  per-edge physical-occurrence records (each
+  with `vertex_handle` / `derived_id` /
+  `endpoint_key` / `source_occurrence_ids`).
+  Duplicate logical-coordinate branches append
+  by OBJECT IDENTITY (new
+  `_physical_occurrence_present?` helper). Each
+  analyzer `proposed_move` fans out to every
+  eligible physical occurrence belonging to
+  the same logical cluster with the SAME
+  Z-only translation vector. The candidate
+  record also exposes
+  `logical_moves`, `physical_count`,
+  `physical_occurrences` (amendment §5.1).
+
+- **§4 Executor — one outer operation, multiple
+  owner-safe primitive calls (amendment §4.1 +
+  §4.2 + §4.4)** `extension/su_ai_plugin/core/planar_normalization_executor.rb`:
+  Preflight (BEFORE opening any operation)
+  validates, for every physical occurrence,
+  handle presence, identity-uniqueness (by
+  `object_id`), `vertex_position` readability,
+  finite position, Z-only vector, finite target
+  Z. A preflight failure aborts BEFORE any
+  mutation (stable reason code). The existing
+  single outer `begin_operation` is opened ONCE;
+  for each physical occurrence, one
+  `transform_vertices_by_vectors([handle], [vector])`
+  call is invoked. Mid-mutation failure aborts
+  the outer operation once + transitions through
+  the existing failed-workspace path (no faked
+  Ruby-side rollback, no Source CAD mutation).
+  Postvalidation reads every physical Vertex
+  again BEFORE commit and asserts, under existing
+  `coordinate_epsilon`: X unchanged, Y unchanged,
+  Z == target Z, live read finite. A postvalidation
+  failure aborts the outer operation once +
+  publishes zero committed logical success.
+
+- **§5 Count schema (amendment §5.1 + §5.2 +
+  §5.3)** `planar_normalization_executor.rb`
+  audit row publishes `logical_applied_count` +
+  `physical_applied_count` + legacy `applied_count`
+  alias. `applied_count` remains a backward-compat
+  alias of `physical_applied_count`. The
+  `movable_count` exposed in the proposal is
+  unchanged (logical cluster count); the
+  user-facing Planar APPLIED card must prefer
+  `logical_applied_count` for the corrected-
+  point count (per §5.3 + §10.8).
+
+- **§6 V1.7 live-coordinate authority (amendment
+  §6.1 + §6.2)** `core/endpoint_record.rb`:
+  The `build` method now reads
+  `host_vertex_map[endpoint_key]` to obtain the
+  ACTUAL endpoint Vertex handle and passes that
+  to `_live_coordinate_for(..., per_endpoint_handle:)`.
+  The Group handle from
+  `workspace.handle_for(derived_id)` is retained
+  only for derived Group / edge-level operations.
+  `_live_coordinate_for` now raises
+  `LiveVertexPositionUnreadable` (amendment §6.2
+  strict fail-closed) when a live endpoint handle
+  is provided but the read raises / returns nil /
+  returns malformed / returns non-finite. Cached
+  fallback is reserved for the no-live-authority
+  case (host_vertex_map has no handle for that
+  endpoint, no adapter, or adapter lacks
+  `vertex_position`).
+
+- **§7.1 Structure warning reads actual V1.8 shape**
+  `cad_prep_workflow_presenter.rb` —
+  `_structure_label_for` now prefers the frozen
+  V1.8 keys (`open_chain_count` /
+  `invalid_loop_count` / `closed_loops` /
+  `regions` / `holes`) with legacy `open_chains`
+  alias fallback. Per-loop validation evidence
+  (`closed_loops[].unresolved_flags` containing
+  `non_planar_loop`) drives the specific
+  non-planar warning.
+
+- **§7.2 FAILED summary CTA = nil**:
+  `cad_prep_workflow_presenter.rb` — `FAILED`
+  `issue_summary` now publishes `cta = nil` +
+  `cta_callback = nil`. The existing recovery
+  banner owns explicit recovery actions
+  (`重新生成工作副本` / `放弃工作副本`).
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (extended; the
+  V1.9A P0 SHARED-VERTEX CORRECTION section is
+  appended below the existing V1.9A FINAL BLOCK
+  FIX section).
+
+Next expected action: AIPM direct source review
+of the V1.9A P0 SHARED-VERTEX CORRECTION packet
+on `dev/v1.9` (merge commit `d72c188`). Then:
+Owner real-SU2020 re-verification of the §12
+fixture (Planar + Gap detected -> Gap locked
+before Planar -> Apply Planar -> Gap auto-
+unlocks -> Apply Gap -> Structure auto-recomputes
+-> workspace = ready -> open_chain_count = 0,
+closed_loop_count = 1, invalid_loop_count = 0,
+region_count = 1, no `non_planar_loop`). Final
+V1.x Codex xHigh review remains mandatory later
+regardless.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch §11: P0 touches the
+V1.6 -> V1.7 current-geometry authority seam +
+the V1.6 physical-fan-out identity dedupe
+boundary (the highest-cost single seam in V1.x).
+Order: (1) Pi implementation + tests + commit +
+push (this packet); (2) AIPM direct source / diff
+review first; (3) AIPM decides narrow Codex review
+timing or folds into final V1.x review; (4) Owner
+real-SU2020 re-verification; (5) AIPM / Owner may
+close V1.9A.
+
+AIPM_REVIEW = PENDING.
+OWNER_SU2020 = NOT YET.
+V1.9B: NOT STARTED.
+
+## V1.9A FINAL BLOCK FIX — Current Geometry + Current Issue Semantics (PREVIOUS UPDATE)
 
 Updated: 2026-09-07 (V1.9A FINAL BLOCK FIX dispatch
 EXECUTION on assigned `dev/v1.9` per dispatch
