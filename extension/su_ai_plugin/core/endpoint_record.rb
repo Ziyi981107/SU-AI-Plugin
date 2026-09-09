@@ -667,14 +667,22 @@ module SUAnalysis
           # cached fallback.
           return nil
         end
+        # V1.9A P0 NARROW RECHECK R3 (fix 2026-09-08):
+        # when the caller provided a per-endpoint Vertex
+        # handle but the adapter is nil OR the adapter
+        # genuinely lacks `vertex_position` capability,
+        # there is no usable live authority. Cached
+        # fallback IS allowed for this case (host-free
+        # pure-test path / contexts that genuinely have
+        # no live coordinate authority). Only when the
+        # adapter is present AND exposes `vertex_position`
+        # but the read returns nil / malformed /
+        # non-finite / raises do we fail closed.
         if adapter.nil? || !adapter.respond_to?(:vertex_position)
-          # Caller provided a live endpoint authority handle
-          # but there is no usable adapter. Fail closed so
-          # the snapshot does not silently fall back to stale
-          # cached coordinates for a known-live endpoint.
-          raise LiveVertexPositionUnreadable.new(
-            endpoint_key: endpoint_key, underlying: nil
-          )
+          # Caller provided a per-endpoint handle but no
+          # usable adapter seam — cached fallback is the
+          # caller's authority.
+          return nil
         end
         # We DO have live endpoint authority reachable.
         # Fail closed on ANY unreadable result.
@@ -692,7 +700,13 @@ module SUAnalysis
             endpoint_key: endpoint_key, underlying: nil
           )
         end
-        unless pos.is_a?(Array) && pos.length >= 3 &&
+        # V1.9A P0 NARROW RECHECK R3 (fix 2026-09-08):
+        # live position shape MUST be EXACTLY 3 values;
+        # an Array longer or shorter than 3 is malformed
+        # and fails closed. Previously the code accepted
+        # `pos.length >= 3` which silently let 4-element
+        # arrays through and ignored the surplus slot(s).
+        unless pos.is_a?(Array) && pos.length == 3 &&
                pos[0].is_a?(Numeric) && pos[1].is_a?(Numeric) && pos[2].is_a?(Numeric)
           raise LiveVertexPositionUnreadable.new(
             endpoint_key: endpoint_key,

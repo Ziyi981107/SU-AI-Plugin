@@ -39,6 +39,7 @@
 
 require_relative 'runner'
 require_relative '../extension/su_ai_plugin/core/tolerance'
+require_relative '../extension/su_ai_plugin/core/analysis_config'
 require_relative '../extension/su_ai_plugin/core/source_reference'
 require_relative '../extension/su_ai_plugin/core/edge_record'
 require_relative '../extension/su_ai_plugin/core/face_record'
@@ -51,11 +52,13 @@ require_relative '../extension/su_ai_plugin/core/derived_entity_record'
 require_relative '../extension/su_ai_plugin/core/derived_workspace_adapter'
 require_relative '../extension/su_ai_plugin/core/derived_geometry_workspace'
 require_relative '../extension/su_ai_plugin/core/source_snapshot'
+require_relative '../extension/su_ai_plugin/core/issue_registry'
 require_relative '../extension/su_ai_plugin/core/endpoint_record'
 require_relative '../extension/su_ai_plugin/core/planar_normalization_analyzer'
 require_relative '../extension/su_ai_plugin/core/planar_normalization_proposer'
 require_relative '../extension/su_ai_plugin/core/planar_normalization_executor'
 require_relative '../extension/su_ai_plugin/core/working_mode_runner'
+require_relative '../extension/su_ai_plugin/cad_prep_workflow_orchestrator'
 
 include SUAnalysis::Core
 
@@ -411,6 +414,133 @@ test 'V19A-P0 §10.2 (FAILCLOSED-INFINITY): vertex_position returns Float::INFIN
     err = e
   end
   refute_nil err, 'LiveVertexPositionUnreadable MUST be raised for non-finite position'
+  assert_includes err.message, 'live_vertex_position_unreadable'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# ===========================================================
+# R3 — V1.9A P0 NARROW RECHECK (fix 2026-09-08)
+# Endpoint live-read fallback contract correction
+# ===========================================================
+
+# R3 fallback matrix: per-endpoint handle present + adapter
+# genuinely lacks `vertex_position` capability -> cached
+# fallback allowed (NOT a fail-closed condition). The
+# frozen amendment §6.2 / R3 §4 enumerates this as a
+# legitimate no-live-authority case.
+test 'V19A-P0 (R3): endpoint handle + adapter lacks vertex_position -> cached fallback' do
+  adapter, ws = v19a_fp_prepare(
+    [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]],
+    v19a_fp_tol
+  )
+  hvm = v19a_fp_host_vertex_map(ws, adapter)
+  # Subclass adapter with NO vertex_position seam.
+  no_vp_adapter = Class.new(adapter.class) do
+    undef_method(:vertex_position) if respond_to?(:vertex_position)
+  end.new
+  adapter.created_handles.each { |h| no_vp_adapter.created_handles << h }
+  adapter.added_edges.each       { |e| no_vp_adapter.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| no_vp_adapter.vertex_handles_by_edge[k] = v }
+  err = nil
+  result = nil
+  begin
+    result = SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder.build(
+      workspace: ws, adapter: no_vp_adapter, vertex_keys_by_edge: hvm
+    )
+  rescue SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder::LiveVertexPositionUnreadable => e
+    err = e
+  end
+  assert_nil err, 'per-endpoint handle + adapter lacks vertex_position MUST allow cached fallback (NOT fail closed)'
+  refute_nil result, 'snapshot builder MUST publish a result using cached coordinates'
+  edge = result['edges'].first
+  assert_equal [0.0, 0.0, 0.0],  edge.world_endpoints[0],
+               'cached start coord MUST be published when adapter lacks vertex_position'
+  assert_equal [10.0, 0.0, 0.0], edge.world_endpoints[1]
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R3 fallback matrix: per-endpoint handle present + adapter
+# is nil -> cached fallback allowed (no-live-authority case).
+test 'V19A-P0 (R3): endpoint handle + nil adapter -> cached fallback' do
+  adapter, ws = v19a_fp_prepare(
+    [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]],
+    v19a_fp_tol
+  )
+  hvm = v19a_fp_host_vertex_map(ws, adapter)
+  err = nil
+  result = nil
+  begin
+    result = SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder.build(
+      workspace: ws, adapter: nil, vertex_keys_by_edge: hvm
+    )
+  rescue SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder::LiveVertexPositionUnreadable => e
+    err = e
+  end
+  assert_nil err, 'per-endpoint handle + nil adapter MUST allow cached fallback'
+  refute_nil result
+  edge = result['edges'].first
+  assert_equal [0.0, 0.0, 0.0],  edge.world_endpoints[0],
+               'cached start coord MUST be published when adapter is nil'
+  assert_equal [10.0, 0.0, 0.0], edge.world_endpoints[1]
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R3 fail-closed contract: per-endpoint handle present +
+# adapter exposes vertex_position + returns a 4-element
+# Array (NOT exactly 3) -> fail closed (malformed).
+test 'V19A-P0 (R3): endpoint handle + 4-element position Array -> LiveVertexPositionUnreadable' do
+  adapter, ws = v19a_fp_prepare(
+    [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]],
+    v19a_fp_tol
+  )
+  hvm = v19a_fp_host_vertex_map(ws, adapter)
+  long_adapter = Class.new(adapter.class) do
+    def vertex_position(_h); return [0.0, 0.0, 0.0, 0.0]; end
+  end.new
+  adapter.created_handles.each { |h| long_adapter.created_handles << h }
+  adapter.added_edges.each       { |e| long_adapter.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| long_adapter.vertex_handles_by_edge[k] = v }
+  err = nil
+  begin
+    SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder.build(
+      workspace: ws, adapter: long_adapter, vertex_keys_by_edge: hvm
+    )
+  rescue SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder::LiveVertexPositionUnreadable => e
+    err = e
+  end
+  refute_nil err, '4-element position Array MUST fail closed (malformed; exactly 3 required)'
+  assert_includes err.message, 'live_vertex_position_unreadable'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R3 fail-closed contract: per-endpoint handle present +
+# adapter exposes vertex_position + returns a 2-element
+# Array (length too short) -> fail closed (malformed).
+test 'V19A-P0 (R3): endpoint handle + 2-element position Array -> LiveVertexPositionUnreadable' do
+  adapter, ws = v19a_fp_prepare(
+    [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]],
+    v19a_fp_tol
+  )
+  hvm = v19a_fp_host_vertex_map(ws, adapter)
+  short_adapter = Class.new(adapter.class) do
+    def vertex_position(_h); return [0.0, 0.0]; end
+  end.new
+  adapter.created_handles.each { |h| short_adapter.created_handles << h }
+  adapter.added_edges.each       { |e| short_adapter.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| short_adapter.vertex_handles_by_edge[k] = v }
+  err = nil
+  begin
+    SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder.build(
+      workspace: ws, adapter: short_adapter, vertex_keys_by_edge: hvm
+    )
+  rescue SUAnalysis::Core::EndpointRecord::DerivedTopologySnapshotBuilder::LiveVertexPositionUnreadable => e
+    err = e
+  end
+  refute_nil err, '2-element position Array MUST fail closed (malformed; exactly 3 required)'
   assert_includes err.message, 'live_vertex_position_unreadable'
 ensure
   V19A_FP_RUNNER.reset_for_tests
@@ -1113,6 +1243,252 @@ ensure
 end
 
 # ===========================================================
+# R2 — V1.9A P0 NARROW RECHECK (fix 2026-09-08)
+# Post-read exception safety + atomicity
+# ===========================================================
+
+# R2: post-position read RAISES for one physical Vertex.
+# The executor MUST:
+#   - call begin_operation ONCE;
+#   - call transform_vertices_by_vectors for each occurrence
+#     (the mutation itself succeeds);
+#   - abort ONCE (not commit);
+#   - publish status :failed with zero committed logical
+#     success;
+#   - the post-read exception MUST NOT escape the
+#     function (the operation control surface remains
+#     consistent).
+test 'V19A-P0 (R2): post-position read raises -> one begin, one abort, no commit, FAILED, exception suppressed' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  # After any transform_vertices_by_vectors call, the
+  # post-position read raises. Preflight (which runs
+  # BEFORE the transform) still reads truthful
+  # pre-mutation Z values so preflight passes; only
+  # postvalidation detects the failure.
+  hvm = v19a_fp_host_vertex_map(ws, adapter)
+  first_handle = hvm.values.first
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        # Raise AFTER any mutation. The postvalidation
+        # loop MUST catch this raise per occurrence;
+        # the executor MUST abort once + publish FAILED;
+        # the exception MUST NOT escape the function.
+        raise StandardError, 'synthetic post-read boom'
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = nil
+  raised = nil
+  begin
+    result = PlanarNormalizationExecutor.apply(
+      workspace:     ws,
+      adapter:       spied,
+      proposal_hash: proposal_hash,
+      tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+    )
+  rescue StandardError => e
+    raised = e
+  end
+  assert_nil raised,
+             'executor MUST NOT let the post-read exception escape (operation must be aborted first)'
+  refute_nil result
+  assert_equal :failed, result[:status],
+               'post-read raise MUST surface as :failed'
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  # Operation control surface: last apply cycle has
+  # exactly one begin + exactly one abort + zero commit.
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin),
+               'apply cycle MUST contain exactly one begin'
+  assert_equal 1, apply_log_kinds.count(:abort),
+               'apply cycle MUST contain exactly one abort'
+  assert !apply_log_kinds.include?(:commit),
+         'apply cycle MUST NOT contain a commit'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R2: post-position returns malformed (non-Array)
+# for one occurrence -> one begin, one abort, no
+# commit, FAILED.
+test 'V19A-P0 (R2): post-position returns malformed non-Array -> one begin, one abort, no commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        { x: 0.0, y: 0.0, z: 0.0 } # Hash, NOT an Array
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace:     ws,
+    adapter:       spied,
+    proposal_hash: proposal_hash,
+    tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin)
+  assert_equal 1, apply_log_kinds.count(:abort)
+  assert !apply_log_kinds.include?(:commit),
+         'apply cycle MUST NOT contain a commit on malformed post-read'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R2: post-position returns Float::NAN for one
+# occurrence -> one begin, one abort, no commit,
+# FAILED.
+test 'V19A-P0 (R2): post-position returns Float::NAN -> one begin, one abort, no commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        [0.0, 0.0, Float::NAN]
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace:     ws,
+    adapter:       spied,
+    proposal_hash: proposal_hash,
+    tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin)
+  assert_equal 1, apply_log_kinds.count(:abort)
+  assert !apply_log_kinds.include?(:commit),
+         'apply cycle MUST NOT contain a commit on non-finite post-read'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# R2 source-level guard: the post-read loop MUST be
+# wrapped in an exception-safe guard so an unexpected
+# host read cannot escape with the outer operation open.
+test 'V19A-P0 (R2 source-level): post-read loop is wrapped in begin/rescue StandardError' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/core/planar_normalization_executor.rb', __dir__))
+  # Locate the post-validation block by scanning for
+  # 'Post-validation' / 'Post-validation' comments.
+  refute_nil src.index('Post-validation'),
+             'executor source MUST contain the Post-validation block'
+  # Locate the post-read code path; ensure the
+  # `vertex_position` call inside the post-validation
+  # loop is wrapped in `rescue StandardError`. The
+  # production source uses `rescue StandardError => e`
+  # immediately after `adapter.vertex_position(h)`.
+  post_block_start = src.index('# ---- Post-validation')
+  refute_nil post_block_start
+  post_block_end   = src.index('if !validation_errors.empty?', post_block_start)
+  refute_nil post_block_end
+  post_block = src[post_block_start..post_block_end]
+  assert_includes post_block, 'rescue StandardError',
+                  'post-read loop MUST be wrapped in `rescue StandardError` so a raised host read cannot escape with the outer operation open'
+  assert_includes post_block, "vertex_position(h)",
+                  'post-read loop MUST call adapter.vertex_position(h)'
+end
+
+# ===========================================================
 # §10.7 -TRUE end-to-end Owner-equivalent integration
 # ===========================================================
 
@@ -1339,4 +1715,172 @@ test 'V19A-P0 §9 (EXECUTOR-ONE-PRIMITIVE-PER-OCCURRENCE): executor opens once +
   # The executor MUST call the per-vertex primitive
   # in a loop (NOT one batched call).
   assert_match(/transform_vertices_by_vectors/, src)
+end
+
+# ===========================================================
+# R5 — V1.9A P0 NARROW RECHECK (fix 2026-09-08)
+# TRUE orchestrated Owner-equivalent E2E regression
+# ===========================================================
+
+# Build an Owner-fixture SourceSnapshot carrying 4 source
+# edges (A-B, B-C, C-D, D-E) with the same geometry the
+# R5 dispatch specifies.
+def v19a_fp_owner_fixture_source
+  live_z = 0.2 / 25.4            # 0.2 mm in inches
+  w = 10.0
+  h = 5.0
+  one_mm = 1.0 / 25.4
+  edges_data = [
+    [[0.0, 0.0, 0.0],     [w,   0.0, live_z]],
+    [[w,   0.0, live_z],  [w,   h,   0.0]],
+    [[w,   h,   0.0],     [0.0, h,   0.0]],
+    [[0.0, h,   0.0],     [0.0, one_mm, 0.0]]
+  ]
+  recs = edges_data.map.with_index do |(s, e), i|
+    EdgeRecord.new(
+      id: i,
+      source: SourceReference.new(
+        entity_id: 1 + i, persistent_id: 100 + i, kind: 'edge',
+        persistent_id_path: [100 + i], instance_path: [],
+        structural_depth: 0, pid_path_complete: true, layer_name: 'L0'
+      ),
+      start_point: s, end_point: e, layer: 'L0'
+    )
+  end
+  layer = LayerRecord.new(name: 'L0')
+  geom = GeometrySnapshot.new(edges: recs, layers: [layer])
+  cfg = AnalysisConfig.new
+  ec = ExecutionConfigSnapshot.from_live_config(
+    cfg, rule_set_digest: 'v19a-p0-r5-owner-fixture',
+    source_snapshot_schema_version: '1'
+  )
+  SourceSnapshot.from_geometry_snapshot(
+    geom,
+    selection: [],
+    host: nil,
+    execution_config: ec,
+    rule_set_digest: 'v19a-p0-r5-owner-fixture',
+    snapshot_id: "v19a-p0-r5-snap-#{rand(2**32)}",
+    captured_at: '2026-09-08T00:00:00Z',
+    transform_context: nil
+  )
+end
+
+# R5: TRUE orchestrated Owner-equivalent integration.
+#
+# Per R5 dispatch (fix 2026-09-08): exercise ONLY the
+# real V1.9A orchestrator chain — NOT manual
+# `WorkingModeRunner.compute_*` / `apply_*` calls that
+# simulate the automatic chain.
+#
+# Flow:
+#   CadPrepWorkflowOrchestrator.start
+#     -> planar ACTIONABLE
+#     -> gap detected + presenter Gap action disabled
+#   CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+#     -> BOTH identity-distinct physical B Vertex handles
+#        reach target Z
+#     -> presenter Gap action enabled
+#   CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+#     -> returned snapshot already contains recomputed
+#        Structure (open=0, closed=1, invalid=0, region=1,
+#        no non_planar_loop).
+test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and_refresh -> apply_gap_and_refresh -> ready 0/1/0/1' do
+  src = v19a_fp_owner_fixture_source
+  # Use strict tolerances per the amendment.
+  tol = Tolerance.new(duplicate: 1.0e-4, short_edge: 0.5,
+                      gap_search: 0.05, coordinate_epsilon: 1.0e-4,
+                      planar_z_snap: 0.01)
+  V19A_FP_RUNNER.reset_for_tests
+  adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+  begin
+    # === Step 1: CadPrepWorkflowOrchestrator.start ===
+    start_snap = CadPrepWorkflowOrchestrator.start(
+      source: src, adapter: adapter, model: nil, registry: nil
+    )
+    assert_equal 'ready', start_snap['state'],
+                 'orchestrator.start MUST yield a ready workspace'
+    pn = start_snap['planar_normalization']
+    refute_nil pn, 'start snapshot MUST expose planar_normalization sub-snapshot'
+    assert_equal 'READY_TO_NORMALIZE', pn['state'].to_s,
+                 'planar MUST be READY_TO_NORMALIZE on the Owner fixture (0.2 mm Z residue on B)'
+    # Gap detected but disabled while planar is
+    # actionable.
+    tr = start_snap['topology_repair']
+    refute_nil tr, 'start snapshot MUST expose topology_repair sub-snapshot'
+    assert_equal 'READY_TO_REPAIR', tr['state'].to_s,
+                 'gap MUST be READY_TO_REPAIR on the Owner fixture (1mm E-A gap)'
+    # Presenter surfaces Gap action disabled.
+    pres = SUAnalysis::Extension::CadPrepWorkflowPresenter.present(
+      analysis_result: nil, workspace_snapshot: start_snap
+    )
+    gap_card = pres['cards'].find { |c| c['id'] == 'gap_endpoint' }
+    refute_nil gap_card
+    refute_nil gap_card['primary_action']
+    refute gap_card['primary_action']['enabled'],
+           'gap repair action MUST be disabled while planar is actionable (gap-ordering safety)'
+    # === Step 2: CadPrepWorkflowOrchestrator.apply_planar_and_refresh ===
+    apply_p_snap = CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+    assert_equal 'ready', apply_p_snap['state'],
+                 'orchestrator.apply_planar_and_refresh MUST yield a ready workspace'
+    pn_after = apply_p_snap['planar_normalization']
+    refute_nil pn_after
+    assert_equal 'APPLIED', pn_after['state'].to_s,
+                 'planar MUST be APPLIED after apply_planar_and_refresh'
+    # === Step 3: CadPrepWorkflowOrchestrator.apply_gap_and_refresh ===
+    apply_g_snap = CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+    assert_equal 'ready', apply_g_snap['state'],
+                 'orchestrator.apply_gap_and_refresh MUST yield a ready workspace'
+    # Structure is auto-recomputed on the returned snapshot.
+    struct = apply_g_snap['structure_reconstruction']
+    refute_nil struct, 'returned snapshot MUST expose structure_reconstruction sub-snapshot (auto-recomputed)'
+    assert_equal 'READY', struct['state'].to_s,
+                 'structure MUST be READY after apply_gap_and_refresh'
+    metrics = struct['metrics'] || {}
+    assert_equal 0, metrics['open_chain_count'].to_i,
+                 'open_chain_count MUST be 0 after Z+Gap fix; got ' \
+                 "#{metrics.inspect}"
+    assert_equal 1, metrics['closed_loop_count'].to_i,
+                 "closed_loop_count MUST be 1; got #{metrics.inspect}"
+    assert_equal 1, metrics['region_count'].to_i,
+                 "region_count MUST be 1; got #{metrics.inspect}"
+    assert_equal 0, metrics['invalid_loop_count'].to_i,
+                 'invalid_loop_count MUST be 0 (no non_planar_loop residue)'
+    # No closed loop carries non_planar_loop.
+    # V1.8 production shape: `loops`[].unresolved_flags.
+    loops = struct['loops'] || struct['closed_loops'] || []
+    loops.each do |loop|
+      flags = Array(loop['unresolved_flags'])
+      assert !flags.include?('non_planar_loop'),
+             'NO closed loop MAY carry non_planar_loop after the V1.9A P0 fix'
+    end
+    # The presenter surfaces Gap action enabled after
+    # planar apply.
+    pres_after = SUAnalysis::Extension::CadPrepWorkflowPresenter.present(
+      analysis_result: nil, workspace_snapshot: apply_g_snap
+    )
+    gap_card_after = pres_after['cards'].find { |c| c['id'] == 'gap_endpoint' }
+    refute_nil gap_card_after
+    if gap_card_after['primary_action']
+      # After gap apply the topology_repair state is
+      # APPLIED (no longer READY_TO_REPAIR). The
+      # presenter's gap card surfaces 'APPLIED' state
+      # (no primary_action in that branch). This test
+      # only asserts the post-planar intermediate
+      # (gap unlocked) state.
+    end
+    # === Step 4: post-planar intermediate state proves
+    # the gap was auto-unlocked before the user clicked
+    # 修复间隙. ===
+    pres_after_planar = SUAnalysis::Extension::CadPrepWorkflowPresenter.present(
+      analysis_result: nil, workspace_snapshot: apply_p_snap
+    )
+    gap_card_after_planar = pres_after_planar['cards'].find { |c| c['id'] == 'gap_endpoint' }
+    refute_nil gap_card_after_planar
+    refute_nil gap_card_after_planar['primary_action']
+    assert gap_card_after_planar['primary_action']['enabled'],
+           'gap repair action MUST be enabled after planar apply (gap auto-unlocks)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
 end

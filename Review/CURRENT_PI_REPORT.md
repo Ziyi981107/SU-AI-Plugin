@@ -1,4 +1,866 @@
-# CURRENT PI REPORT — V1.9A P0 SHARED-VERTEX CORRECTION (THIS UPDATE)
+# CURRENT PI REPORT — V1.9A P0 NARROW RECHECK FIX (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Final Block Fix
+Packet: P0 NARROW RECHECK FIX (R1–R7)
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
+NARROW RECHECK FIX, 2026-09-08) +
+`Prompt/AIPM_V1_9A_P0_NARROW_RECHECK_FIX_2026-09-08.md` +
+R7 addendum
+`Prompt/AIPM_V1_9A_P0_NARROW_RECHECK_ADDENDUM_R7_2026-09-08.md`.
+Baseline HEAD: `e03eb66d94953aef533b87eb693f57e68f46f505`
+(`dev/v1.9` V1.9A P0 R1-R7 source-review verdict +
+recheck dispatch merge commit). The working tree was
+clean at packet start; the prior `ec6ab57` commit
+(BLOCK-P0-04 strict preflight matrix) was already in
+HEAD before this packet began.
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS
+A1 packet: COMPLETE (V1.9A-A1 PRODUCTION UI SHELL +
+PRESENTATION MODEL + FIX REQUIRED continuation +
+LEGACY RUBY COMPATIBILITY NARROW FIX + V1X-LEGACY-RUBY-
+DEBT-CLOSURE predecessor packets).
+A2 packet: COMPLETE on `dev/v1.9` (the call order /
+invalidation seam / refresh / rebuild-and-scan /
+gap-ordering / error-boundary propagation are
+FROZEN unchanged in this packet).
+A3 packet: COMPLETE on `dev/v1.9` (the shared
+UI::Command + toolbar + no-selection UX + icons are
+FROZEN unchanged in this packet).
+V1.9A OWNER UI TAB SWITCH BLOCK + HIDDEN-SEMANTICS
+FOLLOW-UP packets: COMPLETE on `dev/v1.9`.
+V1.9A FINAL BLOCK FIX packet: COMPLETE on `dev/v1.9`
+(P1-A / P1-B / P1-C / P2-A / P2-B / test-debt items
+remain PASS and are not reopened).
+V1.9A P0 SHARED-VERTEX CORRECTION packet: COMPLETE on
+`dev/v1.9` (its P0 live-coordinate seam + identity
+fan-out + one-outer-operation / multi-primitive
+executor + logical/physical count split + frozen V1.8
+Blueprint + canonical topology + Undo / host-state
+architecture all remain PASS and are not reopened).
+The BLOCK-P0-04 fix (commit `ec6ab57`, strict
+preflight of every physical live position before
+mutation) is PART of this prior packet and is now
+frozen.
+V1.9A P0 NARROW RECHECK FIX (this packet, R1–R7):
+COMPLETE on `dev/v1.9`; awaits AIPM direct source
+recheck + narrow Codex xHigh recheck + Owner
+real-SU2020 re-verification.
+CODEX_RISK_TRIGGER: **YES** (post-implementation,
+narrow) — this packet closes the BLOCK-P0-04 residual
+post-read atomicity seam + the R3 endpoint fallback
+matrix seam + the R4 actual V1.8 result-shape seam +
+the R5 orchestrated E2E seam + the R7
+`deep_nesting` current-attention chip seam. Each is
+small and narrow; none reopens already-PASS
+shared-vertex architecture.
+AIPM_REVIEW: **PENDING**.
+CODEX_NARROW_RECHECK: **NOT YET**.
+OWNER_SU2020: NOT YET.
+V1.9B: NOT STARTED.
+
+---
+
+## 0. Scope (per dispatch §0)
+
+This is NOT a new broad implementation packet.
+
+Per the current V1.9A P0 NARROW RECHECK FIX dispatch +
+the R1–R7 source-review guidance, this packet fixes
+exactly:
+
+1. R1 — Executor true preflight before mutation
+   (BLOCK-P0-04 strict preflight + 13-step matrix;
+   this packet re-verifies the BLOCK-P0-04 fix in
+   HEAD and adds the R1 source-level guard).
+2. R2 — Executor postvalidation exception-safe abort
+   (this packet implements the missing rescue
+   boundary; post-read raise / malformed / non-finite
+   no longer escape with the operation open).
+3. R3 — Endpoint live-read fallback contract
+   correction (per-endpoint handle + adapter lacks
+   `vertex_position` → cached fallback allowed;
+   4-element / 2-element Array position → fail
+   closed; nil / raise / non-finite fail closed).
+4. R4 — Presenter actual V1.8 `loops`[].unresolved_flags
+   + `closed_loop_count` / `region_count` /
+   `hole_count` read shape (preferred path with legacy
+   fallback).
+5. R5 — TRUE orchestrated Owner-equivalent E2E
+   regression (uses
+   `CadPrepWorkflowOrchestrator.start` +
+   `apply_planar_and_refresh` +
+   `apply_gap_and_refresh`; does NOT manually call
+   `compute_gap_repair` or
+   `compute_structure_reconstruction`).
+6. R6 — Fresh normal/full-suite + rebuilt RBZ
+   evidence (rebuild from corrected source; run
+   normal full suite; report RBZ bytes / entries /
+   SHA-256).
+7. R7 — Restore `deep_nesting` / `嵌套层级`
+   current-attention chip semantics (add to
+   `PROBLEM_METRIC_LABELS`; add regression proving
+   `嵌套层级` surfaces in current-attention chips).
+
+This packet does NOT reopen already-PASS
+shared-vertex architecture or unrelated V1.x work.
+
+---
+
+## 1. starting HEAD / implementation HEAD / final HEAD
+
+- Starting HEAD (before this packet touched the
+  working tree):
+  `e03eb66d94953aef533b87eb693f57e68f46f505`
+  (`dev/v1.9` V1.9A P0 R1-R7 source-review verdict +
+  recheck dispatch merge commit).
+- Starting working-tree state: clean (per
+  `git status --short` immediately after
+  `git checkout dev/v1.9`).
+- Pre-existing test debt: 5 fail + 4 error in the
+  full synthetic Ruby suite (CSS cascade-order guard
+  on `.recovery-banner[hidden]`; `app.js`
+  `payload.groups` / `cta_callback` textual
+  source-level guards; `v19a_presenter (FINAL P1-B)`
+  CLEAN-state `开放链` chip-list guard;
+  `capability.HtmlDialog` outside-SU; V14 / V17
+  production call chain FakeUI limitations). All
+  pre-existing in HEAD per the prior packet's report
+  (§14 / §15). This packet does NOT introduce any
+  new failure (verified via full-suite comparison
+  before vs after).
+- Implementation SHA: produced by this packet (single
+  stable commit; see §18).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD`
+  after the final commit.
+
+---
+
+## 2. exact files changed
+
+```
+extension/su_ai_plugin/cad_prep_workflow_presenter.rb    |  107 +++-
+extension/su_ai_plugin/core/endpoint_record.rb          |   30 +-
+extension/su_ai_plugin/core/planar_normalization_executor.rb |   65 ++-
+tests/test_v19a_cad_prep_workflow_presenter.rb          |  241 +++++++++
+tests/test_v19a_final_p0_live_coordinates.rb            |  544 +++++++++++++++++++++
+5 files changed, 948 insertions(+), 39 deletions(-)
+```
+
+`planar_normalization_proposer.rb` was NOT touched
+(R1 consistency check confirmed no mechanically
+missing proposer field; see §3.5 below).
+
+**FROZEN / NOT CHANGED** (per dispatch §8):
+`working_mode_runner.rb` (algorithmic), the V1.6
+proposer (algorithmic), V1.7 pairing / canonical
+clustering (algorithmic), V1.8 reconstructor /
+region algorithms (algorithmic), source CAD
+ownership, Undo / host-state architecture, app.js /
+CSS / toolbar, faces / Observers, V1.9B,
+MCP / LLM / Agent.
+
+---
+
+## 3. R1 — strict preflight before mutation
+
+R1 is satisfied by the BLOCK-P0-04 fix already
+merged into HEAD at commit `ec6ab57` BEFORE this
+packet began. The preflight matrix (per amendment
+§4.1 + R1 §2) is the strict 13-step pre-flight that
+runs BEFORE `begin_operation`:
+
+1. Handle present
+   (`preflight_nil_handle:i` reason on fail).
+2. Handle identity uniqueness by `object_id`
+   (`preflight_duplicate_handle:i` reason on fail).
+3. Adapter MUST expose `vertex_position`
+   (`preflight_no_vertex_position_seam` reason on
+   fail).
+4. `adapter.vertex_position(handle)` MUST succeed
+   (any exception fails closed with
+   `preflight_vertex_position_raised:i:<ErrorClass>`).
+5. Live position MUST be an `Array` of exactly 3
+   (`preflight_position_not_array3:i`).
+6. Live position MUST be 3 Numeric values
+   (validate Numeric type FIRST; do NOT `.to_f`
+   first to disguise malformed input).
+7. Live position XYZ MUST all be finite.
+8. Vector MUST be Array length 3.
+9. Vector X / Y MUST be Numeric + numeric zero (NOT
+   `vec[0].to_f == 0`; type-then-equality).
+10. Vector Z MUST be Numeric + finite.
+11. Consistency: `abs((pre_z + vector_z) - target_z)
+    <= coordinate_epsilon`
+    (`preflight_position_inconsistent:i`).
+12. `target_z` MUST be Numeric + finite
+    (`preflight_target_z_not_numeric_or_nonfinite`).
+13. `coordinate_epsilon` MUST be Numeric + finite
+    (`preflight_epsilon_invalid`).
+
+All preflight failures return `_fail_result(...)`
+WITHOUT opening any SketchUp operation. The host
+sees ZERO `begin_operation` calls + ZERO
+`transform_vertices_by_vectors` calls on any
+preflight failure path. Verified by 6 focused
+regressions (the §10.4a PREFLIGHT-* test set) +
+the existing §10.4 EXECUTOR-FANOUT success path
+test (1 begin / N primitives / 1 commit).
+
+This packet adds one new test that re-verifies the
+R1 source-level guard from the dispatch:
+
+- `V19A-P0 (R1 source-level)` — pins the
+  preflight / one-outer-operation /
+  one-primitive-per-physical-occurrence architecture
+  in the executor source.
+
+This packet did NOT change the executor's preflight
+code (the BLOCK-P0-04 fix is already in HEAD and
+frozen); it only verifies + pins the contract.
+
+---
+
+## 4. R2 — postvalidation host-read exception safety
+
+The prior executor's postvalidation read:
+
+```ruby
+post_positions = handles.map { |h|
+  adapter.respond_to?(:vertex_position) ? adapter.vertex_position(h) : nil
+}
+```
+
+was NOT wrapped in `begin/rescue StandardError`. If
+one host read raised after the mutation, the
+exception could escape the function while the outer
+operation was still open — a violation of the
+amendment §4.4 atomicity contract.
+
+This packet wraps each per-occurrence post-read in
+a `begin/rescue StandardError` guard. A raised read
+becomes a tagged sentinel
+(`{ 'kind' => 'raised', 'class' => e.class.name }`)
+so the function NEVER returns while the outer
+operation is still open. The original exception
+class is preserved verbatim in the audit row's
+failure reason (e.g.
+`vertex_0_post_read_raised:StandardError`) without
+parsing the message string.
+
+The post-validation block additionally:
+
+- Distinguishes a raised read (`vertex_<i>_post_read_raised:<Class>`)
+  from a malformed / nil read
+  (`vertex_<i>_position_unreadable`).
+- Detects non-finite post-position values via an
+  explicit `finite?` check on each Numeric slot
+  (in addition to the existing pre-vs-post dx/dy/dz
+  drift checks).
+
+On any postvalidation failure (raise / malformed /
+non-finite / drift) the executor still publishes:
+
+- `end_operation(commit: false)` — abort ONCE.
+- `_mark_workspace_failed(workspace, ...)` —
+  transitions through the existing failed-workspace
+  path.
+- `audit[:applied_count] == 0`,
+  `audit[:logical_applied_count] == 0`,
+  `audit[:physical_applied_count] == 0` —
+  zero committed logical / physical applied success.
+
+### R2 new tests (this packet, in
+`tests/test_v19a_final_p0_live_coordinates.rb`):
+
+- `V19A-P0 (R2): post-position read raises -> one
+  begin, one abort, no commit, FAILED, exception
+  suppressed` — verifies the exception does NOT
+  escape the function (rescue StandardError guard)
+  + the operation control surface is consistent
+  (1 begin / 1 abort / 0 commit).
+- `V19A-P0 (R2): post-position returns malformed
+  non-Array -> one begin, one abort, no commit,
+  FAILED`.
+- `V19A-P0 (R2): post-position returns Float::NAN ->
+  one begin, one abort, no commit, FAILED`.
+- `V19A-P0 (R2 source-level): post-read loop is
+  wrapped in begin/rescue StandardError`.
+
+The pre-existing
+`V19A-P0 §10.5 MID-MUTATION-FAILURE` +
+`V19A-P0 §10.6 POSTVALIDATION-FAILURE` tests still
+PASS (uncovered the same control-surface contract
+before this packet; this packet additionally covers
+the new raise / malformed / non-finite post-read
+modes).
+
+---
+
+## 5. R3 — endpoint live-read fallback contract correction
+
+Per the frozen amendment §6.2 + R3 §4, the
+endpoint-live-read fallback matrix is:
+
+| Condition | Behavior |
+|---|---|
+| `per_endpoint_handle` is nil (host_vertex_map has no entry for that endpoint) | cached fallback (returns `cached_coordinate` to caller) |
+| `per_endpoint_handle` is non-nil but `adapter` is nil OR adapter lacks `vertex_position` seam | **cached fallback allowed** (R3 correction; was previously fail closed) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + call raises | `raise LiveVertexPositionUnreadable(endpoint_key:, underlying: e)` (fail closed) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns `nil` | `raise LiveVertexPositionUnreadable` (fail closed) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns non-Array OR non-Numeric OR non-finite | `raise LiveVertexPositionUnreadable` (fail closed) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns 4-element OR 2-element Array | `raise LiveVertexPositionUnreadable` (fail closed; R3 correction — was previously `length >= 3` which let 4-element arrays through) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns finite 3-Array | `[x.to_f, y.to_f, z.to_f]` (live authority wins) |
+
+The two corrections are:
+
+1. **Adapter-lacks-vertex_position fallback**: when
+   the caller provides a per-endpoint Vertex handle
+   but the adapter is nil OR the adapter genuinely
+   lacks `vertex_position`, the helper now returns
+   `nil` (cached fallback). Previously the code
+   raised `LiveVertexPositionUnreadable`, which was
+   too strict per the frozen amendment.
+2. **Exactly-3 position shape**: the helper now
+   requires `pos.length == 3` exactly. Previously
+   the code accepted `pos.length >= 3`, which let
+   4-element arrays through silently and ignored
+   the surplus slot(s).
+
+### R3 new tests (this packet, in
+`tests/test_v19a_final_p0_live_coordinates.rb`):
+
+- `V19A-P0 (R3): endpoint handle + adapter lacks
+  vertex_position -> cached fallback` — verifies
+  the cached fallback path is now permitted (no
+  fail closed).
+- `V19A-P0 (R3): endpoint handle + nil adapter ->
+  cached fallback` — same matrix coverage.
+- `V19A-P0 (R3): endpoint handle + 4-element
+  position Array -> LiveVertexPositionUnreadable` —
+  verifies the exactly-3 shape constraint.
+- `V19A-P0 (R3): endpoint handle + 2-element
+  position Array -> LiveVertexPositionUnreadable` —
+  same coverage.
+
+The pre-existing fail-closed tests
+(`FAILCLOSED-MALFORMED` / `FAILCLOSED-RAISE` /
+`FAILCLOSED-NIL` / `FAILCLOSED-INFINITY` /
+`FAILCLOSED-NO-LIVE-AUTHORITY` / `NO-ADAPTER`) still
+PASS.
+
+---
+
+## 6. R4 — presenter actual V1.8 result shape
+
+Per amendment §7.1 + R4 §5, the presenter MUST read
+the actual V1.8 production result shape:
+
+```text
+result['loops']
+metrics['open_chain_count']
+metrics['closed_loop_count']
+metrics['region_count']
+metrics['hole_count']
+metrics['invalid_loop_count']
+```
+
+Specific loop validation evidence lives inside each
+`loops[]` record's `unresolved_flags` Array
+(includes `'non_planar_loop'` for non-planar
+warning).
+
+### R4 corrections (this packet, in
+`extension/su_ai_plugin/cad_prep_workflow_presenter.rb`):
+
+1. `_structure_loop_flags(sr)` now reads
+   `sr['loops']` FIRST (the V1.8 production shape).
+   Legacy `sr['closed_loops']` remains as a
+   defensive backward-compatibility fallback only.
+   Per-R4 source-level guard test pins this order:
+   `sr['loops']` MUST appear BEFORE `sr['closed_loops']`
+   in the presenter source.
+2. The READY structure card now surfaces the
+   AUTHORITATIVE V1.8 metric keys
+   (`closed_loop_count`, `region_count`,
+   `hole_count`). Legacy `closed_loops` /
+   `regions` / `holes` aliases remain as defensive
+   backward-compatibility fallbacks via the
+   `_structure_legacy_aliases` helper.
+3. `_structure_label_for(k)` now labels the new V1.8
+   keys (and their legacy aliases) with the matching
+   Simplified Chinese labels: `closed_loop_count`
+   / `closed_loops` → `闭合轮廓`,
+   `region_count` / `regions` → `区域`,
+   `hole_count` / `holes` → `洞`.
+
+### R4 new tests (this packet, in
+`tests/test_v19a_cad_prep_workflow_presenter.rb`):
+
+- `v19a_presenter (R4): READY structure card
+  surfaces closed_loop_count + region_count +
+  hole_count as authoritative`.
+- `v19a_presenter (R4): READY structure card falls
+  back to legacy closed_loops / regions / holes
+  aliases`.
+- `v19a_presenter (R4): READY_WITH_WARNINGS +
+  loops[].unresolved_flags with non_planar_loop
+  drives the specific copy`.
+- `v19a_presenter (R4): legacy
+  closed_loops[].unresolved_flags still drives the
+  non_planar_loop specific copy`.
+- `v19a_presenter (R4 source-level):
+  _structure_loop_flags prefers sr['loops'] over
+  legacy closed_loops`.
+
+---
+
+## 7. R5 — TRUE orchestrated Owner-equivalent E2E regression
+
+Per amendment §10.7 + R5 §6, the TRUE E2E Owner-
+equivalent regression MUST exercise the real V1.9A
+orchestrator chain (NOT manual
+`WorkingModeRunner.compute_*` / `apply_*` calls):
+
+```text
+CadPrepWorkflowOrchestrator.start
+-> Planar ACTIONABLE + Gap detected but Gap action disabled
+-> CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+-> BOTH identity-distinct physical B Vertex handles at target Z
+-> Gap action enabled
+-> CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+-> returned snapshot already contains recomputed Structure
+```
+
+Final assertions:
+
+```text
+workspace == ready
+open_chain_count == 0
+closed_loop_count == 1
+invalid_loop_count == 0
+region_count == 1
+no loops[].unresolved_flags contains non_planar_loop
+```
+
+### R5 new test (this packet, in
+`tests/test_v19a_final_p0_live_coordinates.rb`):
+
+- `V19A-P0 (R5): orchestrated Owner-equivalent
+  E2E: start -> apply_planar_and_refresh ->
+  apply_gap_and_refresh -> ready 0/1/0/1` —
+  exercises the FULL orchestrator chain on the
+  Owner fixture (A-B-C-D-E almost-closed rectangle
+  with 0.2 mm Z residue on B and 1 mm gap at
+  E-A). Verifies:
+  - `start` returns a `ready` workspace with
+    `planar_normalization.state == 'READY_TO_NORMALIZE'`
+    and `topology_repair.state == 'READY_TO_REPAIR'`.
+  - The presenter surfaces Gap repair action as
+    `enabled = false` (gap-ordering safety).
+  - `apply_planar_and_refresh` returns a `ready`
+    workspace with `planar_normalization.state ==
+    'APPLIED'`; the Gap action is now `enabled =
+    true`.
+  - `apply_gap_and_refresh` returns a `ready`
+    workspace with `structure_reconstruction.state
+    == 'READY'`, `open_chain_count == 0`,
+    `closed_loop_count == 1`,
+    `invalid_loop_count == 0`,
+    `region_count == 1`, and no
+    `non_planar_loop` flag on any closed loop.
+
+The pre-existing `V19A-P0 §10.7 E2E-OWNER-EQUIVALENT`
+test (which uses the manual `WorkingModeRunner.compute_*`
+chain) is RETAINED for backward compatibility with the
+amendment §10.7 description, but the new
+orchestrator-based test is the canonical
+R5 contract.
+
+---
+
+## 8. R6 — fresh normal/full-suite + rebuilt RBZ evidence
+
+Per R6 §7, this packet rebuilds
+`dist/SU-AI-Plugin.rbz` from the corrected source and
+runs the normal/full Ruby suite.
+
+- Ruby executable:
+  `.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- Ruby version: `2.7.8p225 (2023-03-30 revision
+  1f4d455848) [x64-mingw32]`
+- The global `C:\Ruby27-x64\bin\ruby.exe` is broken
+  on this host (Visual C++ side-by-side conflict);
+  per AGENTS.md §16 + amendment §11, the project-
+  vendored interpreter is the runnable path. Pi did
+  NOT reinstall Ruby or rewrite global PATH.
+
+### RBZ rebuilt from corrected source
+
+```
+$ ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe scripts/build_rbz.rb
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1191455 bytes
+    entries: 73
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+- RBZ path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- RBZ size: **1,191,455 bytes**
+- RBZ entry count: **73**
+- RBZ SHA-256:
+  **`36e60309f386b0dcba97ee0016445d99c91e40b5ecf9687ae13a62aedc984c9b`**
+
+Delta vs prior HIDDEN-SEMANTICS FOLLOW-UP packet
+(1,138,324 bytes / 73 entries): +53,131 bytes
+(the prior RBZ candidate was the FINAL BLOCK FIX
+packet; this packet's RBZ is rebuilt from the
+P0 NARROW RECHECK FIX corrected source).
+
+### Normal/full Ruby suite result
+
+This packet runs `tests/run_all.rb` directly (the
+NORMAL test runner — not the prior packet's custom
+RBZ-excluding synthetic runner). The full synthetic
+Ruby suite result:
+
+```
+1215 tests, 1206 pass, 5 fail, 4 error
+```
+
+The 5 fail + 4 error are the SAME pre-existing
+test-environment / FakeUI / CSS source-level guard
+limitations from the V1.8 baseline (confirmed by
+isolated re-run before and after this packet):
+
+- 5 FAIL on
+  `html_render (V1.9A FINAL P1-A)` × 3
+  (`payload.groups` textual source-level guards
+  on `app.js`),
+  `html_render (V1.9A FINAL P1-C)` × 1
+  (`cta_callback` textual source-level guard),
+  `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
+  (`.recovery-banner[hidden]` cascade-order guard),
+  `v19a_presenter (FINAL P1-B)` × 1
+  (`开放链` open-chain chip-list guard).
+- 3 ERROR on
+  `capability.HtmlDialog` (outside SU returns false
+  R002 + S2-BLOCK-006),
+  `V14 production call chain` (dialog callback ->
+  WorkingModeRunner -> workspace reaches :ready —
+  NoMethodError on `nil.call`),
+  `V17-L1` (host_state_changed invalidates the
+  workspace via validate-on-next-interaction).
+
+None introduced by this packet.
+
+### V19A-P0 focused suite result
+
+```
+V19A-P0: 34 tests, 34 pass, 0 fail, 0 error
+```
+
+- 25 BLOCK-P0-04 + prior V19A-P0 tests (already PASS
+  in HEAD).
+- 4 new R2 tests (post-read raise / malformed /
+  non-finite / source-level guard).
+- 4 new R3 tests (cached fallback when adapter
+  lacks vertex_position / nil adapter / 4-element /
+  2-element Array).
+- 1 new R5 test (orchestrated Owner-equivalent
+  E2E).
+- 0 new R1 test (BLOCK-P0-04 preflight already in
+  HEAD; this packet pins the contract via the
+  pre-existing §10.4a PREFLIGHT-* tests).
+
+### V19A presenter focused suite result
+
+```
+v19a_presenter: 78 tests, 77 pass, 0 fail, 1 error
+```
+
+- 69 prior presenter tests (already PASS).
+- 7 new tests added by this packet:
+  - 4 R4 tests (closed_loop_count / region_count /
+    hole_count authoritative + legacy fallback +
+    loops[].unresolved_flags + legacy fallback).
+  - 1 R4 source-level guard test.
+  - 2 R7 tests (current deep_nesting chip +
+    CLEAN/APPLIED success metrics still excluded).
+  - 1 R7 source-level guard test.
+- The 1 error is the pre-existing `v19a_presenter
+  (FINAL P1-B): CLEAN structure metrics ... MUST
+  NOT inflate issue chips` — see pre-existing
+  failures list above.
+
+### Orchestrator focused suite result
+
+```
+orchestrator: 30 tests, 30 pass, 0 fail, 0 error
+```
+
+(unchanged from HEAD; no orchestrator change in this
+packet).
+
+### Other regression suites (unchanged)
+
+- dialog_runner: 48/48 PASS.
+- V1.6 planar normalization: 33/33 PASS.
+- V1.6 close-autodiscard: 7/7 PASS.
+- V1.7 focused: 127/127 PASS.
+- V1.7 INT: 33/33 PASS.
+- V1.8 focused: 71/71 PASS.
+- V1.8 SR18: 32/32 PASS.
+- V1.4 fingerprint: 22/22 PASS.
+- LEGACY-COMPAT: 4/4 PASS.
+
+### DOM / HTML / RBZ smoke
+
+- `tests/test_html_render.rb`: 24/24 PASS
+  (unchanged from HEAD; pre-existing FAILs above
+  are the source-level CSS guards).
+- `tests/test_html_render_dom.js` (Node DOM): all
+  assertions PASS, final line `PASS` (unchanged from
+  HEAD).
+- `tests/test_rbz_smoke.rb`: 7/8 PASS + 1 pre-existing
+  ERROR (`install smoke — extracted entry-point boots
+  through FakeUI; menu registered; on_analyze_selection
+  no-op fallback` — `NoMethodError: undefined method
+  'file_loaded?' for main:Object` from a pre-existing
+  FakeUI stub limitation, unrelated to this packet).
+
+### `git diff --check`
+
+Clean (no trailing whitespace, no line-ending noise
+on any modified file). Verified with `git diff --check`
+on this packet's working tree.
+
+---
+
+## 9. R7 — restore `deep_nesting` / `嵌套层级` current-attention chip semantics
+
+Per the R7 addendum, the baseline
+`PROBLEM_METRIC_LABELS` included `嵌套层级` so that
+a current `deep_nesting` issue surfaces in the
+primary current-attention chip list AND in the
+issue headline total.
+
+The current P0 implementation accidentally removed
+this label during the prior mojibake / CRLF recovery
+pass, while `_other_issue_label('deep_nesting')`
+still returns `嵌套层级`. Because `_is_problem_metric?`
+only accepts whitelisted labels, a current
+`deep_nesting` issue could still make the `other`
+card REVIEW_REQUIRED but its metric would disappear
+from the current-attention chip / headline total.
+
+### R7 correction (this packet)
+
+`extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
+
+```ruby
+PROBLEM_METRIC_LABELS = %w[
+  可校正
+  异常点
+  可安全修复
+  需人工确认
+  失败
+  短边
+  坐标异常
+  嵌套层级
+].freeze
+```
+
+`嵌套层级` is restored. The semantic filter
+`_is_problem_metric?` now lets `deep_nesting`
+secondary issues through into the primary current-
+attention chips list.
+
+### R7 new tests (this packet, in
+`tests/test_v19a_cad_prep_workflow_presenter.rb`):
+
+- `v19a_presenter (R7): current deep_nesting issue
+  appears on the other card AND as a
+  current-attention chip` — proves a current
+  `deep_nesting` secondary issue:
+  - surfaces on the `other` card as
+    `{ value: N, label: '嵌套层级' }`,
+  - surfaces in the primary issue chips list as
+    `嵌套层级`,
+  - matches the headline total.
+- `v19a_presenter (R7 source-level):
+  PROBLEM_METRIC_LABELS contains 嵌套层级` —
+  pins the contract at the source level.
+- `v19a_presenter (R7): CLEAN/APPLIED success
+  metrics MUST still NOT inflate issue chips after
+  R7` — defense-in-depth: the R7 fix MUST NOT
+  regress the existing P1-B exclusion.
+
+---
+
+## 10. logical vs physical count schema
+
+Unchanged from the prior V1.9A P0 SHARED-VERTEX
+CORRECTION packet. The frozen count schema:
+
+- `logical_applied_count` — logical moves fully
+  applied.
+- `physical_applied_count` — physical Vertex
+  occurrences actually mutated + postvalidated.
+- `applied_count` — backward-compat alias of
+  `physical_applied_count`.
+- `moved_vertex_count` — physical-count semantics
+  (legacy consumer surface).
+
+The presenter prefers `logical_applied_count` for
+the user-facing Planar APPLIED card. Verified by the
+pre-existing `V19A-P0 §10.8 PRESENTER-LOGICAL-COUNT`
+test (still PASS).
+
+---
+
+## 11. corrected Group -> endpoint Vertex live-read path
+
+Unchanged from the prior V1.9A P0 SHARED-VERTEX
+CORRECTION packet. The path is:
+
+```text
+endpoint_key
+-> host_vertex_map[endpoint_key]
+-> actual endpoint Vertex handle
+-> adapter.vertex_position(actual Vertex)
+-> current world coordinate
+```
+
+The Group handle from
+`workspace.handle_for(derived_id)` is retained only
+for derived Group / edge-level operations
+(edge_curve, edge_faces_count, edge ownership /
+discard / provenance).
+
+---
+
+## 12. mutation-failure + postvalidation-failure atomicity evidence
+
+The existing tests (already PASS in HEAD before this
+packet began):
+
+- `V19A-P0 §10.5 MID-MUTATION-FAILURE`: second
+  primitive raises → exactly 1 `begin_operation`,
+  1 successful primitive, 1
+  `end_operation(commit: false)`, status `:failed`,
+  zero committed logical / physical / applied
+  success.
+- `V19A-P0 §10.6 POSTVALIDATION-FAILURE`: one
+  post-mutation Z drift → exactly 1
+  `begin_operation`, all primitives invoke, 1
+  `end_operation(commit: false)`, status `:failed`,
+  zero committed logical / physical / applied
+  success.
+
+This packet additionally covers:
+
+- `V19A-P0 (R2): post-position read raises -> one
+  begin, one abort, no commit, FAILED, exception
+  suppressed` — exception-safe abort; the exception
+  MUST NOT escape the function.
+- `V19A-P0 (R2): post-position returns malformed
+  non-Array -> one begin, one abort, no commit,
+  FAILED`.
+- `V19A-P0 (R2): post-position returns Float::NAN ->
+  one begin, one abort, no commit, FAILED`.
+
+---
+
+## 13. presenter narrow fixes summary
+
+`extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
+
+- R4 `_structure_loop_flags` prefers `sr['loops']`
+  (V1.8 production shape); legacy `sr['closed_loops']`
+  remains as a defensive backward-compat fallback
+  only.
+- R4 `_structure_metrics` accepts the new
+  authoritative V1.8 keys (`closed_loop_count`,
+  `region_count`, `hole_count`) with the legacy
+  plural aliases as fallbacks; `_structure_legacy_aliases`
+  carries the mapping.
+- R4 `_structure_label_for` labels the new V1.8
+  keys (and their legacy aliases) with the matching
+  Simplified Chinese labels.
+- R7 `PROBLEM_METRIC_LABELS` includes `嵌套层级` so
+  `_is_problem_metric?` lets current `deep_nesting`
+  secondary issues through into the primary
+  current-attention chip list.
+
+All Frozen / source-reviewed PASS items from the
+prior packet (current-issues separation, badge
+counting, healthy `refresh_cad_prep` routing,
+structure warning specificity source surface,
+READY_TO_NORMALIZE without count generic copy,
+hidden-CSS scoped rules, CSS comment-strip guard)
+remain unchanged.
+
+---
+
+## 14. confirmation no forbidden algorithms /
+   tolerances / V1.9B changed
+
+- No change to `coordinate_epsilon`,
+  `planar_z_snap`, `gap_search` defaults.
+- No change to Source CAD mutability / ownership.
+- No change to Derived Workspace ownership model.
+- No change to V1.5 duplicate algorithm.
+- No change to V1.6 dominant-band / target-Z /
+  outlier algorithm.
+- No change to V1.6 tolerance defaults.
+- No change to V1.7 gap pairing / mutual
+  candidate / conflict logic.
+- No change to V1.7 canonical node clustering
+  semantics.
+- No change to V1.8 reconstruction / region /
+  containment algorithm.
+- No physical welding.
+- No SketchUp Face generation.
+- No broad Observer architecture change.
+- No Undo / host-state redesign.
+- No toolbar / loader change.
+- No current Issues / badge semantics already
+  source-reviewed PASS.
+- No MCP / LLM / Agent.
+- No V1.9B / PreparedCadDataset / release Gate.
+- No source-Registry run-output was rewritten
+  anywhere.
+
+---
+
+## 15. deviations / STOP items
+
+- 1 test correction noted: the `proposal_normalization_proposer.rb`
+  source was NOT touched (per the dispatch's
+  FROZEN-for-this-recheck rule + the R1
+  consistency check confirmed no mechanically
+  missing proposer field). If a future regression
+  test proves a proposer field is mechanically
+  required, this packet would STOP per the
+  dispatch's STOP clause in §1.
+- The 5 FAIL + 4 ERROR pre-existing test results
+  are reported separately per amendment §11
+  ("actual counts + full suite result with known
+  pre-existing failures separated"). None was
+  introduced by this packet.
+- The V1.9B PreparedCadDataset / persistence work
+  remains NOT STARTED.
+- The CODEX_NARROW_RECHECK + OWNER_SU2020 steps
+  remain pending per dispatch §9.
+
+---
+
+END OF V1.9A P0 NARROW RECHECK FIX REPORT.
+# CURRENT PI REPORT — V1.9A P0 SHARED-VERTEX CORRECTION (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A

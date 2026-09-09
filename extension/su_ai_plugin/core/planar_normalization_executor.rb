@@ -308,10 +308,49 @@ module SUAnalysis
           }.freeze
         end
         # ---- Post-validation ----
+        # V1.9A P0 NARROW RECHECK R2 (fix 2026-09-08):
+        # post-read exceptions MUST NOT escape while the
+        # outer operation is open. The amendment §4.4 +
+        # R2 §3 require that post-read nil / malformed /
+        # non-numeric / non-finite / raised all become
+        # postvalidation failure for that occurrence;
+        # the ONE outer operation MUST be aborted exactly
+        # once; no commit; workspace/result FAILED; no
+        # published logical/physical applied success.
+        #
+        # Implementation: each per-occurrence post-read is
+        # wrapped in a `begin/rescue StandardError` guard
+        # that returns the captured exception class (or
+        # `nil` when the read returned successfully). A
+        # raise therefore becomes a tagged sentinel in
+        # `post_results` rather than escaping the loop
+        # with the operation still open. The downstream
+        # validation logic records
+        # `vertex_#{i}_post_read_raised:<ClassName>` and
+        # falls through to the existing
+        # abort-once-no-commit FAILED path.
         eps = tolerance.coordinate_epsilon.to_f
-        post_positions = handles.map { |h|
-          adapter.respond_to?(:vertex_position) ? adapter.vertex_position(h) : nil
-        }
+        post_results = handles.map do |h|
+          if !adapter.respond_to?(:vertex_position)
+            # No live-read capability — treat as missing.
+            { 'kind' => 'missing' }
+          else
+            begin
+              pos = adapter.vertex_position(h)
+              { 'kind' => 'ok', 'value' => pos }
+            rescue StandardError => e
+              # Raised host read becomes a per-occurrence
+              # tagged sentinel so the downstream
+              # validation logic can record the original
+              # exception class verbatim. The exception
+              # itself is suppressed here so the function
+              # NEVER returns while the outer operation is
+              # still open (the abort-once path below runs
+              # cleanly to completion).
+              { 'kind' => 'raised', 'class' => e.class.name }
+            end
+          end
+        end
         validation_errors = []
         moved_count = 0
         max_movement = 0.0
@@ -319,10 +358,26 @@ module SUAnalysis
         after_zs = []
         handles.each_with_index do |h, i|
           pre = pre_positions[i]
-          post = post_positions[i]
+          entry = post_results[i]
+          post = entry.is_a?(Hash) ? entry['value'] : nil
           before_zs << pre[2].to_f if pre.is_a?(Array)
           after_zs << post[2].to_f if post.is_a?(Array)
-          if pre.is_a?(Array) && post.is_a?(Array)
+          # R2 fail-closed: a raised read is treated as a
+          # postvalidation failure for that occurrence.
+          if entry.is_a?(Hash) && entry['kind'] == 'raised'
+            validation_errors << "vertex_#{i}_post_read_raised:#{entry['class']}"
+            next
+          end
+          if pre.is_a?(Array) && post.is_a?(Array) &&
+             post[0].is_a?(Numeric) && post[1].is_a?(Numeric) && post[2].is_a?(Numeric)
+            finite =
+              (!post[0].respond_to?(:finite?) || post[0].finite?) &&
+              (!post[1].respond_to?(:finite?) || post[1].finite?) &&
+              (!post[2].respond_to?(:finite?) || post[2].finite?)
+            unless finite
+              validation_errors << "vertex_#{i}_position_unreadable"
+              next
+            end
             dx = (post[0] - pre[0]).abs
             dy = (post[1] - pre[1]).abs
             dz = (post[2] - target_z).abs

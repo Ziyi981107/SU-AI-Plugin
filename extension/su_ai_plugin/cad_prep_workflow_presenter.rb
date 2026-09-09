@@ -462,6 +462,18 @@ module SUAnalysis
       # (closed_loops, regions, holes, repaired counts, etc.)
       # MUST NOT inflate the primary issue count (P1-B
       # dispatch §2.3 truth rule).
+      # V1.9A P0 NARROW RECHECK R7 (addendum 2026-09-08):
+      # `嵌套层级` MUST appear in PROBLEM_METRIC_LABELS so
+      # that a current `deep_nesting` issue surfaces in
+      # the primary current-attention chips. The baseline
+      # presenter included this label; it was accidentally
+      # removed during the prior mojibake/CRLF recovery
+      # pass while `_other_issue_label('deep_nesting')`
+      # still returns `嵌套层级`. The semantic filter
+      # `_is_problem_metric?` only accepts whitelisted
+      # labels, so a current `deep_nesting` issue would
+      # otherwise make the `other` card REVIEW_REQUIRED but
+      # disappear from the chip list / issue headline total.
       PROBLEM_METRIC_LABELS = %w[
         可校正
         异常点
@@ -470,6 +482,7 @@ module SUAnalysis
         失败
         短边
         坐标异常
+        嵌套层级
       ].freeze
 
       # Backwards-compatibility: legacy test fixtures +
@@ -1075,13 +1088,22 @@ module SUAnalysis
         metrics = sr['metrics'].is_a?(Hash) ? sr['metrics'] : {}
         case ss
         when 'READY'
+          # V1.9A P0 NARROW RECHECK R4 (fix 2026-09-08):
+          # READY structure card metrics MUST use the
+          # AUTHORITATIVE V1.8 production keys
+          # (`closed_loop_count`, `region_count`,
+          # `hole_count`). Legacy `closed_loops` /
+          # `regions` / `holes` aliases remain as defensive
+          # backward-compatibility fallbacks only. The
+          # `_structure_metrics` helper already carries the
+          # alias-fallback logic per preferred key.
           {
             'id'               => 'structure_region',
             'state'            => 'CLEAN',
             'state_label'      => '结构可用',
             'title'            => CARD_TITLES_CN['structure_region'],
             'summary'          => '闭合轮廓与区域均已稳定',
-            'metrics'          => _structure_metrics(metrics, %w[closed_loops regions]),
+            'metrics'          => _structure_metrics(metrics, %w[closed_loop_count region_count hole_count]),
             'primary_action'   => nil,
             'secondary_action' => nil,
             'detail_filter'    => 'structure'
@@ -1215,7 +1237,17 @@ module SUAnalysis
       # label.
       def _structure_legacy_aliases(preferred_key)
         case preferred_key.to_s
-        when 'open_chain_count' then ['open_chains'].freeze
+        # V1.9A P0 NARROW RECHECK R4 (fix 2026-09-08):
+        # the AUTHORITATIVE V1.8 production keys
+        # (`open_chain_count` / `closed_loop_count` /
+        # `region_count` / `hole_count` /
+        # `invalid_loop_count`) accept the legacy
+        # pre-V1.8 plural keys as defensive
+        # backward-compatibility fallbacks.
+        when 'open_chain_count'   then ['open_chains'].freeze
+        when 'closed_loop_count'  then ['closed_loops'].freeze
+        when 'region_count'       then ['regions'].freeze
+        when 'hole_count'         then ['holes'].freeze
         when 'invalid_loop_count' then [].freeze
         else [].freeze
         end
@@ -1253,29 +1285,48 @@ module SUAnalysis
         v.is_a?(Integer) ? v : 0
       end
 
-      # V1.9A P0 SHARED-VERTEX CORRECTION (amendment §7.1):
+      # V1.9A P0 NARROW RECHECK R4 (fix 2026-09-08):
       # Read the loop unresolved_flags list. The actual V1.8
-      # frozen shape publishes flags inside each
-      # `closed_loops[]` record's `unresolved_flags` Array.
-      # Older fixtures may carry `unresolved_flags` at the
-      # top level or under metrics; tolerate those as
-      # backward-compatibility fallbacks. The flattened flag
+      # production shape (per CanonicalStructureReconstructor)
+      # publishes each loop record inside the top-level
+      # `loops` Array; each record carries an
+      # `unresolved_flags` Array. The legacy `closed_loops`
+      # top-level Array is tolerated as a defensive
+      # backward-compatibility fallback only (older V1.8
+      # callers / fixtures). Older fixtures may also carry
+      # `unresolved_flags` at the top level or under
+      # metrics; tolerate those too. The flattened flag
       # list is the union of ALL per-loop flag Arrays plus
-      # any legacy top-level / metrics-level fallback. Returns
-      # an Array<String>.
+      # any legacy top-level / metrics-level fallback.
+      # Returns an Array<String>.
       def _structure_loop_flags(sr)
         return [] unless sr.is_a?(Hash)
         flags = []
-        # Preferred shape: closed_loops[].unresolved_flags.
-        closed_loops = sr['closed_loops']
-        closed_loops = sr[:closed_loops] if closed_loops.nil?
-        if closed_loops.is_a?(Array)
-          closed_loops.each do |loop|
+        # Preferred V1.8 production shape: `loops`[].unresolved_flags.
+        # Read this FIRST; the legacy `closed_loops` fallback
+        # only fires when `loops` is absent / non-Array.
+        loops = sr['loops']
+        loops = sr[:loops] if loops.nil?
+        if loops.is_a?(Array) && !loops.empty?
+          loops.each do |loop|
             next unless loop.is_a?(Hash)
             raw = loop['unresolved_flags']
             raw = loop[:unresolved_flags] if raw.nil?
             next unless raw.is_a?(Array)
             raw.each { |x| flags << x.to_s }
+          end
+        else
+          # Legacy fallback: `closed_loops`[].unresolved_flags.
+          closed_loops = sr['closed_loops']
+          closed_loops = sr[:closed_loops] if closed_loops.nil?
+          if closed_loops.is_a?(Array)
+            closed_loops.each do |loop|
+              next unless loop.is_a?(Hash)
+              raw = loop['unresolved_flags']
+              raw = loop[:unresolved_flags] if raw.nil?
+              next unless raw.is_a?(Array)
+              raw.each { |x| flags << x.to_s }
+            end
           end
         end
         # Backward-compatibility fallbacks (older fixtures
@@ -1335,17 +1386,21 @@ module SUAnalysis
 
       def _structure_label_for(k)
         case k.to_s
-        # V1.9A P0 SHARED-VERTEX CORRECTION (amendment
-        # §7.1): prefer the frozen V1.8 key
-        # `open_chain_count` (singular + `_count`); legacy
-        # `open_chains` is tolerated as a defensive alias
-        # for older fixtures.
-        when 'open_chain_count', 'open_chains' then '开放链'
-        when 'invalid_loop_count'             then '无效轮廓'
-        when 'closed_loops'  then '闭合轮廓'
-        when 'regions'       then '区域'
-        when 'holes'         then '洞'
-        when 'exceptions'    then '异常'
+        # V1.9A P0 NARROW RECHECK R4 (fix 2026-09-08):
+        # the AUTHORITATIVE V1.8 production keys
+        # (`open_chain_count` / `closed_loop_count` /
+        # `region_count` / `hole_count` /
+        # `invalid_loop_count`) get the matching
+        # Simplified Chinese labels. Legacy aliases
+        # (`open_chains` / `closed_loops` / `regions` /
+        # `holes`) share the same labels so older fixtures
+        # surface consistent copy.
+        when 'open_chain_count', 'open_chains'      then '开放链'
+        when 'closed_loop_count', 'closed_loops'   then '闭合轮廓'
+        when 'region_count', 'regions'             then '区域'
+        when 'hole_count', 'holes'                 then '洞'
+        when 'invalid_loop_count'                  then '无效轮廓'
+        when 'exceptions'                          then '异常'
         else k.to_s
         end
       end

@@ -1456,3 +1456,244 @@ test 'v19a_presenter (FINAL P1-C): presenter source exposes issue_summary.cta_ca
          "(IDLE / READY-with-APPLIED / clean / STALE / FAILED / SCANNING / NEEDS); " \
          "got #{occurrences} occurrence(s)"
 end
+
+# ===========================================================
+# V1.9A P0 NARROW RECHECK R4 — presenter reads actual V1.8 keys
+# ===========================================================
+
+# Per dispatch R4 (fix 2026-09-08): the READY structure
+# card MUST surface the AUTHORITATIVE V1.8 production
+# metric keys (`closed_loop_count`, `region_count`,
+# `hole_count`). Legacy `closed_loops` / `regions` /
+# `holes` aliases remain as defensive fallbacks only.
+test 'v19a_presenter (R4): READY structure card surfaces closed_loop_count + region_count + hole_count as authoritative' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY',
+      'metrics' => {
+        'closed_loop_count' => 12,
+        'region_count'      => 8,
+        'hole_count'        => 2
+      }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  labels = sr['metrics'].map { |m| m['label'] }
+  values = sr['metrics'].map { |m| m['value'] }
+  assert_includes labels, '闭合轮廓',
+                  'READY MUST surface closed_loop_count as 闭合轮廓 chip'
+  assert_includes labels, '区域',
+                  'READY MUST surface region_count as 区域 chip'
+  assert_includes labels, '洞',
+                  'READY MUST surface hole_count as 洞 chip when > 0'
+  assert_includes values, 12
+  assert_includes values, 8
+  assert_includes values, 2
+end
+
+# R4 legacy fallback: when only legacy plural keys
+# are present, the presenter still surfaces the same
+# labels so older fixtures do not regress.
+test 'v19a_presenter (R4): READY structure card falls back to legacy closed_loops / regions / holes aliases' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY',
+      'metrics' => { 'closed_loops' => 5, 'regions' => 3 }
+      # no hole_count at all
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  labels = sr['metrics'].map { |m| m['label'] }
+  values = sr['metrics'].map { |m| m['value'] }
+  assert_includes labels, '闭合轮廓',
+                  'legacy closed_loops MUST fall back to the 闭合轮廓 chip label'
+  assert_includes labels, '区域',
+                  'legacy regions MUST fall back to the 区域 chip label'
+  refute_includes labels, '洞',
+                  'hole chip MUST be hidden when no hole_count / holes data is present'
+  assert_includes values, 5
+  assert_includes values, 3
+end
+
+# R4: per-loop unresolved_flags MUST be read from the
+# AUTHORITATIVE V1.8 `loops`[].unresolved_flags path.
+# Legacy `closed_loops`[].unresolved_flags remains as a
+# fallback only.
+test 'v19a_presenter (R4): READY_WITH_WARNINGS + loops[].unresolved_flags with non_planar_loop drives the specific copy' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => {
+        'open_chain_count'    => 0,
+        'closed_loop_count'   => 1,
+        'invalid_loop_count'  => 1
+      },
+      # V1.8 production shape: `loops`[].unresolved_flags
+      'loops' => [
+        { 'unresolved_flags' => ['non_planar_loop'] }
+      ]
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal 'REVIEW_REQUIRED', sr['state']
+  assert_equal '存在非平面闭合轮廓，暂不能形成区域', sr['summary'],
+               'preferred V1.8 `loops`[].unresolved_flags (non_planar_loop) MUST drive the specific copy'
+end
+
+# R4 backward-compat: legacy `closed_loops`[].unresolved_flags
+# still works (older fixtures / callers).
+test 'v19a_presenter (R4): legacy closed_loops[].unresolved_flags still drives the non_planar_loop specific copy' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY_WITH_WARNINGS',
+      'metrics' => {
+        'open_chain_count'    => 0,
+        'closed_loop_count'   => 1,
+        'invalid_loop_count'  => 1
+      },
+      # Legacy V1.8 caller shape: `closed_loops`[].unresolved_flags
+      'closed_loops' => [
+        { 'unresolved_flags' => ['non_planar_loop'] }
+      ]
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  sr = payload['cards'].find { |c| c['id'] == 'structure_region' }
+  assert_equal '存在非平面闭合轮廓，暂不能形成区域', sr['summary'],
+               'legacy closed_loops[].unresolved_flags MUST remain as a defensive fallback'
+end
+
+# R4 source-level guard: the production-primary path
+# MUST read `sr['loops']` FIRST; legacy `sr['closed_loops']`
+# is the fallback only.
+test 'v19a_presenter (R4 source-level): _structure_loop_flags prefers sr[\'loops\'] over legacy closed_loops' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  # Production-primary read: sr['loops'] before sr['closed_loops'].
+  loops_idx  = src.index("sr['loops']")
+  closed_idx = src.index("sr['closed_loops']")
+  refute_nil loops_idx,
+             'presenter source MUST read sr[\'loops\'] as the V1.8 production-primary loop path'
+  refute_nil closed_idx
+  assert loops_idx < closed_idx,
+         'sr[\'loops\'] (V1.8 production-primary) MUST appear BEFORE sr[\'closed_loops\'] (legacy fallback) in source'
+end
+
+# ===========================================================
+# V1.9A P0 NARROW RECHECK R7 — `嵌套层级` current-attention chip
+# ===========================================================
+
+# Per dispatch R7 addendum (2026-09-08): a current
+# `deep_nesting` issue MUST surface in the primary
+# current-attention chips (otherwise the headline total
+# and the chip count silently disagree with the
+# REVIEW_REQUIRED `other` card).
+test 'v19a_presenter (R7): current deep_nesting issue appears on the other card AND as a current-attention chip' do
+  pf = Struct.new(:edge_count, :vertex_count, :non_zero_z_vertex_count, :warning_count, :face_count, :faces_with_holes_count).new(10, 12, 0, 0, 0, 0)
+  # Build an IssueRegistry carrying only the deep_nesting
+  # secondary issue type. The other card must surface it
+  # as a REVIEW_REQUIRED card; the primary issue chips
+  # list MUST include the `嵌套层级` label.
+  reg = IssueRegistry.new([
+    { issue_id: 'deep_nesting|1|1', issue_type: 'deep_nesting', severity: 'low',
+      confidence: 'high', sources: [], source_entity_ids: [], edge_ids: [],
+      location: nil, message: 'm', metadata: {}, locatable: false, display_length: nil },
+    { issue_id: 'deep_nesting|2|1', issue_type: 'deep_nesting', severity: 'low',
+      confidence: 'high', sources: [], source_entity_ids: [], edge_ids: [],
+      location: nil, message: 'm', metadata: {}, locatable: false, display_length: nil },
+    { issue_id: 'deep_nesting|3|1', issue_type: 'deep_nesting', severity: 'low',
+      confidence: 'high', sources: [], source_entity_ids: [], edge_ids: [],
+      location: nil, message: 'm', metadata: {}, locatable: false, display_length: nil }
+  ])
+  ar = AnalysisResult.new(preflight: pf, registry: reg,
+                         selection_type: 'Group', selection_label: 'x')
+  snap = {
+    'state' => 'ready',
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => { 'computed' => true, 'state' => 'READY' }
+  }
+  payload = v19a_present(ar, snap)
+  other = payload['cards'].find { |c| c['id'] == 'other' }
+  # Card-level surface: `other` card carries the deep_nesting metric.
+  assert_equal 'REVIEW_REQUIRED', other['state'],
+               'card "other" must surface as REVIEW_REQUIRED when deep_nesting secondary issues exist'
+  metric = other['metrics'].find { |m| m['label'] == '嵌套层级' }
+  refute_nil metric,
+             'card "other" metric MUST include 嵌套层级 (deep_nesting) label'
+  assert_equal 3, metric['value'],
+               'card "other" 嵌套层级 metric MUST reflect the deep_nesting count'
+  # Chip-level surface: the current issue chips list MUST
+  # include 嵌套层级 so the chip count and the headline
+  # total stay truthful.
+  chips = payload['issue_summary']['chips']
+  chip = chips.find { |c| c['label'] == '嵌套层级' }
+  refute_nil chip,
+             'current issue chips MUST include 嵌套层级 (R7 restoration contract)'
+  assert_equal 3, chip['value'],
+               'chip value MUST equal the current deep_nesting count'
+end
+
+# R7 source-level guard: `嵌套层级` MUST appear in
+# PROBLEM_METRIC_LABELS so `_is_problem_metric?` lets
+# it through into the chip list.
+test 'v19a_presenter (R7 source-level): PROBLEM_METRIC_LABELS contains 嵌套层级' do
+  src = File.read(File.expand_path('../extension/su_ai_plugin/cad_prep_workflow_presenter.rb', __dir__))
+  assert_match(/PROBLEM_METRIC_LABELS\s*=\s*%w\[/, src,
+               'presenter source MUST expose PROBLEM_METRIC_LABELS')
+  # Extract the array literal and assert 嵌套层级 is in it.
+  m = src.match(/PROBLEM_METRIC_LABELS\s*=\s*%w\[(.*?)\]\.freeze/m)
+  refute_nil m, 'presenter source MUST expose PROBLEM_METRIC_LABELS as a frozen %w[] array'
+  labels = m[1].split(/\s+/).reject(&:empty?)
+  assert_includes labels, '嵌套层级',
+                  'PROBLEM_METRIC_LABELS MUST include 嵌套层级 (R7 contract)'
+end
+
+# R7 defense-in-depth: CLEAN / APPLIED success metrics
+# remain excluded from the chip list even when
+# `嵌套层级` is restored to PROBLEM_METRIC_LABELS.
+test 'v19a_presenter (R7): CLEAN/APPLIED success metrics MUST still NOT inflate issue chips after R7' do
+  snap = {
+    'state' => 'ready',
+    'duplicate_repair' => { 'actions_applied' => 0, 'duplicate_pairs_before' => 0, 'duplicate_pairs_after' => 0 },
+    'planar_normalization' => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'topology_repair'      => { 'computed' => true, 'state' => 'NO_CANDIDATE' },
+    'structure_reconstruction' => {
+      'computed' => true, 'state' => 'READY',
+      'metrics' => {
+        'closed_loop_count' => 18,
+        'region_count'      => 12,
+        'hole_count'        => 4
+      }
+    }
+  }
+  payload = v19a_present(v19a_make_ar, snap)
+  labels = payload['issue_summary']['chips'].map { |c| c['label'] }
+  # Success-state labels MUST NOT inflate the chips list.
+  forbidden = %w[闭合轮廓 区域 洞]
+  forbidden.each do |lbl|
+    refute_includes labels, lbl,
+                    "CLEAN-state metric #{lbl.inspect} MUST NOT inflate issue chips"
+  end
+  # No 嵌套层级 chip when no deep_nesting issue exists.
+  refute_includes labels, '嵌套层级',
+                  '嵌套层级 chip MUST NOT appear when no current deep_nesting issue exists'
+end
