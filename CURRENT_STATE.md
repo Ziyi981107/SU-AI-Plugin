@@ -1,3 +1,364 @@
+## V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — RFR-01..RFR-05 (THIS UPDATE)
+
+Updated: 2026-09-09 (V1.9A OWNER REFRESH STALE-PLANAR
+BLOCK FIX dispatch EXECUTION on assigned `dev/v1.9` per
+AIPM direct Owner-evidence guidance
+`Prompt/AIPM_V1_9A_OWNER_REFRESH_STALE_PLANAR_BLOCK_FIX_2026-09-09.md`).
+Per dispatch + AIPM narrow guidance, this packet fixes
+exactly ONE narrow production seam surfaced by real
+SketchUp 2020 Owner testing.
+
+  - **Root cause (Owner evidence)**: real SU2020 Owner
+    flow — start -> apply Z (audit `applied`,
+    `logical_applied_count = 1`,
+    `physical_applied_count = 2`, `APPLIED`) -> click
+    `重新检测` (`refresh_cad_prep`) -> Planar
+    immediately becomes `READY_TO_NORMALIZE` again ->
+    refreshed proposal reports
+    `max_movement = 0.007874015748...` inch, exactly
+    the original 0.2 mm drift. The proposer was
+    resurrecting the build-time cached
+    `geometry_summary['start'] / ['end']` coordinate
+    instead of reading the current post-mutation LIVE
+    per-endpoint Vertex position. This violates the
+    frozen refresh contract: Refresh must re-scan the
+    current derived workspace and must not resurrect a
+    repair already applied to that workspace.
+  - **Required production change**: primary allowed
+    production file
+    `extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
+    The proposer now uses LIVE per-endpoint Vertex
+    positions (via `adapter.vertex_position(handle)`) as
+    the current-coordinate AUTHORITY for ALL
+    coordinate-dependent V1.6 Planar logic (safe-edge
+    gating, `edge_data` positions, cluster map, and
+    candidate selection). Cached `geometry_summary`
+    is retained ONLY as the no-live-authority fallback
+    (host-free / pure-test path). When a per-endpoint
+    Vertex handle exists AND the adapter exposes
+    `vertex_position`, an unreadable live read
+    (nil / raise / wrong shape / non-Numeric /
+    NaN / Infinity) fails CLOSED: the affected edge
+    is marked unsafe and the proposer MUST NOT silently
+    substitute the cached pre-mutation coordinate.
+  - **Live-read matrix** (when endpoint Vertex handle
+    exists AND adapter exposes `vertex_position`):
+    - exact 3-Numeric-finite XYZ -> authoritative
+      current coordinate;
+    - nil / raise / wrong length / non-Numeric /
+      NaN / Infinity -> FAIL CLOSED: edge unsafe, no
+      cached resurrection.
+    Cached `geometry_summary` fallback is allowed ONLY
+    when there is genuinely no live-position capability
+    in the execution environment (no per-endpoint
+    handle resolvable OR adapter lacks
+    `vertex_position`).
+  - **Source CAD immutability preserved**: the proposer
+    does NOT mutate `geometry_summary`; the LIVE
+    read is applied to the outgoing analysis only.
+  - **Do NOT touch** (per dispatch): executor, shared-
+    vertex fan-out architecture, transaction / Undo
+    semantics, `working_mode_runner.rb`,
+    `cad_prep_workflow_orchestrator.rb`, V1.7 pairing /
+    canonical clustering, V1.8 reconstruction /
+    regions, tolerances, Source CAD ownership, Presenter
+    / app.js / CSS / toolbar, V1.9B / MCP / LLM / Agent.
+    None of those frozen files were modified by this
+    packet.
+
+The ONLY production source file touched is
+`extension/su_ai_plugin/core/planar_normalization_proposer.rb`
+(per dispatch's primary allowed production scope).
+`planar_normalization_executor.rb`, `endpoint_record.rb`,
+presenter, orchestrator, `working_mode_runner.rb`,
+V1.7 / V1.8 algorithms, app.js / CSS / toolbar, V1.9B
+remain FROZEN.
+
+V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — 2026-09-09.
+
+- Starting HEAD: `e3d6f3b...` (the V1.9A P0 FINAL
+  NARROW RESIDUAL CORRECTION merge commit on `dev/v1.9`).
+- Starting working-tree state: 2 untracked dispatch
+  files (the new
+  `Prompt/AIPM_V1_9A_OWNER_REFRESH_STALE_PLANAR_BLOCK_FIX_2026-09-09.md`
+  + the prior
+  `Prompt/AIPM_V1_9A_P0_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-09.md`
+  from the previous packet). Working tree otherwise clean.
+- Pre-existing test debt: 5 fail + 4 error in HEAD
+  (CSS / app.js textual source-level guards +
+  FakeUI / V14 / V17 / V19A FINAL P1-B pre-existing
+  failures). None caused by this packet.
+- Implementation SHA: produced by this packet (the
+  final stable commit on `dev/v1.9`; see
+  `git log -1 --format=%H` after the commit).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD`
+  after push.
+- V1.9A OWNER REFRESH RBZ candidate: rebuilt from the
+  corrected source via `scripts/build_rbz.rb`. The RBZ
+  smoke test (`tests/test_rbz_smoke.rb`) extracts the
+  rebuilt RBZ into a temp dir and LOADS the extracted
+  proposer — so the rebuilt RBZ is what subsequent
+  tests exercise. A stale dist RBZ would mask the fix
+  (the extracted OLD proposer would resurrect cached
+  coordinates). Hence: this packet MUST rebuild the
+  RBZ.
+  - **size**: 1,204,395 bytes
+  - **entries**: 73
+  - **SHA-256**:
+    `d87f16deaf2b7aabf23d75294c0b42bccdb69bc561438a1b2aa9ec174cf0246b`
+  - Do NOT present any prior RBZ SHA-256 as the
+    V1.9A RFR Owner-candidate.
+
+Packaged file SHAs (vs the previous V1.9A P0 FINAL
+NARROW RESIDUAL CORRECTION packet):
+  - `su_ai_plugin/core/planar_normalization_proposer.rb`
+    SHA-256: recomputed (**CHANGED** — RFR fix: live
+    per-endpoint Vertex positions as the
+    current-coordinate authority for all Planar
+    clustering + candidate selection; new
+    `_live_position_for` helper; first-pass
+    `fail_closed: true` live authority gate; second-
+    pass cached fallback only when no live capability
+    exists; cluster map also uses live authority;
+    proposer never mutates `geometry_summary`).
+  - `su_ai_plugin/core/planar_normalization_executor.rb`,
+    `su_ai_plugin/core/endpoint_record.rb`,
+    `su_ai_plugin/cad_prep_workflow_presenter.rb`,
+    `su_ai_plugin/core/working_mode_runner.rb`,
+    `su_ai_plugin/cad_prep_workflow_orchestrator.rb`,
+    `su_ai_plugin/dialog_runner.rb`,
+    `su_ai_plugin/ui_bridge.rb`,
+    `su_ai_plugin/loader.rb`, `su_ai_plugin.rb`,
+    `html/index.html`, `html/app.js`, `html/style.css`,
+    icons: **UNCHANGED** (verified via packaged-RBZ
+    extraction).
+
+Frozen V1.8 Blueprint preserved unchanged on the
+assigned `dev/v1.9`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 / V1.8
+algorithm change. No source / provenance authority
+change. No workspace ownership change. No host
+mutation / Face / Observer. No site semantics. No A2
+orchestrator / Presenter / DialogRunner callbacks
+change. No Loader / A3 toolbar / V1.9A3 contract
+change. No V1.9B PreparedCadDataset / persistence
+(V1.9B NOT STARTED). No MCP / LLM / Agent.
+
+Validation:
+
+- `ruby -c` on the modified production file:
+  **Syntax OK**.
+- V19A RFR focused suite: **11 / 11 PASS, 0 fail,
+  0 error** (new this packet).
+  Coverage (this packet's new tests in **bold**):
+  - **§RFR-01 direct stale-cache / current-live
+    regression**: cached drift + live target Z ->
+    proposer MUST NOT return READY_TO_NORMALIZE
+    (NO_CANDIDATE expected).
+  - **§RFR-02 orchestrated apply -> refresh**:
+    `start -> apply_planar_and_refresh -> refresh`
+    on the Owner fixture; both physical B Vertex
+    handles at target Z; workspace_id unchanged
+    across refresh; no prepare / rebuild / host
+    mutation; refreshed state is NOT
+    READY_TO_NORMALIZE; `max_movement == 0`;
+    Gap remains diagnosable.
+  - **§RFR-03 continue through Gap after refresh**:
+    `refresh -> apply_gap_and_refresh`; final
+    Structure 0 / 1 / 0 / 1; no `non_planar_loop`.
+  - **§RFR-04a..f live-read failure matrix**:
+    nil / raise / Hash / non-Numeric slot / NaN /
+    Infinity on `vertex_position` -> the proposer
+    MUST fail closed (NOT READY_TO_NORMALIZE) on
+    the live authority; cached pre-mutation MUST
+    NOT be resurrected.
+  - **§RFR-05 initial detection preserved**:
+    unmodified Owner fixture still reports
+    READY_TO_NORMALIZE; one logical move; two
+    physical B Vertex occurrences; identity-distinct
+    physical handles; `max_movement` equals the
+    original 0.2 mm drift.
+  - **RFR source-level guard**: proposer source
+    uses `_live_position_for` for
+    current-coordinate authority; multiple call
+    sites; `fail_closed: true` first-pass gate.
+- V19A-P0 focused suite (pre-existing 38 tests):
+  **38 / 38 PASS, 0 fail, 0 error** (unchanged from
+  HEAD).
+- v19a_presenter focused suite: 78 tests, 77 pass,
+  0 fail, 1 error (the 1 error is the pre-existing
+  `v19a_presenter (FINAL P1-B)` chip-list guard; see
+  pre-existing failures below).
+- v19a_cad_prep_workflow_orchestrator focused suite:
+  30 / 30 PASS (unchanged).
+- v19a_dialog_runner focused suite: 48 / 48 PASS
+  (unchanged).
+- V1.6 planar normalization: 33 / 33 PASS (unchanged).
+- V1.6 close-autodiscard: 7 / 7 PASS (unchanged).
+- V1.7 focused: 127 / 127 PASS (unchanged).
+- V1.7 INT: 33 / 33 PASS (unchanged).
+- V1.8 focused: 71 / 71 PASS (unchanged).
+- V1.8 SR18: 32 / 32 PASS (unchanged).
+- V1.4 fingerprint focused: 22 / 22 PASS (unchanged).
+- LEGACY-COMPAT: 4 / 4 PASS (unchanged).
+- RBZ smoke: 7 / 8 PASS + 1 pre-existing ERROR
+  (`install smoke — extracted entry-point boots
+  through FakeUI; menu registered;
+  on_analyze_selection no-op fallback` —
+  `NoMethodError: undefined method 'file_loaded?' for
+  main:Object` from a pre-existing FakeUI stub
+  limitation, unrelated to this packet).
+
+Full synthetic Ruby suite (this packet's run, the
+NORMAL runner — not the prior packet's custom
+RBZ-excluding synthetic runner):
+
+```
+1230 tests, 1221 pass, 5 fail, 4 error
+```
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via isolated re-run before vs after
+with `git stash`):
+
+- 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
+  `html_render (V1.9A FINAL P1-C)` × 1 +
+  `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
+  — CSS / `app.js` textual source-level guards on
+  already-source-reviewed PASS items. CSS / `app.js`
+  are UNCHANGED in this packet.
+- 1 FAIL on `capability.HtmlDialog` (outside SU
+  returns false R002 + S2-BLOCK-006) — pre-existing
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) — pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` — pre-existing
+  test-environment / FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` — pre-existing
+  presenter test guard (`开放链` chip-list); not
+  addressed by RFR scope.
+
+Node DOM (`tests/test_html_render_dom.js`):
+all assertions PASS, final line `PASS` (unchanged
+from HEAD; no DOM change in this packet).
+
+`git diff --check`: clean (no trailing whitespace,
+no line-ending noise on any modified file). LF
+line endings are consistent on all modified files.
+
+Corrections / additions by this packet:
+
+- **RFR proposer live-coordinate authority fix**
+  (`extension/su_ai_plugin/core/planar_normalization_proposer.rb`):
+  - New `_live_position_for(adapter:, handle:,
+    cached_pos:, endpoint_key:, fail_closed:)` helper.
+    Reads `adapter.vertex_position(handle)`; on
+    nil / raise / wrong shape / non-Numeric /
+    NaN / Infinity returns nil (fail closed) or the
+    cached `cached_pos` (fallback ONLY when no live
+    capability exists). The proposer now uses this
+    helper for ALL coordinate-dependent Planar logic
+    (safe-edge gate, `edge_data` positions, cluster
+    map).
+  - First-pass unsafe gate now calls
+    `_live_position_for(fail_closed: true)` so an
+    unreadable live read marks the edge unsafe
+    (does NOT silently resurrect cached coords).
+  - The proposer NEVER mutates
+    `DerivedEntityRecord.geometry_summary`; the
+    cached coordinate is consulted ONLY when no
+    live capability exists.
+  - The proposer docstring was updated to
+    explicitly state the live-coordinate authority
+    contract (per dispatch §"Frozen authority
+    correction" + "Live-read matrix").
+
+- **RFR focused tests (test-only)**:
+  `tests/test_v19a_final_p0_live_coordinates.rb`
+  appended §RFR-01 / §RFR-02 / §RFR-03 / §RFR-04
+  (a..f) / §RFR-05 / RFR source-level guard.
+
+- **RBZ rebuild**: `dist/SU-AI-Plugin.rbz` rebuilt
+  via `scripts/build_rbz.rb` from the corrected
+  source. The RBZ smoke test extracts the rebuilt
+  RBZ and loads the extracted proposer — so the
+  extracted proposer is the FIXED proposer
+  (verified via `method(:propose).source_location`
+  inside RFR-01 prints the dev-tree path, not the
+  stale extracted path).
+
+Forbidden / not changed (per dispatch §"Frozen /
+forbidden"):
+
+- `planar_normalization_executor.rb` (not pre-
+  authorized for this packet).
+- Shared-vertex fan-out architecture.
+- Transaction / Undo semantics.
+- `working_mode_runner.rb`.
+- `cad_prep_workflow_orchestrator.rb`.
+- V1.7 pairing / canonical clustering.
+- V1.8 reconstruction / region algorithms.
+- Tolerances (`coordinate_epsilon`,
+  `planar_z_snap`, `gap_search` defaults).
+- Source CAD ownership / mutability.
+- Undo / host-state architecture.
+- Current Issues / badge semantics already
+  source-reviewed PASS.
+- MCP / LLM / Agent.
+- V1.9B / PreparedCadDataset / release Gate.
+
+Corrections / additions summary:
+
+| File | Δ (insertions / deletions) | Note |
+|---|---|---|
+| `extension/su_ai_plugin/core/planar_normalization_proposer.rb` | +252 / -30 (logical) | RFR live-coordinate authority: `_live_position_for` helper; first-pass `fail_closed: true` gate; second-pass live read for `edge_data` positions; cluster map live read |
+| `tests/test_v19a_final_p0_live_coordinates.rb` | +424 / 0 | RFR focused tests: §RFR-01 / §RFR-02 / §RFR-03 / §RFR-04 (a..f) / §RFR-05 / RFR source-level guard |
+| `dist/SU-AI-Plugin.rbz` | rebuilt | size 1,204,395 bytes; entries 73; SHA-256 `d87f16deaf2b7aabf23d75294c0b42bccdb69bc561438a1b2aa9ec174cf0246b` |
+| **Total (logical)** | **+676 / -30** | (line-ending normalization kept separate; this packet normalizes both modified files to LF to match HEAD) |
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (the V1.9A OWNER
+  REFRESH STALE-PLANAR BLOCK FIX section is
+  prepended above the existing V1.9A P0 FINAL
+  NARROW RESIDUAL CORRECTION section).
+
+Next expected action:
+
+1. AIPM direct source / diff review of this packet's
+   RFR proposer live-coordinate authority fix on
+   `dev/v1.9`.
+2. Narrow Codex xHigh recheck on the RFR live-read
+   fail-closed seam.
+3. Owner real-SU2020 re-verification of the §12
+   fixture (Planar + Gap detected -> click Apply Z
+   -> click 重新检测 -> MUST NOT resurrect
+   READY_TO_NORMALIZE -> Gap auto-unlocks -> Apply
+   Gap -> Structure auto-recomputes -> workspace =
+   ready -> open_chain_count = 0, closed_loop_count =
+   1, invalid_loop_count = 0, region_count = 1, no
+   `non_planar_loop`).
+4. Only then may AIPM close V1.9A.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch §"Frozen / forbidden": the
+fix touches the proposer live-coordinate authority
+seam (the regression the Owner actually hit). The
+fix is small and narrow; it does NOT reopen already-
+PASS shared-vertex architecture or the executor /
+executor post-read atomicity seam.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the implementation + tests + RBZ + commit (pending
++ push pending) and now returns control to AIPM
+for direct source review.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = NOT YET.
+OWNER_SU2020 = BLOCKED_BY_REFRESH_FIX.
+V1.9B = NOT STARTED.
+
 ## V1.9A P0 FINAL NARROW RESIDUAL CORRECTION — FINAL-R2-01 + FINAL-R5-01 (THIS UPDATE)
 
 Updated: 2026-09-09 (V1.9A P0 FINAL NARROW RESIDUAL

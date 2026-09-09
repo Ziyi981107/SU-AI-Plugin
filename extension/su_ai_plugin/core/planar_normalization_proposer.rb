@@ -61,7 +61,49 @@
 #   - Tolerance.coordinate_epsilon + Tolerance.planar_z_snap
 #   - SourceSnapshot.execution_config for rule/version tagging
 #   - DerivedEntityRecord's geometry_summary['start'] / ['end']
-#     for source occurrence IDs
+#     for source occurrence IDs (IDENTITY / PROVENANCE ONLY;
+#     the current-coordinate AUTHORITY is the live per-endpoint
+#     Vertex handle read via adapter.vertex_position, per the
+#     V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX dispatch
+#     dated 2026-09-09: cached geometry_summary is a
+#     build-time snapshot that becomes stale after V1.6
+#     mutation, and therefore MUST NOT be the
+#     current-coordinate authority for refreshed Planar
+#     diagnosis).
+#
+# V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (2026-09-09)
+# live-coordinate authority:
+#
+#   For a prepared live derived workspace:
+#
+#     derived edge
+#       -> adapter.edge_endpoints(group_handle)
+#       -> actual endpoint Vertex handle
+#       -> adapter.vertex_position(Vertex)
+#
+#   MUST be the current-coordinate AUTHORITY for ALL
+#   coordinate-dependent V1.6 Planar logic. The cached
+#   geometry_summary is the build-time immutable provenance
+#   record; it MUST NOT be rewritten after host repairs, and
+#   it MUST NOT be the current-coordinate source for
+#   refreshed Planar diagnosis.
+#
+# Live-read matrix (when an endpoint Vertex handle exists
+# AND the adapter exposes vertex_position):
+#
+#   - exact 3-Numeric-finite XYZ -> authoritative current
+#     coordinate;
+#   - nil / raise / wrong length / non-Numeric /
+#     NaN / Infinity -> FAIL CLOSED: the affected edge is
+#     treated as unsafe. The proposer MUST NOT silently
+#     substitute the cached geometry_summary coordinate.
+#
+# Cached geometry_summary fallback is allowed ONLY when
+# there is genuinely no live-position capability in the
+# execution environment (no per-endpoint handle resolvable
+# OR adapter lacks vertex_position), so that pure host-free
+# test / backward-compatible contexts can still drive the
+# proposer from the immutable build-time snapshot.
 #
 
 require_relative 'planar_normalization_analyzer'
@@ -130,13 +172,24 @@ module SUAnalysis
         edge_data = []
         unsafe_edge_count = 0
         unresolved_endpoint_count = 0
-        # First pass: build unsafe_lookup for every edge
-        # (covers curve, face, missing handle, unresolved
-        # endpoints, malformed geometry_summary). The same
-        # checks below ALSO push to edge_data when the edge
-        # is safe; we do the unsafe marking first so the
-        # shared-vertex scope pass below can include unsafe
-        # edges in its cluster map (Blueprint §6.4).
+        # First pass: build unsafe_lookup for every edge.
+        # The V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
+        # (2026-09-09) switches the current-coordinate
+        # authority from cached geometry_summary to LIVE
+        # per-endpoint Vertex positions read via
+        # adapter.vertex_position. The cached
+        # geometry_summary is retained ONLY as the
+        # no-live-authority fallback (host-free / pure-test
+        # contexts) and ONLY when there is genuinely no live
+        # position capability. When a per-endpoint Vertex
+        # handle is resolvable AND the adapter exposes
+        # vertex_position, an unreadable live read
+        # (nil / raise / wrong shape / non-Numeric /
+        # NaN / Infinity) fails CLOSED: the affected edge
+        # is marked unsafe and the proposer MUST NOT
+        # silently resurrect the cached pre-mutation
+        # coordinate (which is the Owner regression we are
+        # fixing).
         unsafe_lookup = {}
         edges_records.each do |rec|
           did = rec.respond_to?(:derived_id) ? rec.derived_id.to_s : ''
@@ -161,15 +214,38 @@ module SUAnalysis
             unsafe_lookup[did] = true
             next
           end
-          gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
-          s = gs['start']
-          e = gs['end']
-          unless s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
+          # V1.9A OWNER REFRESH FIX: verify BOTH
+          # endpoints have a live-coordinate authority
+          # path (live read succeeds) OR a legitimate
+          # cached fallback (no live capability exists).
+          # If a live handle + vertex_position seam
+          # exists but the read is unreadable, mark the
+          # edge unsafe (do NOT resurrect cached coords).
+          live_start = _live_position_for(
+            adapter:     adapter,
+            handle:      endpoints[0],
+            cached_pos:  nil,           # no cached fallback when live authority exists
+            endpoint_key: "#{did}.start",
+            fail_closed: true
+          )
+          live_end = _live_position_for(
+            adapter:     adapter,
+            handle:      endpoints[1],
+            cached_pos:  nil,
+            endpoint_key: "#{did}.end",
+            fail_closed: true
+          )
+          if live_start.nil? || live_end.nil?
             unsafe_lookup[did] = true
             next
           end
         end
         # Second pass: build edge_data (only safe edges).
+        # Positions are sourced from LIVE per-endpoint
+        # Vertex reads (adapter.vertex_position) when a live
+        # authority exists; otherwise the cached
+        # geometry_summary coordinates are the legitimate
+        # fallback (host-free / pure-test path).
         edges_records.each do |rec|
           derived_id = rec.respond_to?(:derived_id) ? rec.derived_id.to_s : ''
           next if unsafe_lookup[derived_id]
@@ -178,19 +254,46 @@ module SUAnalysis
                         adapter.edge_endpoints(edge_handle) :
                         nil
           gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
-          s = gs['start']
-          e = gs['end']
+          s_cached = gs['start']
+          e_cached = gs['end']
           unsafe_edge_count += 1 if unsafe_lookup[derived_id]
           unresolved_endpoint_count += 1 if endpoints.nil? ||
                                              !endpoints.is_a?(Array) ||
                                              endpoints.length != 2
+          # V1.9A OWNER REFRESH FIX live-authority read for
+          # BOTH endpoints. The cached coordinate is the
+          # fallback ONLY when no live capability exists.
+          s_live = _live_position_for(
+            adapter:     adapter,
+            handle:      endpoints[0],
+            cached_pos:  s_cached,
+            endpoint_key: "#{derived_id}.start",
+            fail_closed: false
+          )
+          e_live = _live_position_for(
+            adapter:     adapter,
+            handle:      endpoints[1],
+            cached_pos:  e_cached,
+            endpoint_key: "#{derived_id}.end",
+            fail_closed: false
+          )
+          # If both live and cached are unavailable, this
+          # edge has no current-coordinate authority; the
+          # first pass already marked it unsafe. Defensive
+          # fallback here keeps the data-structure
+          # invariants intact even if a future refactor
+          # weakens the first-pass gate.
+          unless s_live.is_a?(Array) && s_live.length == 3 &&
+                 e_live.is_a?(Array) && e_live.length == 3
+            next
+          end
           edge_data << {
             derived_id:    derived_id,
             edge_handle:   edge_handle,
             vertex_handles: [endpoints[0], endpoints[1]].freeze,
             positions:     [
-              [s[0].to_f, s[1].to_f, s[2].to_f],
-              [e[0].to_f, e[1].to_f, e[2].to_f]
+              [s_live[0].to_f, s_live[1].to_f, s_live[2].to_f],
+              [e_live[0].to_f, e_live[1].to_f, e_live[2].to_f]
             ].freeze,
             record:        rec
           }
@@ -228,27 +331,57 @@ module SUAnalysis
         # Build (position_key) -> list of {edge_data_idx | nil}
         # where `nil` marks unsafe edges (kept as identity-only
         # markers for clustering, never used as candidates).
+        #
+        # V1.9A OWNER REFRESH FIX: this all-edge cluster map
+        # MUST use the same live-coordinate authority as the
+        # safe-edge `edge_data` array above, so unsafe edges
+        # can still participate in shared-vertex cluster
+        # detection without resurrecting stale cached
+        # coordinates. Per-endpoint Vertex reads are reused;
+        # the cached fallback applies ONLY when no live
+        # capability exists.
         all_edge_positions = []  # parallel to edges_records
         edges_records.each do |rec|
           did = rec.respond_to?(:derived_id) ? rec.derived_id.to_s : ''
-          gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
-          s = gs['start']
-          e = gs['end']
-          positions = if s.is_a?(Array) && s.length == 3 && e.is_a?(Array) && e.length == 3
-                        [[s[0], s[1], s[2]], [e[0], e[1], e[2]]]
-                      else
-                        nil
+          edge_handle = workspace.handle_for(did)
+          endpoints = if edge_handle && adapter.respond_to?(:edge_endpoints)
+                        adapter.edge_endpoints(edge_handle)
                       end
-          if unsafe_lookup[did]
-            all_edge_positions << positions  # may be nil
-          elsif positions
+          gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
+          s_cached = gs['start']
+          e_cached = gs['end']
+          positions = nil
+          if endpoints.is_a?(Array) && endpoints.length == 2 &&
+             endpoints.all? { |v| !v.nil? }
+            s_pos = _live_position_for(
+              adapter:     adapter,
+              handle:      endpoints[0],
+              cached_pos:  s_cached,
+              endpoint_key: "#{did}.start",
+              fail_closed: false
+            )
+            e_pos = _live_position_for(
+              adapter:     adapter,
+              handle:      endpoints[1],
+              cached_pos:  e_cached,
+              endpoint_key: "#{did}.end",
+              fail_closed: false
+            )
+            if s_pos.is_a?(Array) && s_pos.length == 3 &&
+               e_pos.is_a?(Array) && e_pos.length == 3
+              positions = [[s_pos[0], s_pos[1], s_pos[2]],
+                           [e_pos[0], e_pos[1], e_pos[2]]]
+            end
+          end
+          if positions
             all_edge_positions << positions
           else
-            # Safe edge with malformed geometry; treat as unsafe
-            # for clustering purposes (it cannot contribute to
-            # candidates anyway since edge_data building
-            # already filtered it).
+            # No current-coordinate authority (live read
+            # failed AND cached fallback unavailable). Mark
+            # the edge unsafe for clustering purposes (it
+            # cannot contribute to candidates anyway).
             all_edge_positions << nil
+            unsafe_lookup[did] = true unless unsafe_lookup[did]
           end
         end
         # Map edge_data_idx (compact, only safe edges) ->
@@ -684,6 +817,95 @@ module SUAnalysis
           occ.is_a?(Hash) && occ[:vertex_handle] &&
             occ[:vertex_handle].object_id == candidate_handle.object_id
         end
+      end
+
+      # V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
+      # (2026-09-09) live-coordinate authority helper.
+      #
+      # Resolve the CURRENT world coordinate for one
+      # endpoint Vertex handle. The current-coordinate
+      # authority is the live per-endpoint Vertex handle
+      # read via adapter.vertex_position; the cached
+      # geometry_summary coordinate is ONLY a legitimate
+      # fallback when there is genuinely no live
+      # coordinate capability in this execution
+      # environment.
+      #
+      # Returns:
+      #   - the LIVE 3-Float Array, when a live handle +
+      #     vertex_position seam is available and the read
+      #     returns a finite 3-Numeric result;
+      #   - the CACHED 3-Float Array (cached_pos),
+      #     ONLY when `fail_closed: false` AND there is no
+      #     live capability (no adapter OR adapter lacks
+      #     vertex_position OR handle is nil). This is the
+      #     host-free / pure-test / no-live-authority
+      #     fallback path;
+      #   - nil, when `fail_closed: true` AND the live
+      #     authority exists but the read is unreadable
+      #     (nil / raise / wrong shape / non-Numeric /
+      #     NaN / Infinity). Caller treats the affected
+      #     edge as unsafe (fail closed: do NOT
+      #     resurrect the cached pre-mutation coordinate).
+      def _live_position_for(adapter:, handle:, cached_pos:, endpoint_key:, fail_closed:)
+        # No live handle at all: there is genuinely no
+        # live authority. Allow cached fallback ONLY in
+        # the no-fail-closed path; in the fail-closed
+        # gate (first pass), nil handle also fails closed.
+        if handle.nil?
+          if fail_closed
+            return nil
+          else
+            return _sanitize_cached_point(cached_pos)
+          end
+        end
+        # Adapter missing OR lacks vertex_position seam:
+        # no usable live authority. Cached fallback is
+        # allowed ONLY when fail_closed is false.
+        if adapter.nil? || !adapter.respond_to?(:vertex_position)
+          if fail_closed
+            return nil
+          else
+            return _sanitize_cached_point(cached_pos)
+          end
+        end
+        # Live authority is reachable. ANY unreadable
+        # read fails closed: nil / raise / wrong shape /
+        # non-Numeric / NaN / Infinity. We MUST NOT
+        # silently substitute cached (the Owner regression
+        # we are fixing).
+        begin
+          pos = adapter.vertex_position(handle)
+        rescue StandardError
+          return nil
+        end
+        return nil if pos.nil?
+        return nil unless pos.is_a?(Array) && pos.length == 3
+        return nil unless pos[0].is_a?(Numeric) &&
+                          pos[1].is_a?(Numeric) &&
+                          pos[2].is_a?(Numeric)
+        finite = (!pos[0].respond_to?(:finite?) || pos[0].finite?) &&
+                  (!pos[1].respond_to?(:finite?) || pos[1].finite?) &&
+                  (!pos[2].respond_to?(:finite?) || pos[2].finite?)
+        return nil unless finite
+        [pos[0].to_f, pos[1].to_f, pos[2].to_f]
+      end
+
+      # Sanitize a cached geometry_summary coordinate.
+      # Returns a 3-Float Array when the cached point is
+      # well-formed; otherwise nil. Used only by the
+      # host-free / pure-test fallback path.
+      def _sanitize_cached_point(cached_pos)
+        return nil unless cached_pos.is_a?(Array)
+        return nil unless cached_pos.length == 3
+        return nil unless cached_pos[0].is_a?(Numeric) &&
+                          cached_pos[1].is_a?(Numeric) &&
+                          cached_pos[2].is_a?(Numeric)
+        finite = (!cached_pos[0].respond_to?(:finite?) || cached_pos[0].finite?) &&
+                  (!cached_pos[1].respond_to?(:finite?) || cached_pos[1].finite?) &&
+                  (!cached_pos[2].respond_to?(:finite?) || cached_pos[2].finite?)
+        return nil unless finite
+        [cached_pos[0].to_f, cached_pos[1].to_f, cached_pos[2].to_f]
       end
     end
   end

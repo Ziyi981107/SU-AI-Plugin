@@ -2317,3 +2317,427 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     V19A_FP_RUNNER.reset_for_tests
   end
 end
+
+# ===========================================================
+# RFR - V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
+# Per dispatch AIPM_V1_9A_OWNER_REFRESH_STALE_PLANAR_BLOCK_FIX_2026-09-09
+# ===========================================================
+#
+# Owner evidence (real SU2020):
+#   start -> apply Z succeeds (audit applied, logical=1,
+#   physical=2, state=APPLIED)
+#   -> user clicks refresh_cad_prep
+#   -> Planar immediately returns READY_TO_NORMALIZE
+#   -> refreshed proposal reports max_movement = 0.2 mm
+#      exactly the original drift.
+#
+# Root cause: proposer used cached geometry_summary
+# ('start'/'end') as the current-coordinate authority;
+# this cache is build-time immutable and stays stale
+# after V1.6 mutation.
+#
+# Required fix: proposer uses LIVE per-endpoint Vertex
+# positions via adapter.vertex_position as the primary
+# current-coordinate authority for ALL coordinate-
+# dependent V1.6 Planar logic. Cached fallback ONLY
+# when no live capability exists.
+
+# RFR-01: direct stale-cache/current-live regression.
+test 'V19A-RFR §RFR-01 (STALE-CACHE / CURRENT-LIVE): cached drift + live target Z -> NOT READY_TO_NORMALIZE' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    # Move the LIVE per-endpoint Vertex handles to target Z.
+    # The cached geometry_summary still reports the
+    # original drift. The proposer MUST read the LIVE
+    # coordinates and conclude the workspace is already
+    # planar -> NO_CANDIDATE (or semantically-equivalent
+    # clean state).
+    hvm.each_value do |vh|
+      vh.z = 0.0
+    end
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: adapter, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'proposer MUST NOT return READY_TO_NORMALIZE when LIVE positions are already planar; ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    # The result MUST surface a clean / non-actionable
+    # state. The pure analyzer returns NO_CANDIDATE when
+    # every vertex is already planar, which is the correct
+    # semantic for this fixture.
+    assert_includes %w[NO_CANDIDATE REVIEW_REQUIRED].freeze,
+                    result[:state].to_s,
+                    'state MUST be NO_CANDIDATE (already planar at LIVE positions) or REVIEW_REQUIRED; ' \
+                    "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    # proposal MUST be nil when state != READY_TO_NORMALIZE.
+    assert_nil result[:proposal],
+               'proposal MUST be nil when state != READY_TO_NORMALIZE'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# RFR-02: real orchestrated apply -> refresh regression.
+test 'V19A-RFR §RFR-02 (ORCHESTRATED APPLY -> REFRESH): apply -> refresh -> NOT READY_TO_NORMALIZE, no resurrection' do
+  src = v19a_fp_owner_fixture_source
+  tol = Tolerance.new(duplicate: 1.0e-4, short_edge: 0.5,
+                      gap_search: 0.05, coordinate_epsilon: 1.0e-4,
+                      planar_z_snap: 0.01)
+  begin
+    V19A_FP_RUNNER.reset_for_tests
+    adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+    # Step 1: orchestrator start.
+    start_snap = CadPrepWorkflowOrchestrator.start(
+      source: src, adapter: adapter, model: nil, registry: nil
+    )
+    assert_equal 'ready', start_snap['state']
+    workspace_id_start = V19A_FP_RUNNER.current_workspace_for_test.workspace_id
+    refute_nil workspace_id_start
+    edges_count_before_apply = adapter.added_edges.length
+    # Step 2: orchestrator apply_planar_and_refresh.
+    apply_p_snap = CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+    assert_equal 'ready', apply_p_snap['state']
+    apply_p_pn = apply_p_snap['planar_normalization']
+    assert_equal 'APPLIED', apply_p_pn['state'].to_s
+    # Step 3: identity-distinct physical B Vertex handles
+    # at target Z.
+    ws_after_planar = V19A_FP_RUNNER.current_workspace_for_test
+    hvm_after_planar = v19a_fp_host_vertex_map(ws_after_planar, adapter)
+    refute_empty hvm_after_planar
+    edge_dids = ws_after_planar.entities
+                                  .select { |r| r.respond_to?(:kind) && r.kind == :edge }
+                                  .map { |r| r.respond_to?(:derived_id) ? r.derived_id.to_s : '' }
+                                  .reject(&:empty?)
+                                  .sort
+    assert_equal 4, edge_dids.length
+    edge_a_b_did = edge_dids.find { |did|
+      g = ws_after_planar.handle_for(did)
+      next false unless g
+      eps = adapter.edge_endpoints(g)
+      next false unless eps.is_a?(Array) && eps.length == 2
+      eps[0].respond_to?(:position) && eps[0].position[0] == 0.0 && eps[0].position[1] == 0.0
+    }
+    edge_b_c_did = edge_dids.find { |did|
+      g = ws_after_planar.handle_for(did)
+      next false unless g
+      next false if did == edge_a_b_did
+      eps = adapter.edge_endpoints(g)
+      next false unless eps.is_a?(Array) && eps.length == 2
+      eps[0].respond_to?(:position) && eps[0].position[0] == 10.0 && eps[0].position[1] == 0.0
+    }
+    refute_nil edge_a_b_did
+    refute_nil edge_b_c_did
+    ab_b_handle = hvm_after_planar["#{edge_a_b_did}.end"]
+    bc_b_handle = hvm_after_planar["#{edge_b_c_did}.start"]
+    refute_nil ab_b_handle
+    refute_nil bc_b_handle
+    refute_equal ab_b_handle.object_id, bc_b_handle.object_id
+    target_z = V19A_FP_RUNNER.planar_normalization_audit['target_z']
+    refute_nil target_z
+    eps = tol.coordinate_epsilon
+    assert_in_delta target_z.to_f, adapter.vertex_position(ab_b_handle)[2].to_f, eps
+    assert_in_delta target_z.to_f, adapter.vertex_position(bc_b_handle)[2].to_f, eps
+    operation_log_before_refresh = adapter.operation_log.dup
+    # Step 4: orchestrator refresh.
+    refresh_snap = CadPrepWorkflowOrchestrator.refresh
+    assert_equal 'ready', refresh_snap['state']
+    workspace_id_after_refresh = V19A_FP_RUNNER.current_workspace_for_test.workspace_id
+    assert_equal workspace_id_start, workspace_id_after_refresh,
+                 'refresh MUST NOT change workspace_id (no rebuild / no prepare)'
+    edges_count_after_refresh = adapter.added_edges.length
+    assert_equal edges_count_before_apply, edges_count_after_refresh,
+                 'refresh MUST NOT add new edges (no rebuild / no prepare)'
+    operation_log_after_refresh = adapter.operation_log.dup
+    assert_equal operation_log_before_refresh.length, operation_log_after_refresh.length,
+                 'refresh MUST NOT open new SketchUp operations (no host mutation)'
+    # RFR-02 CORE ASSERTION: the refreshed Planar state
+    # is NOT READY_TO_NORMALIZE.
+    refresh_pn = refresh_snap['planar_normalization']
+    refute_nil refresh_pn,
+               'refresh MUST expose planar_normalization sub-snapshot'
+    refute_equal 'READY_TO_NORMALIZE', refresh_pn['state'].to_s,
+                 'refresh MUST NOT resurrect READY_TO_NORMALIZE from cached geometry_summary; ' \
+                 "got state=#{refresh_pn['state'].inspect} reason=#{refresh_pn['reason'].inspect}"
+    # The refreshed proposal MUST NOT resurrect the
+    # original 0.2 mm movement.
+    refresh_proposal = refresh_pn['proposal']
+    if refresh_proposal.is_a?(Hash) && refresh_proposal['max_movement']
+      assert_in_delta 0.0, refresh_proposal['max_movement'].to_f, eps,
+                      'refreshed max_movement MUST be 0 (no resurrection of original 0.2 mm)'
+    end
+    # RFR-02 LAST ASSERTION: Gap remains correctly
+    # diagnosable / actionable on the current workspace.
+    refresh_tr = refresh_snap['topology_repair']
+    refute_nil refresh_tr
+    assert_equal 'READY_TO_REPAIR', refresh_tr['state'].to_s,
+                 'gap MUST remain READY_TO_REPAIR on the post-apply workspace'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# RFR-03: continue through Gap after refresh.
+test 'V19A-RFR §RFR-03 (CONTINUE THROUGH GAP AFTER REFRESH): refresh -> apply_gap -> Structure 0/1/0/1; no non_planar_loop' do
+  src = v19a_fp_owner_fixture_source
+  tol = Tolerance.new(duplicate: 1.0e-4, short_edge: 0.5,
+                      gap_search: 0.05, coordinate_epsilon: 1.0e-4,
+                      planar_z_snap: 0.01)
+  begin
+    V19A_FP_RUNNER.reset_for_tests
+    adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+    start_snap = CadPrepWorkflowOrchestrator.start(
+      source: src, adapter: adapter, model: nil, registry: nil
+    )
+    assert_equal 'ready', start_snap['state']
+    apply_p_snap = CadPrepWorkflowOrchestrator.apply_planar_and_refresh
+    assert_equal 'ready', apply_p_snap['state']
+    refresh_snap = CadPrepWorkflowOrchestrator.refresh
+    assert_equal 'ready', refresh_snap['state']
+    apply_g_snap = CadPrepWorkflowOrchestrator.apply_gap_and_refresh
+    assert_equal 'ready', apply_g_snap['state']
+    struct = apply_g_snap['structure_reconstruction']
+    refute_nil struct,
+               'returned snapshot MUST expose structure_reconstruction sub-snapshot (auto-recomputed)'
+    assert_equal 'READY', struct['state'].to_s
+    metrics = struct['metrics'] || {}
+    assert_equal 0, metrics['open_chain_count'].to_i
+    assert_equal 1, metrics['closed_loop_count'].to_i
+    assert_equal 1, metrics['region_count'].to_i
+    assert_equal 0, metrics['invalid_loop_count'].to_i
+    loops = struct['loops'] || struct['closed_loops'] || []
+    loops.each do |loop|
+      flags = Array(loop['unresolved_flags'])
+      assert !flags.include?('non_planar_loop'),
+             'NO closed loop MAY carry non_planar_loop after the V1.9A RFR fix'
+    end
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# RFR-04: live-read failure matrix (in proposer).
+test 'V19A-RFR §RFR-04a (LIVE-READ NIL): vertex_position returns nil on the live endpoint -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| nil }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'live vertex_position => nil MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+test 'V19A-RFR §RFR-04b (LIVE-READ RAISE): vertex_position raises -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| raise StandardError, 'synthetic refresh live-read boom' }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'live vertex_position raise MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+test 'V19A-RFR §RFR-04c (LIVE-READ MALFORMED): vertex_position returns Hash -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| { x: 0.0, y: 0.0, z: 0.0 } }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'malformed live position MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+test 'V19A-RFR §RFR-04d (LIVE-READ NON-NUMERIC): vertex_position returns String slot -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| [0.0, 'bad', 0.0] }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'non-Numeric live position slot MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+test 'V19A-RFR §RFR-04e (LIVE-READ NAN): vertex_position returns Float::NAN -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| [0.0, 0.0, Float::NAN] }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'NaN live position slot MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+test 'V19A-RFR §RFR-04f (LIVE-READ INFINITY): vertex_position returns Float::INFINITY -> NOT READY_TO_NORMALIZE from cached' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| [0.0, 0.0, Float::INFINITY] }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: spied, tolerance: tol
+    )
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'Infinity live position slot MUST fail closed (no cached resurrection); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'proposal MUST be nil on fail-closed (cached must NOT be resurrected)'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# RFR-05: initial detection preserved.
+test 'V19A-RFR §RFR-05 (INITIAL DETECTION PRESERVED): unmodified Owner fixture -> READY_TO_NORMALIZE; 1 logical move; 2 physical B; logical/physical preserved' do
+  src = v19a_fp_owner_fixture_source
+  tol = Tolerance.new(duplicate: 1.0e-4, short_edge: 0.5,
+                      gap_search: 0.05, coordinate_epsilon: 1.0e-4,
+                      planar_z_snap: 0.01)
+  begin
+    V19A_FP_RUNNER.reset_for_tests
+    adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+    start_snap = CadPrepWorkflowOrchestrator.start(
+      source: src, adapter: adapter, model: nil, registry: nil
+    )
+    assert_equal 'ready', start_snap['state']
+    pn = start_snap['planar_normalization']
+    refute_nil pn
+    assert_equal 'READY_TO_NORMALIZE', pn['state'].to_s,
+                 'unmodified Owner fixture MUST initially detect the 0.2 mm Z issue'
+    proposal = pn['proposal']
+    refute_nil proposal
+    assert_equal 1, proposal['movable_count'].to_i,
+                 'unmodified Owner fixture MUST report one logical move'
+    physical = proposal['physical_occurrences']
+    refute_nil physical,
+               'proposal MUST publish the per-logical physical_occurrences shape'
+    assert_equal 2, physical.length,
+                 'unmodified Owner fixture MUST publish two physical B Vertex occurrences'
+    refute_equal physical[0]['vertex_handle'].object_id,
+                 physical[1]['vertex_handle'].object_id,
+                 'two physical B Vertex handles MUST be identity-distinct'
+    drift = 0.2 / 25.4
+    assert_in_delta drift, proposal['max_movement'].to_f, 1.0e-9,
+                    'max_movement MUST equal the original 0.2 mm drift'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# RFR source-level guard.
+test 'V19A-RFR (source-level): proposer source uses _live_position_for helper for current-coordinate authority' do
+  src = File.read(File.expand_path(
+    '../extension/su_ai_plugin/core/planar_normalization_proposer.rb', __dir__
+  ))
+  assert_match(/_live_position_for/, src,
+               'proposer source MUST define the _live_position_for live-coordinate authority helper')
+  live_position_call_count = src.scan(/_live_position_for\b/).length
+  assert live_position_call_count >= 5,
+         "proposer source MUST call _live_position_for at multiple sites (got #{live_position_call_count})"
+  assert_match(/fail_closed: true/, src,
+               'proposer source MUST use fail_closed: true in the first-pass live authority gate')
+end
+
