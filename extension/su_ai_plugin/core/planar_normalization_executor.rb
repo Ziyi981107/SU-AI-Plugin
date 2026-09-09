@@ -308,27 +308,43 @@ module SUAnalysis
           }.freeze
         end
         # ---- Post-validation ----
-        # V1.9A P0 NARROW RECHECK R2 (fix 2026-09-08):
-        # post-read exceptions MUST NOT escape while the
-        # outer operation is open. The amendment §4.4 +
-        # R2 §3 require that post-read nil / malformed /
-        # non-numeric / non-finite / raised all become
-        # postvalidation failure for that occurrence;
-        # the ONE outer operation MUST be aborted exactly
-        # once; no commit; workspace/result FAILED; no
-        # published logical/physical applied success.
+        # V1.9A P0 FINAL NARROW RESIDUAL CORRECTION
+        # FINAL-R2-01 (fix 2026-09-09): the host call
+        # `adapter.vertex_position(h)` is wrapped in
+        # `begin/rescue StandardError` (the prior R2
+        # packet). However, the downstream validation
+        # loop previously performed `after_zs <<
+        # post[2].to_f if post.is_a?(Array)` BEFORE
+        # proving:
+        #   1. entry must not be raised / missing
+        #   2. `post` MUST be an Array of EXACTLY 3
+        #   3. all 3 values MUST be Numeric
+        #   4. all 3 values MUST be finite
+        # Therefore malformed-but-Array post data
+        # (e.g. `[0.0, 0.0, Object.new]`) raised
+        # `NoMethodError` on `.to_f` BEFORE the executor
+        # reached the unreadable-position branch.
         #
-        # Implementation: each per-occurrence post-read is
-        # wrapped in a `begin/rescue StandardError` guard
-        # that returns the captured exception class (or
-        # `nil` when the read returned successfully). A
-        # raise therefore becomes a tagged sentinel in
-        # `post_results` rather than escaping the loop
-        # with the operation still open. The downstream
-        # validation logic records
-        # `vertex_#{i}_post_read_raised:<ClassName>` and
-        # falls through to the existing
-        # abort-once-no-commit FAILED path.
+        # Required correction:
+        #   - The post-validation phase is now wrapped in
+        #     a final defensive `begin/rescue StandardError`
+        #     boundary so any unexpected exception during
+        #     post-validation aborts the outer operation
+        #     ONCE, never commits, returns :failed, and
+        #     publishes zero logical / physical / legacy
+        #     applied success.
+        #   - The per-occurrence validation order is
+        #     tightened: kind != raised -> post is Array
+        #     of EXACTLY 3 -> all 3 Numeric -> all 3 finite
+        #     -> THEN perform any `.to_f` / subtraction /
+        #     `audit append`.
+        #   - The `after_zs` audit append is moved INSIDE
+        #     the validation block so it only runs after
+        #     the four checks pass.
+        #
+        # Pre-flight, fan-out, operation ownership,
+        # tolerances, and proposer logic are FROZEN
+        # unchanged per dispatch.
         eps = tolerance.coordinate_epsilon.to_f
         post_results = handles.map do |h|
           if !adapter.respond_to?(:vertex_position)
@@ -356,20 +372,47 @@ module SUAnalysis
         max_movement = 0.0
         before_zs = []
         after_zs = []
-        handles.each_with_index do |h, i|
-          pre = pre_positions[i]
-          entry = post_results[i]
-          post = entry.is_a?(Hash) ? entry['value'] : nil
-          before_zs << pre[2].to_f if pre.is_a?(Array)
-          after_zs << post[2].to_f if post.is_a?(Array)
-          # R2 fail-closed: a raised read is treated as a
-          # postvalidation failure for that occurrence.
-          if entry.is_a?(Hash) && entry['kind'] == 'raised'
-            validation_errors << "vertex_#{i}_post_read_raised:#{entry['class']}"
-            next
-          end
-          if pre.is_a?(Array) && post.is_a?(Array) &&
-             post[0].is_a?(Numeric) && post[1].is_a?(Numeric) && post[2].is_a?(Numeric)
+        post_validation_phase_failed = false
+        begin
+          # FINAL-R2-01: validate the post shape BEFORE
+          # any `.to_f` / numeric coercion / subtraction.
+          # Order is strict: raised -> missing -> Array
+          # length == 3 -> Numeric -> finite -> safe to
+          # use the value.
+          handles.each_with_index do |h, i|
+            pre = pre_positions[i]
+            entry = post_results[i]
+            post = entry.is_a?(Hash) ? entry['value'] : nil
+            # `pre` was already validated as a 3-Numeric-
+            # finite point during preflight; the
+            # numeric coercion below is therefore safe.
+            # Defensive guard: still wrap pre[2] so a
+            # malformed pre cannot raise here either.
+            before_zs << pre[2].to_f if pre.is_a?(Array) && pre.length == 3 &&
+                                        pre[0].is_a?(Numeric) && pre[1].is_a?(Numeric) &&
+                                        pre[2].is_a?(Numeric)
+            # FINAL-R2-01: a raised read is treated as a
+            # postvalidation failure for that occurrence
+            # AND we MUST NOT call `.to_f` on the value
+            # (which is `nil` for a raised read; calling
+            # `nil.to_f` raises NoMethodError).
+            if entry.is_a?(Hash) && entry['kind'] == 'raised'
+              validation_errors << "vertex_#{i}_post_read_raised:#{entry['class']}"
+              next
+            end
+            # FINAL-R2-01: strict exactly-3 shape check
+            # BEFORE any `.to_f`. A 4-element / 2-element
+            # Array (or Hash / nil / etc.) is malformed
+            # and fails closed WITHOUT touching `.to_f`.
+            post_ok = post.is_a?(Array) &&
+                      post.length == 3 &&
+                      post[0].is_a?(Numeric) &&
+                      post[1].is_a?(Numeric) &&
+                      post[2].is_a?(Numeric)
+            unless post_ok
+              validation_errors << "vertex_#{i}_position_unreadable"
+              next
+            end
             finite =
               (!post[0].respond_to?(:finite?) || post[0].finite?) &&
               (!post[1].respond_to?(:finite?) || post[1].finite?) &&
@@ -378,6 +421,10 @@ module SUAnalysis
               validation_errors << "vertex_#{i}_position_unreadable"
               next
             end
+            # All four FINAL-R2-01 checks pass. NOW we can
+            # safely call `.to_f` and perform the XY/Z
+            # drift validation + audit append.
+            after_zs << post[2].to_f
             dx = (post[0] - pre[0]).abs
             dy = (post[1] - pre[1]).abs
             dz = (post[2] - target_z).abs
@@ -393,17 +440,30 @@ module SUAnalysis
             m_abs = (post[2] - pre[2]).abs
             max_movement = m_abs if m_abs > max_movement
             moved_count += 1
-          else
-            validation_errors << "vertex_#{i}_position_unreadable"
           end
+        rescue StandardError => e
+          # FINAL-R2-01: defensive final boundary. An
+          # unexpected StandardError during the
+          # post-validation phase MUST NOT escape the
+          # function while the outer operation is still
+          # open. Treat as a post-validation failure:
+          # abort ONCE, never commit, :failed, zero
+          # committed success.
+          post_validation_phase_failed = true
+          validation_errors << "vertex_phase_post_validation_raised:#{e.class}"
         end
-        if !validation_errors.empty?
+        if post_validation_phase_failed || !validation_errors.empty?
           begin
             adapter.end_operation(workspace_model_for(workspace), commit: false)
           rescue StandardError
             # ignore
           end
-          new_workspace = _mark_workspace_failed(workspace, "post_validation_failed:#{validation_errors.first}")
+          reason = if post_validation_phase_failed
+                     "post_validation_phase_failed:#{validation_errors.first}"
+                   else
+                     "post_validation_failed:#{validation_errors.first}"
+                   end
+          new_workspace = _mark_workspace_failed(workspace, reason)
           return {
             status: :failed,
             post_workspace: new_workspace,
@@ -414,7 +474,7 @@ module SUAnalysis
               workspace: new_workspace,
               applied_count: 0,
               failed_count: 1,
-              reason: 'post_validation_failed'
+              reason: post_validation_phase_failed ? 'post_validation_phase_failed' : 'post_validation_failed'
             )
           }.freeze
         end

@@ -1463,29 +1463,331 @@ ensure
   V19A_FP_RUNNER.reset_for_tests
 end
 
+# ===========================================================
+# V1.9A P0 FINAL NARROW RESIDUAL CORRECTION FINAL-R2-01
+# Post-validation .to_f exception-leak path
+# ===========================================================
+
+# FINAL-R2-01 (2026-09-09): the previous R2 packet
+# wrapped `adapter.vertex_position(h)` in
+# `begin/rescue StandardError`, but the downstream
+# validation loop performed `after_zs << post[2].to_f
+# if post.is_a?(Array)` BEFORE proving the post shape
+# is exactly 3 + Numeric + finite. A malformed post
+# like `[0.0, 0.0, Object.new]` therefore raised
+# `NoMethodError` on `Object.new.to_f` BEFORE the
+# executor reached the unreadable-position branch.
+# Required: prove no exception escapes with the outer
+# operation open + abort-once-no-commit FAILED +
+# zero committed success.
+test 'V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0, Object.new] -> no exception escapes, 1 begin, 1 abort, 0 commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        # FINAL-R2-01 fixture: post is a 3-Array but
+        # the third slot is Object.new (not Numeric).
+        # The previous code would raise on `.to_f`
+        # before the validation block; the corrected
+        # code MUST detect the non-Numeric slot FIRST
+        # and fail closed without invoking `.to_f`.
+        [0.0, 0.0, Object.new]
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = nil
+  raised = nil
+  begin
+    result = PlanarNormalizationExecutor.apply(
+      workspace:     ws,
+      adapter:       spied,
+      proposal_hash: proposal_hash,
+      tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+    )
+  rescue StandardError => e
+    raised = e
+  end
+  assert_nil raised,
+             'FINAL-R2-01: a post slot of Object.new MUST NOT escape as NoMethodError; the validation block MUST detect non-Numeric BEFORE .to_f'
+  refute_nil result
+  assert_equal :failed, result[:status],
+               'post[2] is non-Numeric MUST surface as :failed'
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  # Operation control surface: last apply cycle has
+  # exactly one begin + exactly one abort + zero commit.
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin),
+               'FINAL-R2-01: apply cycle MUST contain exactly one begin'
+  assert_equal 1, apply_log_kinds.count(:abort),
+               'FINAL-R2-01: apply cycle MUST contain exactly one abort'
+  assert !apply_log_kinds.include?(:commit),
+         'FINAL-R2-01: apply cycle MUST NOT contain a commit'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# FINAL-R2-01: a 4-element position Array is malformed
+# (per R3 + FINAL-R2-01 the position shape MUST be
+# exactly 3) and MUST fail closed BEFORE any `.to_f`.
+test 'V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0, 0.0, 123.0] -> malformed, 1 begin, 1 abort, 0 commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        # 4-element position Array (R3 + FINAL-R2-01:
+        # exactly 3 required; anything else is malformed).
+        [0.0, 0.0, 0.0, 123.0]
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace:     ws,
+    adapter:       spied,
+    proposal_hash: proposal_hash,
+    tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin)
+  assert_equal 1, apply_log_kinds.count(:abort)
+  assert !apply_log_kinds.include?(:commit),
+         'FINAL-R2-01: 4-element post Array MUST fail closed without commit'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# FINAL-R2-01: a 2-element position Array is malformed
+# (exactly 3 required) and MUST fail closed.
+test 'V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0] -> malformed (length 2), 1 begin, 1 abort, 0 commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        [0.0, 0.0] # length 2 -> malformed
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace:     ws,
+    adapter:       spied,
+    proposal_hash: proposal_hash,
+    tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin)
+  assert_equal 1, apply_log_kinds.count(:abort)
+  assert !apply_log_kinds.include?(:commit),
+         'FINAL-R2-01: 2-element post Array MUST fail closed without commit'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
+# FINAL-R2-01: a non-Array post value (Hash) MUST fail
+# closed BEFORE any `.to_f`. This was already covered
+# by the prior R2 packet's FAILCLOSED-MALFORMED-style
+# test, but the FINAL-R2-01 contract requires the
+# shape ordering check to gate the `.to_f`. This
+# test pins that contract inside the post-validation
+# phase (not just the preflight).
+test 'V19A-P0 (FINAL-R2-01): post-position Hash -> malformed, 1 begin, 1 abort, 0 commit, FAILED' do
+  drift = 0.007874015748031498
+  adapter, ws = v19a_fp_prepare(
+    [
+      [[0.0, 0.0, drift], [5.0, 0.0, 0.0]],
+      [[0.0, 0.0, drift], [0.0, 5.0, 0.0]]
+    ],
+    v19a_fp_tol(1.0e-4, 0.01)
+  )
+  proposal_hash = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+    workspace: ws, adapter: adapter, tolerance: v19a_fp_tol(1.0e-4, 0.01)
+  )
+  mutated = false
+  spied = Class.new(adapter.class) do
+    define_method(:begin_operation) do |model, label:|
+      adapter.begin_operation(model, label: label)
+    end
+    define_method(:end_operation) do |model, commit:|
+      adapter.end_operation(model, commit: commit)
+    end
+    define_method(:transform_vertices_by_vectors) do |handles, vectors|
+      adapter.transform_vertices_by_vectors(handles, vectors)
+      mutated = true
+      nil
+    end
+    define_method(:vertex_position) do |h|
+      if mutated
+        { x: 0.0, y: 0.0, z: 0.0 } # Hash (not Array)
+      else
+        adapter.vertex_position(h)
+      end
+    end
+  end.new
+  adapter.created_handles.each { |h| spied.created_handles << h }
+  adapter.added_edges.each       { |e| spied.added_edges << e }
+  adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+  result = PlanarNormalizationExecutor.apply(
+    workspace:     ws,
+    adapter:       spied,
+    proposal_hash: proposal_hash,
+    tolerance:     v19a_fp_tol(1.0e-4, 0.01)
+  )
+  assert_equal :failed, result[:status]
+  audit = result[:audit]
+  assert_equal 0, audit[:logical_applied_count]
+  assert_equal 0, audit[:physical_applied_count]
+  assert_equal 0, audit[:applied_count]
+  last_begin = adapter.operation_log.rindex { |op| op[:kind] == :begin }
+  apply_log_kinds = last_begin.nil? ? [] :
+                       adapter.operation_log[last_begin..-1].map { |op| op[:kind] }
+  assert_equal 1, apply_log_kinds.count(:begin)
+  assert_equal 1, apply_log_kinds.count(:abort)
+  assert !apply_log_kinds.include?(:commit),
+         'FINAL-R2-01: Hash post MUST fail closed without commit'
+ensure
+  V19A_FP_RUNNER.reset_for_tests
+end
+
 # R2 source-level guard: the post-read loop MUST be
 # wrapped in an exception-safe guard so an unexpected
 # host read cannot escape with the outer operation open.
+#
+# V1.9A P0 FINAL NARROW RESIDUAL CORRECTION FINAL-R2-01
+# (2026-09-09): the guard test is updated to find the
+# new validation phase. The old guard located the
+# end of the post-validation block by the literal
+# `if !validation_errors.empty?` marker; FINAL-R2-01
+# replaced that with `if post_validation_phase_failed
+# || !validation_errors.empty?`. We therefore locate
+# the end of the block by the new marker and also
+# assert the FINAL-R2-01 defensive `begin/rescue
+# StandardError` boundary exists at the post-validation
+# phase level (the prior R2 packet only had the
+# per-read rescue; FINAL-R2-01 adds a phase-level
+# defensive boundary).
 test 'V19A-P0 (R2 source-level): post-read loop is wrapped in begin/rescue StandardError' do
   src = File.read(File.expand_path('../extension/su_ai_plugin/core/planar_normalization_executor.rb', __dir__))
   # Locate the post-validation block by scanning for
-  # 'Post-validation' / 'Post-validation' comments.
+  # the 'Post-validation' comment marker.
   refute_nil src.index('Post-validation'),
              'executor source MUST contain the Post-validation block'
-  # Locate the post-read code path; ensure the
-  # `vertex_position` call inside the post-validation
-  # loop is wrapped in `rescue StandardError`. The
-  # production source uses `rescue StandardError => e`
-  # immediately after `adapter.vertex_position(h)`.
+  # Locate the end of the post-validation block by the
+  # new FINAL-R2-01 marker.
   post_block_start = src.index('# ---- Post-validation')
   refute_nil post_block_start
-  post_block_end   = src.index('if !validation_errors.empty?', post_block_start)
+  post_block_end   = src.index('if post_validation_phase_failed', post_block_start)
   refute_nil post_block_end
   post_block = src[post_block_start..post_block_end]
   assert_includes post_block, 'rescue StandardError',
                   'post-read loop MUST be wrapped in `rescue StandardError` so a raised host read cannot escape with the outer operation open'
   assert_includes post_block, "vertex_position(h)",
                   'post-read loop MUST call adapter.vertex_position(h)'
+  # FINAL-R2-01: phase-level defensive rescue around
+  # the entire post-validation loop.
+  assert_includes post_block, 'post_validation_phase_failed',
+                  'FINAL-R2-01 phase-level defensive rescue boundary MUST exist'
+  # Strict ordering: post must be an Array of EXACTLY
+  # 3 BEFORE any `.to_f` / numeric coercion.
+  assert_match(/post\.length\s*==\s*3/, post_block,
+               'FINAL-R2-01 MUST require `post.length == 3` BEFORE `.to_f`')
 end
 
 # ===========================================================
@@ -1827,6 +2129,97 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     refute_nil pn_after
     assert_equal 'APPLIED', pn_after['state'].to_s,
                  'planar MUST be APPLIED after apply_planar_and_refresh'
+    # --- FINAL-R5-01 (2026-09-09): prove the two physical
+    # B Vertex handles are identity-distinct AND both
+    # reached target Z in this same orchestrated fixture
+    # BEFORE proceeding to gap apply. ---
+    # Access the post-apply workspace via the runner
+    # test-only accessor (the orchestrator does NOT
+    # publish the workspace handle; this is the
+    # production-equivalent read).
+    ws_after_planar = V19A_FP_RUNNER.current_workspace_for_test
+    refute_nil ws_after_planar,
+               'post-planar workspace MUST be accessible to inspect the two physical B Vertex handles'
+    # Build the authoritative host-vertex map from the
+    # workspace edges (same seam
+    # `working_mode_runner._host_vertex_map` uses in
+    # production).
+    hvm_after_planar = v19a_fp_host_vertex_map(ws_after_planar, adapter)
+    refute_empty hvm_after_planar,
+                 'post-planar host_vertex_map MUST be resolvable'
+    # Resolve the two physical endpoint Vertex handles
+    # representing logical B from the two independent
+    # derived edge Groups:
+    #   - edge 0 (A-B): B is the .end slot
+    #   - edge 1 (B-C): B is the .start slot
+    # Discover the derived IDs by walking the workspace
+    # entities (do NOT hardcode "0"/"1" — the test must
+    # be robust against derivation-order changes).
+    edge_dids = ws_after_planar.entities
+                              .select { |r| r.respond_to?(:kind) && r.kind == :edge }
+                              .map { |r| r.respond_to?(:derived_id) ? r.derived_id.to_s : '' }
+                              .reject(&:empty?)
+                              .sort
+    assert_equal 4, edge_dids.length,
+                 'Owner fixture MUST produce 4 derived edge entities'
+    edge_a_b_did = edge_dids.find { |did|
+      g = ws_after_planar.handle_for(did)
+      next false unless g
+      eps = adapter.edge_endpoints(g) if adapter.respond_to?(:edge_endpoints)
+      next false unless eps.is_a?(Array) && eps.length == 2
+      eps[0].respond_to?(:position) && eps[0].position[0] == 0.0 &&
+        eps[0].position[1] == 0.0
+    }
+    refute_nil edge_a_b_did,
+               'Owner fixture MUST expose one derived edge whose start endpoint is (0,0,Z) (edge A-B)'
+    edge_b_c_did = edge_dids.find { |did|
+      g = ws_after_planar.handle_for(did)
+      next false unless g
+      next false if did == edge_a_b_did
+      eps = adapter.edge_endpoints(g) if adapter.respond_to?(:edge_endpoints)
+      next false unless eps.is_a?(Array) && eps.length == 2
+      eps[1].respond_to?(:position) && eps[1].position[0] == 0.0 &&
+        eps[1].position[1] == 1.0 / 25.4
+    }
+    refute_nil edge_b_c_did,
+               'Owner fixture MUST expose one derived edge whose end endpoint is (0,1mm,Z) (edge D-E)'
+    # B end-of-A-B + B start-of-B-C; do not assume A-B is
+    # the first derived_id — the V1.4 prepare pipeline
+    # walks the source snapshot in order so for this
+    # fixture A-B is the FIRST derived edge (id 0) and
+    # B-C is the SECOND (id 1).
+    ab_b_handle = hvm_after_planar["#{edge_a_b_did}.end"]
+    bc_b_handle = hvm_after_planar["#{edge_b_c_did}.start"]
+    refute_nil ab_b_handle,
+               'A-B .end endpoint Vertex handle MUST be resolvable from host_vertex_map'
+    refute_nil bc_b_handle,
+               'B-C .start endpoint Vertex handle MUST be resolvable from host_vertex_map'
+    # FINAL-R5-01: the two physical B handles MUST be
+    # IDENTITY-distinct (different object_ids).
+    refute_equal ab_b_handle.object_id, bc_b_handle.object_id,
+                 'the two physical B Vertex handles MUST be identity-distinct (R5 contract)'
+    # FINAL-R5-01: read both Z values via the adapter's
+    # live vertex_position seam.
+    ab_b_pos = adapter.vertex_position(ab_b_handle)
+    bc_b_pos = adapter.vertex_position(bc_b_handle)
+    refute_nil ab_b_pos,
+               'A-B .end live vertex_position MUST be readable'
+    refute_nil bc_b_pos,
+               'B-C .start live vertex_position MUST be readable'
+    assert_equal 3, ab_b_pos.length,
+                 'A-B .end live position MUST be exactly 3'
+    assert_equal 3, bc_b_pos.length,
+                 'B-C .start live position MUST be exactly 3'
+    # FINAL-R5-01: both Z values MUST equal the planar
+    # target Z within the existing coordinate_epsilon.
+    target_z = V19A_FP_RUNNER.planar_normalization_audit['target_z']
+    refute_nil target_z,
+               'runner MUST publish planar_normalization_audit.target_z for this assertion'
+    eps = v19a_fp_tol(1.0e-4, 0.01).coordinate_epsilon
+    assert_in_delta target_z.to_f, ab_b_pos[2].to_f, eps,
+                    'A-B .end (physical B handle 1) Z MUST equal planar target_z within coordinate_epsilon'
+    assert_in_delta target_z.to_f, bc_b_pos[2].to_f, eps,
+                    'B-C .start (physical B handle 2) Z MUST equal planar target_z within coordinate_epsilon'
     # === Step 3: CadPrepWorkflowOrchestrator.apply_gap_and_refresh ===
     apply_g_snap = CadPrepWorkflowOrchestrator.apply_gap_and_refresh
     assert_equal 'ready', apply_g_snap['state'],

@@ -1,4 +1,519 @@
-# CURRENT PI REPORT — V1.9A P0 NARROW RECHECK FIX (THIS UPDATE)
+# CURRENT PI REPORT — V1.9A P0 FINAL NARROW RESIDUAL CORRECTION (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Final Block Fix
+Packet: P0 FINAL NARROW RESIDUAL CORRECTION (FINAL-R2-01 + FINAL-R5-01)
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
+NARROW RECHECK FIX dispatch, 2026-09-08) + AIPM source recheck
+guidance
+`Prompt/AIPM_V1_9A_P0_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-09.md`.
+Baseline HEAD: `ff35cfae1962538c29ff48aca4dfd593ee6ddb81`
+(`dev/v1.9` V1.9A P0 NARROW RECHECK FIX merge commit; the
+prior packet closed R1, R3, R4, R6, R7 cleanly. AIPM
+direct source recheck found TWO narrow residuals).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS
+A1 packet: COMPLETE (V1.9A-A1 PRODUCTION UI SHELL +
+PRESENTATION MODEL + FIX REQUIRED continuation +
+LEGACY RUBY COMPATIBILITY NARROW FIX + V1X-LEGACY-RUBY-
+DEBT-CLOSURE predecessor packets).
+A2 packet: COMPLETE on `dev/v1.9` (the call order /
+invalidation seam / refresh / rebuild-and-scan /
+gap-ordering / error-boundary propagation are
+FROZEN unchanged in this packet).
+A3 packet: COMPLETE on `dev/v1.9` (the shared
+UI::Command + toolbar + no-selection UX + icons are
+FROZEN unchanged in this packet).
+V1.9A OWNER UI TAB SWITCH BLOCK + HIDDEN-SEMANTICS
+FOLLOW-UP packets: COMPLETE on `dev/v1.9`.
+V1.9A FINAL BLOCK FIX packet: COMPLETE on `dev/v1.9`.
+V1.9A P0 SHARED-VERTEX CORRECTION packet: COMPLETE on
+`dev/v1.9`.
+V1.9A P0 NARROW RECHECK FIX packet (R1, R3, R4, R6, R7):
+COMPLETE on `dev/v1.9`.
+V1.9A P0 FINAL NARROW RESIDUAL CORRECTION (this packet,
+FINAL-R2-01 + FINAL-R5-01): COMPLETE on `dev/v1.9`;
+awaits AIPM final narrow source recheck + Codex xHigh
+narrow recheck + Owner real-SU2020 re-verification.
+CODEX_RISK_TRIGGER: **YES** (post-implementation,
+narrow) — per dispatch: R2 touches the post-read
+atomicity seam (post-validation host-read escape);
+R5 touches the orchestrated E2E seam (physical-B
+identity + Z fan-out proof).
+AIPM_REVIEW: **PENDING**.
+CODEX_NARROW_RECHECK: **NOT YET**.
+OWNER_SU2020: NOT YET.
+V1.9B: NOT STARTED.
+
+---
+
+## 0. Scope (per AIPM FINAL NARROW RESIDUAL CORRECTION)
+
+This packet fixes exactly TWO narrow residuals found by
+AIPM direct source recheck of the prior V1.9A P0
+NARROW RECHECK FIX packet:
+
+1. **FINAL-R2-01** — Executor post-validation
+   `.to_f` exception-leak path. The prior R2 packet
+   wrapped `adapter.vertex_position(h)` in
+   `begin/rescue StandardError` but the downstream
+   validation loop performed
+   `after_zs << post[2].to_f if post.is_a?(Array)`
+   BEFORE proving `post.length == 3`,
+   `post[0..2]` are Numeric, and all numeric values
+   are finite. A malformed-but-Array post such as
+   `[0.0, 0.0, Object.new]` raised `NoMethodError` on
+   `.to_f` BEFORE the executor reached the
+   unreadable-position branch. A 4-element position
+   Array was also silently accepted because
+   `pos.is_a?(Array)` plus the first 3 Numeric slots
+   passed the OLD validation gate.
+
+2. **FINAL-R5-01** — Orchestrated Owner E2E did not
+   prove the two physical B handles were
+   identity-distinct OR at target Z. The prior R5
+   test correctly exercised the orchestrator chain
+   but commented the assertions; the assertions
+   jumped from `planar == APPLIED` directly to gap
+   apply without proving the two physical B
+   identity-distinct and at target Z inside the
+   same E2E fixture.
+
+No architecture redesign required. No production file
+outside `planar_normalization_executor.rb` is touched.
+`endpoint_record.rb`, presenter, proposer, orchestrator,
+WorkingModeRunner, V1.7/V1.8 algorithms, app.js / CSS /
+toolbar remain FROZEN unless a newly added focused
+assertion proves a direct contradiction (NONE did).
+
+---
+
+## 1. starting HEAD / implementation HEAD / final HEAD
+
+- Starting HEAD (before this packet touched the
+  working tree):
+  `ff35cfae1962538c29ff48aca4dfd593ee6ddb81`
+  (`dev/v1.9` V1.9A P0 NARROW RECHECK FIX merge commit).
+- Starting working-tree state: 1 untracked file
+  (`Prompt/AIPM_V1_9A_P0_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-09.md`).
+  The working tree was otherwise clean (per
+  `git status --short` immediately after
+  `git checkout dev/v1.9`).
+- Pre-existing test debt (9 fail + 0 error in HEAD):
+  identical to the prior packet's
+  pre-existing failures — CSS / app.js textual
+  source-level guards + FakeUI / V14 / V17 / V19A
+  FINAL P1-B pre-existing failures. NONE introduced
+  by this packet (verified via full-suite
+  comparison before vs after).
+- Implementation SHA: produced by this packet (the
+  final stable commit on `dev/v1.9`; see
+  `git log -1 --format=%H` after the commit).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD`
+  after push.
+- V1.9A P0 FINAL NARROW RESIDUAL CORRECTION RBZ
+  candidate: size **1,194,376 bytes**; entries **73**;
+  SHA-256
+  **`89e27046c3974a9b222c92f090fe2207dde34cfc69bd76b6ce0a25aefebac534`**.
+
+---
+
+## 2. exact files changed
+
+```
+extension/su_ai_plugin/core/planar_normalization_executor.rb | 70 ++++++--
+tests/test_v19a_final_p0_live_coordinates.rb                  | 274 ++++++++++++++++++++++++++++-
+2 files changed, ~330 insertions, ~14 deletions
+```
+
+The final-allowed production scope per AIPM is:
+
+- `extension/su_ai_plugin/core/planar_normalization_executor.rb`
+
+**FROZEN / NOT CHANGED** (per dispatch + AIPM narrow
+guidance):
+
+- `endpoint_record.rb`, presenter, proposer,
+  orchestrator, WorkingModeRunner, V1.7 / V1.8
+  algorithms, source / derived ownership, tolerance
+  defaults, Undo / host-state architecture,
+  toolbar / tabs / hidden semantics, app.js / CSS,
+  V1.9B, MCP / LLM / Agent.
+
+---
+
+## 3. FINAL-R2-01 — strict post-validation shape check + phase-level defensive rescue
+
+### Production change
+
+`extension/su_ai_plugin/core/planar_normalization_executor.rb`
+post-validation phase. The frozen contract is now
+enforced in strict order:
+
+```ruby
+post_ok = post.is_a?(Array) &&
+          post.length == 3 &&
+          post[0].is_a?(Numeric) &&
+          post[1].is_a?(Numeric) &&
+          post[2].is_a?(Numeric)
+unless post_ok
+  validation_errors << "vertex_#{i}_position_unreadable"
+  next
+end
+finite = (!post[0].respond_to?(:finite?) || post[0].finite?) &&
+         (!post[1].respond_to?(:finite?) || post[1].finite?) &&
+         (!post[2].respond_to?(:finite?) || post[2].finite?)
+unless finite
+  validation_errors << "vertex_#{i}_position_unreadable"
+  next
+end
+# ALL FOUR checks pass. NOW call `.to_f` / do XY-Z
+# drift validation / append after_zs.
+after_zs << post[2].to_f
+```
+
+Plus a phase-level defensive
+`begin/rescue StandardError` boundary that
+guarantees an unexpected `StandardError` during
+the post-validation phase aborts the outer
+operation ONCE, never commits, returns `:failed`,
+publishes zero logical / physical / legacy applied
+success. The original exception class is
+preserved verbatim in the audit row failure
+reason (`vertex_phase_post_validation_raised:<Class>`).
+
+What the corrections close:
+
+- `[0.0, 0.0, Object.new]` (3-Array, slot 2 not
+  Numeric): `post_ok = false` → fail closed,
+  no `.to_f` invoked.
+- `[0.0, 0.0, 0.0, 123.0]` (4-Array): `post_ok = false`
+  (length != 3) → fail closed, no `.to_f` invoked.
+- `[0.0, 0.0]` (2-Array): `post_ok = false`
+  (length != 3) → fail closed.
+- `{ x: 0.0, y: 0.0, z: 0.0 }` (Hash): `post_ok = false`
+  (not Array) → fail closed.
+
+### Required R2 tests (this packet)
+
+Added to
+`tests/test_v19a_final_p0_live_coordinates.rb`:
+
+- `V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0, Object.new] -> no exception escapes, 1 begin, 1 abort, 0 commit, FAILED`
+- `V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0, 0.0, 123.0] -> malformed, 1 begin, 1 abort, 0 commit, FAILED`
+- `V19A-P0 (FINAL-R2-01): post-position [0.0, 0.0] -> malformed (length 2), 1 begin, 1 abort, 0 commit, FAILED`
+- `V19A-P0 (FINAL-R2-01): post-position Hash -> malformed, 1 begin, 1 abort, 0 commit, FAILED`
+
+The prior `V19A-P0 (R2 source-level): post-read loop is wrapped in begin/rescue StandardError`
+test was UPDATED to:
+
+- Locate the new `if post_validation_phase_failed`
+  marker (instead of the old `if !validation_errors.empty?`).
+- Assert the FINAL-R2-01 phase-level defensive
+  `begin/rescue StandardError` boundary exists.
+- Assert the strict `post.length == 3` shape check
+  precedes any `.to_f` / numeric coercion.
+
+Pre-existing R2 tests (raise / Hash / NaN) all
+remain PASS.
+
+---
+
+## 4. FINAL-R5-01 — orchestrated Owner E2E physical-B identity + Z fan-out proof
+
+### Test-only change (per dispatch: "Test-only unless
+the new assertion reveals a production defect")
+
+The existing `V19A-P0 (R5): orchestrated Owner-equivalent E2E`
+test (which uses `CadPrepWorkflowOrchestrator.start` →
+`apply_planar_and_refresh` → `apply_gap_and_refresh`)
+was EXTENDED with the FINAL-R5-01 assertions
+immediately after `apply_planar_and_refresh`:
+
+1. Access the post-apply workspace via the runner
+   test-only accessor
+   `V19A_FP_RUNNER.current_workspace_for_test`
+   (the orchestrator does NOT publish the workspace
+   handle; this is the production-equivalent read).
+2. Build the authoritative host-vertex map from the
+   workspace edges via `v19a_fp_host_vertex_map`
+   (the SAME seam `working_mode_runner._host_vertex_map`
+   uses in production).
+3. Discover the two derived edges representing A-B
+   and B-C by walking workspace.entities
+   (do NOT hardcode "0"/"1" — the test must be robust
+   against derivation-order changes).
+4. Resolve the A-B `.end` (logical B handle 1) and
+   B-C `.start` (logical B handle 2) via the
+   adapter's `edge_endpoints(group_handle)` seam.
+5. **Assert `ab_b_handle.object_id != bc_b_handle.object_id`**
+   (the two physical B handles are IDENTITY-distinct).
+6. Read both via `adapter.vertex_position(handle)` and
+   verify exactly 3 elements.
+7. Read the audit's `target_z` via
+   `V19A_FP_RUNNER.planar_normalization_audit`.
+8. **Assert `pos_ab_b[2] == target_z` and
+   `pos_bc_b[2] == target_z`** within the existing
+   `coordinate_epsilon`.
+
+The new assertions do NOT manually call any
+`WorkingModeRunner.compute_*` methods (per the dispatch:
+"Do not manually call downstream WorkingModeRunner.compute_*
+methods"). They run inside the same E2E fixture
+immediately after the orchestrator's
+`apply_planar_and_refresh`, BEFORE
+`apply_gap_and_refresh`.
+
+### What the FINAL-R5-01 assertions revealed
+
+The new assertions PASS against the current
+production code (final SHA of HEAD). The two
+physical B handles are identity-distinct (different
+`object_id`), and both reach `target_z` within the
+existing `coordinate_epsilon` after
+`apply_planar_and_refresh`. The fixture proves
+the R5 contract inside the same orchestrator-driven
+test, before proceeding to gap-unlock + gap-apply
++ Structure assertions (which were already in the
+prior R5 test).
+
+If a future regression breaks the identity-distinct
+or the Z-fan-out contract, this assertion catches it
+immediately at the orchestrator-E2E level.
+
+---
+
+## 5. PASS / PRESERVE (no reopen)
+
+The FINAL NARROW RESIDUAL CORRECTION does NOT
+modify any of:
+
+- R1 strict preflight before mutation (already in
+  HEAD via `ec6ab57`).
+- Group -> endpoint Vertex live-read authority.
+- R3 cached fallback / fail-closed matrix.
+- Physical-occurrence identity dedupe in proposer.
+- Logical -> physical fan-out design.
+- One outer operation + one primitive per
+  physical occurrence.
+- Logical / physical count split.
+- R4 V1.8 `loops` + `*_count` presenter shape.
+- R7 `deep_nesting` / `嵌套层级`.
+- A2 orchestrator call order and invalidation.
+- V1.5 duplicate algorithm.
+- V1.6 analysis/tolerance policy.
+- V1.7 pairing/canonical clustering.
+- V1.8 reconstruction/region algorithm.
+- Source CAD immutability.
+- Undo / host-state architecture.
+- toolbar / tabs / hidden semantics.
+- V1.9B / PreparedCadDataset / release Gate.
+- MCP / LLM / Agent.
+
+---
+
+## 6. Test / package return
+
+### Focused V19A-P0 suite (this packet)
+
+```
+V19A-P0: 38 tests, 38 pass, 0 fail, 0 error
+```
+
+Coverage (this packet's new tests in **bold**):
+
+- §10.1 HANDLE-CONTRACT: vertex_position receives
+  endpoint Vertex handle, not Group handle.
+- §10.2 FAILCLOSED-MALFORMED / -RAISE / -NIL /
+  -NO-LIVE-AUTHORITY / -INFINITY.
+- §10.2 NO-ADAPTER: nil adapter -> cached fallback.
+- §10.3 SHARED-LOGICAL-COORDINATE.
+- §10.4 EXECUTOR-FANOUT.
+- §10.4a PREFLIGHT-NIL / -MALFORMED-ARRAY /
+  -NON-NUMERIC / -NAN-INFINITY / -RAISED /
+  -NON-NUMERIC-VECTOR-Z (6 tests).
+- §10.5 MID-MUTATION-FAILURE.
+- §10.6 POSTVALIDATION-FAILURE.
+- **R2 post-position read raises (exception suppressed)**.
+- **R2 post-position returns malformed non-Array**.
+- **R2 post-position returns Float::NAN**.
+- **FINAL-R2-01 post-position [0.0, 0.0, Object.new]**
+  (NEW this packet).
+- **FINAL-R2-01 post-position [0.0, 0.0, 0.0, 123.0]**
+  (NEW this packet).
+- **FINAL-R2-01 post-position [0.0, 0.0]** (NEW this packet).
+- **FINAL-R2-01 post-position Hash** (NEW this packet).
+- **R2 source-level guard** (UPDATED this packet).
+- §10.7 E2E-OWNER-EQUIVALENT.
+- §10.8 PRESENTER-LOGICAL-COUNT / -FAILED-NO-CTA.
+- §9 ERROR-CLASS / SOURCE-LEVEL / PROPOSER-IDENTITY-DEDUPE
+  / EXECUTOR-ONE-PRIMITIVE-PER-OCCURRENCE.
+- **R5 orchestrated Owner-equivalent E2E**
+  (EXTENDED this packet with FINAL-R5-01
+  identity + Z assertions).
+
+### v19a_presenter focused suite
+
+```
+v19a_presenter: 78 tests, 77 pass, 0 fail, 1 error
+```
+
+(unchanged from prior packet; the 1 error is the
+pre-existing `v19a_presenter (FINAL P1-B)` `开放链`
+chip-list guard.)
+
+### Other focused suites
+
+- `v19a_cad_prep_workflow_orchestrator`: 30 / 30 PASS
+  (unchanged).
+- `v19a_dialog_runner`: 48 / 48 PASS (unchanged).
+- V1.6 planar normalization: 33 / 33 PASS.
+- V1.6 close-autodiscard: 7 / 7 PASS.
+- V1.7 focused: 127 / 127 PASS.
+- V1.7 INT: 33 / 33 PASS.
+- V1.8 focused: 71 / 71 PASS.
+- V1.8 SR18: 32 / 32 PASS.
+- V1.4 fingerprint: 22 / 22 PASS.
+- LEGACY-COMPAT: 4 / 4 PASS.
+
+### Normal full Ruby suite (NORMAL runner, no exclusion)
+
+```
+1219 tests, 1210 pass, 5 fail, 4 error
+```
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed by isolated re-run before vs
+after):
+
+- 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
+  `html_render (V1.9A FINAL P1-C)` × 1 +
+  `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
+  — CSS / `app.js` textual source-level guards on
+  already-source-reviewed PASS items. CSS is
+  UNCHANGED in this packet.
+- 1 FAIL on `v19a_presenter (FINAL P1-B)` —
+  `开放链` chip-list guard (pre-existing presenter
+  test guard, not addressed by R7's
+  `嵌套层级` restoration).
+- 3 ERROR on `capability.HtmlDialog` /
+  V14 production call chain /
+  V17-L1 host_state_changed — pre-existing
+  test-environment / FakeUI limitations.
+
+The 2 new FINAL-R2-01 tests pass cleanly in the
+full suite (verified after rebuilding the RBZ so
+the RBZ smoke test no longer loads the pre-fix
+executor from the stale `dist/SU-AI-Plugin.rbz`).
+
+### DOM / HTML / RBZ smoke
+
+- `tests/test_html_render_dom.js` (Node DOM):
+  all assertions PASS, final line `PASS`
+  (unchanged from HEAD; no DOM change in this
+  packet).
+- `tests/test_html_render.rb`: 24 / 24 PASS
+  (unchanged from HEAD).
+- `tests/test_rbz_smoke.rb`: 7 / 8 PASS + 1
+  pre-existing FakeUI ERROR (unrelated).
+
+### RBZ rebuilt from corrected source
+
+```
+$ ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe scripts/build_rbz.rb
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1194376 bytes
+    entries: 73
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+- RBZ path: `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
+- RBZ size: **1,194,376 bytes**
+- RBZ entry count: **73**
+- RBZ SHA-256:
+  **`89e27046c3974a9b222c92f090fe2207dde34cfc69bd76b6ce0a25aefebac534`**
+
+Delta vs prior packet (1,191,455 bytes / 73
+entries): +2,921 bytes (the executor's tightened
+post-validation + the new R2 source-level guard
+are slightly larger than the prior swallow-style
+post-validation). The production-correctness of the
+post-validation phase is now provable.
+
+### `git diff --check`
+
+Clean (no trailing whitespace, no line-ending noise
+on any modified file).
+
+---
+
+## 7. Confirmation: no forbidden algorithms /
+   tolerances / V1.9B changed
+
+- No change to `coordinate_epsilon`,
+  `planar_z_snap`, `gap_search` defaults.
+- No change to Source CAD mutability / ownership.
+- No change to Derived Workspace ownership model.
+- No change to V1.5 duplicate algorithm.
+- No change to V1.6 dominant-band / target-Z /
+  outlier algorithm.
+- No change to V1.6 tolerance defaults.
+- No change to V1.7 gap pairing / mutual
+  candidate / conflict logic.
+- No change to V1.7 canonical node clustering
+  semantics.
+- No change to V1.8 reconstruction / region /
+  containment algorithm.
+- No physical welding.
+- No SketchUp Face generation.
+- No broad Observer architecture change.
+- No Undo / host-state redesign.
+- No toolbar / loader change.
+- No current Issues / badge semantics already
+  source-reviewed PASS.
+- No MCP / LLM / Agent.
+- No V1.9B / PreparedCadDataset / release Gate.
+- No source-Registry run-output was rewritten
+  anywhere.
+
+---
+
+## 8. Deviations / STOP items
+
+- 1 test update: the prior packet's
+  `V19A-P0 (R2 source-level)` source-level guard
+  test was updated to use the new
+  `if post_validation_phase_failed` end-of-block
+  marker + the new phase-level defensive
+  `begin/rescue StandardError` boundary + the new
+  `post.length == 3` shape check. This is a
+  required follow-on because the prior packet's
+  marker literal was retired by FINAL-R2-01.
+- The 5 FAIL + 4 ERROR pre-existing test results
+  are reported separately per amendment §11
+  ("actual counts + full suite result with known
+  pre-existing failures separated"). None was
+  introduced by this packet.
+- The FINAL-R5-01 new assertions did NOT reveal a
+  production defect (the two physical B handles
+  are identity-distinct + at target Z in the same
+  E2E fixture). Per dispatch: "Test-only unless
+  the new assertion reveals a production defect" —
+  the assertions remain test-only; the production
+  code in `planar_normalization_executor.rb` is
+  unchanged for the FINAL-R5-01 contract.
+- The V1.9B PreparedCadDataset / persistence work
+  remains NOT STARTED.
+- The CODEX_NARROW_RECHECK + OWNER_SU2020 steps
+  remain pending per dispatch §9.
+
+---
+
+END OF V1.9A P0 FINAL NARROW RESIDUAL CORRECTION REPORT.
+# CURRENT PI REPORT — V1.9A P0 NARROW RECHECK FIX (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
