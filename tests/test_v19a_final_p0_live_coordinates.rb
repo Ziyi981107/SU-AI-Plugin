@@ -2132,7 +2132,19 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     # --- FINAL-R5-01 (2026-09-09): prove the two physical
     # B Vertex handles are identity-distinct AND both
     # reached target Z in this same orchestrated fixture
-    # BEFORE proceeding to gap apply. ---
+    # BEFORE proceeding to gap apply.
+    #
+    # Bug fix (2026-09-09): the prior packet's finder
+    # identified B-C by `eps[1] == (0, 1mm)`. That is
+    # the D-E edge end-point (XY=(0,1mm,Z=0)), NOT B-C.
+    # The test then took `bc_b_handle = "<D-E>.start"`
+    # which is D-E.start (XY=(0,H,Z=0)), NOT the second
+    # physical B. The corrected finder identifies B-C
+    # by `eps[0] == (W, 0)` (B-C.start XY=(W,0,Z=drift));
+    # `ab_b_handle = A-B.end` (B at .end XY=(W,0)) and
+    # `bc_b_handle = B-C.start` (B at .start XY=(W,0))
+    # are now the correct logical-B representation from
+    # the two independent derived edge Groups. ---
     # Access the post-apply workspace via the runner
     # test-only accessor (the orchestrator does NOT
     # publish the workspace handle; this is the
@@ -2147,11 +2159,11 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     hvm_after_planar = v19a_fp_host_vertex_map(ws_after_planar, adapter)
     refute_empty hvm_after_planar,
                  'post-planar host_vertex_map MUST be resolvable'
-    # Resolve the two physical endpoint Vertex handles
-    # representing logical B from the two independent
-    # derived edge Groups:
-    #   - edge 0 (A-B): B is the .end slot
-    #   - edge 1 (B-C): B is the .start slot
+    # The Owner fixture uses W = 10.0 inches (literal
+    # value mirrored from `v19a_fp_owner_fixture_source`;
+    # we do not change the helper to keep this packet
+    # test-only).
+    owner_w = 10.0
     # Discover the derived IDs by walking the workspace
     # entities (do NOT hardcode "0"/"1" — the test must
     # be robust against derivation-order changes).
@@ -2162,6 +2174,7 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
                               .sort
     assert_equal 4, edge_dids.length,
                  'Owner fixture MUST produce 4 derived edge entities'
+    # A-B is identified by its start endpoint XY = (0, 0).
     edge_a_b_did = edge_dids.find { |did|
       g = ws_after_planar.handle_for(did)
       next false unless g
@@ -2172,22 +2185,30 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     }
     refute_nil edge_a_b_did,
                'Owner fixture MUST expose one derived edge whose start endpoint is (0,0,Z) (edge A-B)'
+    # B-C is identified by its start endpoint XY = (W, 0)
+    # (B-C.start = (W, 0, drift)); this is the SECOND
+    # physical B handle (B-C.start). The prior packet's
+    # finder used end endpoint XY = (0, 1mm) which is
+    # D-E.end by coincidence — do NOT use that.
     edge_b_c_did = edge_dids.find { |did|
       g = ws_after_planar.handle_for(did)
       next false unless g
       next false if did == edge_a_b_did
       eps = adapter.edge_endpoints(g) if adapter.respond_to?(:edge_endpoints)
       next false unless eps.is_a?(Array) && eps.length == 2
-      eps[1].respond_to?(:position) && eps[1].position[0] == 0.0 &&
-        eps[1].position[1] == 1.0 / 25.4
+      eps[0].respond_to?(:position) && eps[0].position[0] == owner_w &&
+        eps[0].position[1] == 0.0
     }
     refute_nil edge_b_c_did,
-               'Owner fixture MUST expose one derived edge whose end endpoint is (0,1mm,Z) (edge D-E)'
-    # B end-of-A-B + B start-of-B-C; do not assume A-B is
-    # the first derived_id — the V1.4 prepare pipeline
-    # walks the source snapshot in order so for this
-    # fixture A-B is the FIRST derived edge (id 0) and
-    # B-C is the SECOND (id 1).
+               'Owner fixture MUST expose one derived edge whose start endpoint is (W,0,Z) (edge B-C; logical B at .start)'
+    # ab_b_handle = A-B.end (the .end slot of A-B is the
+    # logical B at XY=(W,0,Z)). bc_b_handle = B-C.start
+    # (the .start slot of B-C is also the logical B at
+    # XY=(W,0,Z)). The two derived edges own these two
+    # physical Vertex handles independently; the
+    # proposer's identity-dedupe preserves them as
+    # different objects (the prior packet's
+    # identity-dedupe fan-out contract).
     ab_b_handle = hvm_after_planar["#{edge_a_b_did}.end"]
     bc_b_handle = hvm_after_planar["#{edge_b_c_did}.start"]
     refute_nil ab_b_handle,
@@ -2195,11 +2216,17 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
     refute_nil bc_b_handle,
                'B-C .start endpoint Vertex handle MUST be resolvable from host_vertex_map'
     # FINAL-R5-01: the two physical B handles MUST be
-    # IDENTITY-distinct (different object_ids).
+    # IDENTITY-distinct (different object_ids; the
+    # derived edge Groups own their own physical Vertex
+    # handles independently).
     refute_equal ab_b_handle.object_id, bc_b_handle.object_id,
-                 'the two physical B Vertex handles MUST be identity-distinct (R5 contract)'
-    # FINAL-R5-01: read both Z values via the adapter's
-    # live vertex_position seam.
+                 'the two physical B Vertex handles MUST be identity-distinct (R5 contract; A-B.end vs B-C.start)'
+    # FINAL-R5-01: read both live positions via the
+    # adapter's live vertex_position seam. Both must
+    # carry the LOGICAL B XY = (W, 0) (the two physical
+    # Vertex handles represent the same logical B
+    # coordinate but are owned by different derived edge
+    # Groups).
     ab_b_pos = adapter.vertex_position(ab_b_handle)
     bc_b_pos = adapter.vertex_position(bc_b_handle)
     refute_nil ab_b_pos,
@@ -2210,8 +2237,21 @@ test 'V19A-P0 (R5): orchestrated Owner-equivalent E2E: start -> apply_planar_and
                  'A-B .end live position MUST be exactly 3'
     assert_equal 3, bc_b_pos.length,
                  'B-C .start live position MUST be exactly 3'
-    # FINAL-R5-01: both Z values MUST equal the planar
-    # target Z within the existing coordinate_epsilon.
+    # FINAL-R5-01: both live XY MUST equal the logical B
+    # XY = (W, 0) (the two physical B Vertex handles
+    # share the logical B coordinate but live on
+    # different derived edge Groups).
+    assert_in_delta owner_w.to_f, ab_b_pos[0].to_f, 1.0e-6,
+                    'A-B .end (physical B handle 1) live X MUST equal logical B X = W'
+    assert_in_delta 0.0,         ab_b_pos[1].to_f, 1.0e-6,
+                    'A-B .end (physical B handle 1) live Y MUST equal logical B Y = 0'
+    assert_in_delta owner_w.to_f, bc_b_pos[0].to_f, 1.0e-6,
+                    'B-C .start (physical B handle 2) live X MUST equal logical B X = W'
+    assert_in_delta 0.0,         bc_b_pos[1].to_f, 1.0e-6,
+                    'B-C .start (physical B handle 2) live Y MUST equal logical B Y = 0'
+    # FINAL-R5-01: both live Z values MUST equal the
+    # planar target Z within the existing
+    # coordinate_epsilon.
     target_z = V19A_FP_RUNNER.planar_normalization_audit['target_z']
     refute_nil target_z,
                'runner MUST publish planar_normalization_audit.target_z for this assertion'

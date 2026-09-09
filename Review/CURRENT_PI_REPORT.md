@@ -181,8 +181,18 @@ the post-validation phase aborts the outer
 operation ONCE, never commits, returns `:failed`,
 publishes zero logical / physical / legacy applied
 success. The original exception class is
-preserved verbatim in the audit row failure
-reason (`vertex_phase_post_validation_raised:<Class>`).
+preserved in the failed workspace's
+`last_error` string as
+`post_validation_phase_failed:vertex_phase_post_validation_raised:<Class>`
+(per the `validation_errors.first` interpolation);
+the audit row's `reason` itself is the GENERIC
+`post_validation_phase_failed` (per dispatch
+final narrow residual guidance 2026-09-09: the
+class is preserved in the failed workspace's
+`last_error`; the audit row's `reason` stays
+generic — the production code is NOT to be
+changed to fit an older report wording that put
+the class directly into the audit row's `reason`).
 
 What the corrections close:
 
@@ -278,6 +288,33 @@ the R5 contract inside the same orchestrator-driven
 test, before proceeding to gap-unlock + gap-apply
 + Structure assertions (which were already in the
 prior R5 test).
+
+### FINAL-R5-01 test-only false positive (fixed 2026-09-09)
+
+AIPM final narrow source recheck of this packet
+found the R5 test's B-C finder was matching the
+WRONG edge. The prior packet's finder located B-C
+by `eps[1] == (0, 1mm)` — but D-E has its `.end`
+endpoint at `(0, 1mm, 0)`, NOT B-C. So the prior
+test took `bc_b_handle = "D-E.start"` which is the
+D Vertex, not the second physical B handle.
+
+This packet fixes the test-only bug (NO production
+source change) by identifying B-C by
+`eps[0] == (W, 0)` (B-C.start XY = (W, 0, drift)).
+The corrected test now correctly proves:
+
+- `ab_b_handle = A-B.end` (logical B at A-B.end)
+- `bc_b_handle = B-C.start` (logical B at B-C.start)
+- `ab_b_handle.object_id != bc_b_handle.object_id`
+  (identity-distinct)
+- Both live XY == (W, 0) (the logical B coordinate)
+- Both live Z == `target_z` within `coordinate_epsilon`
+
+NO production code change (per dispatch). NO
+production RBZ rebuild needed — the RBZ SHA
+remains
+`89e27046c3974a9b222c92f090fe2207dde34cfc69bd76b6ce0a25aefebac534`.
 
 If a future regression breaks the identity-distinct
 or the Z-fan-out contract, this assertion catches it
@@ -760,9 +797,17 @@ becomes a tagged sentinel
 (`{ 'kind' => 'raised', 'class' => e.class.name }`)
 so the function NEVER returns while the outer
 operation is still open. The original exception
-class is preserved verbatim in the audit row's
-failure reason (e.g.
-`vertex_0_post_read_raised:StandardError`) without
+class is preserved in the failed workspace's
+`last_error` string (e.g.
+`post_validation_failed:vertex_0_post_read_raised:StandardError`);
+the audit row's `reason` itself stays the GENERIC
+`post_validation_failed` (per dispatch final
+narrow residual guidance 2026-09-09: the class is
+preserved in the failed workspace's `last_error`;
+the audit row's `reason` stays generic — the
+production code is NOT to be changed to fit an
+older report wording that put the class directly
+into the audit row's `reason`).
 parsing the message string.
 
 The post-validation block additionally:
