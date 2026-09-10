@@ -190,6 +190,24 @@ module SUAnalysis
         # silently resurrect the cached pre-mutation
         # coordinate (which is the Owner regression we are
         # fixing).
+        #
+        # V1.9A RFR CODEX NARROW RECHECK CORRECTION
+        # CXR-01 (2026-09-10): the first-pass gate MUST
+        # distinguish "live capability present but
+        # unreadable" from "live capability genuinely
+        # absent (no vertex_position seam)". When the
+        # adapter LACKS vertex_position (the host-free /
+        # backward-compatible analysis path), the
+        # first-pass gate MUST consult the cached
+        # geometry_summary coordinate so a valid 0.2 mm
+        # drift can still drive READY_TO_NORMALIZE via
+        # the existing second-pass cached-fallback
+        # path. Previously the first pass hardcoded
+        # `fail_closed: true` + `cached_pos: nil`, which
+        # forced every adapter-without-vertex_position
+        # edge to be marked unsafe BEFORE the second
+        # pass could use its valid cached geometry.
+        has_live_reader = !adapter.nil? && adapter.respond_to?(:vertex_position)
         unsafe_lookup = {}
         edges_records.each do |rec|
           did = rec.respond_to?(:derived_id) ? rec.derived_id.to_s : ''
@@ -214,26 +232,33 @@ module SUAnalysis
             unsafe_lookup[did] = true
             next
           end
-          # V1.9A OWNER REFRESH FIX: verify BOTH
+          # V1.9A OWNER REFRESH FIX + CXR-01: verify BOTH
           # endpoints have a live-coordinate authority
           # path (live read succeeds) OR a legitimate
           # cached fallback (no live capability exists).
           # If a live handle + vertex_position seam
           # exists but the read is unreadable, mark the
           # edge unsafe (do NOT resurrect cached coords).
+          # When the adapter lacks vertex_position, fall
+          # back to the cached geometry_summary so the
+          # host-free / backward-compatible analysis
+          # path stays reachable in the first pass.
+          gs_first_pass = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
+          s_cached_first_pass = gs_first_pass['start']
+          e_cached_first_pass = gs_first_pass['end']
           live_start = _live_position_for(
             adapter:     adapter,
             handle:      endpoints[0],
-            cached_pos:  nil,           # no cached fallback when live authority exists
+            cached_pos:  s_cached_first_pass,
             endpoint_key: "#{did}.start",
-            fail_closed: true
+            fail_closed: has_live_reader
           )
           live_end = _live_position_for(
             adapter:     adapter,
             handle:      endpoints[1],
-            cached_pos:  nil,
+            cached_pos:  e_cached_first_pass,
             endpoint_key: "#{did}.end",
-            fail_closed: true
+            fail_closed: has_live_reader
           )
           if live_start.nil? || live_end.nil?
             unsafe_lookup[did] = true

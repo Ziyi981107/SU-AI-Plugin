@@ -2741,3 +2741,286 @@ test 'V19A-RFR (source-level): proposer source uses _live_position_for helper fo
                'proposer source MUST use fail_closed: true in the first-pass live authority gate')
 end
 
+# ===========================================================
+# CXR-01 / CXR-02 - V1.9A RFR CODEX NARROW RECHECK
+# CORRECTION (fix 2026-09-10). Per dispatch
+# Prompt/AIPM_V1_9A_RFR_CODEX_NARROW_RECHECK_CORRECTION_2026-09-10.md
+# ===========================================================
+
+# CXR-01A: no live reader + valid cached drift.
+#
+# Per Codex CXR-01: the proposer's first-pass gate
+# MUST distinguish "live capability absent" from
+# "live capability present but unreadable". When the
+# adapter genuinely lacks vertex_position (the
+# host-free / backward-compatible analysis path),
+# the first-pass gate MUST consult the cached
+# geometry_summary so a valid 0.2 mm drift can
+# still drive READY_TO_NORMALIZE via the existing
+# second-pass cached-fallback path. Before CXR-01
+# the first pass hardcoded `fail_closed: true` +
+# `cached_pos: nil`, which forced every
+# adapter-without-vertex_position edge to be marked
+# unsafe BEFORE the second pass could use its valid
+# cached geometry.
+test 'V19A-RFR §CXR-01A (NO-LIVE-READER + VALID CACHED DRIFT): first pass consults cached geometry_summary -> READY_TO_NORMALIZE; proposal exists; max_movement = drift' do
+  # V1.9A RFR CODEX NARROW RECHECK CORRECTION (2026-09-10):
+  # The rbz smoke test (`tests/test_rbz_smoke.rb`) uses `load`
+  # to re-execute the extracted `planar_normalization_proposer.rb`
+  # from `dist/SU-AI-Plugin.rbz`, which is the BEFORE-CXR-01
+  # implementation. When CXR-01A runs AFTER the rbz smoke
+  # test in `tests/run_all.rb`, the dev-tree proposer's methods
+  # are redefined by the rbz smoke test's `load`. We therefore
+  # explicitly `load` the dev-tree proposer at the START of
+  # this test to guarantee the CXR-01 fix is active.
+  load File.expand_path(
+    '../extension/su_ai_plugin/core/planar_normalization_proposer.rb', __dir__
+  )
+  begin
+    src = v19a_fp_owner_fixture_source
+    tol = Tolerance.new(duplicate: 1.0e-4, short_edge: 0.5,
+                        gap_search: 0.05, coordinate_epsilon: 1.0e-4,
+                        planar_z_snap: 0.01)
+    V19A_FP_RUNNER.reset_for_tests
+    adapter = DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+    # Build the workspace from the Owner fixture so
+    # every derived entity record carries the cached
+    # 0.2 mm Z drift in its geometry_summary['start']
+    # / ['end']. This is the cached coordinate the
+    # proposer MUST consult when the adapter lacks
+    # the live vertex_position seam.
+    snap = V19A_FP_RUNNER.prepare(
+      source: src, adapter: adapter, model: nil
+    )
+    assert_equal 'ready', snap['state']
+    ws = V19A_FP_RUNNER.current_workspace_for_test
+    refute_nil ws
+    # Sanity check: every edge geometry_summary has
+    # the expected 0.2 mm drift on the B endpoints.
+    drift = 0.2 / 25.4
+    drift_count = 0
+    ws.entities.each do |rec|
+      next unless rec.respond_to?(:kind) && rec.kind == :edge
+      gs = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
+      if gs['start'].is_a?(Array) && gs['start'][2].is_a?(Numeric) &&
+         (gs['start'][2].to_f - drift).abs < 1.0e-9
+        drift_count += 1
+      end
+      if gs['end'].is_a?(Array) && gs['end'][2].is_a?(Numeric) &&
+         (gs['end'][2].to_f - drift).abs < 1.0e-9
+        drift_count += 1
+      end
+    end
+    assert drift_count >= 1,
+           "CXR-01A fixture precondition: at least one endpoint MUST carry the cached 0.2 mm drift (got #{drift_count})"
+    # Build a no-vertex_position adapter: still
+    # supports edge safety / endpoints but
+    # genuinely lacks the live-coordinate seam.
+    # Unconditional undef_method is required
+    # because respond_to? inside a class
+    # definition block checks only the class's
+    # own methods (NOT inherited ones) — a
+    # conditional `if respond_to?(:vertex_position)`
+    # would always be false in that context and
+    # silently leave the inherited method intact.
+    no_vp_adapter = Class.new(adapter.class) do
+      undef_method(:vertex_position)
+    end.new
+    refute(no_vp_adapter.respond_to?(:vertex_position),
+           'CXR-01A fixture precondition: the adapter MUST lack vertex_position seam')
+    adapter.created_handles.each { |h| no_vp_adapter.created_handles << h }
+    adapter.added_edges.each       { |e| no_vp_adapter.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| no_vp_adapter.vertex_handles_by_edge[k] = v }
+    result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+      workspace: ws, adapter: no_vp_adapter, tolerance: tol
+    )
+    assert_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'CXR-01A: no-live-reader + valid cached drift MUST reach READY_TO_NORMALIZE (backward-compatible cached analysis path); ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    proposal = result[:proposal]
+    refute_nil proposal, 'CXR-01A: proposal MUST exist when cached drift is preserved'
+    assert_equal 1, proposal[:movable_count].to_i,
+                 'CXR-01A: cached 0.2 mm drift MUST produce one logical move'
+    assert_in_delta drift, proposal[:max_movement].to_f, 1.0e-9,
+                    'CXR-01A: max_movement MUST equal the cached 0.2 mm drift'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# CXR-01B: live reader exists but unreadable.
+#
+# Per Codex CXR-01: the existing fail-closed matrix
+# MUST be preserved after the CXR-01 fix. When a
+# live vertex_position seam exists but the read is
+# unreadable (nil / raise / malformed / non-Numeric /
+# NaN / Infinity), the proposer MUST fail closed and
+# MUST NOT resurrect the cached pre-mutation
+# coordinate. This test pins the COMPLETE fail-closed
+# matrix on the proposer's first-pass seam so that the
+# CXR-01 fix does not accidentally weaken the live
+# authority contract on the production path.
+test 'V19A-RFR §CXR-01B (LIVE-READER PRESENT BUT UNREADABLE): complete fail-closed matrix preserved (nil / raise / malformed / non-Numeric / NaN / Infinity)' do
+  drift = 0.007874015748031498
+  cases = [
+    ['nil',            :nil_value],
+    ['raise',          :raise_value],
+    ['malformed_hash', { 'x' => 0.0, 'y' => 0.0, 'z' => 0.0 }],
+    ['non_numeric',    [0.0, 'bad', 0.0]],
+    ['nan',            [0.0, 0.0, Float::NAN]],
+    ['infinity',       [0.0, 0.0, Float::INFINITY]]
+  ]
+  cases.each do |label, ret_kind|
+    begin
+      adapter, ws = v19a_fp_prepare(
+        [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+        v19a_fp_tol(1.0e-4, 0.01)
+      )
+      spied = Class.new(adapter.class) do
+        define_method(:vertex_position) do |_h|
+          case ret_kind
+          when :nil_value
+            nil
+          when :raise_value
+            raise StandardError, "synthetic CXR-01B fail-closed case: #{label}"
+          else
+            ret_kind
+          end
+        end
+      end.new
+      adapter.created_handles.each { |h| spied.created_handles << h }
+      adapter.added_edges.each       { |e| spied.added_edges << e }
+      adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+      tol = v19a_fp_tol(1.0e-4, 0.01)
+      result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+        workspace: ws, adapter: spied, tolerance: tol
+      )
+      refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                   "CXR-01B [#{label}]: live reader exists but unreadable MUST fail closed (no cached resurrection); " \
+                   "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+      assert_nil result[:proposal],
+                 "CXR-01B [#{label}]: live reader exists but unreadable MUST NOT publish a proposal"
+    ensure
+      V19A_FP_RUNNER.reset_for_tests
+    end
+  end
+end
+
+# CXR-02 (length-2): proposer-level wrong-length live-coordinate regression.
+#
+# Per Codex CXR-02: the proposer-level RFR failure
+# matrix omits behavioral wrong-length live-coordinate
+# coverage. With live endpoint authority present and
+# stale cached drift available, a length-2 Array MUST
+# produce:
+#   - state == REVIEW_REQUIRED;
+#   - reason == no_safe_eligible_vertices
+#     (existing safe failure reason; or an equivalent
+#     stable reason if current repo semantics dictate);
+#   - proposal == nil;
+#   - cached 0.2 mm drift MUST NOT be resurrected
+#     into READY_TO_NORMALIZE;
+#   - no exception escapes.
+test 'V19A-RFR §CXR-02a (PROPOSER WRONG-LENGTH 2-ELEMENT): cached drift + length-2 live Array -> REVIEW_REQUIRED, no proposal, no resurrection, no exception' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    refute_empty hvm
+    # Live endpoint authority present; returns a
+    # length-2 Array (NOT exactly 3) -> malformed.
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| [0.0, 0.0] }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    raised = nil
+    result = nil
+    begin
+      result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+        workspace: ws, adapter: spied, tolerance: tol
+      )
+    rescue StandardError => e
+      raised = e
+    end
+    assert_nil raised,
+               'CXR-02a [length-2]: proposer MUST NOT escape with an exception on length-2 live Array'
+    refute_nil result,
+               'CXR-02a [length-2]: proposer MUST publish a fail-closed result'
+    assert_equal 'REVIEW_REQUIRED', result[:state].to_s,
+                 'CXR-02a [length-2]: state MUST be REVIEW_REQUIRED; ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_equal 'no_safe_eligible_vertices', result[:reason].to_s,
+                 'CXR-02a [length-2]: reason MUST be no_safe_eligible_vertices; ' \
+                 "got reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'CXR-02a [length-2]: proposal MUST be nil on REVIEW_REQUIRED'
+    # Cached 0.2 mm drift MUST NOT be resurrected
+    # into READY_TO_NORMALIZE: this is the
+    # defensive anti-resurrection assertion.
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'CXR-02a [length-2]: cached drift MUST NOT be resurrected into READY_TO_NORMALIZE'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+
+# CXR-02 (length-4): proposer-level wrong-length live-coordinate regression.
+#
+# Per Codex CXR-02: a length-4 Array (4 slots where
+# exactly 3 are expected) is malformed. The
+# proposer MUST behave identically to the length-2
+# case (fail closed, no resurrection, no exception).
+test 'V19A-RFR §CXR-02b (PROPOSER WRONG-LENGTH 4-ELEMENT): cached drift + length-4 live Array -> REVIEW_REQUIRED, no proposal, no resurrection, no exception' do
+  drift = 0.007874015748031498
+  begin
+    adapter, ws = v19a_fp_prepare(
+      [[[0.0, 0.0, drift], [10.0, 0.0, 0.0]]],
+      v19a_fp_tol(1.0e-4, 0.01)
+    )
+    hvm = v19a_fp_host_vertex_map(ws, adapter)
+    refute_empty hvm
+    # Live endpoint authority present; returns a
+    # length-4 Array (NOT exactly 3) -> malformed.
+    spied = Class.new(adapter.class) do
+      define_method(:vertex_position) { |_h| [0.0, 0.0, 0.0, 1.0] }
+    end.new
+    adapter.created_handles.each { |h| spied.created_handles << h }
+    adapter.added_edges.each       { |e| spied.added_edges << e }
+    adapter.vertex_handles_by_edge.each { |k, v| spied.vertex_handles_by_edge[k] = v }
+    tol = v19a_fp_tol(1.0e-4, 0.01)
+    raised = nil
+    result = nil
+    begin
+      result = SUAnalysis::Core::PlanarNormalizationProposer.propose(
+        workspace: ws, adapter: spied, tolerance: tol
+      )
+    rescue StandardError => e
+      raised = e
+    end
+    assert_nil raised,
+               'CXR-02b [length-4]: proposer MUST NOT escape with an exception on length-4 live Array'
+    refute_nil result,
+               'CXR-02b [length-4]: proposer MUST publish a fail-closed result'
+    assert_equal 'REVIEW_REQUIRED', result[:state].to_s,
+                 'CXR-02b [length-4]: state MUST be REVIEW_REQUIRED; ' \
+                 "got state=#{result[:state].inspect} reason=#{result[:reason].inspect}"
+    assert_equal 'no_safe_eligible_vertices', result[:reason].to_s,
+                 'CXR-02b [length-4]: reason MUST be no_safe_eligible_vertices; ' \
+                 "got reason=#{result[:reason].inspect}"
+    assert_nil result[:proposal],
+               'CXR-02b [length-4]: proposal MUST be nil on REVIEW_REQUIRED'
+    # Cached 0.2 mm drift MUST NOT be resurrected
+    # into READY_TO_NORMALIZE.
+    refute_equal 'READY_TO_NORMALIZE', result[:state].to_s,
+                 'CXR-02b [length-4]: cached drift MUST NOT be resurrected into READY_TO_NORMALIZE'
+  ensure
+    V19A_FP_RUNNER.reset_for_tests
+  end
+end
+

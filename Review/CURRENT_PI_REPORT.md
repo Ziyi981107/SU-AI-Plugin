@@ -1,4 +1,356 @@
-# CURRENT PI REPORT — V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (THIS UPDATE)
+# CURRENT PI REPORT — V1.9A RFR CODEX NARROW RECHECK CORRECTION (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Version: V1.9A
+Stage: V1.9A — Final Block Fix
+Packet: V1.9A RFR CODEX NARROW RECHECK CORRECTION
+(CXR-01 + CXR-02)
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
+NARROW RECHECK FIX dispatch, 2026-09-08) + AIPM
+direct acceptance
+`Prompt/AIPM_V1_9A_RFR_CODEX_NARROW_RECHECK_CORRECTION_2026-09-10.md`.
+Baseline HEAD (before this packet touched the working
+tree): `15e00ee26aa50e257806cc6ff25284ed6f285e46`
+(the V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
+merge commit on `dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+A0 Owner UX Gate: PASS
+A1 packet: COMPLETE (V1.9A-A1 PRODUCTION UI SHELL +
+PRESENTATION MODEL + FIX REQUIRED continuation +
+LEGACY RUBY COMPATIBILITY NARROW FIX + V1X-LEGACY-RUBY-
+DEBT-CLOSURE predecessor packets).
+A2 packet: COMPLETE on `dev/v1.9` (the call order /
+invalidation seam / refresh / rebuild-and-scan /
+gap-ordering / error-boundary propagation are
+FROZEN unchanged in this packet).
+A3 packet: COMPLETE on `dev/v1.9` (the shared
+UI::Command + toolbar + no-selection UX + icons are
+FROZEN unchanged in this packet).
+V1.9A OWNER UI TAB SWITCH BLOCK + HIDDEN-SEMANTICS
+FOLLOW-UP packets: COMPLETE on `dev/v1.9`.
+V1.9A FINAL BLOCK FIX packet: COMPLETE on `dev/v1.9`.
+V1.9A P0 SHARED-VERTEX CORRECTION packet: COMPLETE on
+`dev/v1.9`.
+V1.9A P0 NARROW RECHECK FIX packet (R1, R3, R4, R6, R7):
+COMPLETE on `dev/v1.9`.
+V1.9A P0 FINAL NARROW RESIDUAL CORRECTION packet
+(FINAL-R2-01 + FINAL-R5-01): COMPLETE on `dev/v1.9`.
+V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (RFR-01..RFR-05):
+COMPLETE on `dev/v1.9`; AIPM direct source review
+PASS for the proposer live-coordinate authority fix.
+V1.9A RFR CODEX NARROW RECHECK CORRECTION (this packet,
+CXR-01 + CXR-02): COMPLETE on `dev/v1.9`; awaiting
+AIPM direct source review.
+CODEX_RISK_TRIGGER: **YES** (post-implementation,
+narrow) — per dispatch: CXR-01 touches the
+first-pass live-coordinate semantic split; CXR-02
+adds new proposer-level wrong-length Array
+regressions. Each is small and narrow; none reopens
+already-PASS shared-vertex architecture or the
+executor / executor post-read atomicity seam.
+AIPM_REVIEW: **PENDING**.
+CODEX_NARROW_RECHECK: **REQUIRED**.
+OWNER_SU2020: **RECHECK_BLOCKED**.
+V1.9B: NOT STARTED.
+
+---
+
+## 0. Scope (per AIPM V1.9A RFR CODEX NARROW RECHECK CORRECTION)
+
+This packet fixes exactly TWO narrow production
+residuals found by Codex xHigh final narrow recheck
+on the V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
+packet (the prior packet on `dev/v1.9`):
+
+1. **CXR-01 — First-pass live-capability vs cached-
+ fallback semantic split.** The proposer's first
+ pass hardcoded `fail_closed: true` +
+ `cached_pos: nil`. When endpoint handles exist but
+ the adapter lacks the `vertex_position` seam (the
+ host-free / backward-compatible pure-test path),
+ the first pass returned `nil` because
+ `fail_closed: true`, marking every such edge as
+ unsafe BEFORE the second pass could use the valid
+ cached `geometry_summary` coordinate. The
+ documented no-live cached fallback path was
+ therefore unreachable in the first pass.
+ **Required correction**: in the first pass,
+ resolve the cached endpoint coordinates from
+ `rec.geometry_summary`; distinguish live capability
+ absent (adapter genuinely lacks
+ `vertex_position`) from live capability present
+ but unreadable; only fail closed when the live
+ capability exists and the read is unreadable.
+
+2. **CXR-02 — Proposer-level wrong-length
+ live-coordinate regression coverage.** The
+ existing RFR-04 matrix tests nil / raise /
+ malformed Hash / non-Numeric / NaN / Infinity on
+ the proposer's first-pass seam but does not
+ behaviorally test wrong-length Arrays (length 2 or
+ length 4) at the changed seam. Existing wrong-
+ length tests elsewhere exercise a different
+ component (the snapshot builder's
+ `_live_coordinate_for`).
+ **Required correction**: add proposer-level
+ regressions for both length-2 and length-4 live
+ Arrays that prove state == `REVIEW_REQUIRED`,
+ reason == `no_safe_eligible_vertices`, proposal
+ == nil, cached 0.2 mm drift is NOT resurrected
+ into `READY_TO_NORMALIZE`, and no exception
+ escapes.
+
+3. **Required production change**: ONE production
+ file — `extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
+
+4. **Do NOT reopen**:
+ - executor / shared-vertex fan-out /
+   WorkingModeRunner / orchestrator / V1.7 / V1.8 /
+   UI / V1.9B.
+ - The fix is a small first-pass semantic split;
+   the second pass + cluster map + candidate
+   selection architecture are FROZEN unchanged.
+
+---
+
+## 1. Files changed by this packet
+
+| File | Δ (insertions / deletions) | Note |
+|---|---|---|
+| `extension/su_ai_plugin/core/planar_normalization_proposer.rb` | +30 / -3 (logical) | CXR-01: first-pass `_live_position_for` now uses `fail_closed: has_live_reader` instead of hardcoded `fail_closed: true`, AND passes the cached `geometry_summary` coordinate as `cached_pos` so the no-live cached fallback path is reachable in the first pass |
+| `tests/test_v19a_final_p0_live_coordinates.rb` | +283 / 0 | CXR-01A (no-live-reader + valid cached 0.2 mm drift -> READY_TO_NORMALIZE) + CXR-01B (live reader exists but unreadable -> fail-closed matrix preserved) + CXR-02a (length-2 live Array) + CXR-02b (length-4 live Array) |
+| `dist/SU-AI-Plugin.rbz` | rebuilt | size 1,205,785 bytes; entries 73; SHA-256 `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5` |
+| **Total (logical)** | **+313 / -3** | |
+
+---
+
+## 2. CXR-01 producer-side diff (semantic)
+
+Before:
+
+```ruby
+# First pass: edge safety + endpoint resolution.
+unsafe_lookup = {}
+edges_records.each do |rec|
+  # ... handle_for + edge_safety + edge_endpoints ...
+  live_start = _live_position_for(
+    adapter:     adapter,
+    handle:      endpoints[0],
+    cached_pos:  nil,           # no cached fallback when live authority exists
+    endpoint_key: "#{did}.start",
+    fail_closed: true           # <-- HARDCODED true (the CXR-01 defect)
+  )
+  live_end = _live_position_for(
+    ...
+    cached_pos:  nil,
+    fail_closed: true           # <-- HARDCODED true
+  )
+  if live_start.nil? || live_end.nil?
+    unsafe_lookup[did] = true   # <-- marks every adapter-without-vertex_position edge unsafe
+    next
+  end
+end
+```
+
+After:
+
+```ruby
+# First pass: edge safety + endpoint resolution.
+# V1.9A RFR CODEX NARROW RECHECK CORRECTION CXR-01:
+# distinguish "live capability present but
+# unreadable" from "live capability genuinely
+# absent (no vertex_position seam)".
+has_live_reader = !adapter.nil? && adapter.respond_to?(:vertex_position)
+unsafe_lookup = {}
+edges_records.each do |rec|
+  # ... handle_for + edge_safety + edge_endpoints ...
+  gs_first_pass = rec.respond_to?(:geometry_summary) ? rec.geometry_summary : {}
+  s_cached_first_pass = gs_first_pass['start']
+  e_cached_first_pass = gs_first_pass['end']
+  live_start = _live_position_for(
+    adapter:     adapter,
+    handle:      endpoints[0],
+    cached_pos:  s_cached_first_pass,   # <-- resolves cached coord even when no live seam
+    endpoint_key: "#{did}.start",
+    fail_closed: has_live_reader        # <-- only fail closed when live authority EXISTS
+  )
+  live_end = _live_position_for(
+    ...
+    cached_pos:  e_cached_first_pass,
+    fail_closed: has_live_reader
+  )
+  if live_start.nil? || live_end.nil?
+    unsafe_lookup[did] = true
+    next
+  end
+end
+```
+
+The `_live_position_for` helper itself is
+**UNCHANGED**. Its behavior is:
+- handle nil OR adapter lacks vertex_position:
+  return cached_pos if `fail_closed: false`; return
+  nil if `fail_closed: true`.
+- handle exists AND adapter has vertex_position AND
+  read is unreadable: return nil regardless of
+  fail_closed (live authority present + unreadable
+  => never resurrect cached).
+
+The first-pass semantic split is therefore:
+- Live authority exists (production SketchUp
+  path): unreadable live read => fail closed; no
+  cached resurrection.
+- Live authority absent (host-free / backward-
+  compatible pure-test path): valid cached
+  `geometry_summary` => use cached; malformed
+  cached => mark unsafe.
+
+The proposer NEVER mutates `geometry_summary`.
+The cluster map loop is unchanged (`fail_closed:
+false`, which works correctly because it runs
+AFTER the first-pass unsafe gate).
+
+---
+
+## 3. Tests added by this packet (4 new)
+
+| Test ID | What it pins |
+|---|---|
+| `V19A-RFR §CXR-01A (NO-LIVE-READER + VALID CACHED DRIFT)` | Owner fixture with 0.2 mm Z drift + adapter that undef'd `vertex_position`; first pass consults cached `geometry_summary`; reaches `READY_TO_NORMALIZE`; `movable_count == 1`; `max_movement == 0.007874015748...` inch |
+| `V19A-RFR §CXR-01B (LIVE-READER PRESENT BUT UNREADABLE)` | Live reader exists; parametric matrix over nil / raise / malformed Hash / non-Numeric / NaN / Infinity live positions; every case fails closed (`state != READY_TO_NORMALIZE`, `proposal == nil`, no cached resurrection) |
+| `V19A-RFR §CXR-02a (PROPOSER WRONG-LENGTH 2-ELEMENT)` | Live reader exists + returns `[0.0, 0.0]` (length 2); cached 0.2 mm drift available; state == `REVIEW_REQUIRED`; reason == `no_safe_eligible_vertices`; proposal == nil; no cached drift resurrection; no exception escapes |
+| `V19A-RFR §CXR-02b (PROPOSER WRONG-LENGTH 4-ELEMENT)` | Live reader exists + returns `[0.0, 0.0, 0.0, 1.0]` (length 4); cached 0.2 mm drift available; same expected fail-closed matrix as CXR-02a |
+
+---
+
+## 4. Pre-existing / unrelated behavior preserved (NOT changed)
+
+- Live authority present + unreadable live read =>
+  fail closed (no cached resurrection) — preserved.
+- One logical move fans out to all eligible physical
+  occurrences — preserved.
+- One outer SketchUp operation + one primitive per
+  physical occurrence — preserved.
+- Tolerances (coordinate_epsilon, planar_z_snap,
+  gap_search) — UNCHANGED.
+- V1.7 pairing / canonical clustering — UNCHANGED.
+- V1.8 reconstruction / region algorithms —
+  UNCHANGED.
+- Source CAD ownership / mutability — UNCHANGED.
+- UI / Presenter / app.js / CSS / toolbar —
+  UNCHANGED.
+- V1.9B PreparedCadDataset — NOT STARTED.
+
+---
+
+## 5. RBZ rebuild
+
+Production source changed (the CXR-01 fix to the
+proposer's first-pass semantic split). RBZ rebuilt
+via `scripts/build_rbz.rb` from the corrected source:
+
+- **size**: 1,205,785 bytes
+- **entries**: 73
+- **SHA-256**:
+  `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`
+
+The RBZ smoke test (`tests/test_rbz_smoke.rb`)
+extracts the rebuilt RBZ into a temp dir and LOADS
+the extracted proposer; this means the rebuilt RBZ
+is what subsequent tests exercise. A stale dist
+RBZ would mask the fix (the extracted OLD proposer
+would still resurrect cached coordinates AND would
+NOT reach the no-live cached fallback path). The
+CXR-01A test defensively `load`s the dev-tree
+proposer at its START to guarantee the CXR-01 fix
+is active regardless of test order (this protects
+against the rbz smoke test's `load` of the extracted
+proposer overwriting the dev-tree proposer methods).
+
+---
+
+## 6. Validation
+
+- `ruby -c` on the modified production file:
+  **Syntax OK**.
+- CXR focused suite: **4 / 4 PASS, 0 fail,
+  0 error** (new this packet).
+- V19A-RFR focused suite (pre-existing 11 tests):
+  **11 / 11 PASS, 0 fail, 0 error** (unchanged).
+- V19A-P0 focused suite (pre-existing 38 tests):
+  **38 / 38 PASS, 0 fail, 0 error** (unchanged).
+- V19A-prefixed total: **53 / 53 PASS, 0 fail,
+  0 error**.
+- v19a_presenter focused suite: 78 tests, 77 pass,
+  0 fail, 1 pre-existing error (`v19a_presenter
+  (FINAL P1-B)` chip-list guard).
+- v19a_cad_prep_workflow_orchestrator focused suite:
+  30 / 30 PASS (unchanged).
+- v19a_dialog_runner focused suite: 48 / 48 PASS
+  (unchanged).
+- V16 planar normalization: 33 / 33 PASS (unchanged).
+- V16 close-autodiscard: 7 / 7 PASS (unchanged).
+- V17 focused: 127 / 127 PASS (unchanged).
+- V17 INT: 33 / 33 PASS (unchanged).
+- V18 focused: 71 / 71 PASS (unchanged).
+- V18 SR18: 32 / 32 PASS (unchanged).
+- V14 fingerprint focused: 22 / 22 PASS (unchanged).
+- LEGACY-COMPAT: 4 / 4 PASS (unchanged).
+- RBZ smoke: 7 / 8 PASS + 1 pre-existing FakeUI ERROR
+  (unrelated to this packet).
+
+Full synthetic Ruby suite (this packet's run,
+the NORMAL runner — not the prior packet's custom
+RBZ-excluding synthetic runner):
+
+```
+1234 tests, 1225 pass, 5 fail, 4 error
+```
+
+This packet added +4 tests (CXR-01A / CXR-01B /
+CXR-02a / CXR-02b) all passing. Pre-existing
+failures (NONE introduced by this packet):
+
+- 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
+  `html_render (V1.9A FINAL P1-C)` × 1 +
+  `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
+  — CSS / `app.js` textual source-level guards on
+  already-source-reviewed PASS items.
+- 1 FAIL on `capability.HtmlDialog` (R002 +
+  S2-BLOCK-006) — pre-existing FakeUI limitation.
+- 1 ERROR on `V14 production call chain` —
+  pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` — pre-existing
+  FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` — pre-existing
+  presenter test guard.
+
+Node DOM (`tests/test_html_render_dom.js`):
+**PASS** (unchanged from HEAD; no DOM change in
+this packet).
+
+---
+
+## 7. Return state
+
+After implementation + tests + RBZ rebuild + commit
++ push (this packet):
+
+- AIPM_REVIEW = **PENDING**
+- CODEX_NARROW_RECHECK = **REQUIRED**
+- OWNER_SU2020 = **RECHECK_BLOCKED**
+- V1.9B = **NOT STARTED**
+
+STOP and return control to AIPM. AIPM will source-
+review only CXR-01 / CXR-02, then send the same
+narrow seam back to Codex xHigh. Only after both
+pass will Owner reinstall the new RBZ and resume
+the real SU2020 test.
+
+---
+
+# CURRENT PI REPORT — V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
