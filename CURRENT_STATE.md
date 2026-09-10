@@ -1,4 +1,119 @@
-## V1.9A RFR CODEX NARROW RECHECK CORRECTION — CXR-01 / CXR-02 (THIS UPDATE)
+## V1.9A OWNER ACCEPTED CLOSURE — 2026-09-10 (THIS UPDATE)
+
+Updated: 2026-09-10 (V1.9A Owner Accepted Closure docs
+per `Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`).
+This is a **DOCS-ONLY** closure sync. No production
+source / test / RBZ change. V1.9A is now
+**COMPLETE / FROZEN** on `dev/v1.9`.
+
+- **Final V1.9A production HEAD**:
+  `36b8f5b48c8ec2f5a4894db894ca62397344d2fa`
+  (commit
+  `fix(v1.9a-rfr-codex-narrow-recheck): CXR-01
+  first-pass live-capability vs cached-fallback
+  split + CXR-02 proposer wrong-length Array
+  regressions`).
+- **Final V1.9A RBZ (Owner-installed candidate)**:
+  - size: 1,205,785 bytes
+  - entries: 73
+  - SHA-256:
+    `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`
+  Do NOT present any prior RBZ SHA-256 as the
+  V1.9A Owner-candidate.
+
+Review chain (all PASS):
+
+| Gate | Verdict |
+|---|---|
+| AIPM direct source / diff review | **PASS** |
+| Codex xHigh narrow recheck | **PASS** |
+| Owner real SketchUp 2020 (20.0.363) | **PASS** |
+
+Owner real-SU2020 regression fixture:
+0.2 mm Z drift + 1.0 mm endpoint gap.
+
+Observed owner-driven flow:
+
+```text
+initial scan
+-> planar safe correction detected
+-> gap detected but correctly gated behind Z
+
+apply Z
+-> successful
+
+refresh / recheck
+-> corrected 0.2 mm planar deviation DID NOT resurrect
+
+apply gap
+-> successful
+
+final structure:
+component_count           = 1
+open_chain_count          = 0
+closed_loop_count         = 1
+region_count              = 1
+hole_count                = 0
+invalid_component_count   = 0
+invalid_loop_count        = 0
+unresolved_issue_count    = 0
+computed                  = true
+```
+
+The refresh-after-apply-Z behavior the prior
+refresh-stale-planar BLOCK was specifically
+tracking is now confirmed: corrected 0.2 mm
+planar deviation DID NOT resurrect on
+refresh / recheck.
+
+Frozen V1.9A surface (do NOT silently reopen):
+
+- Planar normalization proposer / executor
+- Gap proposer / executor
+- Canonical topology
+- Structure reconstruction
+- `working_mode_runner.rb` V1.9A behavior
+- `cad_prep_workflow_orchestrator.rb`
+- `cad_prep_workflow_presenter.rb`
+- `app.js`, `style.css`, V1.9A UI
+- Native toolbar
+- Tolerance policy (`coordinate_epsilon`,
+  `planar_z_snap`, `gap_search` defaults)
+- Shared-vertex rules
+- Source / provenance ownership
+- Source CAD immutability contract
+
+Stage status:
+
+```text
+V1_9A                       = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION       = NOT_STARTED (probe-only dispatch is now in effect)
+OWNER_SU2020_PERSISTENCE_PROBE = NOT_YET
+PERSISTENCE_ROUTE            = NOT_YET_FROZEN
+V1_9B1                      = NOT_STARTED
+```
+
+Next authorized stage: **V1.9B0 ONLY**
+(PreparedCadDataset Persistence Feasibility Probe
+— probe only, NO production PreparedCadDataset
+implementation, NO `extension/` change, NO
+production RBZ rebuild). The probe lives under
+`Probe/V1_9B0/` and uses SketchUp Model
+AttributeDictionary APIs with explicit
+probe-namespaced keys (`__v19b0_probe_payload__`
+etc.). V1.9B1 (production implementation) remains
+NOT STARTED until AIPM decides the persistence
+route from Owner real-host B0 evidence.
+
+Historical V1.9A evidence below this section is
+retained verbatim. Do not use the historical
+sections as current authority; current authority
+is the V1.9B0 dispatch
+`Prompt/CURRENT_PI_DISPATCH.md`.
+
+---
+
+## V1.9A RFR CODEX NARROW RECHECK CORRECTION — CXR-01 / CXR-02 (PREVIOUS UPDATE — RETAINED AS HISTORICAL EVIDENCE)
 
 Updated: 2026-09-10 (V1.9A RFR CODEX NARROW RECHECK
 CORRECTION dispatch EXECUTION on assigned `dev/v1.9`

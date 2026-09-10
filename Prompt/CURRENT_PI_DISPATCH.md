@@ -1,250 +1,442 @@
-# CURRENT PI DISPATCH — V1.9A P0 NARROW RECHECK FIX
+# CURRENT PI DISPATCH — V1.9B0 PERSISTENCE FEASIBILITY PROBE
 
 Project: SU-AI-Plugin
-Stage: V1.9A — Final Block Fix
-Date: 2026-09-08
+Stage: V1.9B0 — PreparedCadDataset Persistence
+Feasibility Probe
+Date: 2026-09-10
 Authority: ChatGPT / AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
 TARGET_BRANCH: `dev/v1.9`
 STATUS: ACTIVE
-AIPM_REVIEW: FIX REQUIRED — NARROW RESIDUALS ONLY
-CODEX_REVIEW: PRE-IMPLEMENTATION REVIEW COMPLETE; NARROW POST-FIX RECHECK PENDING
-OWNER_SU2020: NOT YET
-V1.9B: NOT AUTHORIZED / NOT STARTED
+V1_9A = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION = NOT_STARTED
+V1_9B1 = NOT_STARTED
 
-Primary authority for this continuation:
+V1.9A Owner Accepted Closure evidence:
 
-`Prompt/AIPM_V1_9A_P0_NARROW_RECHECK_FIX_2026-09-08.md`
+`Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`
 
-Additional R7 authority:
-
-`Prompt/AIPM_V1_9A_P0_NARROW_RECHECK_ADDENDUM_R7_2026-09-08.md`
-
-Current AIPM review evidence:
-
-`Review/CURRENT_AIPM_REVIEW.md`
-
-Prior authority remains frozen except where the narrow guidance clarifies residuals:
-
-- `Prompt/AIPM_V1_9A_P0_SHARED_VERTEX_IMPLEMENTATION_AMENDMENT_2026-09-08.md`
-- `Prompt/CODEX_V1_9A_P0_CURRENT_GEOMETRY_SHARED_VERTEX_REVIEW_2026-09-08.md`
+EXPECTED_START_HEAD (current `dev/v1.9` HEAD
+before Pi touches the working tree):
+`36b8f5b48c8ec2f5a4894db894ca62397344d2fa`
 
 ---
 
-## 0. SCOPE
+## 0. PURPOSE
 
-This is NOT a new broad implementation packet.
+This packet is:
 
-Fix exactly AIPM-P0-R1 through R7:
+**V1.9B0 — PreparedCadDataset Persistence
+Feasibility Probe**
 
-1. Executor true preflight before mutation.
-2. Executor postvalidation exception-safe abort.
-3. Endpoint live-read fallback contract correction.
-4. Presenter actual V1.8 `loops` / `*_count` read shape.
-5. TRUE orchestrated Owner-equivalent E2E regression.
-6. Fresh normal/full-suite + rebuilt RBZ evidence.
-7. Restore `deep_nesting` / `嵌套层级` current-attention chip semantics accidentally lost during mojibake recovery.
+This is **NOT** PreparedCadDataset
+implementation.
 
-Do not reopen already-PASS shared-vertex architecture or unrelated V1.x work.
+The only question this packet answers is:
 
----
+> Can SketchUp Model AttributeDictionary reliably
+> persist a representative future
+> PreparedCadDataset payload at realistic size?
 
-## 1. ALLOWED PRODUCTION FILES
-
-- `extension/su_ai_plugin/core/endpoint_record.rb`
-- `extension/su_ai_plugin/core/planar_normalization_executor.rb`
-- `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-
-`planar_normalization_proposer.rb` is FROZEN for this recheck. If an R1 consistency test proves a mechanically missing proposer field is required, STOP and report the exact missing field before editing proposer.
-
-Focused tests may be changed as required by R1–R7.
-
----
-
-## 2. REQUIRED EXECUTOR OUTCOME — R1/R2
-
-Before `begin_operation`:
-
-- target Z must be Numeric + finite before conversion;
-- every physical handle present + identity unique;
-- adapter live-read capability available;
-- every pre-position exactly 3 Numeric finite values;
-- every vector exactly 3 Numeric finite values, X/Y exactly zero;
-- `abs((pre_z + vector_z) - target_z) <= coordinate_epsilon` for every occurrence.
-
-Any preflight failure => no operation opened, FAILED result, zero published success.
-
-After mutation but before commit:
-
-- every post-position read must be guarded;
-- nil/malformed/non-numeric/non-finite/raise => abort exactly once, no commit, FAILED, zero published success;
-- XY unchanged + Z at target within existing epsilon for every occurrence.
-
-Required tests include unreadable/raised pre-read => zero begins, and raised/malformed/non-finite post-read => one begin + one abort + zero commit.
-
----
-
-## 3. REQUIRED ENDPOINT OUTCOME — R3
-
-Preferred path:
-
-`endpoint_key -> host_vertex_map -> actual endpoint Vertex -> vertex_position(Vertex)`.
-
-Cached fallback allowed when:
-
-- endpoint handle absent;
-- adapter absent;
-- adapter genuinely lacks `vertex_position`.
-
-Fail closed when endpoint handle exists AND adapter exposes `vertex_position`, but the read raises / returns nil / malformed / non-numeric / non-finite.
-
-Live position shape must be EXACTLY 3 values.
-
----
-
-## 4. REQUIRED PRESENTER OUTCOME — R4/R7
-
-Use actual V1.8 result shape as primary authority:
-
-- `sr['loops'][].unresolved_flags`
-- `metrics['open_chain_count']`
-- `metrics['closed_loop_count']`
-- `metrics['region_count']`
-- `metrics['hole_count']`
-- `metrics['invalid_loop_count']`
-
-Legacy aliases may remain defensive fallback only.
-
-READY card must truthfully surface closed-loop / region counts using the `*_count` keys; optional hole count may surface when nonzero.
-
-Restore `嵌套层级` to `PROBLEM_METRIC_LABELS`. Add a regression proving a current `deep_nesting` issue appears in the `other` card metric and current-attention chip/headline total, while CLEAN/APPLIED success metrics remain excluded.
-
-Do NOT modify V1.8 or app.js.
-
----
-
-## 5. REQUIRED TRUE E2E REGRESSION — R5
-
-Use the same 0.2mm-Z + 1mm-gap Owner fixture.
-
-Exercise ONLY the real V1.9A orchestrator chain for the automatic behavior:
+Leading candidate persistence route:
 
 ```text
-CadPrepWorkflowOrchestrator.start
--> Planar ACTIONABLE
--> Gap detected + presenter Gap action disabled
--> CadPrepWorkflowOrchestrator.apply_planar_and_refresh
--> BOTH identity-distinct physical B Vertex handles at target Z
--> presenter Gap action enabled
--> CadPrepWorkflowOrchestrator.apply_gap_and_refresh
--> returned snapshot already contains recomputed Structure
+SketchUp Model AttributeDictionary
+
+dictionary:
+SU-AI-Plugin.PreparedCadDataset
 ```
 
-Do NOT manually call `compute_gap_repair` or `compute_structure_reconstruction` to simulate the automatic chain.
-
-Final assertions:
-
-- workspace ready
-- open_chain_count 0
-- closed_loop_count 1
-- invalid_loop_count 0
-- region_count 1
-- no `loops[].unresolved_flags` contains `non_planar_loop`
-- the two physical B handles are proven identity-distinct in THIS fixture.
+The persistence route is NOT frozen by this
+packet. AIPM will decide whether the SketchUp
+Model AttributeDictionary route is acceptable
+based on Owner real-host evidence after Pi
+returns the probe.
 
 ---
 
-## 6. REQUIRED TEST / PACKAGE EVIDENCE — R6
+## 1. CRITICAL SCOPE BOUNDARY
 
-Use the working vendored Ruby interpreter already found by Pi.
+DO NOT implement:
 
-After source/tests are corrected:
+- PreparedCadDataset production class
+- PreparedCadDatasetBuilder
+- PreparedCadDatasetValidator
+- acceptance workflow
+- accepted dataset state
+- production load/store integration
+- final validation UI
+- new dialog callbacks
+- V2
+- MCP
+- LLM
+- Agent
+- road recognition
+- building recognition
+- architectural / site semantics
 
-- run P0 focused tests;
-- run relevant V1.6/V1.7/V1.8 regressions;
-- run presenter + orchestrator regressions;
-- rebuild `dist/SU-AI-Plugin.rbz` FROM THE CORRECTED SOURCE;
-- run RBZ smoke against that rebuilt artifact;
-- run the NORMAL/FULL Ruby suite; do not substitute the custom RBZ-excluding synthetic runner as final evidence;
-- run Node DOM as applicable;
-- run `git diff --check`.
+DO NOT modify anything under:
 
-Report exact Ruby executable path, `ruby -v`, commands/counts, known pre-existing failures separately, RBZ bytes/entries/SHA-256.
+```text
+extension/
+```
 
-If the normal/full suite cannot run, STOP `TEST_EXECUTION_BLOCKED`.
+for this packet.
 
-Do NOT ask Owner to install the currently stale/corrupted RBZ.
+No production RBZ rebuild is required.
 
----
-
-## 7. PASS / PRESERVE — DO NOT REOPEN
-
-- Group -> actual endpoint Vertex current-coordinate authority direction;
-- physical-occurrence identity dedupe in proposer;
-- logical vertex -> all eligible physical Vertex fan-out;
-- one outer operation + one single-Vertex primitive per occurrence;
-- logical/physical count split;
-- V1.5 duplicate algorithm;
-- V1.6 analysis math / tolerance authority;
-- V1.7 pairing / canonical clustering;
-- V1.8 reconstruction algorithm;
-- current Issues / badge / healthy refresh behavior;
-- toolbar / UI tab / hidden-semantics fixes;
-- Source CAD immutability;
-- Undo / host-state architecture;
-- V1.9B.
+V1.9A is frozen at HEAD
+`36b8f5b48c8ec2f5a4894db894ca62397344d2fa`.
 
 ---
 
-## 8. FORBIDDEN
+## 2. PROBE IMPLEMENTATION
 
-Do NOT change:
+Create a standalone real-host probe:
 
-- `working_mode_runner.rb`
-- orchestrator architecture/call order
-- `planar_normalization_proposer.rb` unless STOP/approval condition in §1 is met
-- V1.5 duplicate algorithm
-- V1.6 analysis math/tolerances
-- V1.7 pairing/canonical clustering
-- V1.8 reconstruction/region algorithms
-- Source CAD ownership
-- Undo/host-state architecture
-- app.js / CSS / toolbar
-- Faces / Observers
-- V1.9B / PreparedCadDataset
-- MCP / LLM / Agent
+```text
+Probe/V1_9B0/prepared_dataset_persistence_probe.rb
+```
+
+Optional companion documentation:
+
+```text
+Probe/V1_9B0/README.md
+```
+
+The probe must be loadable directly from
+SketchUp 2020 Ruby Console.
+
+Example future Owner usage:
+
+```text
+load 'D:/Projects/SU-AI-Plugin/Probe/V1_9B0/prepared_dataset_persistence_probe.rb'
+```
+
+Do NOT require installing a new RBZ.
 
 ---
 
-## 9. RETURN
+## 3. PROBE STORAGE CONTRACT
 
-Update:
+Use model-level AttributeDictionary APIs only.
 
-- `CURRENT_STATE.md`
-- `Review/CURRENT_PI_REPORT.md`
+Target dictionary:
 
-Then commit/push only `origin/dev/v1.9` and STOP.
+```text
+SU-AI-Plugin.PreparedCadDataset
+```
 
-Return fields:
+Use explicitly probe-namespaced keys so this
+cannot be confused with a future production
+accepted dataset. Recommended keys:
 
-- exact files changed;
-- R1 preflight behavior + tests;
-- R2 post-read abort behavior + tests;
-- R3 fallback matrix + tests;
-- R4 actual V1.8 presenter key paths + tests;
-- R5 orchestrated E2E evidence including two physical B handles;
-- R6 normal full-suite + rebuilt RBZ evidence;
-- R7 deep_nesting / 嵌套层级 regression evidence;
-- confirmation V1.9B NOT STARTED.
+```text
+__v19b0_probe_payload__
+__v19b0_probe_digest__
+__v19b0_probe_schema__
+__v19b0_probe_seed__
+__v19b0_probe_requested_bytes__
+__v19b0_probe_actual_bytes__
+```
 
-Set:
+Provide an explicit cleanup operation that
+removes all probe data.
 
-- `AIPM_REVIEW = PENDING`
-- `CODEX_NARROW_RECHECK = NOT YET`
-- `OWNER_SU2020 = NOT YET`
-- `V1.9B = NOT STARTED`
+Never modify CAD geometry.
+
+---
+
+## 4. DETERMINISTIC TEST PAYLOAD
+
+Generate deterministic JSON-safe synthetic
+payloads. The generated content should resemble
+the likely PreparedCadDataset shape enough to
+exercise strings / arrays / nested hashes, but
+MUST NOT freeze the actual future B1 schema.
+
+Include generic sections such as:
+
+- metadata
+- source-like data
+- nodes-like arrays
+- edges-like arrays
+- structures-like arrays
+- warnings-like arrays
+
+This is only a persistence payload. Same
+requested size / seed must produce byte-identical
+JSON.
+
+Use `JSON.generate`.
+
+Use SHA-256 for external verification.
+
+Do not put wall-clock timestamps into the
+deterministic payload.
+
+---
+
+## 5. SIZE LADDER
+
+Provide a convenient size-ladder probe.
+
+Recommended default targets:
+
+```text
+256 KiB
+1 MiB
+4 MiB
+8 MiB
+```
+
+The implementation should also allow Owner to
+request an arbitrary payload size later.
+
+Run progressively.
+
+Do not hide slow/failing levels.
+
+For each level report:
+
+- requested approximate bytes
+- actual JSON bytes
+- write time
+- read time
+- exact string equality
+- JSON parse success
+- SHA-256 before write
+- SHA-256 after read
+- digest equality
+
+Use monotonic timing where supported.
+
+No arbitrary PASS performance threshold is
+frozen in code.
+
+Report raw measurements. AIPM will decide
+whether performance is acceptable.
+
+---
+
+## 6. IMMEDIATE READBACK TEST
+
+For every payload:
+
+```text
+write
+-> read back
+-> compare exact bytes
+-> JSON.parse
+-> recompute SHA-256
+-> compare digest
+```
+
+Any mismatch must be surfaced explicitly.
+
+Do not rescue corruption into a false PASS.
+
+---
+
+## 7. REPLACEMENT TEST
+
+Provide a test for one-active-dataset replacement
+semantics:
+
+```text
+write payload A
+-> verify A
+-> replace same probe slot with payload B
+-> verify B
+-> prove old A is no longer active
+```
+
+Do not build historical version management.
+
+V1.9 scope is one active accepted dataset per
+model.
+
+---
+
+## 8. CORRUPT / MISSING TEST
+
+Provide probe helpers to exercise:
+
+- payload missing
+- digest missing
+- invalid JSON
+- digest mismatch
+- unsupported probe schema marker
+
+Read/verify must return a clear fail-closed
+status.
+
+No exception should escape for expected
+corrupt-storage conditions.
+
+Unexpected programming errors must not be
+silently swallowed.
+
+---
+
+## 9. UNDO / REDO PROBE
+
+Write operations must be wrapped in a normal
+SketchUp model operation where appropriate.
+
+Because host Undo/Redo semantics are part of
+what B0 is measuring, DO NOT fake the result
+in host-free code.
+
+Provide:
+
+- a method that writes a recognizable probe
+  payload in one operation
+- a status/read method Owner can call before/
+  after Undo/Redo
+
+Owner will perform real SketchUp Undo/Redo
+manually if that is safer than automating
+host UI actions.
+
+Report observed behavior rather than assuming
+it.
+
+---
+
+## 10. SAVE / CLOSE / REOPEN PROBE
+
+Provide a method that writes a persistent
+reopen-test payload and prints:
+
+- payload bytes
+- expected digest
+- probe schema
+- model path if available
+
+Provide a separate method callable AFTER
+SketchUp/model reopen that:
+
+- reads the stored payload
+- parses JSON
+- recomputes digest
+- compares stored digest
+- prints PASS / BLOCK style evidence
+
+Do NOT programmatically force-close SketchUp.
+
+The Owner will:
+
+```text
+save SKP
+-> close
+-> reopen
+-> run verification
+```
+
+---
+
+## 11. COMPANY-SCALE EVIDENCE
+
+Do not treat a tiny fixture as persistence
+evidence.
+
+The probe must support running the same size
+ladder while a representative company
+SKP / CAD model is open.
+
+No source geometry mutation is allowed.
+
+This lets Owner measure:
+
+- attribute write / read latency
+- SKP save behavior
+- reopen behavior
+- practical model-size impact where measurable
+
+Do not invent company results.
+
+Owner evidence will be supplied after Pi
+returns the probe.
+
+---
+
+## 12. SAFETY
+
+Probe must:
+
+- never delete geometry
+- never alter source CAD entities
+- never create Faces
+- never move vertices
+- never touch WorkingModeRunner state
+- never touch existing V1.9A derived workspace
+- namespace all model attributes
+- provide cleanup
+- fail closed on malformed stored data
+
+---
+
+## 13. VALIDATION BEFORE RETURN
+
+Because `extension/` production source MUST
+remain untouched:
+
+Required automated validation is narrow. At
+minimum:
+
+- `ruby -c` on probe script
+- deterministic payload generation checked
+  twice (same requested size + seed must
+  produce byte-identical JSON)
+- JSON round-trip in host-free Ruby where
+  possible
+- `git diff` confirms NO `extension/` change
+- `git status` recorded
+
+Do NOT spend time re-running the entire V1.x
+suite unless an unexpected production/shared
+dependency was changed.
+
+If anything under `extension/` changes:
+STOP and report before proceeding.
+
+---
+
+## 14. RETURN REPORT
+
+Return:
+
+- A. starting HEAD
+- B. final HEAD
+- C. exact changed files
+- D. confirmation V1.9A closure docs recorded
+- E. confirmation `extension/` unchanged
+- F. probe Ruby Console command
+- G. supported probe commands / methods
+- H. deterministic payload evidence
+- I. syntax / test evidence
+- J. exact Owner real-SU2020 test sequence
+- K. any limitation or unknown
+
+Return state:
+
+```text
+V1_9A                        = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION        = COMPLETE
+OWNER_SU2020_PERSISTENCE_PROBE = REQUIRED
+PERSISTENCE_ROUTE             = NOT_YET_FROZEN
+V1_9B1                       = NOT_STARTED
+```
 
 STOP.
+
+Do not begin B1.
+
+Do not implement production PreparedCadDataset.
+
+Do not choose a persistence route on Owner's
+behalf.
 
 END

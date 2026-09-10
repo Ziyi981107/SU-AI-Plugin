@@ -16,6 +16,59 @@
 
 ---
 
+## Stage Status (CURRENT — durable Stage transition record)
+
+```text
+V1.9A   = CLOSED_FROZEN   (Owner Accepted Closure 2026-09-10)
+V1.9B0  = IN_DISPATCH     (probe-only persistence feasibility)
+V1.9B1  = NOT_STARTED
+```
+
+- **V1.9A final production HEAD**:
+  `36b8f5b48c8ec2f5a4894db894ca62397344d2fa`
+  on `dev/v1.9`.
+- **V1.9A Owner-installed RBZ**:
+  size 1,205,785 bytes; entries 73;
+  SHA-256
+  `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`.
+- **Review chain**: AIPM source/diff PASS,
+  Codex xHigh narrow recheck PASS, Owner real
+  SketchUp 2020 (20.0.363) regression PASS on
+  the 0.2 mm Z + 1.0 mm Gap fixture (refresh
+  after Apply Z did NOT resurrect corrected
+  planar drift; final Structure =
+  `component_count=1, open_chain_count=0,
+  closed_loop_count=1, region_count=1,
+  hole_count=0, invalid_component_count=0,
+  invalid_loop_count=0,
+  unresolved_issue_count=0, computed=true`).
+- **Frozen V1.9A surface** (do NOT silently
+  reopen): planar proposer / executor, gap
+  proposer / executor, canonical topology,
+  structure reconstruction,
+  `working_mode_runner.rb` V1.9A behavior,
+  `cad_prep_workflow_orchestrator.rb`,
+  `cad_prep_workflow_presenter.rb`,
+  `app.js`, `style.css`, V1.9A UI, native
+  toolbar, tolerance policy
+  (`coordinate_epsilon`, `planar_z_snap`,
+  `gap_search`), shared-vertex rules, source /
+  provenance ownership, Source CAD immutability
+  contract.
+- **Closure evidence**:
+  `Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`.
+- **Next authorized Stage**: V1.9B0 ONLY
+  (PreparedCadDataset Persistence Feasibility
+  Probe — probe only, NO production
+  PreparedCadDataset implementation, NO
+  `extension/` change, NO production RBZ
+  rebuild). The probe lives under
+  `Probe/V1_9B0/`. V1.9B1 remains NOT_STARTED
+  until AIPM decides the persistence route
+  from Owner real-host B0 evidence.
+
+---
+
 ## 0. Purpose
 
 This file stores only durable project truths.
