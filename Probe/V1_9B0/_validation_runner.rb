@@ -122,9 +122,13 @@ end
 # corrections). The probe ships NO SketchUp dependency, so we install a
 # minimal `Sketchup` module stub + a FakeModel that simulates SketchUp's
 # transaction + AttributeDictionary API surface to exercise:
-#     - start_operation argument shape (3 positional args, no String 4th)
+#     - start_operation argument shape (neutral `*args` capture; no fixed
+#       3-arg signature in the FakeModel so it teaches the correct real
+#       SketchUp API rather than a wrong 3-arg shape)
 #     - commit on success
-#     - abort_operation on failure (NOT `model.abort`)
+#     - abort_operation on failure AFTER open (NOT `model.abort`)
+#     - ZERO abort_operation when start_operation itself fails before open
+#       (B0-R01 operation_opened flag guard)
 #     - exact-string equality round-trip (B0-02 / B0-03)
 #     - same-length-but-altered-payload regression (B0-03)
 # ---------------------------------------------------------------------------
@@ -157,6 +161,12 @@ end
 # ---- FakeModel --------------------------------------------------------
 # Records every start_operation / commit_operation / abort_operation call
 # so tests can assert call counts and argument shapes.
+#
+# B0-R01: start_operation uses a neutral `*args` capture so the FakeModel
+# itself does NOT teach the wrong 3-arg API. The probe can call
+# `start_operation(name, true)` (preferred) or any other explicitly
+# approved non-transparent form; the tests assert the actual call shape
+# by inspecting the captured args array.
 class FakeModel
   attr_reader :start_operation_calls
   attr_accessor :commit_operation_calls
@@ -173,6 +183,16 @@ class FakeModel
   # probe MUST abort_operation exactly once and never commit.
   attr_accessor :simulate_mid_operation_failure
 
+  # B0-R01: inject failure FROM start_operation itself, BEFORE any
+  # operation has opened. The probe MUST NOT call abort_operation in this
+  # case (operation_opened flag guard).
+  attr_accessor :simulate_start_operation_raise
+
+  # When true, the FakeModel tracks whether a successful start_operation
+  # has opened an operation. The probe MUST only call abort_operation
+  # when this flag is true.
+  attr_reader :operation_open
+
   def initialize
     @start_operation_calls = []
     @commit_operation_calls = 0
@@ -181,40 +201,47 @@ class FakeModel
     @dictionaries = {}
     @simulate_dictionary_create_failure = false
     @simulate_mid_operation_failure = false
-    @op_open = false
+    @simulate_start_operation_raise = false
+    @operation_open = false
   end
 
-  # B0-01: start_operation must accept exactly three positional args
-  # (name, disable_ui, transparent). The probe must NOT pass a 4th String
-  # arg.
-  def start_operation(name, disable_ui, transparent)
-    @start_operation_calls << {
-      name:        name,
-      disable_ui:  disable_ui,
-      transparent: transparent,
-    }
+  # B0-R01: neutral argument capture. Real SketchUp signature is
+  #   start_operation(op_name, disable_ui=false, next_transparent=false,
+  #                   transparent=false)
+  # The probe MUST call this with non-transparent args. The FakeModel
+  # does not fix the parameter shape so it teaches nothing wrong.
+  def start_operation(*args)
+    @start_operation_calls << args
+    # B0-R01: failure FROM start_operation itself happens BEFORE any
+    # operation has opened. operation_open stays false.
+    if @simulate_start_operation_raise
+      @simulate_start_operation_raise = false
+      raise 'injected start_operation pre-open failure'
+    end
+    @operation_open = true
+    # Optional mid-operation raise (AFTER open).
     if @simulate_mid_operation_failure
       @simulate_mid_operation_failure = false
       raise 'injected mid-operation failure'
     end
-    @op_open = true
   end
 
   def commit_operation
     @commit_operation_calls += 1
-    @op_open = false
+    @operation_open = false
   end
 
-  # B0-01: this is the CORRECT abort API; the probe MUST use this.
+  # B0-R01: this is the CORRECT abort API; the probe MUST use this only
+  # when operation_open == true.
   def abort_operation
     @abort_operation_calls += 1
-    @op_open = false
+    @operation_open = false
   end
 
   # B0-01: if the probe ever calls `model.abort` (wrong API), record it.
   def abort
     @abort_calls += 1
-    @op_open = false
+    @operation_open = false
   end
 
   def attribute_dictionary(name, create_if_needed = false)
@@ -304,29 +331,16 @@ check('B0-01A: zero abort calls (probe must use abort_operation, not abort)',
       fake_model.abort_calls == 0,
       "got #{fake_model.abort_calls}")
 
-# B0-01B: mid-operation raise -> exactly one start_operation, exactly one
-# abort_operation, ZERO commit_operation, ZERO abort.
-fake_model = FakeModel.new
-fake_model.simulate_mid_operation_failure = true
-$fake_model = fake_model
-
-write_result = SUAIPlugin::V19B0Probe.write_probe(fake_model, payload,
-                                                  seed: 0xFEED, requested_bytes: 4 * 1024)
-check('B0-01B: write_probe ok=false on mid-operation raise',
-      write_result[:ok] == false && write_result[:reason] == 'unexpected_runtime_error',
-      write_result.inspect)
-check('B0-01B: exactly one start_operation call',
-      fake_model.start_operation_calls.length == 1,
-      "got #{fake_model.start_operation_calls.length}")
-check('B0-01B: exactly one abort_operation call',
-      fake_model.abort_operation_calls == 1,
-      "got #{fake_model.abort_operation_calls}")
-check('B0-01B: zero commit_operation calls',
-      fake_model.commit_operation_calls == 0,
-      "got #{fake_model.commit_operation_calls}")
-check('B0-01B: zero abort calls',
-      fake_model.abort_calls == 0,
-      "got #{fake_model.abort_calls}")
+# B0-R01-2: failure AFTER a successful start (e.g. probe_dictionary
+# returns nil). Real SketchUp semantics: start_operation returns OK,
+# operation IS open, post-start work fails, probe MUST abort exactly
+# once.
+#
+# (B0-01B's original "mid_operation_failure" was structurally equivalent
+# to start_operation itself raising — the FakeModel raised from inside
+# start_operation after a fake-open. Real SketchUp start_operation is
+# atomic: if it raises, no operation is open. The probe correctly skips
+# abort in that case. That scenario is now covered by B0-R01-3 below.)
 
 # B0-01C: successful write -> exactly one start_operation, exactly one
 # commit_operation, ZERO abort_operation, ZERO abort; start_operation
@@ -352,23 +366,61 @@ check('B0-01C: zero abort calls on success',
       fake_model.abort_calls == 0,
       "got #{fake_model.abort_calls}")
 
-# B0-01D: start_operation argument shape — name is String, disable_ui is
-# true, transparent is false; arity is exactly 3 (no 4th positional arg).
+# B0-01D / B0-R01: start_operation argument shape — name is String,
+# disable_ui is true, transparent is NOT supplied by the probe (B0-R01
+# preferred form `start_operation(name, true)` leaves `transparent` at
+# its default `false`).
 so_call = fake_model.start_operation_calls.first
 check('B0-01D: start_operation name is a String',
-      so_call[:name].is_a?(String),
-      "name=#{so_call[:name].inspect}")
+      so_call[0].is_a?(String),
+      "name=#{so_call[0].inspect}")
 check('B0-01D: start_operation disable_ui == true',
-      so_call[:disable_ui] == true,
-      "disable_ui=#{so_call[:disable_ui].inspect}")
-check('B0-01D: start_operation transparent == false',
-      so_call[:transparent] == false,
-      "transparent=#{so_call[:transparent].inspect}")
-# Arity is 3 (positional args: name, disable_ui, transparent). The 4th arg
-# (any String description) was a source-review BLOCK.
-check('B0-01D: start_operation arity == 3 (no 4th arg)',
-      fake_model.method(:start_operation).arity == 3,
+      so_call[1] == true,
+      "disable_ui=#{so_call[1].inspect}")
+# B0-R01: the probe MUST NOT pass a String as the 4th positional arg.
+# The preferred call shape is `start_operation(name, true)` — i.e. exactly
+# TWO positional arguments (op_name, disable_ui). Any extra args would
+# have been a transparent operation regression.
+check('B0-R01: start_operation call shape is (String, true) — exactly 2 positional args',
+      so_call.length == 2 && so_call[0].is_a?(String) && so_call[1] == true,
+      "call=#{so_call.inspect}")
+check('B0-R01: start_operation was NOT called with transparent=true (no String 4th arg)',
+      !so_call.any? { |a| a.is_a?(String) && a != so_call[0] },
+      "call=#{so_call.inspect}")
+# B0-R01: the FakeModel itself teaches the correct neutral `*args` API
+# rather than a fixed-arity signature (this protects the FakeModel from
+# silently enshrining a wrong 3-arg API).
+check('B0-R01: FakeModel start_operation uses neutral *args capture',
+      fake_model.method(:start_operation).arity == -1,
       "arity=#{fake_model.method(:start_operation).arity}")
+
+# B0-R01-3: failure FROM start_operation itself, BEFORE any operation has
+# opened. The probe MUST call abort_operation ZERO times (operation_opened
+# flag guard).
+fake_model = FakeModel.new
+fake_model.simulate_start_operation_raise = true
+$fake_model = fake_model
+
+write_result = SUAIPlugin::V19B0Probe.write_probe(fake_model, payload,
+                                                  seed: 0xFEED, requested_bytes: 4 * 1024)
+check('B0-R01-3: write_probe ok=false on start_operation pre-open raise',
+      write_result[:ok] == false && write_result[:reason] == 'unexpected_runtime_error',
+      write_result.inspect)
+check('B0-R01-3: exactly one start_operation attempt',
+      fake_model.start_operation_calls.length == 1,
+      "got=#{fake_model.start_operation_calls.length}")
+check('B0-R01-3: zero commit_operation calls',
+      fake_model.commit_operation_calls == 0,
+      "got=#{fake_model.commit_operation_calls}")
+# B0-R01 KEY assertion: no abort_operation on a never-opened operation.
+check('B0-R01-3: ZERO abort_operation calls (operation_opened flag guard)',
+      fake_model.abort_operation_calls == 0,
+      "got=#{fake_model.abort_operation_calls}")
+check('B0-R01-3: zero abort calls',
+      fake_model.abort_calls == 0,
+      "got=#{fake_model.abort_calls}")
+check('B0-R01-3: FakeModel.operation_open stayed false (no operation opened)',
+      fake_model.operation_open == false)
 
 # B0-02 / B0-03: exact-string equality round-trip.
 # After write_probe + read_probe, the raw payload string from read_probe

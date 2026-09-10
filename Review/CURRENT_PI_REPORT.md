@@ -1,4 +1,185 @@
-# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION (THIS UPDATE)
+# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Stage: V1.9B0 (probe-only final narrow residual correction;
+V1.9A remains CLOSED_FROZEN)
+Date: 2026-09-10
+Authority:
+`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-10.md`
+Baseline HEAD (before this packet touched the working
+tree):
+`ab6362ce36454a0eb7e78d87ba11c8893a0e2e18`
+(the V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION
+merge commit on `dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Working tree (start): 1 untracked dispatch file
+(`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-10.md`).
+Working tree otherwise clean.
+
+AIPM direct source review of the previous V1.9B0 probe
+correction packet (`ab6362c`) found ONE narrow residual
+(B0-R01). This packet fixes ONLY B0-R01 inside the same
+allowed scope. No `extension/` change. No production RBZ
+rebuild. No V1.9A re-open. No V1.9B1 production
+implementation.
+
+## BLOCK fix B0-R01 — Correct SketchUp operation signature + abort only if opened
+
+### Correct API contract
+
+SketchUp Model API (real 4-parameter signature):
+
+```text
+start_operation(op_name,
+                disable_ui = false,
+                next_transparent = false,
+                transparent = false)
+```
+
+The previous correction packet described the API as a 3-arg
+`(name, disable_ui, transparent)` signature — that description
+was inaccurate. The previous `start_operation(name, true, false)`
+call happened to remain non-transparent only by accident (3rd
+arg `false` AND 4th arg default `false`).
+
+### Required call form
+
+The probe now uses the simplest unambiguous normal
+non-transparent form:
+
+```ruby
+model.start_operation(name, true)
+```
+
+This leaves BOTH `next_transparent` (deprecated, default
+`false`) and `transparent` (default `false`) at their defaults.
+The probe source comment block + the README §5A section +
+the FakeModel regression suite all document this signature
+accurately.
+
+### Required open-state guard
+
+The probe now uses an `operation_opened` local flag guard:
+
+- `operation_opened = false` BEFORE the begin block.
+- `operation_opened = true` AFTER `start_operation` returns
+  successfully.
+- `operation_opened = false` AFTER `commit_operation`.
+- In the rescue path, `model.abort_operation` is only called
+  if `operation_opened == true`. If `start_operation` itself
+  raises before opening, the probe MUST NOT call
+  `abort_operation` (there is nothing to abort).
+- For post-start failures inside an open transaction
+  (e.g. `probe_dictionary` returns nil), abort once and
+  clear the flag.
+
+Applied to `write_probe`, `cleanup_probe`, and every corrupt /
+missing test path inside `run_corrupt_missing_tests`.
+
+### FakeModel regression correction
+
+The FakeModel's `start_operation` previously used a fixed
+3-arg signature `(name, disable_ui, transparent)` which
+incorrectly taught the wrong API. It now uses neutral `*args`
+capture so it teaches nothing wrong. Tests assert the actual
+call shape (`args.length == 2`, `args[0]` is a String,
+`args[1] == true`) rather than relying on a fixed-arity FakeModel
+signature.
+
+### Required test coverage
+
+| Test | Asserts |
+|---|---|
+| B0-R01 (normal successful write) | actual call is `start_operation(name, true)` — exactly 2 positional args; no String 4th arg; one start, one commit, zero abort |
+| B0-R01-2 (post-start failure — dictionary_create_failed) | one start, zero commit, one abort_operation, zero abort |
+| B0-R01-3 (start_operation pre-open raise) | one attempted start, zero commit, ZERO abort_operation, zero abort |
+| B0-R01 (FakeModel neutral) | FakeModel `start_operation` uses `*args` capture (arity -1) rather than a fixed-arity signature |
+| (preserved from previous packet) | B0-02 raw read string equality; B0-03 separate `exact_string_equal` + `exact_byte_count_equal` diagnostic; SHA-256 verification; 256 KiB / 1 MiB / 4 MiB / 8 MiB ladder; largest-passing-payload reopen plan; replacement test; corrupt/missing semantics; deterministic payload generator; probe namespace |
+
+## Optional Owner-evidence improvement
+
+Added a `README.md` optional deterministic exact-string
+reopen check (independent content evidence alongside the
+stored-digest-vs-recomputed-digest verification):
+
+```ruby
+expected = SUAIPlugin::V19B0Probe.generate_payload(
+  seed: 7, target_bytes: 8 * 1024 * 1024,
+)
+raw = SUAIPlugin::V19B0Probe.read_probe(Sketchup.active_model)
+puts raw[:ok] && raw[:payload] == expected ? \
+       '[reopen_test:exact_string] PASS' : \
+       '[reopen_test:exact_string] BLOCK'
+```
+
+No production schema is frozen by this Owner-evidence
+addition.
+
+## Allowed scope (this packet)
+
+Only:
+
+- `Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
+- `Probe/V1_9B0/_validation_runner.rb`
+- `Probe/V1_9B0/README.md`
+- `CURRENT_STATE.md` / `Review/CURRENT_PI_REPORT.md` (status
+  updates only)
+
+`extension/`, `tests/`, `dist/SU-AI-Plugin.rbz`, V1.9A closure,
+V1.9B1 production implementation, V2 / MCP / LLM / Agent are
+NOT touched.
+
+## Validation (this packet)
+
+- `ruby -c` on both Probe files: Syntax OK.
+- Full host-free validation runner (vendored Ruby 2.7.8):
+  **74 PASS, 0 FAIL** (pre-existing 33 + B0-01 / B0-02 /
+  B0-03 FakeModel 33 + new B0-R01 7 + B0-R01-3 5 + ladder
+  end-to-end 4).
+- `git diff --check`: clean.
+- `git status --porcelain tests/ extension/ dist/`: empty.
+- `git status --porcelain`: only Probe/V1_9B0/* + the
+  untracked dispatch file (expected starting state).
+
+## Return state
+
+```text
+V1_9A                           = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION           = COMPLETE_PENDING_FINAL_AIPM_RECHECK
+OWNER_SU2020_PERSISTENCE_PROBE  = BLOCKED_BY_FINAL_NARROW_FIX
+PERSISTENCE_ROUTE               = NOT_YET_FROZEN
+V1_9B1                          = NOT_STARTED
+```
+
+## Next expected action
+
+1. AIPM final narrow source review of this packet's B0-R01
+  correction on `dev/v1.9`.
+2. Owner real-SU2020 persistence probe on the corrected
+  probe (after AIPM PASS).
+3. AIPM decision on whether the SketchUp Model
+  AttributeDictionary route is acceptable based on Owner
+  evidence.
+4. ONLY after the persistence route decision may AIPM
+  authorize V1.9B1 production implementation.
+
+CODEX_REVIEW_TRIGGER = NO (probe-only; B0-R01 is a narrow
+API-contract correction + open-state guard inside the
+existing V1.9B0 probe; no new architecture and no reopen
+of already-PASS V1.9A production seams).
+
+Pi MUST NOT invoke Codex itself. Pi has completed the
+correction + host-free regressions + commit + push (this
+packet) and now returns control to AIPM for final narrow
+source recheck.
+
+STOP. Do not begin V1.9B1. Do not implement production
+PreparedCadDataset.
+
+---
+
+# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B0 (probe-only correction; V1.9A remains

@@ -1,4 +1,87 @@
-## V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION — 2026-09-10 (THIS UPDATE)
+## V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION — 2026-09-10 (THIS UPDATE)
+
+Updated: 2026-09-10 (V1.9B0 AIPM final narrow residual
+correction per
+`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-10.md`).
+Per dispatch, this packet fixes ONE narrow residual (B0-R01)
+surfaced by AIPM direct source review of the previous V1.9B0
+source-review correction packet:
+
+- **B0-R01** — Correct SketchUp operation signature + abort
+  only if opened. The probe and FakeModel previously described
+  `start_operation` as a 3-arg `(name, disable_ui, transparent)`
+  API; the real SketchUp Model API is a 4-arg
+  `(op_name, disable_ui, next_transparent, transparent)` API.
+  The current 3-arg call `start_operation(name, true, false)`
+  happens to remain non-transparent only by accident. The probe
+  now uses the simplest unambiguous normal form:
+  `model.start_operation(name, true)`. The probe also adds an
+  `operation_opened` local flag guard so `abort_operation` is
+  only called when an operation was actually opened; if
+  `start_operation` itself raises before opening, the probe
+  MUST NOT call `abort_operation`. The FakeModel now uses a
+  neutral `*args` capture so it does not enshrine a wrong
+  fixed-arity signature.
+
+The probe source comments, the FakeModel implementation, and
+the README's transaction-API reference section (new §5A) all
+now state the real 4-parameter SketchUp Model API accurately.
+The previous B0-02 / B0-03 fixes (raw read string equality,
+separate `exact_string_equal` + `exact_byte_count_equal`
+diagnostic, save/close/reopen using the largest passing ladder
+payload, deterministic payload generator, probe namespace,
+SHA-256 verification, replacement test, corrupt/missing
+semantics) are PRESERVED unchanged.
+
+Added 7 new host-free B0-R01 checks to the FakeModel regression
+suite:
+
+- B0-R01 call-shape: actual call is `(String, true)` — exactly
+  2 positional args (B0-R01 preferred form).
+- B0-R01 no-String-4th: start_operation was NOT called with a
+  transparent=true String as the 4th arg.
+- B0-R01 FakeModel neutral: FakeModel's `start_operation` uses
+  `*args` capture (arity -1) rather than a fixed-arity signature.
+- B0-R01-3 start_operation raises pre-open: one attempted
+  start, zero commit, ZERO `abort_operation` (operation_opened
+  flag guard), zero `abort`.
+- B0-R01-3 FakeModel.operation_open stays false on pre-open
+  raise.
+- Plus the existing B0-01A post-start failure (one start, zero
+  commit, one `abort_operation`) and B0-01C successful write
+  (one start, one commit, zero abort).
+
+Allowed scope:
+`Probe/V1_9B0/prepared_dataset_persistence_probe.rb` +
+`Probe/V1_9B0/_validation_runner.rb` + `Probe/V1_9B0/README.md`.
+`extension/`, `tests/`, `dist/SU-AI-Plugin.rbz`, V1.9A closure,
+V1.9B1 production implementation are NOT touched.
+
+Validation:
+
+- `ruby -c` on both Probe files: Syntax OK.
+- Full host-free validation runner (vendored Ruby 2.7.8):
+  **74 PASS, 0 FAIL** (33 pre-existing + 33 B0-01/02/03
+  FakeModel + new 7 B0-R01 + 1 ladder-rebuild check).
+- `git diff --check`: clean.
+- `git status --porcelain tests/ extension/ dist/`: empty.
+
+```text
+V1_9A                           = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION           = COMPLETE_PENDING_FINAL_AIPM_RECHECK
+OWNER_SU2020_PERSISTENCE_PROBE  = BLOCKED_BY_FINAL_NARROW_FIX
+PERSISTENCE_ROUTE               = NOT_YET_FROZEN
+V1_9B1                          = NOT_STARTED
+```
+
+Stage status: V1.9A remains **CLOSED_FROZEN**. V1.9B0 probe is
+**COMPLETE_PENDING_FINAL_AIPM_RECHECK**. V1.9B1 remains
+**NOT_STARTED** until AIPM decides the persistence route from
+Owner real-host B0 evidence.
+
+---
+
+## V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION — 2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9B0 AIPM direct source review
 correction per

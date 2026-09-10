@@ -126,14 +126,43 @@ module SUAIPlugin
     ].freeze
 
     DEFAULT_OP_NAME     = 'SU-AI-Plugin V1.9B0 Persistence Probe Write'
-    # NOTE: SketchUp's start_operation(name, disable_ui, transparent) takes
-    # at most 3 arguments; the 3rd is the Boolean `transparent` flag, NOT a
-    # description string. A Ruby String would be truthy and silently create
-    # a transparent operation (with no Undo entry + no Undo/Redo probe
-    # visibility). B0-01 fix: always call `start_operation(name, true, false)`
-    # so the operation is non-transparent and observable in the host Undo
-    # stack. See FakeModel transaction-arguments regression in
-    # `_validation_runner.rb`.
+
+    # SketchUp Model API (real 4-parameter signature):
+    #
+    #   start_operation(op_name,
+    #                   disable_ui = false,
+    #                   next_transparent = false,
+    #                   transparent = false)
+    #
+    #   - op_name            : String   (required, becomes the host Undo entry)
+    #   - disable_ui         : Boolean  (true => no UI during operation)
+    #   - next_transparent   : Boolean  (DEPRECATED; false => normal op)
+    #   - transparent        : Boolean  (true => excluded from Undo stack — DO NOT use)
+    #
+    # B0-R01 correction: the previous 4-argument call
+    #   model.start_operation(name, true, false, DEFAULT_OP_DESC)
+    # passed a Ruby String as the 4th positional argument. Ruby strings are
+    # truthy, so that String was supplied to SketchUp as `transparent = true`,
+    # which would have produced a TRANSPARENT operation (no Undo entry + no
+    # Undo/Redo probe visibility). The current 3-argument call
+    #   model.start_operation(name, true, false)
+    # is non-transparent because argument 3 is `false` AND argument 4 defaults
+    # to `false`, but this happens to be correct only by accident; the probe
+    # also wants the simplest unambiguous form.
+    #
+    # The probe therefore uses:
+    #
+    #   model.start_operation(name, true)
+    #
+    # which leaves BOTH `next_transparent` and `transparent` at their default
+    # `false`. This is unambiguous, requires no special documentation, and is
+    # a normal non-transparent SketchUp operation that the host Undo/Redo
+    # stack observes as one undoable step.
+    #
+    # B0-R01 also adds an `operation_opened` local flag guard so that
+    # `model.abort_operation` is only called when an operation was actually
+    # opened. If `model.start_operation(...)` itself raises BEFORE opening,
+    # the probe MUST NOT call `abort_operation` (there is nothing to abort).
 
     # ----- Host-free helpers (always available) --------------------------
 
@@ -288,28 +317,26 @@ module SUAIPlugin
       digest       = sha256_hex(payload_string)
       result       = { ok: false }
 
-      # B0-01: SketchUp start_operation signature is
-      #   start_operation(name, disable_ui, transparent)
-      # - name       : String (required, becomes the host Undo entry)
-      # - disable_ui : Boolean (true => no UI during operation)
-      # - transparent: Boolean (true => excluded from Undo stack — DO NOT use)
-      # The previous call passed a String as the 4th positional argument;
-      # Ruby silently ignored it AND the 3rd arg `false` left the operation
-      # non-transparent. The fix is to call with exactly three positional
-      # arguments and NEVER pass a description string. Failure paths use
-      # `model.abort_operation`, never `model.abort` (which does not exist
-      # on SketchUp::Model — it raises NoMethodError).
+      # B0-R01: simplest unambiguous normal non-transparent call. Leaves
+      # both `next_transparent` (deprecated, default false) and
+      # `transparent` (default false) at their defaults.
+      operation_opened = false
       begin
-        model.start_operation(DEFAULT_OP_NAME, true, false)
+        model.start_operation(DEFAULT_OP_NAME, true)
+        operation_opened = true
         dict = probe_dictionary(model)
         if dict.nil?
-          # B0-01 extension: probe_dictionary failed AFTER start_operation,
-          # so the operation is still open. We MUST abort it before
-          # returning; otherwise the host transaction leaks.
-          begin
-            model.abort_operation
-          rescue StandardError
-            # ignore secondary abort_operation errors
+          # probe_dictionary failed AFTER start_operation; the operation is
+          # still open. Abort it once and clear the flag. We only abort when
+          # operation_opened == true so we never call abort_operation on an
+          # operation that was never opened.
+          if operation_opened
+            begin
+              model.abort_operation
+            rescue StandardError
+              # ignore secondary abort_operation errors
+            end
+            operation_opened = false
           end
           result = { ok: false, reason: 'dictionary_create_failed' }
         else
@@ -320,6 +347,7 @@ module SUAIPlugin
           dict[KEY_REQUESTED_BYTES] = requested_bytes.to_i
           dict[KEY_ACTUAL_BYTES]    = actual_bytes
           model.commit_operation
+          operation_opened = false
           result = {
             ok:               true,
             requested_bytes:  requested_bytes.to_i,
@@ -331,13 +359,16 @@ module SUAIPlugin
           }
         end
       rescue StandardError => e
-        # Defensive: if we got far enough to open an operation, abort it.
-        # B0-01 fix: use `abort_operation`, not `abort` (which doesn't exist
-        # on SketchUp::Model and would itself raise).
-        begin
-          model.abort_operation
-        rescue StandardError
-          # ignore secondary abort_operation errors
+        # B0-R01: only abort if an operation was actually opened. If
+        # start_operation itself raised before opening, abort_operation
+        # would itself raise and there is nothing to abort.
+        if operation_opened
+          begin
+            model.abort_operation
+          rescue StandardError
+            # ignore secondary abort_operation errors
+          end
+          operation_opened = false
         end
         result = {
           ok:     false,
@@ -454,9 +485,12 @@ module SUAIPlugin
       return { ok: false, reason: 'nil_model' } if model.nil?
 
       result = { ok: false }
-      # B0-01: start_operation(name, disable_ui, transparent) — exactly 3 args.
+      # B0-R01: simplest unambiguous non-transparent call +
+      # operation_opened flag guard.
+      operation_opened = false
       begin
-        model.start_operation('SU-AI-Plugin V1.9B0 Probe Cleanup', true, false)
+        model.start_operation('SU-AI-Plugin V1.9B0 Probe Cleanup', true)
+        operation_opened = true
         dict = model.attribute_dictionary(PROBE_DICTIONARY)
         removed = []
         if dict.nil?
@@ -471,12 +505,15 @@ module SUAIPlugin
           result = { ok: true, removed: removed }
         end
         model.commit_operation
+        operation_opened = false
       rescue StandardError => e
-        # B0-01 fix: use abort_operation (NOT abort — which does not exist).
-        begin
-          model.abort_operation
-        rescue StandardError
-          # ignore secondary abort_operation errors
+        if operation_opened
+          begin
+            model.abort_operation
+          rescue StandardError
+            # ignore secondary abort_operation errors
+          end
+          operation_opened = false
         end
         result = {
           ok: false,
@@ -664,14 +701,19 @@ module SUAIPlugin
       dict = model.attribute_dictionary(PROBE_DICTIONARY, true)
 
       # Case 1: payload missing
+      # B0-R01: operation_opened flag guard for the corrupt test paths.
+      operation_opened = false
       begin
-        # B0-01: start_operation(name, disable_ui, transparent) — 3 args max.
-        model.start_operation('V1.9B0 probe — corrupt: payload missing', true, false)
+        model.start_operation('V1.9B0 probe — corrupt: payload missing', true)
+        operation_opened = true
         dict.delete_key(KEY_PAYLOAD)
         model.commit_operation
+        operation_opened = false
       rescue StandardError
-        # B0-01 fix: abort_operation (NOT abort).
-        begin; model.abort_operation; rescue StandardError; end
+        if operation_opened
+          begin; model.abort_operation; rescue StandardError; end
+          operation_opened = false
+        end
       end
       v = verify_probe(model)
       results << { case: 'payload_missing', ok: !v[:ok] && v[:reason] == 'payload_missing', observed: v }
@@ -682,12 +724,18 @@ module SUAIPlugin
       dict = model.attribute_dictionary(PROBE_DICTIONARY, true)
 
       # Case 2: digest missing
+      operation_opened = false
       begin
-        model.start_operation('V1.9B0 probe — corrupt: digest missing', true, false)
+        model.start_operation('V1.9B0 probe — corrupt: digest missing', true)
+        operation_opened = true
         dict.delete_key(KEY_DIGEST)
         model.commit_operation
+        operation_opened = false
       rescue StandardError
-        begin; model.abort_operation; rescue StandardError; end
+        if operation_opened
+          begin; model.abort_operation; rescue StandardError; end
+          operation_opened = false
+        end
       end
       v = verify_probe(model)
       results << { case: 'digest_missing', ok: !v[:ok] && v[:reason] == 'digest_missing', observed: v }
@@ -697,15 +745,21 @@ module SUAIPlugin
       dict = model.attribute_dictionary(PROBE_DICTIONARY, true)
 
       # Case 3: invalid JSON
+      operation_opened = false
       begin
-        model.start_operation('V1.9B0 probe — corrupt: invalid JSON', true, false)
+        model.start_operation('V1.9B0 probe — corrupt: invalid JSON', true)
+        operation_opened = true
         dict[KEY_PAYLOAD] = '{this is not valid JSON'
         # Keep digest intentionally stale to also exercise the digest
         # mismatch path that would otherwise be triggered first.
         dict[KEY_DIGEST]  = 'deadbeef' * 8
         model.commit_operation
+        operation_opened = false
       rescue StandardError
-        begin; model.abort_operation; rescue StandardError; end
+        if operation_opened
+          begin; model.abort_operation; rescue StandardError; end
+          operation_opened = false
+        end
       end
       v = verify_probe(model)
       results << { case: 'invalid_json', ok: !v[:ok] && v[:reason] == 'invalid_json', observed: v }
@@ -715,13 +769,19 @@ module SUAIPlugin
       dict = model.attribute_dictionary(PROBE_DICTIONARY, true)
 
       # Case 4: digest mismatch (payload fresh, digest intentionally stale)
+      operation_opened = false
       begin
-        model.start_operation('V1.9B0 probe — corrupt: digest mismatch', true, false)
+        model.start_operation('V1.9B0 probe — corrupt: digest mismatch', true)
+        operation_opened = true
         dict[KEY_PAYLOAD] = JSON.generate({ 'ok' => true, 'note' => 'different payload after restore' })
         dict[KEY_DIGEST]  = 'feedface' * 8
         model.commit_operation
+        operation_opened = false
       rescue StandardError
-        begin; model.abort_operation; rescue StandardError; end
+        if operation_opened
+          begin; model.abort_operation; rescue StandardError; end
+          operation_opened = false
+        end
       end
       v = verify_probe(model)
       results << { case: 'digest_mismatch', ok: !v[:ok] && v[:reason] == 'digest_mismatch', observed: v }
@@ -731,12 +791,18 @@ module SUAIPlugin
       dict = model.attribute_dictionary(PROBE_DICTIONARY, true)
 
       # Case 5: unsupported probe schema marker
+      operation_opened = false
       begin
-        model.start_operation('V1.9B0 probe — corrupt: unsupported schema', true, false)
+        model.start_operation('V1.9B0 probe — corrupt: unsupported schema', true)
+        operation_opened = true
         dict[KEY_SCHEMA] = 'v19b0_probe_v9_unsupported'
         model.commit_operation
+        operation_opened = false
       rescue StandardError
-        begin; model.abort_operation; rescue StandardError; end
+        if operation_opened
+          begin; model.abort_operation; rescue StandardError; end
+          operation_opened = false
+        end
       end
       v = verify_probe(model)
       results << { case: 'unsupported_probe_schema', ok: !v[:ok] && v[:reason] == 'unsupported_probe_schema', observed: v }

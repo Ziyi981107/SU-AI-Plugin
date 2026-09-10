@@ -153,6 +153,29 @@ the original payload. Record the reopen latency (SketchUp Ruby
 Console does not give a precise timer; Owner can time the wall
 clock by hand or simply observe the print line).
 
+**B0-R01 recommended optional Owner-evidence improvement**: for
+strongest independent content evidence, also run a deterministic
+exact-string check against a regenerated expected payload after
+reopen. This is in addition to (not a replacement for) the
+stored-digest-vs-recomputed-digest verification. Example for the
+8 MiB / seed 7 case:
+
+```ruby
+expected = SUAIPlugin::V19B0Probe.generate_payload(
+  seed: 7,
+  target_bytes: 8 * 1024 * 1024,
+)
+raw = SUAIPlugin::V19B0Probe.read_probe(Sketchup.active_model)
+# Independent exact-content evidence:
+puts raw[:ok] && raw[:payload] == expected ? \
+       '[reopen_test:exact_string] PASS' : \
+       '[reopen_test:exact_string] BLOCK'
+```
+
+This gives independent exact-content evidence alongside the digest
+comparison. No production schema is frozen by this Owner-evidence
+addition.
+
 Step 8 — company-scale ladder (optional but recommended):
 
 Open a representative company SKP / CAD model (with many entities /
@@ -227,6 +250,70 @@ Host-free API (always available; does not need SketchUp):
 - Cleanup is always safe to call: it removes only the
   `__v19b0_probe_*__` keys under the
   `SU-AI-Plugin.PreparedCadDataset` dictionary.
+
+---
+
+## 5A. SketchUp transaction API contract (B0-R01 reference)
+
+The probe wraps every state-mutating call in a single normal
+non-transparent SketchUp Model operation so that the host Undo/Redo
+stack observes exactly one undoable step.
+
+SketchUp's real Model API signature is:
+
+```text
+start_operation(op_name,
+                disable_ui = false,
+                next_transparent = false,
+                transparent = false)
+```
+
+- `op_name`          — String (required; becomes the host Undo entry)
+- `disable_ui`       — Boolean (true => no UI during the operation)
+- `next_transparent` — Boolean (DEPRECATED; default false)
+- `transparent`      — Boolean (true => excluded from Undo stack — DO NOT use)
+
+The probe uses the simplest unambiguous normal non-transparent form:
+
+```text
+model.start_operation(name, true)
+```
+
+This leaves both `next_transparent` and `transparent` at their
+default `false`. The probe NEVER passes a String as `transparent`
+(B0-01 BLOCK history: a truthy String would have created a
+transparent operation with no Undo entry + no Undo/Redo probe
+visibility).
+
+On failure the probe uses `model.abort_operation` to abort the open
+transaction. To avoid aborting an operation that was never opened,
+the probe uses an `operation_opened` local flag guard:
+
+- Set `operation_opened = false` BEFORE the begin block.
+- Set `operation_opened = true` AFTER `start_operation` returns
+  successfully.
+- Set `operation_opened = false` AFTER `commit_operation`.
+- In the rescue path, only call `model.abort_operation` if
+  `operation_opened == true` (i.e. an operation was actually opened).
+- For post-start failures inside the open transaction
+  (e.g. dictionary creation fails, post-write work raises), abort
+  once and clear the flag.
+
+The probe never calls `model.abort` (which does not exist on
+`Sketchup::Model` and would itself raise `NoMethodError`).
+
+A host-free `FakeModel` regression suite in
+`Probe/V1_9B0/_validation_runner.rb` exercises the full contract:
+
+1. Normal successful write — one `start_operation(name, true)`,
+   one `commit_operation`, zero `abort_operation`, zero `abort`.
+2. Failure AFTER a successful start (e.g. probe_dictionary returns
+   nil) — one `start_operation`, zero `commit_operation`, one
+   `abort_operation`, zero `abort`.
+3. Failure FROM `start_operation` itself, before open (e.g.
+   injected SketchUp internal error) — one attempted
+   `start_operation`, zero `commit_operation`, ZERO `abort_operation`,
+   zero `abort`.
 
 ---
 
