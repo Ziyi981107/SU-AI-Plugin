@@ -1,4 +1,208 @@
-# CURRENT PI REPORT — V1.9A OWNER ACCEPTED CLOSURE + V1.9B0 PERSISTENCE PROBE (THIS UPDATE)
+# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Stage: V1.9B0 (probe-only correction; V1.9A remains
+CLOSED_FROZEN)
+Date: 2026-09-10
+Authority:
+`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_SOURCE_REVIEW_CORRECTION_2026-09-10.md`
+Baseline HEAD (before this packet touched the working
+tree):
+`4d1eeb93a9deacf422ad4aeea5bd0a274cf44c5e`
+(the V1.9A closure + V1.9B0 probe merge commit on
+`dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Working tree (start): 1 untracked dispatch file
+(`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_SOURCE_REVIEW_CORRECTION_2026-09-10.md`).
+Working tree otherwise clean.
+
+AIPM direct source review found THREE BLOCKs in the
+previous V1.9B0 probe
+(`Probe/V1_9B0/prepared_dataset_persistence_probe.rb` +
+`Probe/V1_9B0/_validation_runner.rb` +
+`Probe/V1_9B0/README.md`). This packet fixes ALL THREE
+inside the same allowed scope. No `extension/` change. No
+production RBZ rebuild. No V1.9A re-open. No V1.9B1
+production implementation.
+
+## BLOCK fixes (this packet)
+
+### B0-01 — SketchUp transaction API contract
+- `model.start_operation(...)` calls were previously
+  invoked with a 4-argument signature where the 4th
+  positional argument was a String description. SketchUp's
+  real signature is `start_operation(name, disable_ui,
+  transparent)` (3 positional arguments; `transparent`
+  is a Boolean). The previous 4-arg call silently
+  ignored the 4th String AND passed `false` as the 3rd
+  `transparent` flag, which happened to produce a
+  non-transparent operation BUT obscured the API
+  contract. The probe was therefore vulnerable to future
+  regressions where someone might pass a description
+  String as the 4th argument and silently turn every
+  probe write into a TRANSPARENT operation (with no Undo
+  entry + no host Undo/Redo probe visibility).
+- **Fix**: every `start_operation` call now passes
+  EXACTLY three positional arguments:
+  `model.start_operation(name, true, false)`. A code
+  comment block documents the signature contract.
+- **Fix**: every `model.abort()` (which does NOT exist
+  on `Sketchup::Model` and would itself raise
+  `NoMethodError`) is replaced with `model.abort_operation`.
+  This applies to all rescue paths in `write_probe`,
+  `cleanup_probe`, and `run_corrupt_missing_tests`.
+- **Fix**: when `probe_dictionary(model)` returns `nil`
+  AFTER `start_operation` but BEFORE the normal
+  `commit_operation` path (a legitimate post-start
+  failure), the probe now aborts the open transaction
+  before returning `{ ok: false, reason:
+  'dictionary_create_failed' }`. This prevents a host
+  transaction leak when the probe cannot get a
+  dictionary to write into.
+
+### B0-02 — immediate readback false negative
+- `run_immediate_readback_test` previously compared
+  `payload == read_result[:payload]` where `read_result`
+  came from `verify_probe`. `verify_probe` does NOT
+  return `:payload` (it returns digest + parse evidence
+  only), so the comparison was always against `nil` and
+  `exact_byte_equal` was always `false`.
+- **Fix**: `run_immediate_readback_test` now calls
+  `read_probe(model)` directly to obtain the raw payload
+  string for byte-for-byte string equality, and calls
+  `verify_probe(model)` separately for JSON parse +
+  digest evidence. Success requires
+  `exact_string_equal == true`.
+
+### B0-03 — size ladder must prove exact STRING equality
+- The previous `exact_byte_equal` field in the size
+  ladder row only compared `actual_bytes` to the original
+  payload's `bytesize`. Pure byte-count equality passes
+  even when the stored payload was corrupted to a
+  different same-length string — the very class of
+  corruption the probe is supposed to detect.
+- **Fix**: each ladder row now also includes
+  `exact_string_equal` which is computed via direct
+  string equality `raw_read[:payload] == payload` (where
+  `raw_read = read_probe(model)`). This is the primary
+  success predicate for the size ladder. The previous
+  byte-count equality is retained as a separate
+  diagnostic field (`exact_byte_count_equal`).
+- **Fix**: the `print_size_ladder_row` one-liner now
+  prints BOTH `exact_string_equal` (primary) AND
+  `exact_byte_count_equal` (diagnostic) so Owner can
+  immediately spot a same-length corruption that would
+  have silently passed the old check.
+- **Owner test plan correction**: `README.md` Step 7
+  (save / close / reopen) now explicitly directs Owner
+  to run the FULL `256 KiB / 1 MiB / 4 MiB / 8 MiB`
+  ladder first (Step 2) and then perform save-close-
+  reopen against the LARGEST passing ladder payload,
+  preferably 8 MiB (fall back to 4 MiB / 1 MiB if 8 MiB
+  fails). The old default of 64 KiB was too small to
+  exercise the realistic worst case.
+
+## Allowed scope (this packet)
+
+Only the following files were modified:
+
+- `Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
+  — production probe file.
+- `Probe/V1_9B0/README.md` — Owner-facing usage.
+- `Probe/V1_9B0/_validation_runner.rb` — host-free
+  validation runner (throwaway; not shipped to Owner).
+
+`extension/`, `tests/`, `dist/SU-AI-Plugin.rbz`, the
+V1.9A closure evidence, and the V1.9B1 production
+implementation are NOT touched (verified via
+`git status --porcelain tests/ extension/ dist/` returning
+empty output).
+
+## Host-free FakeModel regressions (this packet)
+
+Added a comprehensive host-free `FakeModel` regression
+suite to `Probe/V1_9B0/_validation_runner.rb`. The probe
+ships NO SketchUp dependency, so the runner installs a
+minimal `Sketchup` module stub (`Sketchup.active_model`
+returning a `$fake_model` global) and a `FakeModel` class
+that simulates SketchUp's transaction + AttributeDictionary
+API surface. The stub is removed at the end of the test
+block so it does not leak past the suite.
+
+Coverage:
+
+| Block | Test | Asserts |
+|---|---|---|
+| B0-01A | `dictionary_create_failed` after `start_operation` | one `start_operation`, one `abort_operation`, zero `commit_operation`, zero `abort`; `write_probe[:reason] == 'dictionary_create_failed'` |
+| B0-01B | mid-operation raise inside `start_operation` | one `start_operation`, one `abort_operation`, zero `commit_operation`, zero `abort`; `write_probe[:reason] == 'unexpected_runtime_error'` |
+| B0-01C | successful write | one `start_operation`, one `commit_operation`, zero `abort_operation`, zero `abort` |
+| B0-01D | `start_operation` argument shape | `name` is String, `disable_ui == true`, `transparent == false`, arity == 3 (no 4th positional arg) |
+| B0-01E | `cleanup_probe` success path | one `start_operation`, one `commit_operation`, zero `abort_operation`, zero `abort` |
+| B0-02 | exact-string round-trip | `read_probe[:payload] == original_payload` (NOT byte-count only) |
+| B0-02 | `run_immediate_readback_test` | `ok == true`, `exact_string_equal == true`, `exact_byte_count_equal == true` |
+| B0-03 | same-length-but-altered-payload | mutate stored dict to a different same-length string; `raw_read[:payload] != original_payload`; size-ladder `exact_string_equal == false` (correctly detects corruption that byte-count equality misses) |
+| B0-03 | full `run_size_ladder` on FakeModel | one row per ladder level; every level has `exact_string_equal == true`, `verify_ok == true`, `digest_equality == true` |
+
+## Validation (this packet)
+
+- `ruby -c Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
+  -> Syntax OK.
+- `ruby -c Probe/V1_9B0/_validation_runner.rb` -> Syntax OK.
+- `ruby Probe/V1_9B0/_validation_runner.rb` (vendored
+  Ruby 2.7.8) -> **all checks PASS, 0 failures**. The
+  pre-existing 33 deterministic / JSON / SketchUp-availability
+  checks continue to PASS unchanged. The new FakeModel
+  regression suite adds 33 B0-01 / B0-02 / B0-03
+  behavioral checks, all PASS.
+- `git diff --check`: clean (no trailing whitespace, no
+  line-ending noise on any modified file). LF line
+  endings are consistent on all modified files.
+- `git status --porcelain tests/ extension/ dist/`: empty
+  (no production source / test / RBZ change).
+- `git status --porcelain`: only Probe/V1_9B0/* +
+  untracked dispatch file (the expected starting state).
+
+## Return state
+
+```text
+V1_9A                        = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION        = COMPLETE_PENDING_AIPM_RECHECK
+OWNER_SU2020_PERSISTENCE_PROBE = BLOCKED_BY_PROBE_FIX
+PERSISTENCE_ROUTE             = NOT_YET_FROZEN
+V1_9B1                       = NOT_STARTED
+```
+
+## Next expected action
+
+1. AIPM direct source / diff review of this packet's
+  B0-01 / B0-02 / B0-03 narrow corrections on
+  `dev/v1.9`.
+2. Owner real-SU2020 persistence probe on the corrected
+  probe (after AIPM PASS).
+3. AIPM decision on whether the SketchUp Model
+  AttributeDictionary route is acceptable based on
+  Owner evidence.
+4. ONLY after the persistence route decision may AIPM
+  authorize V1.9B1 production implementation.
+
+CODEX_REVIEW_TRIGGER = NO (probe-only; B0-01 / B0-02 /
+B0-03 are all narrow host-free test / API-contract
+fixes inside the existing V1.9B0 probe; none of them
+introduce new architecture or reopen already-PASS
+V1.9A production seams).
+
+Pi MUST NOT invoke Codex itself. Pi has completed the
+correction + host-free regressions + commit + push
+(this packet) and now returns control to AIPM for
+direct source recheck.
+
+STOP. Do not begin V1.9B1. Do not implement production
+PreparedCadDataset.
+
+---
+
+# CURRENT PI REPORT — V1.9A OWNER ACCEPTED CLOSURE + V1.9B0 PERSISTENCE PROBE (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage transition: V1.9A -> V1.9B0

@@ -1,4 +1,79 @@
-## V1.9A OWNER ACCEPTED CLOSURE — 2026-09-10 (THIS UPDATE)
+## V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION — 2026-09-10 (THIS UPDATE)
+
+Updated: 2026-09-10 (V1.9B0 AIPM direct source review
+correction per
+`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_SOURCE_REVIEW_CORRECTION_2026-09-10.md`).
+Per dispatch, this packet fixes exactly THREE narrow
+BLOCKs in the previous V1.9B0 probe
+(`Probe/V1_9B0/prepared_dataset_persistence_probe.rb` +
+`_validation_runner.rb` + `README.md`):
+
+- **B0-01** — SketchUp transaction API contract:
+  `start_operation` now uses normal non-transparent
+  semantics with exactly three positional arguments
+  (`start_operation(name, true, false)`); no 4th String
+  description. All `model.abort()` paths replaced with
+  `model.abort_operation`. When `probe_dictionary(model)`
+  returns nil after `start_operation` (legitimate
+  post-start failure), the probe now aborts the open
+  transaction before returning
+  `{ ok: false, reason: 'dictionary_create_failed' }`
+  to prevent a host transaction leak.
+- **B0-02** — `run_immediate_readback_test` now calls
+  `read_probe(model)` directly for the raw payload
+  string equality (the previous code compared against
+  `verify_probe[:payload]` which is always nil) and
+  `verify_probe(model)` separately for JSON / digest
+  evidence. Success requires `exact_string_equal == true`.
+- **B0-03** — `run_size_ladder` now proves exact STRING
+  equality (`raw_read[:payload] == payload`) per level;
+  the previous byte-count-only check is retained as a
+  separate diagnostic field (`exact_byte_count_equal`).
+  Owner README Step 7 (save / close / reopen) now
+  directs Owner to use the LARGEST passing ladder
+  payload, preferably 8 MiB (fall back to 4 MiB /
+  1 MiB if 8 MiB fails).
+
+Added host-free `FakeModel` regression suite (33 new
+checks) covering transaction-argument shape, commit /
+`abort_operation` call counts, exact-string round-trip
+equality, and same-length-but-altered-payload
+corruption detection. All 33 new checks PASS in
+vendored Ruby 2.7.8.
+
+Allowed scope: ONLY
+`Probe/V1_9B0/prepared_dataset_persistence_probe.rb` +
+`Probe/V1_9B0/_validation_runner.rb` +
+`Probe/V1_9B0/README.md`. `extension/`, `tests/`,
+`dist/SU-AI-Plugin.rbz`, V1.9A closure, V1.9B1
+production implementation are NOT touched.
+
+Validation:
+
+- `ruby -c` on both Probe files: Syntax OK.
+- Full host-free validation runner:
+  **all checks PASS, 0 failures** (pre-existing 33
+  + new 33 FakeModel regressions).
+- `git diff --check`: clean.
+- `git status --porcelain tests/ extension/ dist/`:
+  empty.
+
+```text
+V1_9A                        = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION        = COMPLETE_PENDING_AIPM_RECHECK
+OWNER_SU2020_PERSISTENCE_PROBE = BLOCKED_BY_PROBE_FIX
+PERSISTENCE_ROUTE             = NOT_YET_FROZEN
+V1_9B1                       = NOT_STARTED
+```
+
+Stage status: V1.9A remains **CLOSED_FROZEN**. V1.9B0
+probe is **COMPLETE_PENDING_AIPM_RECHECK**. V1.9B1
+remains **NOT_STARTED** until AIPM decides the
+persistence route from Owner real-host B0 evidence.
+
+---
+
+## V1.9A OWNER ACCEPTED CLOSURE — 2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9A Owner Accepted Closure docs
 per `Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`).

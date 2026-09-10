@@ -126,7 +126,14 @@ module SUAIPlugin
     ].freeze
 
     DEFAULT_OP_NAME     = 'SU-AI-Plugin V1.9B0 Persistence Probe Write'
-    DEFAULT_OP_DESC     = 'SU-AI-Plugin V1.9B0 probe — AttributeDictionary write'
+    # NOTE: SketchUp's start_operation(name, disable_ui, transparent) takes
+    # at most 3 arguments; the 3rd is the Boolean `transparent` flag, NOT a
+    # description string. A Ruby String would be truthy and silently create
+    # a transparent operation (with no Undo entry + no Undo/Redo probe
+    # visibility). B0-01 fix: always call `start_operation(name, true, false)`
+    # so the operation is non-transparent and observable in the host Undo
+    # stack. See FakeModel transaction-arguments regression in
+    # `_validation_runner.rb`.
 
     # ----- Host-free helpers (always available) --------------------------
 
@@ -281,10 +288,29 @@ module SUAIPlugin
       digest       = sha256_hex(payload_string)
       result       = { ok: false }
 
+      # B0-01: SketchUp start_operation signature is
+      #   start_operation(name, disable_ui, transparent)
+      # - name       : String (required, becomes the host Undo entry)
+      # - disable_ui : Boolean (true => no UI during operation)
+      # - transparent: Boolean (true => excluded from Undo stack — DO NOT use)
+      # The previous call passed a String as the 4th positional argument;
+      # Ruby silently ignored it AND the 3rd arg `false` left the operation
+      # non-transparent. The fix is to call with exactly three positional
+      # arguments and NEVER pass a description string. Failure paths use
+      # `model.abort_operation`, never `model.abort` (which does not exist
+      # on SketchUp::Model — it raises NoMethodError).
       begin
-        model.start_operation(DEFAULT_OP_NAME, true, false, DEFAULT_OP_DESC)
+        model.start_operation(DEFAULT_OP_NAME, true, false)
         dict = probe_dictionary(model)
         if dict.nil?
+          # B0-01 extension: probe_dictionary failed AFTER start_operation,
+          # so the operation is still open. We MUST abort it before
+          # returning; otherwise the host transaction leaks.
+          begin
+            model.abort_operation
+          rescue StandardError
+            # ignore secondary abort_operation errors
+          end
           result = { ok: false, reason: 'dictionary_create_failed' }
         else
           dict[KEY_PAYLOAD]         = payload_string
@@ -306,10 +332,12 @@ module SUAIPlugin
         end
       rescue StandardError => e
         # Defensive: if we got far enough to open an operation, abort it.
+        # B0-01 fix: use `abort_operation`, not `abort` (which doesn't exist
+        # on SketchUp::Model and would itself raise).
         begin
-          model.abort() rescue nil
+          model.abort_operation
         rescue StandardError
-          # ignore secondary abort errors
+          # ignore secondary abort_operation errors
         end
         result = {
           ok:     false,
@@ -426,9 +454,9 @@ module SUAIPlugin
       return { ok: false, reason: 'nil_model' } if model.nil?
 
       result = { ok: false }
+      # B0-01: start_operation(name, disable_ui, transparent) — exactly 3 args.
       begin
-        model.start_operation('SU-AI-Plugin V1.9B0 Probe Cleanup', true, false,
-                             'SU-AI-Plugin V1.9B0 probe — remove all probe attributes')
+        model.start_operation('SU-AI-Plugin V1.9B0 Probe Cleanup', true, false)
         dict = model.attribute_dictionary(PROBE_DICTIONARY)
         removed = []
         if dict.nil?
@@ -444,10 +472,11 @@ module SUAIPlugin
         end
         model.commit_operation
       rescue StandardError => e
+        # B0-01 fix: use abort_operation (NOT abort — which does not exist).
         begin
-          model.abort() rescue nil
+          model.abort_operation
         rescue StandardError
-          # ignore
+          # ignore secondary abort_operation errors
         end
         result = {
           ok: false,
@@ -480,25 +509,46 @@ module SUAIPlugin
         write_elapsed = monotonic_now - write_start
 
         read_start = monotonic_now
-        read_result = verify_probe(model)
+        # B0-03 fix: use read_probe (returns the raw payload string) for
+        # the exact string equality check; use verify_probe separately for
+        # JSON parse + digest verification. The previous `exact_byte_equal`
+        # only compared byte counts (silently passing even when the payload
+        # was corrupted to a different same-length string).
+        raw_read = read_probe(model)
         read_elapsed = monotonic_now - read_start
 
+        # If read_probe failed, we still want a verify pass for the report.
+        verify_elapsed_start = monotonic_now
+        verify_result = verify_probe(model)
+        verify_elapsed = monotonic_now - verify_elapsed_start
+
+        # B0-03: exact STRING equality (not just byte count equality).
+        exact_string_equal = raw_read[:ok] && (raw_read[:payload] == payload)
+        # Kept as a separate field for backwards-compatible display.
+        exact_byte_count_equal = raw_read[:ok] &&
+                                 raw_read[:actual_string_bytes].to_i == payload.bytesize
+
         row = {
-          level_index:          idx,
-          requested_bytes:      bytes,
-          actual_json_bytes:    payload.bytesize,
-          generation_time_s:    gen_elapsed,
-          write_time_s:         write_elapsed,
-          read_time_s:          read_elapsed,
-          write_ok:             write_result[:ok],
-          verify_ok:            read_result[:ok],
-          exact_byte_equal:     read_result[:ok] && read_result[:actual_bytes].to_i == payload.bytesize,
-          json_parse_ok:        read_result[:ok] ? read_result[:json_parse_ok] : false,
-          digest_before_write:  sha256_hex(payload),
-          digest_after_read:    read_result[:ok] ? read_result[:recomputed_digest] : nil,
-          digest_equality:      read_result[:ok] ? (read_result[:digest] == read_result[:recomputed_digest]) : false,
-          schema:               read_result[:ok] ? read_result[:schema] : nil,
-          seed:                 seed,
+          level_index:             idx,
+          requested_bytes:         bytes,
+          actual_json_bytes:       payload.bytesize,
+          generation_time_s:       gen_elapsed,
+          write_time_s:            write_elapsed,
+          read_time_s:             read_elapsed,
+          verify_time_s:           verify_elapsed,
+          write_ok:                write_result[:ok],
+          read_ok:                 raw_read[:ok],
+          verify_ok:               verify_result[:ok],
+          # B0-03: primary success predicate for the size ladder.
+          exact_string_equal:      exact_string_equal,
+          # B0-03: kept as a diagnostic field only; NOT a success predicate.
+          exact_byte_count_equal:  exact_byte_count_equal,
+          json_parse_ok:           verify_result[:ok] ? verify_result[:json_parse_ok] : false,
+          digest_before_write:     sha256_hex(payload),
+          digest_after_read:       verify_result[:ok] ? verify_result[:recomputed_digest] : nil,
+          digest_equality:         verify_result[:ok] ? (verify_result[:digest] == verify_result[:recomputed_digest]) : false,
+          schema:                  verify_result[:ok] ? verify_result[:schema] : nil,
+          seed:                    seed,
         }
         results << row
         print_size_ladder_row(row)
@@ -507,6 +557,15 @@ module SUAIPlugin
     end
 
     # Run the immediate readback test on a single target size.
+    #
+    # B0-02 fix: the previous implementation compared `payload` against
+    # `read_result[:payload]` where `read_result` came from `verify_probe`.
+    # `verify_probe` does NOT return `:payload` (only digest + parse
+    # evidence), so the comparison was always against `nil` and
+    # `exact_byte_equal` was always false. The fix uses `read_probe`
+    # directly for the raw payload string equality and `verify_probe`
+    # separately for JSON / digest verification. Success requires
+    # `exact_string_equal == true`.
     def self.run_immediate_readback_test(model, target_bytes:)
       return { ok: false, reason: 'sketchup_unavailable' } unless sketchup_available?
       return { ok: false, reason: 'nil_model' } if model.nil?
@@ -514,20 +573,32 @@ module SUAIPlugin
       payload = generate_payload(seed: seed, target_bytes: target_bytes)
       write_result = write_probe(model, payload,
                                  seed: seed, requested_bytes: target_bytes)
-      read_result  = verify_probe(model)
-      exact_byte_equal = read_result[:ok] &&
-        payload == read_result[:payload]
+      # Raw read for exact-string equality (B0-02).
+      raw_read    = read_probe(model)
+      # Verify read for JSON / digest evidence.
+      verify_read = verify_probe(model)
+
+      # B0-02: exact STRING equality is the primary success predicate.
+      exact_string_equal = raw_read[:ok] && (raw_read[:payload] == payload)
+      # Kept as a separate diagnostic field (NOT a success predicate).
+      exact_byte_count_equal = raw_read[:ok] &&
+                               raw_read[:actual_string_bytes].to_i == payload.bytesize
+
       row = {
-        ok:                write_result[:ok] && read_result[:ok] && exact_byte_equal,
-        requested_bytes:   target_bytes,
-        actual_json_bytes: payload.bytesize,
-        write_ok:          write_result[:ok],
-        read_ok:           read_result[:ok],
-        exact_byte_equal:  exact_byte_equal,
-        json_parse_ok:     read_result[:ok] ? read_result[:json_parse_ok] : false,
-        digest_before:     sha256_hex(payload),
-        digest_after:      read_result[:ok] ? read_result[:recomputed_digest] : nil,
-        digest_equality:   read_result[:ok] ? (read_result[:digest] == read_result[:recomputed_digest]) : false,
+        ok:                     write_result[:ok] && raw_read[:ok] && verify_read[:ok] && exact_string_equal,
+        requested_bytes:        target_bytes,
+        actual_json_bytes:      payload.bytesize,
+        write_ok:               write_result[:ok],
+        read_ok:                raw_read[:ok],
+        verify_ok:              verify_read[:ok],
+        # B0-02: primary success field.
+        exact_string_equal:     exact_string_equal,
+        # Diagnostic only.
+        exact_byte_count_equal: exact_byte_count_equal,
+        json_parse_ok:          verify_read[:ok] ? verify_read[:json_parse_ok] : false,
+        digest_before:          sha256_hex(payload),
+        digest_after:           verify_read[:ok] ? verify_read[:recomputed_digest] : nil,
+        digest_equality:        verify_read[:ok] ? (verify_read[:digest] == verify_read[:recomputed_digest]) : false,
       }
       puts "[immediate_readback] #{row.inspect}"
       row
@@ -594,11 +665,13 @@ module SUAIPlugin
 
       # Case 1: payload missing
       begin
-        model.start_operation('V1.9B0 probe — corrupt: payload missing', true, false, '')
+        # B0-01: start_operation(name, disable_ui, transparent) — 3 args max.
+        model.start_operation('V1.9B0 probe — corrupt: payload missing', true, false)
         dict.delete_key(KEY_PAYLOAD)
         model.commit_operation
       rescue StandardError
-        begin; model.abort; rescue StandardError; end
+        # B0-01 fix: abort_operation (NOT abort).
+        begin; model.abort_operation; rescue StandardError; end
       end
       v = verify_probe(model)
       results << { case: 'payload_missing', ok: !v[:ok] && v[:reason] == 'payload_missing', observed: v }
@@ -610,11 +683,11 @@ module SUAIPlugin
 
       # Case 2: digest missing
       begin
-        model.start_operation('V1.9B0 probe — corrupt: digest missing', true, false, '')
+        model.start_operation('V1.9B0 probe — corrupt: digest missing', true, false)
         dict.delete_key(KEY_DIGEST)
         model.commit_operation
       rescue StandardError
-        begin; model.abort; rescue StandardError; end
+        begin; model.abort_operation; rescue StandardError; end
       end
       v = verify_probe(model)
       results << { case: 'digest_missing', ok: !v[:ok] && v[:reason] == 'digest_missing', observed: v }
@@ -625,14 +698,14 @@ module SUAIPlugin
 
       # Case 3: invalid JSON
       begin
-        model.start_operation('V1.9B0 probe — corrupt: invalid JSON', true, false, '')
+        model.start_operation('V1.9B0 probe — corrupt: invalid JSON', true, false)
         dict[KEY_PAYLOAD] = '{this is not valid JSON'
         # Keep digest intentionally stale to also exercise the digest
         # mismatch path that would otherwise be triggered first.
         dict[KEY_DIGEST]  = 'deadbeef' * 8
         model.commit_operation
       rescue StandardError
-        begin; model.abort; rescue StandardError; end
+        begin; model.abort_operation; rescue StandardError; end
       end
       v = verify_probe(model)
       results << { case: 'invalid_json', ok: !v[:ok] && v[:reason] == 'invalid_json', observed: v }
@@ -643,12 +716,12 @@ module SUAIPlugin
 
       # Case 4: digest mismatch (payload fresh, digest intentionally stale)
       begin
-        model.start_operation('V1.9B0 probe — corrupt: digest mismatch', true, false, '')
+        model.start_operation('V1.9B0 probe — corrupt: digest mismatch', true, false)
         dict[KEY_PAYLOAD] = JSON.generate({ 'ok' => true, 'note' => 'different payload after restore' })
         dict[KEY_DIGEST]  = 'feedface' * 8
         model.commit_operation
       rescue StandardError
-        begin; model.abort; rescue StandardError; end
+        begin; model.abort_operation; rescue StandardError; end
       end
       v = verify_probe(model)
       results << { case: 'digest_mismatch', ok: !v[:ok] && v[:reason] == 'digest_mismatch', observed: v }
@@ -659,11 +732,11 @@ module SUAIPlugin
 
       # Case 5: unsupported probe schema marker
       begin
-        model.start_operation('V1.9B0 probe — corrupt: unsupported schema', true, false, '')
+        model.start_operation('V1.9B0 probe — corrupt: unsupported schema', true, false)
         dict[KEY_SCHEMA] = 'v19b0_probe_v9_unsupported'
         model.commit_operation
       rescue StandardError
-        begin; model.abort; rescue StandardError; end
+        begin; model.abort_operation; rescue StandardError; end
       end
       v = verify_probe(model)
       results << { case: 'unsupported_probe_schema', ok: !v[:ok] && v[:reason] == 'unsupported_probe_schema', observed: v }
@@ -750,10 +823,12 @@ module SUAIPlugin
       out << '  SUAIPlugin::V19B0Probe.run_immediate_readback_test(m, 256*1024)'
       out << '  SUAIPlugin::V19B0Probe.run_replacement_test(m, 256*1024)'
       out << '  SUAIPlugin::V19B0Probe.run_corrupt_missing_tests(m)'
-      out << '  SUAIPlugin::V19B0Probe.write_undo_redo_probe(m, SUAIPlugin::V19B0Probe.generate_payload(seed: 99, target_bytes: 64*1024), seed: 99)'
+      out << '  SUAIPlugin::V19B0Probe.write_undo_redo_probe(m, SUAIPlugin::V19B0Probe.generate_payload(seed: 99, target_bytes: 256*1024), seed: 99)'
       out << '  # then Undo / Redo manually via SketchUp UI'
       out << '  SUAIPlugin::V19B0Probe.verify_probe(m)'
-      out << '  SUAIPlugin::V19B0Probe.write_reopen_test_payload(m, SUAIPlugin::V19B0Probe.generate_payload(seed: 7, target_bytes: 64*1024), seed: 7)'
+      out << '  # B0-03 correction: use the largest passing ladder payload'
+      out << '  # (default 8 MiB; fall back to 4 MiB / 1 MiB if 8 MiB fails).'
+      out << '  SUAIPlugin::V19B0Probe.write_reopen_test_payload(m, SUAIPlugin::V19B0Probe.generate_payload(seed: 7, target_bytes: 8*1024*1024), seed: 7)'
       out << '  # save SKP, close, reopen, then:'
       out << '  SUAIPlugin::V19B0Probe.verify_reopen_test_payload(Sketchup.active_model)'
       out << '  SUAIPlugin::V19B0Probe.cleanup_probe(m)  # always run before final close'
@@ -837,8 +912,10 @@ module SUAIPlugin
            "actual=#{row[:actual_json_bytes]}B " \
            "write=#{format('%.4f', row[:write_time_s])}s " \
            "read=#{format('%.4f', row[:read_time_s])}s " \
-           "write_ok=#{row[:write_ok]} verify_ok=#{row[:verify_ok]} " \
-           "exact_byte_equal=#{row[:exact_byte_equal]} " \
+           "verify=#{format('%.4f', row[:verify_time_s])}s " \
+           "write_ok=#{row[:write_ok]} read_ok=#{row[:read_ok]} verify_ok=#{row[:verify_ok]} " \
+           "exact_string_equal=#{row[:exact_string_equal]} " \
+           "exact_byte_count_equal=#{row[:exact_byte_count_equal]} " \
            "json_parse_ok=#{row[:json_parse_ok]} " \
            "digest_equality=#{row[:digest_equality]} " \
            "digest_before=#{row[:digest_before_write]} " \

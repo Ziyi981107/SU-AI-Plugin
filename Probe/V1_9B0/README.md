@@ -72,7 +72,7 @@ You should see the load banner:
 [SUAIPlugin::V19B0Probe] loaded; probe dictionary = 'SU-AI-Plugin.PreparedCadDataset'; schema = 'v19b0_probe_v1'; size ladder = [262144, 1048576, 4194304, 8388608]
 ```
 
-Step 2 — small fixture sanity (the script's default ladder):
+Step 2 — full ladder (the script's default ladder):
 
 ```ruby
 m = Sketchup.active_model
@@ -80,9 +80,12 @@ SUAIPlugin::V19B0Probe.run_size_ladder(m)
 ```
 
 This exercises 256 KiB → 1 MiB → 4 MiB → 8 MiB progressive write /
-readback / digest-equality checks against `Sketchup.active_model`.
-Each level prints a one-line summary and the function returns an
-Array of result hashes.
+readback / **exact-string-equality** / JSON parse + digest-equality
+checks against `Sketchup.active_model`. Each level prints a one-line
+summary and the function returns an Array of result hashes. The
+primary success predicate is `exact_string_equal == true`
+(`raw_read[:payload] == payload`); byte count equality alone is
+intentionally NOT a success predicate (see B0-03).
 
 Step 3 — immediate readback test:
 
@@ -111,7 +114,7 @@ conditions.
 Step 6 — Undo / Redo probe:
 
 ```ruby
-payload = SUAIPlugin::V19B0Probe.generate_payload(seed: 99, target_bytes: 64 * 1024)
+payload = SUAIPlugin::V19B0Probe.generate_payload(seed: 99, target_bytes: 256 * 1024)
 SUAIPlugin::V19B0Probe.write_undo_redo_probe(m, payload, seed: 99)
 SUAIPlugin::V19B0Probe.verify_probe(m)   # before Undo -> ok=true, digest matches
 # Now click Edit > Undo manually in SketchUp.
@@ -120,10 +123,23 @@ SUAIPlugin::V19B0Probe.verify_probe(m)   # after Undo -> ok=false, reason='paylo
 SUAIPlugin::V19B0Probe.verify_probe(m)   # after Redo -> ok=true again
 ```
 
-Step 7 — save / close / reopen probe:
+Step 7 — save / close / reopen probe.
+
+**B0-03 source-review correction**: the save/close/reopen probe MUST
+use the **largest passing ladder payload** so the reopen round-trip
+exercises the realistic worst case. The default ladder (Step 2) is
+`256 KiB → 1 MiB → 4 MiB → 8 MiB`; AIPM recommends **8 MiB** as the
+default reopen payload (assuming 8 MiB passes on Owner hardware; if
+8 MiB fails, fall back to the largest passing level — typically 4 MiB
+or 1 MiB).
 
 ```ruby
-SUAIPlugin::V19B0Probe.write_reopen_test_payload(m, SUAIPlugin::V19B0Probe.generate_payload(seed: 7, target_bytes: 64 * 1024), seed: 7)
+# After Step 2 confirms 8 MiB passes:
+SUAIPlugin::V19B0Probe.write_reopen_test_payload(
+  m,
+  SUAIPlugin::V19B0Probe.generate_payload(seed: 7, target_bytes: 8 * 1024 * 1024),
+  seed: 7,
+)
 # In SketchUp: File > Save, then File > Close (do NOT quit SketchUp).
 # File > Open the same .skp file again.
 # In the new session's Ruby Console:
@@ -132,7 +148,10 @@ SUAIPlugin::V19B0Probe.verify_reopen_test_payload(m2)
 ```
 
 The expected verdict is `PASS` with the stored digest matching the
-recomputed digest and the JSON parse succeeding.
+recomputed digest AND the raw JSON payload bytes matching exactly
+the original payload. Record the reopen latency (SketchUp Ruby
+Console does not give a precise timer; Owner can time the wall
+clock by hand or simply observe the print line).
 
 Step 8 — company-scale ladder (optional but recommended):
 
