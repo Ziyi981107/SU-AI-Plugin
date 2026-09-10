@@ -1,4 +1,167 @@
-# CURRENT PI REPORT — V1.9A RFR CODEX NARROW RECHECK CORRECTION (THIS UPDATE)
+# CURRENT PI REPORT — V1.9A OWNER ACCEPTED CLOSURE + V1.9B0 PERSISTENCE PROBE (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Stage transition: V1.9A -> V1.9B0
+Date: 2026-09-10
+Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A closure
++ V1.9B0 persistence probe dispatch, 2026-09-10)
+Baseline HEAD (before this packet touched the working
+tree): `36b8f5b48c8ec2f5a4894db894ca62397344d2fa`
+(the V1.9A RFR CODEX NARROW RECHECK CORRECTION merge
+commit on `dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Implementation commit: `4d1eeb93a9deacf422ad4aeea5bd0a274cf44c5e`
+Implementation commit subject:
+`docs(v1.9a-owner-closure) + probe(v1.9b0-persistence)`
+Final HEAD on `dev/v1.9`:
+`4d1eeb93a9deacf422ad4aeea5bd0a274cf44c5e`
+Pushed to: `origin/dev/v1.9`
+Working tree: clean
+
+V1.9A OWNER ACCEPTED CLOSURE (docs only):
+
+- AIPM_REVIEW = PASS
+- CODEX_NARROW_RECHECK = PASS
+- OWNER_SU2020 = PASS
+- V1.9A = COMPLETE / FROZEN at HEAD `36b8f5b` on `dev/v1.9`
+- Final V1.9A RBZ (Owner-installed candidate):
+  - size: 1,205,785 bytes
+  - entries: 73
+  - SHA-256:
+    `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`
+- Owner real-SU2020 (20.0.363) regression PASS on the
+  0.2 mm Z + 1.0 mm Gap fixture; refresh after Apply Z
+  did NOT resurrect corrected planar drift; final
+  Structure `component_count=1, open_chain_count=0,
+  closed_loop_count=1, region_count=1, hole_count=0,
+  invalid_component_count=0, invalid_loop_count=0,
+  unresolved_issue_count=0, computed=true`.
+- Closure record: `Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`.
+- `CURRENT_STATE.md` + `PROJECT_HANDOFF.md` top updated;
+  historical V1.9A evidence preserved verbatim.
+- `Prompt/CURRENT_PI_DISPATCH.md` replaced with the
+  V1.9B0 authority.
+
+V1.9B0 PREPAREDCADDATASET PERSISTENCE FEASIBILITY PROBE:
+
+This packet implements the V1.9B0 probe ONLY. It does NOT
+implement production PreparedCadDataset, PreparedCadDataset
+Builder, PreparedCadDatasetValidator, acceptance workflow,
+accepted dataset state, production load/store integration,
+final validation UI, new dialog callbacks, V2, MCP, LLM,
+Agent, road / building / architectural / site semantics.
+Nothing under `extension/` was modified. No production RBZ
+rebuild was required.
+
+Files added (this packet):
+
+- `Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
+  (895 lines) — standalone real-host probe, loadable from
+  SketchUp 2020 Ruby Console. Uses SketchUp Model
+  AttributeDictionary APIs only. Dictionary:
+  `SU-AI-Plugin.PreparedCadDataset`. Probe-namespaced
+  keys: `__v19b0_probe_payload__`,
+  `__v19b0_probe_digest__`, `__v19b0_probe_schema__`,
+  `__v19b0_probe_seed__`,
+  `__v19b0_probe_requested_bytes__`,
+  `__v19b0_probe_actual_bytes__`. Deterministic JSON
+  payload generator (Park-Miller LCG seeded; JSON.generate;
+  SHA-256 hex digest; no wall-clock timestamps). Size
+  ladder 256 KiB / 1 MiB / 4 MiB / 8 MiB with exact target
+  byte counts. Per-level measurement: requested bytes,
+  actual JSON bytes, write time, read time, exact byte
+  equality, JSON parse success, SHA-256 before write,
+  SHA-256 after read, digest equality, monotonic timing.
+  Immediate readback test, replacement test (one-active-
+  dataset semantics), corrupt / missing test matrix
+  (payload missing / digest missing / invalid JSON /
+  digest mismatch / unsupported probe schema marker),
+  Undo / Redo probe, save / close / reopen probe,
+  company-scale ladder support. Fail-closed structured
+  hashes for every SketchUp-touching helper when SketchUp
+  is unavailable; no exception escapes for expected
+  corrupt-storage conditions; unexpected programming
+  errors propagate. All write operations wrapped in
+  `model.start_operation` / `model.commit_operation`
+  (single SketchUp operation per write; defensive
+  begin/rescue StandardError + `model.abort` fallback).
+- `Probe/V1_9B0/README.md` (229 lines) — Owner usage
+  guide, real-SU2020 test sequence, full command
+  reference.
+- `Probe/V1_9B0/_validation_runner.rb` (123 lines) —
+  host-free validation runner, throwaway; not shipped
+  for Owner use.
+
+Files modified (this packet — docs only):
+
+- `CURRENT_STATE.md` (top updated with V1.9A closure
+  record; historical V1.9A evidence preserved verbatim).
+- `PROJECT_HANDOFF.md` (top updated with V1.9A closure
+  status as durable Stage transition truth).
+- `Prompt/CURRENT_PI_DISPATCH.md` (replaced with the
+  V1.9B0 authority).
+
+Validation (this packet):
+
+- `ruby -c` on probe: **Syntax OK** (re-checked after the
+  filler-formula fix that corrected a 16-byte per-level
+  shortfall to exact-target).
+- Host-free validation runner
+  (`Probe/V1_9B0/_validation_runner.rb`): **31 / 31 PASS,
+  0 fail, 0 error**. Coverage:
+  - Determinism: same seed + same target_bytes =>
+    byte-identical JSON + stable SHA-256 across all 4
+    size levels (256 KiB / 1 MiB / 4 MiB / 8 MiB).
+  - JSON round-trip: parse OK + digest stable.
+  - Size ladder: 256 KiB / 1 MiB / 4 MiB / 8 MiB all
+    hit exact target byte count (zero delta).
+  - Different seeds produce different JSON (sanity).
+  - SketchUp-touching helpers return fail-closed hashes
+    outside SketchUp (no exception escapes for
+    `nil_model`, `nil_payload`, `empty_payload`,
+    `read_probe` outside SketchUp).
+  - `help` does not raise.
+- `git diff --check`: **clean** (no trailing whitespace,
+  no line-ending noise on any modified file). LF line
+  endings consistent on all files.
+- `git diff extension/`: **no diff** (`extension/`
+  UNCHANGED).
+- `git diff tests/`: **no diff** (`tests/` UNCHANGED).
+- V1.9A production RBZ: **UNCHANGED** (no production RBZ
+  rebuild).
+
+Forbidden / not changed (per dispatch):
+
+- `extension/` (no production source / test / RBZ change).
+- V1.9A production behavior at HEAD `36b8f5b`.
+- V1.9B PreparedCadDataset production implementation.
+- V2 / MCP / LLM / Agent.
+- Road / building / architectural / site semantics.
+
+Return state:
+
+```text
+V1_9A                        = CLOSED_FROZEN
+V1_9B0_IMPLEMENTATION        = COMPLETE
+OWNER_SU2020_PERSISTENCE_PROBE = REQUIRED
+PERSISTENCE_ROUTE             = NOT_YET_FROZEN
+V1_9B1                       = NOT_STARTED
+```
+
+STOP. Do not begin B1. Do not implement production
+PreparedCadDataset. Do not choose a persistence route on
+Owner's behalf. AIPM will decide the persistence route
+based on Owner real-host evidence after this report.
+
+CODEX_RISK_TRIGGER = NO — pure probe under Probe/,
+docs-only synchronization; no extension/, no production
+RBZ, no host mutation, no Face / Observer / tolerance
+change.
+
+---
+
+# CURRENT PI REPORT — V1.9A RFR CODEX NARROW RECHECK CORRECTION (PREVIOUS UPDATE — RETAINED AS HISTORICAL EVIDENCE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
