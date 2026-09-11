@@ -1,59 +1,26 @@
-# CODEX V1.9B1 PRE-BUILD DESIGN REVIEW RESULT
+# INVALIDATED — NOT A CODEX REVIEW
 
 Date: 2026-09-11
-Reviewer: Codex xHigh
-Review type: PRE-BUILD TECHNICAL DESIGN REVIEW ONLY
-Implementation: NONE
+Status: INVALIDATED / HISTORICAL ONLY
 
-## Verdict
+The prior contents of this file were incorrectly recorded as a `Codex xHigh` pre-build review result.
 
-`VERDICT: PASS`
+The review output was actually produced by **Pi**, because the review prompt was accidentally sent to Pi instead of Codex.
 
-`SAFE TO DISPATCH B1.2-B1.4: YES`
+Therefore:
 
-## Reviewed contract
+- `VERDICT: PASS` from the prior version is **NOT an authorized Codex review result**;
+- `SAFE TO DISPATCH B1.2-B1.4: YES` from the prior version is **REVOKED pending real Codex xHigh review**;
+- no implementation authorization may rely on the prior contents of this file;
+- V1.9A remains `CLOSED_FROZEN`;
+- V1.9B0 remains `CLOSED_OWNER_PASS`;
+- V1.9B1 B1.2–B1.4 implementation is on HOLD until real Codex xHigh pre-build review returns and AIPM adjudicates it;
+- B1.5 / V1.9B2 / V2 remain NOT STARTED.
+
+Authoritative design under review:
 
 `Prompt/AIPM_V1_9B1_SOURCE_CONTRACT_MAPPING_BLUEPRINT_V1_0_2026-09-11.md`
 
-## Accepted design conclusions
-
-Codex confirmed the Blueprint correctly:
-
-- excludes `snapshot_id` / `workspace_id` from PreparedCadDataset semantic content identity and content digest;
-- excludes existing `CanonicalGeometryGraph#digest` and V1.8 structure digest from B1 semantic identity and keeps them as build evidence only;
-- adopts node coordinates as the single authoritative coordinate source and removes duplicated edge / loop coordinate authorities from the PreparedCadDataset contract;
-- preserves the V1.9A invariant that repaired duplicate / Z / gap findings must not resurrect as current unresolved issues;
-- separates Builder and Validator cleanly for host-free testing;
-- keeps B1.2 / B1.3 / B1.4 pure and explicit-input only;
-- freezes V1.5–V1.9A production modules for the first B1 implementation packet;
-- remains compatible with a Ruby 2.2 / SketchUp 2017-aware implementation approach, subject to implementation review.
-
-## Explicit follow-up precondition
-
-Codex identified one item that MUST be resolved in the later B1.5 integration packet:
-
-> The B1.5 integration seam must explicitly resolve the build-time-vs-live-time coordinate freshness boundary before it publishes a production dataset candidate.
-
-Acceptable direction remains the Blueprint's intended integration sequence:
-
-```text
-validate host/workspace consistency
-→ obtain/rebuild fresh current CanonicalGeometryGraph read-only
-→ require a V1.8 structure result corresponding to that graph
-→ collect current runner audit/state
-→ pass explicit values into the pure Builder
-```
-
-A stale build-time graph must not be silently treated as a fresh current graph.
-
-This is a separate B1.5 integration concern and does NOT block B1.2–B1.4.
-
-## Gate outcome
-
-- B1 PRE-BUILD DESIGN REVIEW = PASS
-- B1.2–B1.4 implementation may be dispatched to Pi
-- B1.5 remains NOT AUTHORIZED
-- B1.9B2 remains NOT STARTED
-- V2 / MCP / LLM / Agent remain NOT STARTED
+A new Codex review result must be recorded separately after the actual Codex xHigh review.
 
 END
