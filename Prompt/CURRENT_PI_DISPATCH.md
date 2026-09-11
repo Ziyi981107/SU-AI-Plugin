@@ -1,442 +1,505 @@
-# CURRENT PI DISPATCH — V1.9B0 PERSISTENCE FEASIBILITY PROBE
+# CURRENT PI DISPATCH — V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION
 
 Project: SU-AI-Plugin
-Stage: V1.9B0 — PreparedCadDataset Persistence
-Feasibility Probe
-Date: 2026-09-10
+Stage: V1.9B1 — PreparedCadDataset
+Date: 2026-09-11
 Authority: ChatGPT / AIPM
 Final Product Owner: Owner
 Implementation Agent: Pi
-TARGET_BRANCH: `dev/v1.9`
+Target branch: `dev/v1.9`
+
 STATUS: ACTIVE
-V1_9A = CLOSED_FROZEN
-V1_9B0_IMPLEMENTATION = NOT_STARTED
-V1_9B1 = NOT_STARTED
 
-V1.9A Owner Accepted Closure evidence:
+Frozen stage state:
+- V1.9A = CLOSED_FROZEN
+- V1.9B0 = CLOSED / OWNER PASS
+- AttributeDictionary route = ACCEPTED_FOR_B1_B2
+- verified persistence envelope = <= 8 MiB on real SketchUp 2020
+- V1.9B1 PRE-BUILD DESIGN REVIEW = PASS
+- SAFE TO DISPATCH B1.2-B1.4 = YES
+- B1.5 = NOT AUTHORIZED
+- V1.9B2 = NOT STARTED
+- V2 / MCP / LLM / Agent = NOT STARTED
 
-`Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`
+Production baseline before B1 production source implementation:
+`839097a49b1bca3002beaa2f442a52f8db47e36e`
 
-EXPECTED_START_HEAD (current `dev/v1.9` HEAD
-before Pi touches the working tree):
-`36b8f5b48c8ec2f5a4894db894ca62397344d2fa`
+Authoritative design:
+`Prompt/AIPM_V1_9B1_SOURCE_CONTRACT_MAPPING_BLUEPRINT_V1_0_2026-09-11.md`
+
+Codex pre-build PASS:
+`Prompt/CODEX_V1_9B1_PREBUILD_DESIGN_REVIEW_RESULT_2026-09-11.md`
 
 ---
 
 ## 0. PURPOSE
 
-This packet is:
+Implement ONLY the pure B1 contract foundation:
 
-**V1.9B0 — PreparedCadDataset Persistence
-Feasibility Probe**
+- B1.2 — `PreparedCadDataset` value object + deterministic canonical serializer
+- B1.3 — pure `PreparedCadDatasetBuilder`
+- B1.4 — pure `PreparedCadDatasetValidator`
 
-This is **NOT** PreparedCadDataset
-implementation.
+STOP after implementation, host-free tests, commit/push, and Pi report.
 
-The only question this packet answers is:
+DO NOT:
+- integrate with live `WorkingModeRunner`;
+- implement B1.5;
+- persist a dataset;
+- add Accept/load/store behavior;
+- change Presenter/UI;
+- rebuild RBZ;
+- begin V1.9B2;
+- begin V2/MCP/LLM/Agent.
 
-> Can SketchUp Model AttributeDictionary reliably
-> persist a representative future
-> PreparedCadDataset payload at realistic size?
+---
 
-Leading candidate persistence route:
+## 1. FIRST ACTION
+
+Before editing:
+
+1. Read `PI_START_HERE.md`.
+2. Read this file.
+3. Read the authoritative B1 Blueprint.
+4. Read the Codex PASS record.
+5. Verify `dev/v1.9` and record actual starting HEAD.
+6. Confirm no unexplained local production edits.
+
+If unexplained edits exist in frozen production files: STOP.
+
+---
+
+## 2. ALLOWED PRODUCTION FILES
+
+Preferred new files only:
 
 ```text
-SketchUp Model AttributeDictionary
-
-dictionary:
-SU-AI-Plugin.PreparedCadDataset
+extension/su_ai_plugin/core/prepared_cad_dataset.rb
+extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb
+extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb
 ```
 
-The persistence route is NOT frozen by this
-packet. AIPM will decide whether the SketchUp
-Model AttributeDictionary route is acceptable
-based on Owner real-host evidence after Pi
-returns the probe.
+Focused new tests under `tests/` are allowed.
+
+A small private canonical serializer may live inside `prepared_cad_dataset.rb`.
+Do not create extra framework layers unless strictly necessary.
 
 ---
 
-## 1. CRITICAL SCOPE BOUNDARY
+## 3. FROZEN EXISTING PRODUCTION SOURCE
 
-DO NOT implement:
+Do NOT modify existing V1.5–V1.9A production modules, including:
 
-- PreparedCadDataset production class
-- PreparedCadDatasetBuilder
-- PreparedCadDatasetValidator
-- acceptance workflow
-- accepted dataset state
-- production load/store integration
-- final validation UI
-- new dialog callbacks
-- V2
-- MCP
-- LLM
-- Agent
-- road recognition
-- building recognition
-- architectural / site semantics
+- SourceSnapshot / SourceFingerprint / ExecutionConfigSnapshot / LayerRecord
+- WorkingModeRunner
+- Planar proposer/executor
+- Gap proposer/executor
+- CanonicalTopologyBuilder / CanonicalGeometryGraph
+- CanonicalStructureReconstructor
+- CadPrepWorkflowOrchestrator
+- Presenter / dialog_runner / ui_bridge / HTML frontend
+- tolerance authority
+- Probe/V1_9B0
+- dist/RBZ
 
-DO NOT modify anything under:
+If B1.2–B1.4 appears to require any frozen existing module change: STOP and report the exact dependency to AIPM.
+
+---
+
+## 4. B1.2 — PREPARED DATASET VALUE OBJECT
+
+Implement a pure Ruby value object:
+
+```ruby
+SUAnalysis::Core::PreparedCadDataset
+```
+
+Required logical fields:
 
 ```text
-extension/
+schema_version
+content_digest
+dataset_id
+content
+build_evidence
+validation
 ```
 
-for this packet.
+Frozen semantics:
 
-No production RBZ rebuild is required.
+- published contract is deeply immutable;
+- defensive copies on construction;
+- JSON-safe primitives only;
+- String Hash keys only in final published data;
+- no SketchUp objects / host handles / Ruby object IDs;
+- no wall-clock/random identity;
+- `content_digest` is SHA-256 of deterministic canonical JSON of `content` ONLY;
+- `dataset_id = "pcd-" + first 20 hex chars of content_digest`;
+- `build_evidence` and `validation` do NOT affect semantic identity.
 
-V1.9A is frozen at HEAD
-`36b8f5b48c8ec2f5a4894db894ca62397344d2fa`.
+Never use `SourceSnapshot.snapshot_id`, `workspace_id`, current CanonicalGeometryGraph digest, or V1.8 structure digest as PreparedCadDataset semantic identity.
+
+### Canonical serializer
+
+Use one deterministic serializer shared by B1 components:
+
+- recursively sort Hash keys;
+- reject unsupported values rather than arbitrary `.to_s` coercion;
+- allow only String / Integer / finite Numeric / true / false / nil / Array / String-keyed Hash;
+- no Symbol values in final dataset;
+- no NaN / Infinity;
+- use `JSON.generate` + SHA-256;
+- preserve traversal order for chain/loop node_ids and edge_ids;
+- Builder must normalize set-like arrays deterministically before serialization.
+
+Ruby 2.2 aware: no Array#sum, Hash#compact, Numeric#positive?, safe-navigation `&.`, filter_map, transform_keys, yield_self/then, or other modern-only APIs/syntax.
+
+### Validation attachment
+
+Preferred pure API:
+
+```ruby
+validated_dataset = candidate.with_validation(validation_hash)
+```
+
+Return a NEW immutable dataset; never mutate candidate. If `validated_content_digest` is supplied and does not match, fail closed.
 
 ---
 
-## 2. PROBE IMPLEMENTATION
+## 5. B1.3 — PURE BUILDER
 
-Create a standalone real-host probe:
+Implement:
+
+```ruby
+SUAnalysis::Core::PreparedCadDatasetBuilder
+```
+
+Preferred API:
+
+```ruby
+PreparedCadDatasetBuilder.build(
+  source_snapshot:,
+  workflow_snapshot:,
+  canonical_graph:,
+  structure_result:,
+  analysis_result:
+)
+```
+
+Explicit inputs only.
+
+Forbidden:
+- global Runner reads;
+- Runner private ivars / `instance_variable_get`;
+- SketchUp API;
+- live host reads;
+- input mutation.
+
+Build canonical `content` sections exactly per Blueprint:
 
 ```text
-Probe/V1_9B0/prepared_dataset_persistence_probe.rb
+source
+execution
+coordinate_context
+layer_semantics
+canonical_geometry
+structures
+repair_history
+unresolved_issues
+provenance_summary
 ```
 
-Optional companion documentation:
+and separate `build_evidence`.
+
+Critical frozen mappings:
+
+### Source / execution
+- source content identity uses source fingerprint + selection scope identity, not `snapshot_id`;
+- exclude captured timestamps from content identity;
+- compute B1-local `execution_context_digest` over normalized ExecutionConfig machine fields excluding `captured_at`;
+- DO NOT add/modify legacy `ExecutionConfigSnapshot#digest`.
+
+### Coordinates
+- canonical node XYZ is the ONLY coordinate authority in PreparedCadDataset v1;
+- node output uses `node_id` + `xyz` + provenance/flags;
+- edge output references `node_a_id` / `node_b_id`;
+- dataset edge MUST NOT publish `world_endpoints`;
+- dataset loop MUST NOT publish `world_coordinates`;
+- active edit transform is provenance/context only; do not re-transform node XYZ;
+- no B1 unit conversion.
+
+### Layer semantics
+Persist machine fields only:
+`layer_name`, `role`, `role_rule`, `visible`, `visibility_unknown`.
+No localized labels and no V2 road/building/land-use semantics.
+
+### Structures
+Project chain/loop/region IDs and references from current V1.8 result. Existing length/area/perimeter/winding may be retained only under clearly non-authoritative `derived_metrics`.
+
+### Repair history
+Persist only the compact durable fields specified by Blueprint. Do not deep-copy arbitrary legacy audit blobs. Omit `applied_at` from canonical content identity.
+
+### Current unresolved issues
+Do NOT copy AnalysisResult.registry wholesale.
+
+These historical source issue families are superseded by current deterministic stage state and MUST NOT resurrect:
 
 ```text
-Probe/V1_9B0/README.md
+duplicate_edge_candidate
+significant_non_zero_z
+open_endpoint
+gap_candidate
 ```
 
-The probe must be loadable directly from
-SketchUp 2020 Ruby Console.
-
-Example future Owner usage:
+These source-registry secondary classes may remain warnings:
 
 ```text
-load 'D:/Projects/SU-AI-Plugin/Probe/V1_9B0/prepared_dataset_persistence_probe.rb'
+short_edge
+abnormal_large_coord
+deep_nesting
 ```
 
-Do NOT require installing a new RBZ.
+Issue records are machine-readable only: code, class, source, count, reason_codes, entity_refs.
+
+### Build evidence
+Keep session/current-run evidence separate and excluded from content digest:
+`source_snapshot_id`, `workspace_id`, upstream graph digest, upstream structure digest, source captured_at, graph/structure schema versions.
 
 ---
 
-## 3. PROBE STORAGE CONTRACT
+## 6. B1.4 — PURE VALIDATOR
 
-Use model-level AttributeDictionary APIs only.
+Implement:
 
-Target dictionary:
+```ruby
+SUAnalysis::Core::PreparedCadDatasetValidator
+```
+
+Preferred API:
+
+```ruby
+validation = PreparedCadDatasetValidator.validate(
+  dataset: candidate,
+  workflow_snapshot: workflow_snapshot
+)
+```
+
+Return a deeply frozen JSON-safe String-keyed Hash with:
 
 ```text
-SU-AI-Plugin.PreparedCadDataset
+validator_version = pcd-validator.v1
+validated_content_digest
+readiness
+checks
+blockers
+warnings
+summary
 ```
 
-Use explicitly probe-namespaced keys so this
-cannot be confused with a future production
-accepted dataset. Recommended keys:
+Readiness:
 
 ```text
-__v19b0_probe_payload__
-__v19b0_probe_digest__
-__v19b0_probe_schema__
-__v19b0_probe_seed__
-__v19b0_probe_requested_bytes__
-__v19b0_probe_actual_bytes__
+blocker exists -> NOT_READY
+no blocker + warning exists -> READY_WITH_WARNINGS
+no blocker + no warning -> READY
 ```
 
-Provide an explicit cleanup operation that
-removes all probe data.
+Minimum validation:
 
-Never modify CAD geometry.
+- supported dataset schema;
+- source fingerprint / execution identity present;
+- supported coordinate contract;
+- unique node IDs;
+- every node xyz exactly 3 Numeric finite values;
+- unique edge IDs + valid node refs;
+- no edge world_endpoints;
+- adjacency only known nodes and consistent/symmetric with edge graph;
+- unique chain/loop/region IDs;
+- all structure refs resolve;
+- no loop world_coordinates;
+- provenance strings valid;
+- only JSON-safe primitives in final tree;
+- content digest recomputes exactly;
+- dataset_id matches digest;
+- canonical serializer repeatable;
+- workflow readiness gates;
+- 8 MiB verified persistence envelope.
 
----
+Structural/schema contradiction is always a blocker even if upstream says READY.
 
-## 4. DETERMINISTIC TEST PAYLOAD
+### Persistence-size gate
 
-Generate deterministic JSON-safe synthetic
-payloads. The generated content should resemble
-the likely PreparedCadDataset shape enough to
-exercise strings / arrays / nested hashes, but
-MUST NOT freeze the actual future B1 schema.
+For B1.4, measure the serialized candidate payload WITHOUT attached validation to avoid circularity. Record measured bytes in validation evidence.
 
-Include generic sections such as:
+If candidate bytes > 8 MiB:
 
-- metadata
-- source-like data
-- nodes-like arrays
-- edges-like arrays
-- structures-like arrays
-- warnings-like arrays
+`persistence_envelope_unverified` blocker.
 
-This is only a persistence payload. Same
-requested size / seed must produce byte-identical
-JSON.
-
-Use `JSON.generate`.
-
-Use SHA-256 for external verification.
-
-Do not put wall-clock timestamps into the
-deterministic payload.
+This means only that the Owner-verified AttributeDictionary envelope currently covers <=8 MiB; do not claim >8 MiB necessarily fails SketchUp.
 
 ---
 
-## 5. SIZE LADDER
+## 7. WORKFLOW READINESS POLICY
 
-Provide a convenient size-ladder probe.
+Use the frozen Blueprint policy:
 
-Recommended default targets:
+Duplicate:
+- required stage missing -> blocker
+- actions_failed > 0 -> blocker
+- actions_skipped > 0 -> warning
 
-```text
-256 KiB
-1 MiB
-4 MiB
-8 MiB
-```
+Planar:
+- NOT_COMPUTED / INVALID_TOLERANCE / FAILED / READY_TO_NORMALIZE -> blocker
+- REVIEW_REQUIRED -> warning
+- NO_CANDIDATE / APPLIED -> clean
 
-The implementation should also allow Owner to
-request an arbitrary payload size later.
+Gap/topology:
+- NOT_COMPUTED / FAILED / READY_TO_REPAIR -> blocker
+- REVIEW_REQUIRED -> warning
+- NO_CANDIDATE / APPLIED -> clean
 
-Run progressively.
+Structure:
+- NOT_COMPUTED / FAILED -> blocker
+- READY_WITH_WARNINGS -> warning(s) using existing reason codes
+- READY -> clean
 
-Do not hide slow/failing levels.
+Workspace state not `ready` -> blocker for production-ready dataset candidate.
 
-For each level report:
-
-- requested approximate bytes
-- actual JSON bytes
-- write time
-- read time
-- exact string equality
-- JSON parse success
-- SHA-256 before write
-- SHA-256 after read
-- digest equality
-
-Use monotonic timing where supported.
-
-No arbitrary PASS performance threshold is
-frozen in code.
-
-Report raw measurements. AIPM will decide
-whether performance is acceptable.
+Do not invent unknown semantics.
 
 ---
 
-## 6. IMMEDIATE READBACK TEST
+## 8. CODEX FOLLOW-UP PRECONDITION — HOLD FOR B1.5
 
-For every payload:
+Codex PASS included one explicit later requirement:
 
-```text
-write
--> read back
--> compare exact bytes
--> JSON.parse
--> recompute SHA-256
--> compare digest
-```
+B1.5 must resolve build-time-vs-live-time coordinate freshness before publishing a production dataset candidate.
 
-Any mismatch must be surfaced explicitly.
+DO NOT solve that in this packet by touching Runner/graph production code.
 
-Do not rescue corruption into a false PASS.
+For B1.2–B1.4:
+- Builder trusts the explicit canonical_graph argument it is given as its input object;
+- tests prove node-only authority inside that input;
+- B1.5 remains a separate held packet.
 
 ---
 
-## 7. REPLACEMENT TEST
+## 9. REQUIRED HOST-FREE REGRESSION MINIMUM
 
-Provide a test for one-active-dataset replacement
-semantics:
+Tests must cover at least:
 
-```text
-write payload A
--> verify A
--> replace same probe slot with payload B
--> verify B
--> prove old A is no longer active
-```
+1. deep immutability / JSON-safe only;
+2. same semantic content -> byte-identical canonical JSON + same digest/id;
+3. differing snapshot_id/workspace_id/upstream digests do not alter content identity;
+4. captured_at differences do not alter execution/content identity;
+5. node-only coordinate authority; edge world_endpoints absent; loop world_coordinates absent;
+6. duplicate IDs / invalid refs / malformed or nonfinite xyz -> NOT_READY;
+7. invalid adjacency -> NOT_READY;
+8. clean rectangle -> READY;
+9. repaired Owner-style Z+Gap fixture -> READY;
+10. pending safe Z -> NOT_READY;
+11. pending safe Gap -> NOT_READY;
+12. non-ready workspace -> NOT_READY;
+13. Planar/Gap/Structure NOT_COMPUTED -> NOT_READY;
+14. review-only ambiguity -> READY_WITH_WARNINGS;
+15. short_edge / abnormal_large_coord / deep_nesting -> READY_WITH_WARNINGS;
+16. repaired historical Z/gap/open-endpoint registry evidence does not resurrect;
+17. duplicate repair failure -> NOT_READY;
+18. duplicate skipped action -> READY_WITH_WARNINGS if no blocker;
+19. execution_context_digest stable across captured_at;
+20. digest recomputation + dataset-id derivation;
+21. >8 MiB -> persistence_envelope_unverified;
+22. Builder/Validator perform zero host mutation and do not mutate inputs;
+23. no V2 semantic labels fabricated.
 
-Do not build historical version management.
-
-V1.9 scope is one active accepted dataset per
-model.
-
----
-
-## 8. CORRUPT / MISSING TEST
-
-Provide probe helpers to exercise:
-
-- payload missing
-- digest missing
-- invalid JSON
-- digest mismatch
-- unsupported probe schema marker
-
-Read/verify must return a clear fail-closed
-status.
-
-No exception should escape for expected
-corrupt-storage conditions.
-
-Unexpected programming errors must not be
-silently swallowed.
+Fixtures must reflect actual current V1 shapes rather than convenient incompatible mock schemas.
 
 ---
 
-## 9. UNDO / REDO PROBE
+## 10. TEST EXECUTION
 
-Write operations must be wrapped in a normal
-SketchUp model operation where appropriate.
+Tests must ACTUALLY run.
 
-Because host Undo/Redo semantics are part of
-what B0 is measuring, DO NOT fake the result
-in host-free code.
+Report:
+- exact Ruby executable path;
+- `ruby -v`;
+- exact commands;
+- exact pass/fail counts.
 
-Provide:
+Minimum:
+- `ruby -c` on each new production Ruby file;
+- focused B1.2/B1.3/B1.4 tests.
 
-- a method that writes a recognizable probe
-  payload in one operation
-- a status/read method Owner can call before/
-  after Undo/Redo
+Full V1.x rerun is not required because frozen shared production modules must not change.
 
-Owner will perform real SketchUp Undo/Redo
-manually if that is safer than automating
-host UI actions.
-
-Report observed behavior rather than assuming
-it.
+Do NOT claim real SketchUp 2017 PASS; only legacy-aware / Ruby-2.2-aware implementation unless real host evidence exists.
 
 ---
 
-## 10. SAVE / CLOSE / REOPEN PROBE
+## 11. VERSION CONTROL
 
-Provide a method that writes a persistent
-reopen-test payload and prints:
+Commit + push to `dev/v1.9`.
 
-- payload bytes
-- expected digest
-- probe schema
-- model path if available
+Commit may contain only:
+- the three allowed new production modules;
+- focused B1 tests;
+- normal Pi state/report documentation required by governance.
 
-Provide a separate method callable AFTER
-SketchUp/model reopen that:
+No RBZ.
 
-- reads the stored payload
-- parses JSON
-- recomputes digest
-- compares stored digest
-- prints PASS / BLOCK style evidence
-
-Do NOT programmatically force-close SketchUp.
-
-The Owner will:
-
-```text
-save SKP
--> close
--> reopen
--> run verification
-```
+Before push record `git status`, `git diff --stat`, and changed filenames. Confirm no frozen existing production source changed.
 
 ---
 
-## 11. COMPANY-SCALE EVIDENCE
+## 12. STOP CONDITIONS
 
-Do not treat a tiny fixture as persistence
-evidence.
+STOP if:
+- WorkingModeRunner modification is needed;
+- Builder needs Runner private state;
+- graph/structure algorithm change is needed;
+- a second coordinate authority seems necessary;
+- identity seems to require snapshot_id/workspace_id;
+- current issue policy is ambiguous;
+- tests cannot actually run;
+- Ruby 2.2 compatibility requires frozen module changes;
+- persistence/UI/Accept integration seems necessary;
+- V2 semantics are needed.
 
-The probe must support running the same size
-ladder while a representative company
-SKP / CAD model is open.
-
-No source geometry mutation is allowed.
-
-This lets Owner measure:
-
-- attribute write / read latency
-- SKP save behavior
-- reopen behavior
-- practical model-size impact where measurable
-
-Do not invent company results.
-
-Owner evidence will be supplied after Pi
-returns the probe.
+Return the ambiguity to AIPM instead of expanding scope.
 
 ---
 
-## 12. SAFETY
-
-Probe must:
-
-- never delete geometry
-- never alter source CAD entities
-- never create Faces
-- never move vertices
-- never touch WorkingModeRunner state
-- never touch existing V1.9A derived workspace
-- namespace all model attributes
-- provide cleanup
-- fail closed on malformed stored data
-
----
-
-## 13. VALIDATION BEFORE RETURN
-
-Because `extension/` production source MUST
-remain untouched:
-
-Required automated validation is narrow. At
-minimum:
-
-- `ruby -c` on probe script
-- deterministic payload generation checked
-  twice (same requested size + seed must
-  produce byte-identical JSON)
-- JSON round-trip in host-free Ruby where
-  possible
-- `git diff` confirms NO `extension/` change
-- `git status` recorded
-
-Do NOT spend time re-running the entire V1.x
-suite unless an unexpected production/shared
-dependency was changed.
-
-If anything under `extension/` changes:
-STOP and report before proceeding.
-
----
-
-## 14. RETURN REPORT
+## 13. RETURN REPORT
 
 Return:
 
-- A. starting HEAD
-- B. final HEAD
-- C. exact changed files
-- D. confirmation V1.9A closure docs recorded
-- E. confirmation `extension/` unchanged
-- F. probe Ruby Console command
-- G. supported probe commands / methods
-- H. deterministic payload evidence
-- I. syntax / test evidence
-- J. exact Owner real-SU2020 test sequence
-- K. any limitation or unknown
+- starting HEAD + final commit SHA;
+- exact changed files;
+- confirmation Blueprint + Codex PASS read;
+- B1.2/B1.3/B1.4 implementation summaries;
+- exact identity/digest behavior;
+- evidence that snapshot_id/workspace_id/upstream digests are excluded from semantic identity;
+- evidence of node-only coordinate authority;
+- issue synthesis behavior;
+- 8 MiB gate behavior;
+- exact Ruby path/version/commands/test counts;
+- Ruby 2.2 compatibility audit;
+- changed-file evidence showing no frozen production source changed;
+- limitations / unresolved questions.
 
 Return state:
 
 ```text
-V1_9A                        = CLOSED_FROZEN
-V1_9B0_IMPLEMENTATION        = COMPLETE
-OWNER_SU2020_PERSISTENCE_PROBE = REQUIRED
-PERSISTENCE_ROUTE             = NOT_YET_FROZEN
-V1_9B1                       = NOT_STARTED
+V1_9A = CLOSED_FROZEN
+V1_9B0 = CLOSED_OWNER_PASS
+V1_9B1_B1_2 = COMPLETE | BLOCKED
+V1_9B1_B1_3 = COMPLETE | BLOCKED
+V1_9B1_B1_4 = COMPLETE | BLOCKED
+V1_9B1_B1_5 = NOT_AUTHORIZED
+V1_9B2 = NOT_STARTED
+V2 = NOT_STARTED
 ```
 
-STOP.
-
-Do not begin B1.
-
-Do not implement production PreparedCadDataset.
-
-Do not choose a persistence route on Owner's
-behalf.
+Then STOP.
 
 END
