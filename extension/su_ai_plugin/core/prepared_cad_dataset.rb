@@ -138,9 +138,14 @@ module SUAnalysis
                      validation:)
         @schema_version             = schema_version.to_s.freeze
         @dataset_id                 = dataset_id.to_s.freeze
-        @content_digest             = content_digest.to_s.freeze
+        # FR-08: content_digest + build_evidence_digest are
+        # hex digest strings produced upstream by
+        # Digest::SHA256.hexdigest and are US-ASCII by default.
+        # Coerce to UTF-8 via the digest-only normalizer so
+        # downstream UTF-8 validation passes.
+        @content_digest             = self.class.send(:_digest_only_utf8_normalize, content_digest.to_s).freeze
         @content                    = content  # already deeply frozen
-        @build_evidence_digest      = build_evidence_digest.to_s.freeze
+        @build_evidence_digest      = self.class.send(:_digest_only_utf8_normalize, build_evidence_digest.to_s).freeze
         @build_evidence             = build_evidence  # already deeply frozen
         @validation                 = validation  # nil or deeply frozen Hash
         freeze
@@ -221,42 +226,64 @@ module SUAnalysis
       def self.compute_build_evidence_digest(full_content_digest, build_evidence)
         domain = {
           'identity_schema_version' => BUILD_EVIDENCE_IDENTITY_SCHEMA,
-          'content_digest'          => _utf8_string(full_content_digest),
+          'content_digest'          => _digest_only_utf8_normalize(full_content_digest),
           'build_evidence'          => _normalize_strings_utf8(build_evidence)
         }
         Digest::SHA256.hexdigest(IdentityBytes.encode(domain))
       end
 
-      # Convert a hex digest String (e.g. from Digest::SHA256.
-      # hexdigest) which Ruby returns as US-ASCII into a UTF-8
-      # String so the strict B1-SR-12 identity encoder accepts
-      # it. Hex characters are all 7-bit ASCII, which is a
-      # strict subset of UTF-8, so the conversion is safe and
-      # preserves the exact byte sequence.
-      def self._utf8_string(s)
+      # B1-SR-12 + FR-08 strict UTF-8 helper.
+      #
+      # Public / semantic String values MUST already be
+      # `encoding.name == 'UTF-8' && valid_encoding?`. This
+      # helper performs NO force-encoding rescue: any
+      # caller-provided non-UTF-8 encoding (US-ASCII,
+      # ASCII-8BIT, etc.) raises.
+      def self._strict_utf8_string(s)
+        return s if s.nil?
+        unless s.respond_to?(:encoding)
+          raise ArgumentError, "non-encoding-aware value: #{s.inspect[0, 80]}"
+        end
+        unless s.encoding.name == 'UTF-8' && s.valid_encoding?
+          raise ArgumentError,
+                "non-UTF-8 String rejected (B1-SR-12 + FR-08): " \
+                "encoding=#{s.encoding.name.inspect} " \
+                "valid_encoding?=#{s.respond_to?(:valid_encoding?) && s.valid_encoding?} " \
+                "value=#{s.inspect[0, 80]}"
+        end
+        s
+      end
+
+      # Digest-only UTF-8 helper.
+      #
+      # Converts a hex digest String (e.g. from Digest::SHA256.
+      # hexdigest) which Ruby returns as US-ASCII into a
+      # UTF-8 String so the strict identity encoder accepts
+      # it. This is for INTERNALLY GENERATED hex digests
+      # ONLY. Hex characters are all 7-bit ASCII, a strict
+      # subset of UTF-8, so the conversion is byte-preserving.
+      # This is NOT used for caller-provided semantic strings.
+      def self._digest_only_utf8_normalize(s)
         return s if s.nil?
         return s unless s.respond_to?(:encoding)
         return s if s.encoding.name == 'UTF-8' && s.valid_encoding?
         out = s.dup.force_encoding('UTF-8')
         unless out.valid_encoding?
           raise ArgumentError,
-                "cannot convert hex digest to UTF-8: #{out.inspect[0, 80]}"
+                "cannot convert digest to UTF-8: #{out.inspect[0, 80]}"
         end
         out
       end
 
       # Recursively walk a Hash / Array / scalar value and
-      # convert all String values (and Hash keys) to UTF-8.
-      # This is the B1-SR-12 entry-point used by the digest
-      # computation so that US-ASCII digests embedded in
-      # semantic content / build evidence do not blow up the
-      # strict identity encoder.
+      # assert all String values (and Hash keys) are
+      # strict-UTF-8 (B1-SR-12 + FR-08). NO force-encoding.
       def self._normalize_strings_utf8(v)
         case v
         when Hash
           out = {}
           v.each do |k, val|
-            ks = k.is_a?(String) ? _utf8_string(k) : k
+            ks = k.is_a?(String) ? _strict_utf8_string(k) : k
             unless ks.is_a?(String) && !ks.is_a?(Symbol)
               raise ArgumentError, "non-String hash key: #{k.inspect}"
             end
@@ -266,7 +293,7 @@ module SUAnalysis
         when Array
           v.map { |x| _normalize_strings_utf8(x) }
         when String
-          _utf8_string(v)
+          _strict_utf8_string(v)
         when Symbol
           # Symbols are not allowed in the encoded domain.
           raise ArgumentError, "Symbol value not allowed: #{v.inspect}"
@@ -278,22 +305,49 @@ module SUAnalysis
         end
       end
 
-      # Convert a hex digest String (e.g. from Digest::SHA256.
-      # hexdigest) which Ruby returns as US-ASCII into a UTF-8
-      # String so the strict B1-SR-12 identity encoder accepts
-      # it. Hex characters are all 7-bit ASCII, which is a
-      # strict subset of UTF-8, so the conversion is safe and
-      # preserves the exact byte sequence.
-      def self._utf8_string(s)
-        return s if s.nil?
-        return s unless s.respond_to?(:encoding)
-        return s if s.encoding.name == 'UTF-8' && s.valid_encoding?
-        out = s.dup.force_encoding('UTF-8')
-        unless out.valid_encoding?
+      # Recursively walk a Hash / Array / scalar value and
+      # normalizes INTERNALLY GENERATED hex digest strings to
+      # UTF-8 (FR-08: digest-only normalization). Caller-
+      # provided semantic strings are asserted strict-UTF-8.
+      #
+      # Callers that compose the encoded domain Hash from a
+      # mix of semantic content (caller-provided) and
+      # digest fields (internally generated) should pass
+      # the digest fields through `_digest_only_utf8_normalize`
+      # BEFORE handing the combined Hash to this normalizer.
+      def self._normalize_strings_utf8_with_digests(v)
+        case v
+        when Hash
+          out = {}
+          v.each do |k, val|
+            ks = k.is_a?(String) ? _strict_utf8_string(k) : k
+            unless ks.is_a?(String) && !ks.is_a?(Symbol)
+              raise ArgumentError, "non-String hash key: #{k.inspect}"
+            end
+            out[ks] = _normalize_strings_utf8_with_digests(val)
+          end
+          out
+        when Array
+          v.map { |x| _normalize_strings_utf8_with_digests(x) }
+        when String
+          _strict_utf8_string(v)
+        when Symbol
+          raise ArgumentError, "Symbol value not allowed: #{v.inspect}"
+        when Numeric, TrueClass, FalseClass, NilClass
+          v
+        else
           raise ArgumentError,
-                "cannot convert hex digest to UTF-8: #{out.inspect[0, 80]}"
+                "unsupported value type in encoded domain: #{v.class}"
         end
-        out
+      end
+
+      # DEPRECATED alias retained for backward compatibility
+      # with the previous API surface. New code MUST use
+      # `_strict_utf8_string` (for caller-provided semantic
+      # strings) or `_digest_only_utf8_normalize` (for
+      # internally generated hex digests only), per FR-08.
+      def self._utf8_string(s)
+        _strict_utf8_string(s)
       end
 
       # ----- Equality / introspection --------------------------------------

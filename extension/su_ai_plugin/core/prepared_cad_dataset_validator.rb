@@ -247,8 +247,11 @@ module SUAnalysis
               blockers << BLOCKER_INVALID_NODE_XYZ + ':missing_id'
               next
             end
-            if seen_ids.key?(id) && seen_ids[id] != :node
-              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID + ":id=#{id}"
+            # FR-09: ANY repeated semantic ID within the same
+            # type is a blocker.
+            if seen_ids.key?(id)
+              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID +
+                              ":id=#{id}:prev=#{seen_ids[id]}:new=:node"
             end
             seen_ids[id] = :node
             xyz = n['xyz']
@@ -265,8 +268,9 @@ module SUAnalysis
               blockers << BLOCKER_UNRESOLVED_EDGE_REF + ':missing_id'
               next
             end
-            if seen_ids.key?(id) && seen_ids[id] != :edge
-              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID + ":id=#{id}"
+            if seen_ids.key?(id)
+              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID +
+                              ":id=#{id}:prev=#{seen_ids[id]}:new=:edge"
             end
             seen_ids[id] = :edge
             edge_ids_set << id.to_s
@@ -282,7 +286,37 @@ module SUAnalysis
             end
           end
           adj = graph['adjacency']
+          # FR-09: rebuild expected adjacency from semantic
+          # edges and require exact normalized equality with
+          # the published adjacency. Any missing or extra pair
+          # BLOCKS.
+          expected_adj = Hash.new { |h, k| h[k] = [] }
+          Array(graph['edges']).each do |e|
+            ea = e['node_a_id'].to_s
+            eb = e['node_b_id'].to_s
+            next if ea.empty? || eb.empty?
+            expected_adj[ea] << eb
+            expected_adj[eb] << ea
+          end
+          expected_adj.each_value { |v| v.uniq!; v.sort! }
           if adj.is_a?(Hash)
+            actual_adj = {}
+            adj.each do |k, v|
+              actual_adj[k.to_s] = Array(v).map(&:to_s).sort
+            end
+            actual_adj.each do |k, v|
+              exp = expected_adj[k].sort
+              unless exp == v
+                blockers << BLOCKER_INVALID_ADJACENCY +
+                                ":adj_mismatch=#{k}:got=#{v}:want=#{exp}"
+              end
+            end
+            expected_adj.each do |k, v|
+              unless actual_adj.key?(k)
+                blockers << BLOCKER_INVALID_ADJACENCY +
+                                ":adj_missing=#{k}:want=#{v}"
+              end
+            end
             adj.each do |nid, neighbors|
               unless node_ids_set.include?(nid.to_s)
                 blockers << BLOCKER_INVALID_ADJACENCY + ":orphan=#{nid}"
@@ -308,8 +342,9 @@ module SUAnalysis
             cid = c['chain_id']
             if cid.nil? || cid.to_s.empty?
               blockers << BLOCKER_UNRESOLVED_CHAIN_REF + ':missing_id'
-            elsif seen_ids.key?(cid) && seen_ids[cid] != :chain
-              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID + ":id=#{cid}"
+            elsif seen_ids.key?(cid)
+              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID +
+                              ":id=#{cid}:prev=#{seen_ids[cid]}:new=:chain"
             end
             seen_ids[cid] = :chain if cid
             Array(c['node_ids']).each do |nid|
@@ -327,8 +362,9 @@ module SUAnalysis
             lid = lp['loop_id']
             if lid.nil? || lid.to_s.empty?
               blockers << BLOCKER_UNRESOLVED_LOOP_REF + ':missing_id'
-            elsif seen_ids.key?(lid) && seen_ids[lid] != :loop
-              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID + ":id=#{lid}"
+            elsif seen_ids.key?(lid)
+              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID +
+                              ":id=#{lid}:prev=#{seen_ids[lid]}:new=:loop"
             end
             seen_ids[lid] = :loop if lid
             loop_id_set << lid.to_s
@@ -352,8 +388,9 @@ module SUAnalysis
             rid = r['region_id']
             if rid.nil? || rid.to_s.empty?
               blockers << BLOCKER_UNRESOLVED_REGION_REF + ':missing_id'
-            elsif seen_ids.key?(rid) && seen_ids[rid] != :region
-              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID + ":id=#{rid}"
+            elsif seen_ids.key?(rid)
+              blockers << BLOCKER_DUPLICATE_SEMANTIC_ID +
+                              ":id=#{rid}:prev=#{seen_ids[rid]}:new=:region"
             end
             seen_ids[rid] = :region if rid
             outer = r['outer_loop_id']
@@ -427,10 +464,24 @@ module SUAnalysis
         dup = _duplicate_summary(workflow_snapshot)
         if dup[:has_summary]
           actions = Array(dup[:actions])
+          # FR-09: check `a.is_a?(Hash)` BEFORE indexing; non-Hash
+          # row => NOT_READY blocker, no exception.
           actions_statuses = actions.map do |a|
-            status = a['status'] || a[:status]
-            raise ArgumentError, "action row not Hash: #{a.inspect}" unless a.is_a?(Hash)
-            status.to_s
+            unless a.is_a?(Hash)
+              blockers << BLOCKER_DUPLICATE_STATE + ':action_row_not_hash'
+              nil
+            else
+              status = a['status'] || a[:status]
+              if status.nil? || (status.is_a?(String) && status.empty?)
+                blockers << BLOCKER_DUPLICATE_STATE + ':action_status_missing'
+                nil
+              else
+                status.to_s
+              end
+            end
+          end.compact
+          if actions_statuses.nil?
+            actions_statuses = []
           end
           unless actions_statuses.all? { |s| %w[applied skipped failed].include?(s) }
             blockers << BLOCKER_DUPLICATE_STATE + ':action_status_unknown'

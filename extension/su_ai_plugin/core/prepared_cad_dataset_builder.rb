@@ -1,5 +1,5 @@
 #
-# core/prepared_cad_dataset_builder.rb — V1.9B1 B1.3 Pure Builder.
+# core/prepared_cad_dataset_builder.rb �?V1.9B1 B1.3 Pure Builder.
 #
 # Per frozen V1.9B1 Blueprint v1.3 (authoritative over v1.2)
 # AND AIPM V1.9B1 B1.2-B1.4 Source Review Correction 2026-09-14:
@@ -69,7 +69,7 @@
 #     Coherence / design failure:
 #       { status: 'BLOCKED', dataset: nil, blockers: [String, ...] }
 #
-#   The Builder does NOT use 'NOT_READY' — that readiness
+#   The Builder does NOT use 'NOT_READY' �?that readiness
 #   verdict belongs to the Validator.
 #
 
@@ -156,6 +156,7 @@ module SUAnalysis
       REASON_SEMANTIC_CHAIN_AMBIGUITY   = 'semantic_chain_ambiguity'.freeze
       REASON_SEMANTIC_LOOP_AMBIGUITY    = 'semantic_loop_ambiguity'.freeze
       REASON_SEMANTIC_REGION_AMBIGUITY  = 'semantic_region_ambiguity'.freeze
+      REASON_SEMANTIC_REPAIR_AMBIGUITY  = 'semantic_repair_ambiguity'.freeze
       REASON_DATASET_ID_TRUNCATION_COLLISION =
         'dataset_id_truncation_collision'.freeze
       REASON_SEMANTIC_ID_TRUNCATION_COLLISION =
@@ -173,7 +174,17 @@ module SUAnalysis
 
       def build(source_snapshot:, workflow_snapshot:,
                 topology_snapshot:, canonical_graph:,
-                structure_result:, analysis_result:)
+                structure_result:, analysis_result:,
+                truncation_context: nil)
+        # FR-01: every public build gets a fresh per-build
+        # truncation collision context. Production correctness
+        # NEVER depends on Thread.current / module-global /
+        # process-global state. The optional `truncation_context`
+        # keyword arg is a TEST-ONLY seam; when supplied, it
+        # is used (and possibly mutated) as the per-build
+        # collision registry for that single call only.
+        truncation_context = truncation_context.nil? ? {} : truncation_context
+
         blockers = []
 
         # ----- input-shape gate --------------------------------------------
@@ -185,7 +196,7 @@ module SUAnalysis
           structure_result: structure_result,
           analysis_result: analysis_result
         ))
-        return _blocked(blockers) unless blockers.empty?
+        return _blocked(blockers, truncation_context) unless blockers.empty?
 
         # ----- workflow state gate -----------------------------------------
         blockers.concat(_check_workflow_state(workflow_snapshot))
@@ -231,7 +242,7 @@ module SUAnalysis
           blockers.concat(tol_blockers)
         end
 
-        return _blocked(blockers) unless blockers.empty?
+        return _blocked(blockers, truncation_context) unless blockers.empty?
 
         # ----- semantic source projection --------------------------------
         source_projection, source_blockers = _project_source(source_snapshot)
@@ -253,11 +264,17 @@ module SUAnalysis
         blockers.concat(ae_blockers)
 
         # ----- B1-SR-02: source_content_digest + execution_context_digest
-        source_content_digest = Digest::SHA256.hexdigest(
-          _encode_normalized(source_projection)
+        # Hex digests are returned by _sha256_hex
+        # as US-ASCII. Coerce to UTF-8 at the producer
+        # (FR-08 digest-only normalization) so the strict
+        # encoder in compute_content_digest accepts them.
+        source_content_digest = PreparedCadDataset.send(
+          :_digest_only_utf8_normalize,
+          _sha256_hex(_encode_normalized(source_projection))
         )
-        execution_context_digest = Digest::SHA256.hexdigest(
-          _encode_normalized(execution_projection)
+        execution_context_digest = PreparedCadDataset.send(
+          :_digest_only_utf8_normalize,
+          _sha256_hex(_encode_normalized(execution_projection))
         )
 
         # ----- semantic geometry remap -------------------------------------
@@ -269,7 +286,7 @@ module SUAnalysis
         )
         blockers.concat(graph_blockers)
 
-        return _blocked(blockers) if graph_projection.nil?
+        return _blocked(blockers, truncation_context) if graph_projection.nil?
 
         # ----- semantic structure remap ------------------------------------
         structure_projection, struct_blockers = _remap_structure(
@@ -277,7 +294,8 @@ module SUAnalysis
           graph_projection: graph_projection,
           legacy_node_to_pcn: legacy_maps[:node],
           legacy_edge_to_pce: legacy_maps[:edge],
-          source_projection: source_projection
+          source_projection: source_projection,
+          truncation_context: truncation_context
         )
         blockers.concat(struct_blockers)
 
@@ -288,7 +306,7 @@ module SUAnalysis
         )
         blockers.concat(issue_blockers)
 
-        return _blocked(blockers) unless blockers.empty?
+        return _blocked(blockers, truncation_context) unless blockers.empty?
 
         # ----- coherence evidence ------------------------------------------
         coherence_digest, coh_blockers = _compute_coherence_digest(
@@ -297,7 +315,7 @@ module SUAnalysis
           source_projection: source_projection
         )
         blockers.concat(coh_blockers)
-        return _blocked(blockers) if coherence_digest.nil?
+        return _blocked(blockers, truncation_context) if coherence_digest.nil?
 
         # ----- assemble semantic content ------------------------------------
         content = {
@@ -331,13 +349,15 @@ module SUAnalysis
         ds_id = PreparedCadDataset.compute_dataset_id(cd)
 
         # ----- B1-SR-09 truncated-ID collision check -----------------------
-        trunc_ctx = _truncation_context
-        if trunc_ctx.key?(ds_id) && trunc_ctx[ds_id][:full_content_digest] != cd
-          blockers << REASON_DATASET_ID_TRUNCATION_COLLISION +
-                          ":same_id_distinct_full_digest"
-          return _blocked(blockers)
+        if truncation_context.key?(ds_id)
+          existing_full = truncation_context[ds_id][:full_content_digest]
+          if existing_full != cd
+            blockers << REASON_DATASET_ID_TRUNCATION_COLLISION +
+                            ":same_id_distinct_full_digest"
+            return _blocked(blockers, truncation_context)
+          end
         end
-        trunc_ctx[ds_id] = {
+        truncation_context[ds_id] = {
           :full_content_digest => cd,
           :semantic_record     => content
         }
@@ -351,7 +371,7 @@ module SUAnalysis
           build_evidence_digest: bed
         )
         { 'status' => STATUS_BUILT, 'dataset' => candidate,
-          'truncation_context' => trunc_ctx }
+          'truncation_context' => truncation_context }
       end
 
       # ----- Truncation context (B1-SR-05 / B1-SR-09) --------------------
@@ -507,8 +527,19 @@ module SUAnalysis
 
       def _check_graph_tolerance_digest(canonical_graph, source_snapshot: nil)
         blockers = []
-        return blockers unless canonical_graph.respond_to?(:tolerance_digest)
+        # FR-02: missing tolerance_digest seam is BLOCKED, not
+        # silently bypassed.
+        unless canonical_graph.respond_to?(:tolerance_digest)
+          blockers << REASON_GRAPH_TOLERANCE_UNREADABLE +
+                          ':graph_missing_tolerance_digest_seam'
+          return blockers
+        end
         published_digest = canonical_graph.tolerance_digest.to_s
+        if published_digest.empty?
+          blockers << REASON_GRAPH_TOLERANCE_UNREADABLE +
+                          ':graph_tolerance_digest_empty'
+          return blockers
+        end
         ec = nil
         if source_snapshot && source_snapshot.respond_to?(:execution_config)
           ec = source_snapshot.execution_config
@@ -518,19 +549,20 @@ module SUAnalysis
         end
         raw = ec && ec.respond_to?(:tolerance_values) ?
                 ec.tolerance_values : nil
-        return blockers if raw.nil?  # If raw tolerance is not
-                                    # accessible, we cannot
-                                    # recompute; builder uses the
-                                    # supply-side check elsewhere.
+        if raw.nil?
+          blockers << REASON_GRAPH_TOLERANCE_UNREADABLE +
+                          ':raw_tolerance_unreadable'
+          return blockers
+        end
         # Recompute from raw tolerance_values per Blueprint v1.3
         # §1.3 (matches the actual canonical_geometry_graph.rb
         # computation: Marshal.dump of Hash#sort.to_h).
         begin
-          expected = 'tol-' + Digest::SHA256.hexdigest(
+          expected = 'tol-' + _sha256_hex(
             Marshal.dump(raw.is_a?(Hash) ? raw.sort.to_h : {})
           )[0, 16]
         rescue StandardError
-          blockers << REASON_GRAPH_TOLERANCE_UNREADABLE
+          blockers << REASON_GRAPH_TOLERANCE_UNREADABLE + ':recompute_failed'
           return blockers
         end
         if expected != published_digest
@@ -544,7 +576,12 @@ module SUAnalysis
 
       def _check_graph_execution_config_digest(canonical_graph)
         blockers = []
-        return blockers unless canonical_graph.respond_to?(:execution_config_digest)
+        # FR-02: missing execution_config_digest seam is BLOCKED.
+        unless canonical_graph.respond_to?(:execution_config_digest)
+          blockers << REASON_GRAPH_EXECUTION_CONFIG_DIGEST_MISMATCH +
+                          ':graph_missing_execution_config_digest_seam'
+          return blockers
+        end
         published = canonical_graph.execution_config_digest.to_s
         # Current ExecutionConfigSnapshot has no public digest.
         # Per Blueprint v1.3 §1.4, the normal current production
@@ -570,7 +607,7 @@ module SUAnalysis
         # workflow may publish graph_digest / structure_digest as
         # evidence (optional fields). When present they MUST
         # match. When absent, that part of the evidence is
-        # missing — we treat as fail-closed per Blueprint v1.3
+        # missing �?we treat as fail-closed per Blueprint v1.3
         # §1.5.
         wf_graph_dgst = (workflow_snapshot['graph_digest'] ||
                          workflow_snapshot[:graph_digest])
@@ -638,7 +675,9 @@ module SUAnalysis
         topo_eps_raw = topology_snapshot[:coordinate_epsilon] ||
                          topology_snapshot['coordinate_epsilon']
         topo_eps = topo_eps_raw.respond_to?(:to_f) ? topo_eps_raw.to_f : nil
-        unless topo_eps.finite? && topo_eps > 0 && topo_eps == tol_eps
+        # FR-02: malformed topology epsilon must BLOCK, never
+        # raise on nil.finite?.
+        unless topo_eps.is_a?(Numeric) && topo_eps.finite? && topo_eps > 0 && topo_eps == tol_eps
           blockers << REASON_EPSILON_MISMATCH + ':topology_vs_tolerance'
         end
         # Every graph-node coordinate_epsilon must agree when present.
@@ -648,7 +687,7 @@ module SUAnalysis
           ge = nh['coordinate_epsilon']
           if !ge.nil?
             ge_f = ge.respond_to?(:to_f) ? ge.to_f : nil
-            if !ge_f.finite? || ge_f != tol_eps
+            unless ge_f.is_a?(Numeric) && ge_f.finite? && ge_f == tol_eps
               blockers << REASON_EPSILON_MISMATCH + ':graph_node'
               break
             end
@@ -1162,7 +1201,7 @@ module SUAnalysis
               nr['label_seed'] = seed
               nr['label_full'] = PreparedCadDataset.send(
                 :_utf8_string,
-                Digest::SHA256.hexdigest(
+                _sha256_hex(
                   _encode_normalized(
                     PreparedCadDataset.send(:_normalize_strings_utf8, seed)
                   )
@@ -1204,8 +1243,18 @@ module SUAnalysis
                   origin_kind: origin,
                   layer_name: layer,
                   source_occurrence_ids: srefs,
-                  unresolved_flags: unresolved
+                  unresolved_flags: unresolved,
+                  truncation_context: truncation_context
                 )
+                # FR-04: nil return from _semantic_repair_id
+                # signals a pcrp truncated-prefix collision
+                # ambiguity.
+                if semantic_repair_id.nil?
+                  blockers << REASON_SEMANTIC_REPAIR_AMBIGUITY +
+                                  ':pcrp_truncation_collision'
+                  # continue to surface as many collisions as
+                  # possible, but BLOCK at the end
+                end
               end
               semantic_edges << {
                 'legacy_canonical_edge_id' => eh['canonical_edge_id'].to_s,
@@ -1254,7 +1303,7 @@ module SUAnalysis
                     'unresolved_flags'   => e['unresolved_flags'],
                     'semantic_repair_id' => e['semantic_repair_id']
                   }
-                  prov_label = Digest::SHA256.hexdigest(
+                  prov_label = _sha256_hex(
                     _encode_normalized(prov)
                   )
                   [prov_label, other_prev].sort_by { |s| s.bytes }
@@ -1264,7 +1313,7 @@ module SUAnalysis
                   'node_local_seed' => nr['label_seed'],
                   'edges'           => pair_list
                 }
-                next_labels[cid] = Digest::SHA256.hexdigest(
+                next_labels[cid] = _sha256_hex(
                   _encode_normalized(input)
                 )
               end
@@ -1325,7 +1374,7 @@ module SUAnalysis
                 'unresolved_flags'      => e['unresolved_flags'],
                 'semantic_repair_id'    => e['semantic_repair_id']
               }
-              full = Digest::SHA256.hexdigest(
+              full = _sha256_hex(
                 _encode_normalized(record)
               )
               pid = PreparedCadDataset::EDGE_ID_PREFIX + full[0, 20]
@@ -1421,25 +1470,59 @@ module SUAnalysis
         Math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
       end
 
+      # B1-SR-06 + FR-04: semantic repair ID is hashed from
+      # STABLE repair facts only. Structured stable source
+      # refs are normalized directly (NOT via Hash#to_s,
+      # which is unstable and forbidden as semantic identity).
+      # Legacy repair/action/proposal IDs are NOT in the
+      # semantic record (they remain build evidence only).
       def _semantic_repair_id(origin_kind:, layer_name:,
-                              source_occurrence_ids:, unresolved_flags:)
+                              source_occurrence_ids:, unresolved_flags:,
+                              truncation_context: nil)
+        # Normalize structured refs into a deterministic
+        # canonical Hash form: sort by IdentityBytes of the
+        # canonical-ref record (NOT by to_s of the Hash).
+        canonical_refs = Array(source_occurrence_ids).map do |r|
+          if r.is_a?(Hash)
+            {
+              'kind'               => r['kind'] || r[:kind],
+              'persistent_id_path' => Array(r['persistent_id_path'] ||
+                                            r[:persistent_id_path]).map(&:to_i)
+            }
+          end
+        end.compact
+        # Deterministic order: by IdentityBytes.
+        canonical_refs.sort_by! do |r|
+          PreparedCadDataset::IdentityBytes.encode(r)
+        end
+        canonical_refs.uniq!
         record = {
           'origin_kind'           => origin_kind.to_s,
-          'layer_name'            => layer_name.to_s,
-          'stable_source_refs'    => Array(source_occurrence_ids).map(&:to_s).sort.uniq,
+          'layer_name'            => _to_utf8(layer_name),
+          'stable_source_refs'    => canonical_refs,
           'unresolved_flags'      => Array(unresolved_flags).map(&:to_s).sort.uniq
         }
-        full = Digest::SHA256.hexdigest(
+        full = _sha256_hex(
           _encode_normalized(record)
         )
-        PreparedCadDataset::REPAIR_ID_PREFIX + full[0, 20]
+        pid = PreparedCadDataset::REPAIR_ID_PREFIX + full[0, 20]
+        # FR-04: enforce pcrp truncated-prefix collision map.
+        if truncation_context
+          key = "pcrp_collision:#{pid}"
+          existing = truncation_context[key]
+          if existing && existing != full
+            return nil  # ambiguous: caller maps to BLOCKED
+          end
+          truncation_context[key] = full
+        end
+        pid
       end
 
       # ----- semantic structure remap -------------------------------------
 
       def _remap_structure(structure_result:, graph_projection:,
                            legacy_node_to_pcn:, legacy_edge_to_pce:,
-                           source_projection:)
+                           source_projection:, truncation_context: nil)
         blockers = []
         schema = structure_result[:schema_version] ||
                    structure_result['schema_version']
@@ -1477,24 +1560,48 @@ module SUAnalysis
             'node_ids' => chosen.select { |t| t.start_with?(PreparedCadDataset::NODE_ID_PREFIX) },
             'edge_ids' => chosen.select { |t| t.start_with?(PreparedCadDataset::EDGE_ID_PREFIX) }
           }
-          full = Digest::SHA256.hexdigest(
+          full = _sha256_hex(
             _encode_normalized(record_without_id)
           )
+          legacy_id = (nh['chain_id'] || nh[:chain_id] || '').to_s
           chain_records << {
             'chain_id'    => PreparedCadDataset::CHAIN_ID_PREFIX + full[0, 20],
             'full_digest' => full,
+            'legacy_id'   => legacy_id,
             'node_ids'    => record_without_id['node_ids'],
             'edge_ids'    => record_without_id['edge_ids']
           }
         end
-        seen = {}
+        # FR-05: track distinct legacy chain inputs separately
+        # from the semantic full_digest. Two DISTINCT legacy
+        # chain IDs producing the SAME full semantic record
+        # => semantic_chain_ambiguity BLOCKED.
+        # Same legacy_id producing same full_digest is dedup,
+        # NOT ambiguity.
+        seen_by_full = {}
+        seen_by_legacy = {}
         chain_records.each do |c|
-          if seen.key?(c['full_digest']) && seen[c['full_digest']] != c['chain_id']
+          full = c['full_digest']
+          leg  = c['legacy_id']
+          if seen_by_full.key?(full)
+            # Multiple distinct legacy chains collide to same
+            # semantic record => ambiguity.
+            if seen_by_full[full] != leg
+              blockers << REASON_SEMANTIC_CHAIN_AMBIGUITY +
+                              ":full=#{full[0, 12]}:legacy=#{seen_by_full[full]}:#{leg}"
+              break
+            end
+          else
+            seen_by_full[full] = leg
+          end
+          if !leg.empty? && seen_by_legacy.key?(leg) && seen_by_legacy[leg] != full
+            # Same legacy id mapped to two different fulls =>
+            # ambiguity too.
             blockers << REASON_SEMANTIC_CHAIN_AMBIGUITY +
-                            ":full=#{c['full_digest'][0, 12]}"
+                            ":legacy=#{leg}:full=#{full[0, 12]}:#{seen_by_legacy[leg][0, 12]}"
             break
           end
-          seen[c['full_digest']] = c['chain_id']
+          seen_by_legacy[leg] = full
         end
         # B1-SR-09 truncated-ID collision check.
         chain_full_by_pid = {}
@@ -1506,7 +1613,10 @@ module SUAnalysis
           end
           chain_full_by_pid[pid] = c['full_digest']
         end
-        chain_records.each { |c| c.delete('full_digest') }
+        chain_records.each do |c|
+          c.delete('full_digest')
+          c.delete('legacy_id')
+        end
 
         # ----- Loops (B1-SR-08) ----------------------------------------
         # Loop exactly 2*N valid node-starting representations,
@@ -1522,23 +1632,45 @@ module SUAnalysis
           remap_nodes = _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
           remap_edges = _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
           rotations = _loop_canonical_representations(remap_nodes, remap_edges)
-          chosen = rotations.min_by do |s|
+                    chosen = rotations.min_by do |s|
             _encode_normalized(s)
           end
           record_without_id = {
             'node_ids' => chosen.select { |t| t.start_with?(PreparedCadDataset::NODE_ID_PREFIX) },
             'edge_ids' => chosen.select { |t| t.start_with?(PreparedCadDataset::EDGE_ID_PREFIX) }
           }
-          full = Digest::SHA256.hexdigest(
+          full = _sha256_hex(
             _encode_normalized(record_without_id)
           )
+          legacy_id = (lh['loop_id'] || lh[:loop_id] || '').to_s
           loop_records << {
             'loop_id'    => PreparedCadDataset::LOOP_ID_PREFIX + full[0, 20],
             'full_digest' => full,
+            'legacy_id'   => legacy_id,
             'node_ids'   => record_without_id['node_ids'],
             'edge_ids'   => record_without_id['edge_ids'],
             'layer_name' => _to_utf8(lh['layer_name'] || lh[:layer_name] || '')
           }
+        end
+        # FR-05: distinct legacy loop inputs producing same
+        # semantic full_digest => ambiguity.
+        seen_by_full = {}
+        seen_by_legacy = {}
+        loop_records.each do |lp|
+          f = lp['full_digest']
+          leg  = lp['legacy_id']
+          if seen_by_full.key?(f) && seen_by_full[f] != leg
+            blockers << REASON_SEMANTIC_LOOP_AMBIGUITY +
+                            ':full=' + f[0, 12] + ':legacy=' + seen_by_full[f] + ':' + leg
+            break
+          end
+          seen_by_full[f] = leg
+          if !leg.empty? && seen_by_legacy.key?(leg) && seen_by_legacy[leg] != f
+            blockers << REASON_SEMANTIC_LOOP_AMBIGUITY +
+                            ':legacy=' + leg + ':full=' + f[0, 12]
+            break
+          end
+          seen_by_legacy[leg] = f
         end
         seen = {}
         loop_records.each do |lp|
@@ -1583,12 +1715,13 @@ module SUAnalysis
             'stable_source_refs' => _region_source_refs(rh),
             'unresolved_flags' => Array(rh['unresolved_flags'] || rh[:unresolved_flags]).map(&:to_s).sort.uniq
           }
-          full = Digest::SHA256.hexdigest(
+          full = _sha256_hex(
             _encode_normalized(record_without_id)
           )
-          region_records << {
+                    region_records << {
             'region_id' => PreparedCadDataset::REGION_ID_PREFIX + full[0, 20],
             'full_digest' => full,
+            'legacy_id' => (rh['region_id'] || rh[:region_id] || '').to_s,
             'outer_loop_id' => outer_semantic,
             'hole_loop_ids' => holes_semantic,
             'layer_name' => record_without_id['layer_name'],
@@ -1596,14 +1729,25 @@ module SUAnalysis
             'unresolved_flags' => record_without_id['unresolved_flags']
           }
         end
-        seen = {}
+        # FR-05: distinct legacy region inputs producing
+        # same semantic full_digest => ambiguity.
+        seen_by_full = {}
+        seen_by_legacy = {}
         region_records.each do |r|
-          if seen.key?(r['full_digest']) && seen[r['full_digest']] != r['region_id']
+          f = r['full_digest']
+          leg  = r['legacy_id']
+          if seen_by_full.key?(f) && seen_by_full[f] != leg
             blockers << REASON_SEMANTIC_REGION_AMBIGUITY +
-                            ":full=#{r['full_digest'][0, 12]}"
+                            ':full=' + f[0, 12] + ':legacy=' + seen_by_full[f] + ':' + leg
             break
           end
-          seen[r['full_digest']] = r['region_id']
+          seen_by_full[f] = leg
+          if !leg.empty? && seen_by_legacy.key?(leg) && seen_by_legacy[leg] != f
+            blockers << REASON_SEMANTIC_REGION_AMBIGUITY +
+                            ':legacy=' + leg + ':full=' + f[0, 12]
+            break
+          end
+          seen_by_legacy[leg] = f
         end
         region_full_by_pid = {}
         region_records.each do |r|
@@ -1613,6 +1757,10 @@ module SUAnalysis
             blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION + ':region'
           end
           region_full_by_pid[pid] = r['full_digest']
+        end
+        region_records.each do |r|
+          r.delete('full_digest')
+          r.delete('legacy_id')
         end
         region_records.each { |r| r.delete('full_digest') }
 
@@ -1854,7 +2002,7 @@ module SUAnalysis
           s = _endpoint_xyz(e.start_point)
           t = _endpoint_xyz(e.end_point)
           ref = _coherence_source_ref(e.source)
-          layer = e.respond_to?(:layer) ? e.layer.to_s : ''
+          layer = _to_utf8(e.respond_to?(:layer) ? e.layer : '')
           {
             'kind' => 'edge',
             'canonical_endpoints' => (s && t) ? _canonical_edge_endpoints(s, t) : nil,
@@ -1868,7 +2016,7 @@ module SUAnalysis
           ref = _coherence_source_ref(f.source)
           {
             'kind' => 'face',
-            'layer_name' => f.respond_to?(:layer) ? f.layer.to_s : '',
+            'layer_name' => _to_utf8(f.respond_to?(:layer) ? f.layer : ''),
             'outer_loop_vertex_count' => f.respond_to?(:outer_loop_vertex_count) ?
                                            f.outer_loop_vertex_count.to_i : 0,
             'inner_loop_count' => f.respond_to?(:inner_loop_count) ?
@@ -1880,10 +2028,10 @@ module SUAnalysis
 
         source_layer_descs = source_layers.map do |l|
           {
-            'name' => l.respond_to?(:name) ? l.name.to_s : '',
-            'role' => (l.respond_to?(:role) ?
+            'name' => _to_utf8(l.respond_to?(:name) ? l.name : ''),
+            'role' => _to_utf8(l.respond_to?(:role) ?
                         (l.role.is_a?(Symbol) ? l.role.to_s : l.role.to_s) : 'UNKNOWN'),
-            'role_rule' => l.respond_to?(:role_rule) ? (l.role_rule ? l.role_rule.to_s : nil) : nil,
+            'role_rule' => _to_utf8(l.respond_to?(:role_rule) ? (l.role_rule ? l.role_rule.to_s : nil) : nil),
             'visible' => l.respond_to?(:visible) ? (l.visible ? true : false) : true,
             'visibility_unknown' => l.respond_to?(:visibility_unknown) ?
                                       (l.visibility_unknown ? true : false) : false,
@@ -1908,7 +2056,7 @@ module SUAnalysis
             analysis_edges << {
               'kind' => 'edge',
               'canonical_endpoints' => (s && t) ? _canonical_edge_endpoints(s, t) : nil,
-              'layer_name' => e.respond_to?(:layer) ? e.layer.to_s : '',
+              'layer_name' => _to_utf8(e.respond_to?(:layer) ? e.layer : ''),
               'coherence_source_ref' => ref
             }
           end
@@ -1918,7 +2066,7 @@ module SUAnalysis
             ref = _coherence_source_ref(f.respond_to?(:source) ? f.source : nil)
             analysis_faces << {
               'kind' => 'face',
-              'layer_name' => f.respond_to?(:layer) ? f.layer.to_s : '',
+              'layer_name' => _to_utf8(f.respond_to?(:layer) ? f.layer : ''),
               'outer_loop_vertex_count' => f.respond_to?(:outer_loop_vertex_count) ?
                                              f.outer_loop_vertex_count.to_i : 0,
               'inner_loop_count' => f.respond_to?(:inner_loop_count) ?
@@ -1930,10 +2078,10 @@ module SUAnalysis
         if geom && geom.respond_to?(:layers)
           Array(geom.layers).each do |l|
             analysis_layers << {
-              'name' => l.respond_to?(:name) ? l.name.to_s : '',
-              'role' => (l.respond_to?(:role) ?
+              'name' => _to_utf8(l.respond_to?(:name) ? l.name : ''),
+              'role' => _to_utf8(l.respond_to?(:role) ?
                           (l.role.is_a?(Symbol) ? l.role.to_s : l.role.to_s) : 'UNKNOWN'),
-              'role_rule' => l.respond_to?(:role_rule) ? (l.role_rule ? l.role_rule.to_s : nil) : nil,
+              'role_rule' => _to_utf8(l.respond_to?(:role_rule) ? (l.role_rule ? l.role_rule.to_s : nil) : nil),
               'visible' => l.respond_to?(:visible) ? (l.visible ? true : false) : true,
               'visibility_unknown' => l.respond_to?(:visibility_unknown) ?
                                         (l.visibility_unknown ? true : false) : false,
@@ -1948,14 +2096,14 @@ module SUAnalysis
         analysis_faces.sort_by!  { |d| _encode_normalized(d) }
         analysis_layers.sort_by! { |d| _encode_normalized(d) }
 
-        source_digest = Digest::SHA256.hexdigest(
+        source_digest = _sha256_hex(
           _encode_normalized({
             'edges' => source_edge_descs,
             'faces' => source_face_descs,
             'layers' => source_layer_descs
           })
         )
-        analysis_digest = Digest::SHA256.hexdigest(
+        analysis_digest = _sha256_hex(
           _encode_normalized({
             'edges' => analysis_edges,
             'faces' => analysis_faces,
@@ -2025,11 +2173,27 @@ module SUAnalysis
         end
 
         # ----- Registry edge ID resolution ----------------------------
+        # FR-03: Analysis geometry EdgeRecord.id MUST be
+        # non-nil and unique. Duplicates or nils BLOCK rather
+        # than overwrite.
         analysis_edge_by_id = {}
+        analysis_edge_ids_seen = {}
         if geom && geom.respond_to?(:edges)
           Array(geom.edges).each do |e|
-            id = e.respond_to?(:id) ? e.id : nil
-            analysis_edge_by_id[id.to_s] = e if id
+            id_raw = e.respond_to?(:id) ? e.id : nil
+            if id_raw.nil?
+              blockers << REASON_REGISTRY_EDGE_MISSING +
+                              ':analysis_edge_id_nil'
+              break
+            end
+            id_str = id_raw.to_s
+            if analysis_edge_ids_seen.key?(id_str)
+              blockers << REASON_REGISTRY_EDGE_NOT_IN_SOURCE +
+                              ":analysis_edge_id_duplicate:#{id_str}"
+              break
+            end
+            analysis_edge_ids_seen[id_str] = true
+            analysis_edge_by_id[id_str] = e
           end
         end
         registry_issues.each do |iss|
@@ -2065,25 +2229,70 @@ module SUAnalysis
         [source_digest, blockers]
       end
 
+      # FR-03: complete incomplete-coherence descriptor. The
+      # same descriptor shape is used for Source and
+      # Analysis, so Source↔Analysis inequality is directly
+      # visible.
+      #
+      # Required fields:
+      #   kind, structural_depth, persistent_id_path,
+      #   instance_path, entity_id, persistent_id (when
+      #   present), layer_name
       def _coherence_source_ref(source_ref)
-        return { 'kind' => 'unresolved' } if source_ref.nil?
-        return { 'kind' => 'unresolved' } unless source_ref.is_a?(SourceReference)
-        if source_ref.pid_path_complete
-          pp = Array(source_ref.persistent_id_path)
-          unless pp.empty?
-            return {
-              'kind' => 'stable_pid',
-              'persistent_id_path' => pp.map(&:to_i)
-            }
-          end
-        end
-        if source_ref.respond_to?(:entity_id) && source_ref.entity_id
+        if source_ref.nil?
           return {
-            'kind' => 'transient_entity',
-            'entity_id' => source_ref.entity_id.to_i
+            'kind'                => 'unresolved',
+            'structural_depth'    => 0,
+            'persistent_id_path'  => [],
+            'instance_path'       => [],
+            'entity_id'           => nil,
+            'persistent_id'       => nil,
+            'layer_name'          => ''
           }
         end
-        { 'kind' => 'unresolved' }
+        unless source_ref.is_a?(SourceReference)
+          return {
+            'kind'                => 'unresolved',
+            'structural_depth'    => 0,
+            'persistent_id_path'  => [],
+            'instance_path'       => [],
+            'entity_id'           => nil,
+            'persistent_id'       => nil,
+            'layer_name'          => ''
+          }
+        end
+        pp = Array(source_ref.persistent_id_path).map(&:to_i)
+        sd = source_ref.respond_to?(:structural_depth) ?
+                source_ref.structural_depth : 0
+        ip = source_ref.respond_to?(:instance_path) ?
+                Array(source_ref.instance_path) : []
+        eid = source_ref.respond_to?(:entity_id) ?
+                source_ref.entity_id : nil
+        pid = source_ref.respond_to?(:persistent_id) ?
+                source_ref.persistent_id : nil
+        layer = source_ref.respond_to?(:layer_name) ?
+                  source_ref.layer_name.to_s : ''
+        if source_ref.pid_path_complete && !pp.empty?
+          {
+            'kind'                => 'stable_pid',
+            'structural_depth'    => sd,
+            'persistent_id_path'  => pp,
+            'instance_path'       => ip,
+            'entity_id'           => eid,
+            'persistent_id'       => pid,
+            'layer_name'          => layer
+          }
+        else
+          {
+            'kind'                => 'transient_entity',
+            'structural_depth'    => sd,
+            'persistent_id_path'  => pp,
+            'instance_path'       => ip,
+            'entity_id'           => eid,
+            'persistent_id'       => pid,
+            'layer_name'          => layer
+          }
+        end
       end
 
       # ----- build_evidence assembly --------------------------------------
@@ -2097,11 +2306,17 @@ module SUAnalysis
                source_snapshot.fingerprint : nil
         ws_id = canonical_graph.respond_to?(:workspace_id) ?
                   canonical_graph.workspace_id.to_s : ''
-        fp_digest = (fp && fp.respond_to?(:digest)) ? fp.digest.to_s : ''
+        # FR-08: legacy / derived digests are produced by
+        # upstream code (Digest::SHA256 etc.) and returned
+        # as US-ASCII. They are NOT caller-provided semantic
+        # strings; normalize via the digest-only helper.
+        _utf8dig = ->(s) { PreparedCadDataset.send(:_digest_only_utf8_normalize, s) }
+        fp_digest = (fp && fp.respond_to?(:digest)) ? _utf8dig.call(fp.digest.to_s) : ''
         graph_dgst = canonical_graph.respond_to?(:digest) ?
-                       canonical_graph.digest.to_s : ''
+                       _utf8dig.call(canonical_graph.digest.to_s) : ''
         struct_dgst = (structure_result[:digest] ||
                        structure_result['digest']).to_s
+        struct_dgst = _utf8dig.call(struct_dgst)
         cap = ''
         if source_snapshot.respond_to?(:captured_at)
           cap = source_snapshot.captured_at.to_s
@@ -2158,16 +2373,23 @@ module SUAnalysis
         out
       end
 
-      def _blocked(blockers)
-        { 'status' => STATUS_BLOCKED, 'dataset' => nil,
-          'blockers' => Array(blockers).uniq.sort }
+      def _blocked(blockers, truncation_context = nil)
+        out = { 'status' => STATUS_BLOCKED, 'dataset' => nil,
+                'blockers' => Array(blockers).uniq.sort }
+        unless truncation_context.nil?
+          out['truncation_context'] = truncation_context
+        end
+        out
       end
 
       # Convenience: SHA-256 hex digest of `s` returned as a
-      # UTF-8 String (B1-SR-12).
+      # UTF-8 String (B1-SR-12 + FR-08: digest-only
+      # normalization).
       def _sha256_hex(str)
-        PreparedCadDataset.send(:_utf8_string,
-                                Digest::SHA256.hexdigest(str))
+        PreparedCadDataset.send(
+          :_digest_only_utf8_normalize,
+          Digest::SHA256.hexdigest(str)
+        )
       end
 
       # Wrapper that normalizes all Strings inside `v` to
@@ -2182,3 +2404,6 @@ module SUAnalysis
     end
   end
 end
+
+
+
