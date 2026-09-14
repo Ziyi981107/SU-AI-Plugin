@@ -92,9 +92,14 @@ V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW R2 CORRECTION — 2026-09-14:
   push (recorded below).
 - Implementation SHA (production + test + R2 dispatch): `2b5e9c5d922bc7cde1deb24c9cd01f195f7088d3`
   (commit `fix(v1.9b1-b1-sr-r2): B1.2-B1.4 FINAL SOURCE REVIEW R2 correction`).
-- Docs/report HEAD (CURRENT_STATE.md + PI report): `a08363aef6ef0ecb061394571e8a52614ec1e4bf`
+- Docs/report HEAD (CURRENT_STATE.md + PI report):
+  `a08363aef6ef0ecb061394571e8a52614ec1e4bf`
   (commit `docs(v1.9b1-b1-sr-r2): add CURRENT_STATE + PI report for R2 correction`).
-- Push: `git push origin dev/v1.9` succeeded (`7e2228a..a08363a dev/v1.9 -> dev/v1.9`).
+- Final `git rev-parse HEAD` (after the implementation +
+  docs commits + literal-SHA recording fix):
+  `76c75ce4eae74c30181a5a7471bea84a6f6feed2`
+  (commit `docs(v1.9b1-b1-sr-r2): record literal implementation SHA + docs/report HEAD`).
+- Push: `git push origin dev/v1.9` succeeded (`7e2228a..76c75ce dev/v1.9 -> dev/v1.9`).
 
 Validation:
 

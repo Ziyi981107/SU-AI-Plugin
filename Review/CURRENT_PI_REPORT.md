@@ -275,6 +275,16 @@ a08363aef6ef0ecb061394571e8a52614ec1e4bf
 (commit
 `docs(v1.9b1-b1-sr-r2): add CURRENT_STATE + PI report for R2 correction`).
 
+The final `git rev-parse HEAD` after the literal-SHA
+recording fix is:
+
+```
+76c75ce4eae74c30181a5a7471bea84a6f6feed2
+```
+
+(commit
+`docs(v1.9b1-b1-sr-r2): record literal implementation SHA + docs/report HEAD`).
+
 The previous V1.9B1 B1.2–B1.4 FINAL RESIDUAL implementation
 commit (the one whose SHA was incorrectly recorded in the
 prior FR report) is:
@@ -289,7 +299,7 @@ without rewriting the recorded wrong SHA, per R2-00.
 ---
 
 ## V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION — 2026-09-14 (THIS UPDATE)
- B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
+ B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL RESIDUAL
 CORRECTION dispatch EXECUTION on assigned `dev/v1.9`
@@ -298,49 +308,49 @@ per `Prompt/AIPM_V1_9B1_B1_2_B1_4_FINAL_RESIDUAL_SOURCE_REVIEW_2026-09-14.md`
 addresses exactly the 9 FRs from the FINAL RESIDUAL
 correction file:
 
-- **FR-01** �?Per-build truncation collision context.
+- **FR-01** �?Per-build truncation collision context.
   Every public `build` gets a fresh `truncation_context`
   Hash (no `Thread.current` / module-global state for
   production correctness). Optional `truncation_context:`
   kwarg is a test-only seam. `Thread.current`-based
   `_truncation_context` / `_reset_truncation_context!`
   retained as test-only legacy helpers.
-- **FR-02** �?Required graph coherence fail-closed. Missing
+- **FR-02** �?Required graph coherence fail-closed. Missing
   graph `tolerance_digest` seam => BLOCKED (was
   silent-bypass). Empty `tolerance_digest` => BLOCKED.
   Unreadable raw tolerance values => BLOCKED.
   Missing `execution_config_digest` seam => BLOCKED.
   Malformed topology / graph-node epsilon => BLOCKED,
   never raises on `nil.finite?`.
-- **FR-03** �?Incomplete PID tuple used by Source↔Analysis
+- **FR-03** �?Incomplete PID tuple used by Source↔Analysis
   coherence. `_coherence_source_ref` produces full
   descriptor: kind, structural_depth, persistent_id_path,
   instance_path, entity_id, persistent_id, layer_name.
   Analysis geometry `EdgeRecord.id` non-nil + unique;
   duplicates BLOCKED. `PID-01` vacuous "BUILT OR BLOCKED"
   test replaced with strict expectations.
-- **FR-04** �?Semantic repair identity normalized
+- **FR-04** �?Semantic repair identity normalized
   structured refs (no `Hash#to_s`). pcrp truncated-prefix
   collision map enforced (test seam via
   `truncation_context:` kwarg).
-- **FR-05** �?Chain/loop/region ambiguity checks track
+- **FR-05** �?Chain/loop/region ambiguity checks track
   distinct legacy inputs separately from the semantic
   full_digest. Two distinct legacy inputs producing the
   same full digest => ambiguity BLOCKED.
-- **FR-06** �?Canonicalization tests acceptance-grade.
+- **FR-06** �?Canonicalization tests acceptance-grade.
   Real open-chain reversed input => same pch +
   content_digest. Real loop rotation invariance.
   Edge-to-consecutive-node alignment preserved.
-- **FR-07** �?Exact 8 MiB boundary test. Iterative
+- **FR-07** �?Exact 8 MiB boundary test. Iterative
   binary search lands the FINAL persisted JSON at exactly
   `8_388_608` bytes (PASS) and `> 8_388_608` bytes
   (FAIL). No approximate margin language.
-- **FR-08** �?Strict UTF-8 split. `_strict_utf8_string`
+- **FR-08** �?Strict UTF-8 split. `_strict_utf8_string`
   rejects valid-but-non-UTF-8 encodings (US-ASCII,
   ASCII-8BIT). `_digest_only_utf8_normalize` (test-only
   for internal SHA-256 hex). Duplicate `_utf8_string`
   definition removed.
-- **FR-09** �?Validator gaps closed. Duplicate row Hash
+- **FR-09** �?Validator gaps closed. Duplicate row Hash
   check (non-Hash row => blocker, no exception).
   Repeated semantic ID within same type is a blocker.
   Adjacency rebuilt from semantic edges must match
@@ -353,7 +363,7 @@ Allowed scope (frozen modules untouched):
 - `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
 - `tests/test_v19b1_prepared_cad_dataset.rb`
 
-V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14:
+V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14:
 
 - Starting HEAD (before Pi touched the working tree):
   `c43a8fd42bd5355046e4c7aaa771acea85ba1a62` (the
@@ -417,7 +427,7 @@ Validation:
 ```
 
 This packet added the +18 net new B1 tests
-(65 �?83) all passing.
+(65 �?83) all passing.
 
 Pre-existing failures (NONE introduced by this
 packet; confirmed via `git diff --name-only` filter
@@ -435,12 +445,12 @@ packet; confirmed via `git diff --name-only` filter
   `app.js` uses `issue_summary.cta_callback`
   explicitly (textual guard).
 - 1 FAIL on `capability.HtmlDialog`: outside SU
-  returns false (R002 + S2-BLOCK-006) �?  test-environment / FakeUI limitation.
+  returns false (R002 + S2-BLOCK-006) �?  test-environment / FakeUI limitation.
 - 1 ERROR on `V14 production call chain`
   (`NoMethodError: undefined method 'call' for
-  nil:NilClass`) �?pre-existing FakeUI limitation.
-- 1 ERROR on `V17-L1 host_state_changed` �?  pre-existing FakeUI limitation.
-- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?  pre-existing presenter test guard (`开放链`
+  nil:NilClass`) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?  pre-existing presenter test guard (`开放链`
   chip-list).
 
 `html_render` / `v19a_presenter` / `capability` /
@@ -456,7 +466,7 @@ Packaged file SHAs (vs the previous V1.9B1 B1.2–B1.4
 implementation packet):
 
 - `su_ai_plugin/core/prepared_cad_dataset.rb`
-  SHA-256: recomputed (**CHANGED** �?FR-08: strict
+  SHA-256: recomputed (**CHANGED** �?FR-08: strict
   UTF-8 split between `_strict_utf8_string` (caller
   semantic) and `_digest_only_utf8_normalize`
   (internally generated hex); duplicate `_utf8_string`
@@ -465,7 +475,7 @@ implementation packet):
   `_full_hex64?` retained; identity / serialization
   contracts preserved.).
 - `su_ai_plugin/core/prepared_cad_dataset_builder.rb`
-  SHA-256: recomputed (**CHANGED** �?FR-01: per-build
+  SHA-256: recomputed (**CHANGED** �?FR-01: per-build
   `truncation_context` Hash kwarg, threaded through
   `_remap_graph` / `_remap_structure` /
   `_semantic_repair_id` for pcrp collision; FR-02:
@@ -479,7 +489,7 @@ implementation packet):
   inputs separately; FR-08: SHA-256 hex via
   `_sha256_hex` (digest-only UTF-8 normalization).).
 - `su_ai_plugin/core/prepared_cad_dataset_validator.rb`
-  SHA-256: recomputed (**CHANGED** �?FR-09: non-Hash
+  SHA-256: recomputed (**CHANGED** �?FR-09: non-Hash
   action row blocker, missing status blocker, repeated
   semantic ID within same type is a blocker, adjacency
   rebuilt from semantic edges must match published
@@ -561,7 +571,7 @@ Next expected action:
 3. Only then may AIPM authorize B1.5 + V1.9B2.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) �?per dispatch: this packet addresses
+NARROW) �?per dispatch: this packet addresses
 the B1 FINAL RESIDUAL correction; each of the
 9 FRs is narrow within its respective seam.
 None reopens any already-PASS frozen V1.5–V1.9A
@@ -581,7 +591,7 @@ V1_9B2 = NOT_STARTED.
 
 ---
 
-# CURRENT PI REPORT �?V1.9B1 B1.2–B1.4 SOURCE REVIEW CORRECTION (THIS UPDATE)
+# CURRENT PI REPORT �?V1.9B1 B1.2–B1.4 SOURCE REVIEW CORRECTION (THIS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B1 B1.2–B1.4 (PreparedCadDataset + pure Builder + pure Validator)
@@ -644,7 +654,7 @@ the diff. `WorkingModeRunner`, `SourceSnapshot`,
 `canonical_geometry_graph.rb`,
 `canonical_structure_reconstructor.rb`,
 `cad_prep_workflow_*`, `dialog_runner.rb`,
-`ui_bridge.rb`, `html/*`, `Probe/*`, `dist/*` �?all UNCHANGED.
+`ui_bridge.rb`, `html/*`, `Probe/*`, `dist/*` �?all UNCHANGED.
 
 ## D. Confirmation of design authority read in full
 
@@ -901,9 +911,9 @@ occurrence IDs return `[]`.
 **B1-SR-08 (chain / loop / region)**:
 
 - Chain forward = walk nodes/edges in given order
-  (`n0, e0, n1, e1, �? n_L`).
+  (`n0, e0, n1, e1, �? n_L`).
 - Chain reverse (aligned) = walk backwards
-  (`n_L, e_{L-1}, n_{L-1}, �? e_0, n_0`).
+  (`n_L, e_{L-1}, n_{L-1}, �? e_0, n_0`).
   Lex-smaller chosen.
 - Loop: exactly `2 * N` node-starting
   representations
@@ -1158,7 +1168,7 @@ Coverage:
   - `source_content_digest` published (full 64-hex);
   - `execution_context_digest` published (full 64-hex).
 
-- **Coherence (B1-SR-03 §1.1�?.5)**:
+- **Coherence (B1-SR-03 §1.1�?.5)**:
   - wrong topology schema BLOCKED;
   - snapshot_id / workspace_id mismatch BLOCKED;
   - structure canonical_graph_digest mismatch
@@ -1369,8 +1379,8 @@ the starting HEAD.
    the boundary test against the Validator's
    measure-and-finalize flow end-to-end (which
    we do, with the 4 KiB safety margin). The
-   semantic contract �?`<= 8_388_608` PASS,
-   `> 8_388_608` FAIL �?is preserved.
+   semantic contract �?`<= 8_388_608` PASS,
+   `> 8_388_608` FAIL �?is preserved.
 4. The Builder's truncation context map
    (`Thread.current[:_pcd_truncation_ctx]`)
    persists across builds within the same Ruby
@@ -1415,7 +1425,7 @@ END OF SOURCE REVIEW CORRECTION REPORT.
 
 ---
 
-# CURRENT PI REPORT �?V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION (THIS UPDATE)
+# CURRENT PI REPORT �?V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION (THIS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B1 B1.2–B1.4 (PreparedCadDataset + pure Builder + pure Validator)
@@ -2202,7 +2212,7 @@ STOP. Do NOT begin B1.5.
 
 ---
 
-# CURRENT PI REPORT �?V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION (PREVIOUS)
+# CURRENT PI REPORT �?V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION (PREVIOUS)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B0 (probe-only final narrow residual correction;
@@ -2242,7 +2252,7 @@ allowed scope. No `extension/` change. No production RBZ
 rebuild. No V1.9A re-open. No V1.9B1 production
 implementation.
 
-## BLOCK fix B0-R01 �?Correct SketchUp operation signature + abort only if opened
+## BLOCK fix B0-R01 �?Correct SketchUp operation signature + abort only if opened
 
 ### Correct API contract
 
@@ -2256,7 +2266,7 @@ start_operation(op_name,
 ```
 
 The previous correction packet described the API as a 3-arg
-`(name, disable_ui, transparent)` signature �?that description
+`(name, disable_ui, transparent)` signature �?that description
 was inaccurate. The previous `start_operation(name, true, false)`
 call happened to remain non-transparent only by accident (3rd
 arg `false` AND 4th arg default `false`).
@@ -2309,8 +2319,8 @@ signature.
 
 | Test | Asserts |
 |---|---|
-| B0-R01 (normal successful write) | actual call is `start_operation(name, true)` �?exactly 2 positional args; no String 4th arg; one start, one commit, zero abort |
-| B0-R01-2 (post-start failure �?dictionary_create_failed) | one start, zero commit, one abort_operation, zero abort |
+| B0-R01 (normal successful write) | actual call is `start_operation(name, true)` �?exactly 2 positional args; no String 4th arg; one start, one commit, zero abort |
+| B0-R01-2 (post-start failure �?dictionary_create_failed) | one start, zero commit, one abort_operation, zero abort |
 | B0-R01-3 (start_operation pre-open raise) | one attempted start, zero commit, ZERO abort_operation, zero abort |
 | B0-R01 (FakeModel neutral) | FakeModel `start_operation` uses `*args` capture (arity -1) rather than a fixed-arity signature |
 | (preserved from previous packet) | B0-02 raw read string equality; B0-03 separate `exact_string_equal` + `exact_byte_count_equal` diagnostic; SHA-256 verification; 256 KiB / 1 MiB / 4 MiB / 8 MiB ladder; largest-passing-payload reopen plan; replacement test; corrupt/missing semantics; deterministic payload generator; probe namespace |
@@ -2397,7 +2407,7 @@ PreparedCadDataset.
 
 ---
 
-# CURRENT PI REPORT �?V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION (PREVIOUS UPDATE)
+# CURRENT PI REPORT �?V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B0 (probe-only correction; V1.9A remains
@@ -2427,7 +2437,7 @@ production implementation.
 
 ## BLOCK fixes (this packet)
 
-### B0-01 �?SketchUp transaction API contract
+### B0-01 �?SketchUp transaction API contract
 - `model.start_operation(...)` calls were previously
   invoked with a 4-argument signature where the 4th
   positional argument was a String description. SketchUp's
@@ -2460,7 +2470,7 @@ production implementation.
   transaction leak when the probe cannot get a
   dictionary to write into.
 
-### B0-02 �?immediate readback false negative
+### B0-02 �?immediate readback false negative
 - `run_immediate_readback_test` previously compared
   `payload == read_result[:payload]` where `read_result`
   came from `verify_probe`. `verify_probe` does NOT
@@ -2474,12 +2484,12 @@ production implementation.
   digest evidence. Success requires
   `exact_string_equal == true`.
 
-### B0-03 �?size ladder must prove exact STRING equality
+### B0-03 �?size ladder must prove exact STRING equality
 - The previous `exact_byte_equal` field in the size
   ladder row only compared `actual_bytes` to the original
   payload's `bytesize`. Pure byte-count equality passes
   even when the stored payload was corrupted to a
-  different same-length string �?the very class of
+  different same-length string �?the very class of
   corruption the probe is supposed to detect.
 - **Fix**: each ladder row now also includes
   `exact_string_equal` which is computed via direct
@@ -2507,9 +2517,9 @@ production implementation.
 Only the following files were modified:
 
 - `Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
-  �?production probe file.
-- `Probe/V1_9B0/README.md` �?Owner-facing usage.
-- `Probe/V1_9B0/_validation_runner.rb` �?host-free
+  �?production probe file.
+- `Probe/V1_9B0/README.md` �?Owner-facing usage.
+- `Probe/V1_9B0/_validation_runner.rb` �?host-free
   validation runner (throwaway; not shipped to Owner).
 
 `extension/`, `tests/`, `dist/SU-AI-Plugin.rbz`, the
@@ -2601,7 +2611,7 @@ PreparedCadDataset.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A OWNER ACCEPTED CLOSURE + V1.9B0 PERSISTENCE PROBE (PREVIOUS UPDATE)
+# CURRENT PI REPORT �?V1.9A OWNER ACCEPTED CLOSURE + V1.9B0 PERSISTENCE PROBE (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Stage transition: V1.9A -> V1.9B0
@@ -2660,7 +2670,7 @@ rebuild was required.
 Files added (this packet):
 
 - `Probe/V1_9B0/prepared_dataset_persistence_probe.rb`
-  (895 lines) �?standalone real-host probe, loadable from
+  (895 lines) �?standalone real-host probe, loadable from
   SketchUp 2020 Ruby Console. Uses SketchUp Model
   AttributeDictionary APIs only. Dictionary:
   `SU-AI-Plugin.PreparedCadDataset`. Probe-namespaced
@@ -2689,13 +2699,13 @@ Files added (this packet):
   `model.start_operation` / `model.commit_operation`
   (single SketchUp operation per write; defensive
   begin/rescue StandardError + `model.abort` fallback).
-- `Probe/V1_9B0/README.md` (229 lines) �?Owner usage
+- `Probe/V1_9B0/README.md` (229 lines) �?Owner usage
   guide, real-SU2020 test sequence, full command
   reference.
-- `Probe/V1_9B0/_validation_runner.rb` (123 lines) �?  host-free validation runner, throwaway; not shipped
+- `Probe/V1_9B0/_validation_runner.rb` (123 lines) �?  host-free validation runner, throwaway; not shipped
   for Owner use.
 
-Files modified (this packet �?docs only):
+Files modified (this packet �?docs only):
 
 - `CURRENT_STATE.md` (top updated with V1.9A closure
   record; historical V1.9A evidence preserved verbatim).
@@ -2756,18 +2766,18 @@ PreparedCadDataset. Do not choose a persistence route on
 Owner's behalf. AIPM will decide the persistence route
 based on Owner real-host evidence after this report.
 
-CODEX_RISK_TRIGGER = NO �?pure probe under Probe/,
+CODEX_RISK_TRIGGER = NO �?pure probe under Probe/,
 docs-only synchronization; no extension/, no production
 RBZ, no host mutation, no Face / Observer / tolerance
 change.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A RFR CODEX NARROW RECHECK CORRECTION (PREVIOUS UPDATE �?RETAINED AS HISTORICAL EVIDENCE)
+# CURRENT PI REPORT �?V1.9A RFR CODEX NARROW RECHECK CORRECTION (PREVIOUS UPDATE �?RETAINED AS HISTORICAL EVIDENCE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Final Block Fix
+Stage: V1.9A �?Final Block Fix
 Packet: V1.9A RFR CODEX NARROW RECHECK CORRECTION
 (CXR-01 + CXR-02)
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
@@ -2808,7 +2818,7 @@ V1.9A RFR CODEX NARROW RECHECK CORRECTION (this packet,
 CXR-01 + CXR-02): COMPLETE on `dev/v1.9`; awaiting
 AIPM direct source review.
 CODEX_RISK_TRIGGER: **YES** (post-implementation,
-narrow) �?per dispatch: CXR-01 touches the
+narrow) �?per dispatch: CXR-01 touches the
 first-pass live-coordinate semantic split; CXR-02
 adds new proposer-level wrong-length Array
 regressions. Each is small and narrow; none reopens
@@ -2828,7 +2838,7 @@ residuals found by Codex xHigh final narrow recheck
 on the V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
 packet (the prior packet on `dev/v1.9`):
 
-1. **CXR-01 �?First-pass live-capability vs cached-
+1. **CXR-01 �?First-pass live-capability vs cached-
  fallback semantic split.** The proposer's first
  pass hardcoded `fail_closed: true` +
  `cached_pos: nil`. When endpoint handles exist but
@@ -2848,7 +2858,7 @@ packet (the prior packet on `dev/v1.9`):
  but unreadable; only fail closed when the live
  capability exists and the read is unreadable.
 
-2. **CXR-02 �?Proposer-level wrong-length
+2. **CXR-02 �?Proposer-level wrong-length
  live-coordinate regression coverage.** The
  existing RFR-04 matrix tests nil / raise /
  malformed Hash / non-Numeric / NaN / Infinity on
@@ -2867,7 +2877,7 @@ packet (the prior packet on `dev/v1.9`):
  escapes.
 
 3. **Required production change**: ONE production
- file �?`extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
+ file �?`extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
 
 4. **Do NOT reopen**:
  - executor / shared-vertex fan-out /
@@ -2992,18 +3002,18 @@ AFTER the first-pass unsafe gate).
 ## 4. Pre-existing / unrelated behavior preserved (NOT changed)
 
 - Live authority present + unreadable live read =>
-  fail closed (no cached resurrection) �?preserved.
+  fail closed (no cached resurrection) �?preserved.
 - One logical move fans out to all eligible physical
-  occurrences �?preserved.
+  occurrences �?preserved.
 - One outer SketchUp operation + one primitive per
-  physical occurrence �?preserved.
+  physical occurrence �?preserved.
 - Tolerances (coordinate_epsilon, planar_z_snap,
-  gap_search) �?UNCHANGED.
-- V1.7 pairing / canonical clustering �?UNCHANGED.
-- V1.8 reconstruction / region algorithms �?  UNCHANGED.
-- Source CAD ownership / mutability �?UNCHANGED.
-- UI / Presenter / app.js / CSS / toolbar �?  UNCHANGED.
-- V1.9B PreparedCadDataset �?NOT STARTED.
+  gap_search) �?UNCHANGED.
+- V1.7 pairing / canonical clustering �?UNCHANGED.
+- V1.8 reconstruction / region algorithms �?  UNCHANGED.
+- Source CAD ownership / mutability �?UNCHANGED.
+- UI / Presenter / app.js / CSS / toolbar �?  UNCHANGED.
+- V1.9B PreparedCadDataset �?NOT STARTED.
 
 ---
 
@@ -3064,7 +3074,7 @@ proposer overwriting the dev-tree proposer methods).
   (unrelated to this packet).
 
 Full synthetic Ruby suite (this packet's run,
-the NORMAL runner �?not the prior packet's custom
+the NORMAL runner �?not the prior packet's custom
 RBZ-excluding synthetic runner):
 
 ```
@@ -3078,14 +3088,14 @@ failures (NONE introduced by this packet):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
   `html_render (V1.9A FINAL P1-C)` × 1 +
   `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
-  �?CSS / `app.js` textual source-level guards on
+  �?CSS / `app.js` textual source-level guards on
   already-source-reviewed PASS items.
 - 1 FAIL on `capability.HtmlDialog` (R002 +
-  S2-BLOCK-006) �?pre-existing FakeUI limitation.
-- 1 ERROR on `V14 production call chain` �?  pre-existing FakeUI limitation.
-- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing
+  S2-BLOCK-006) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V14 production call chain` �?  pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing
   FakeUI limitation.
-- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing
   presenter test guard.
 
 Node DOM (`tests/test_html_render_dom.js`):
@@ -3112,11 +3122,11 @@ the real SU2020 test.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (PREVIOUS UPDATE)
+# CURRENT PI REPORT �?V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Final Block Fix
+Stage: V1.9A �?Final Block Fix
 Packet: V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX
 (RFR-01..RFR-05)
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
@@ -3155,7 +3165,7 @@ RFR-01..RFR-05): COMPLETE on `dev/v1.9`; AIPM direct
 source review PASS for the proposer live-coordinate
 authority fix.
 CODEX_RISK_TRIGGER: **YES** (post-implementation,
-narrow) �?per dispatch §"Frozen / forbidden": the
+narrow) �?per dispatch §"Frozen / forbidden": the
 fix touches the proposer live-coordinate authority
 seam (the exact regression the Owner actually hit on
 real SU2020). The fix is small and narrow; it does
@@ -3175,7 +3185,7 @@ surfaced by real SketchUp 2020 Owner testing AFTER
 the V1.9A P0 FINAL NARROW RESIDUAL CORRECTION packet
 was committed and AIPM source-reviewed PASS:
 
-1. **RFR �?Proposer live-coordinate authority for
+1. **RFR �?Proposer live-coordinate authority for
  refreshed Planar diagnosis.** Real SU2020 Owner
  flow on the standard fixture (0.2 mm Z drift +
  1 mm endpoint gap):
@@ -3207,7 +3217,7 @@ was committed and AIPM source-reviewed PASS:
  workspace Planar diagnosis.
 
 3. **Required production change**: ONE production
- file �?`extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
+ file �?`extension/su_ai_plugin/core/planar_normalization_proposer.rb`.
  The proposer now uses LIVE per-endpoint Vertex
  positions (via
  `adapter.vertex_position(handle)`) as the
@@ -3227,7 +3237,7 @@ was committed and AIPM source-reviewed PASS:
 
 No architecture redesign required. No other
 production file touched. Source CAD immutability
-preserved �?the proposer does NOT mutate
+preserved �?the proposer does NOT mutate
 `geometry_summary`; the LIVE read applies to the
 outgoing analysis only.
 
@@ -3264,7 +3274,7 @@ corrected source via `scripts/build_rbz.rb`):
 
 The RBZ smoke test (`tests/test_rbz_smoke.rb`)
 extracts the rebuilt RBZ into a temp dir and LOADS
-the extracted proposer �?so the rebuilt RBZ is what
+the extracted proposer �?so the rebuilt RBZ is what
 subsequent tests exercise. A stale dist RBZ would
 mask the fix (the extracted OLD proposer would
 resurrect cached coordinates). Hence this packet
@@ -3274,7 +3284,7 @@ Packaged file SHAs (vs the previous V1.9A P0 FINAL
 NARROW RESIDUAL CORRECTION packet):
 
 - `su_ai_plugin/core/planar_normalization_proposer.rb`
-SHA-256: **recomputed (CHANGED)** �?RFR fix:
+SHA-256: **recomputed (CHANGED)** �?RFR fix:
 live per-endpoint Vertex positions as the
 current-coordinate authority for all Planar
 clustering + candidate selection; new
@@ -3348,7 +3358,7 @@ source-reviewed PASS.
 
 ---
 
-## 3. RFR �?proposer live-coordinate authority for refreshed Planar diagnosis
+## 3. RFR �?proposer live-coordinate authority for refreshed Planar diagnosis
 
 ### 3.1 Production change
 
@@ -3446,7 +3456,7 @@ true` first-pass gate.
 
 Pre-existing P0 tests (R1 preflight, R2 post-read,
 R3 endpoint fallback, R4 V1.8 shape, R5 orchestrated
-E2E, R6 RBZ, R7 `嵌套层级`, etc.) all remain PASS �?this packet does NOT reopen them.
+E2E, R6 RBZ, R7 `嵌套层级`, etc.) all remain PASS �?this packet does NOT reopen them.
 
 ---
 
@@ -3465,7 +3475,7 @@ at E-A):
  `logical_applied_count = 1`,
  `physical_applied_count = 2`, state `APPLIED`.
 3. Click `重新检测`
- (`refresh_cad_prep`) �?the orchestrator does
+ (`refresh_cad_prep`) �?the orchestrator does
  NOT rebuild / does NOT mutate host:
  - Planar does **NOT** resurrect to
    `READY_TO_NORMALIZE`.
@@ -3523,7 +3533,7 @@ occurrence (preserved).
 - V1.7 pairing / canonical clustering (preserved).
 - V1.8 reconstruction / region algorithm
 (preserved).
-- Source CAD immutability (preserved �?proposer
+- Source CAD immutability (preserved �?proposer
 does NOT mutate `geometry_summary`).
 - Undo / host-state architecture (preserved).
 - toolbar / tabs / hidden semantics (preserved).
@@ -3635,7 +3645,7 @@ v19a_presenter: 78 tests, 77 pass, 0 fail, 1 error
 
 The 1 error is the pre-existing
 `v19a_presenter (FINAL P1-B)` `开放链` chip-list
-guard �?pre-existing presenter test guard,
+guard �?pre-existing presenter test guard,
 unrelated to RFR scope.
 
 ### 6.4 Other focused suites (unchanged)
@@ -3665,18 +3675,18 @@ after with `git stash`):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
 `html_render (V1.9A FINAL P1-C)` × 1 +
 `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)`
-× 1 �?CSS / `app.js` textual source-level
+× 1 �?CSS / `app.js` textual source-level
 guards on already-source-reviewed PASS items.
 CSS / `app.js` are UNCHANGED in this packet.
 - 1 FAIL on `capability.HtmlDialog` (outside SU
-returns false R002 + S2-BLOCK-006) �?pre-existing
+returns false R002 + S2-BLOCK-006) �?pre-existing
 test-environment / FakeUI limitation.
 - 1 ERROR on `V14 production call chain`
 (`NoMethodError: undefined method 'call' for
-nil:NilClass`) �?pre-existing FakeUI limitation.
-- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing test-environment / FakeUI
+nil:NilClass`) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing test-environment / FakeUI
 limitation.
-- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing presenter test guard
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing presenter test guard
 (`开放链` chip-list); not addressed by RFR
 scope.
 
@@ -3708,7 +3718,7 @@ proposer).
 
 The RBZ smoke test (`tests/test_rbz_smoke.rb`)
 extracts the rebuilt RBZ and LOADS the extracted
-proposer �?so the extracted proposer is the FIXED
+proposer �?so the extracted proposer is the FIXED
 proposer. Verified via
 `method(:propose).source_location` inside §RFR-01
 which prints the dev-tree path (not the stale
@@ -3784,11 +3794,11 @@ actions per AIPM direct source review PASS.
 
 END OF V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX REPORT.
 
-# CURRENT PI REPORT �?V1.9A P0 NARROW RECHECK FIX (PREVIOUS UPDATE)
+# CURRENT PI REPORT �?V1.9A P0 NARROW RECHECK FIX (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Final Block Fix
+Stage: V1.9A �?Final Block Fix
 Packet: P0 NARROW RECHECK FIX (R1–R7)
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
 NARROW RECHECK FIX, 2026-09-08) +
@@ -3835,7 +3845,7 @@ COMPLETE on `dev/v1.9`; awaits AIPM direct source
 recheck + narrow Codex xHigh recheck + Owner
 real-SU2020 re-verification.
 CODEX_RISK_TRIGGER: **YES** (post-implementation,
-narrow) �?this packet closes the BLOCK-P0-04 residual
+narrow) �?this packet closes the BLOCK-P0-04 residual
 post-read atomicity seam + the R3 endpoint fallback
 matrix seam + the R4 actual V1.8 result-shape seam +
 the R5 orchestrated E2E seam + the R7
@@ -3857,35 +3867,35 @@ Per the current V1.9A P0 NARROW RECHECK FIX dispatch +
 the R1–R7 source-review guidance, this packet fixes
 exactly:
 
-1. R1 �?Executor true preflight before mutation
+1. R1 �?Executor true preflight before mutation
    (BLOCK-P0-04 strict preflight + 13-step matrix;
    this packet re-verifies the BLOCK-P0-04 fix in
    HEAD and adds the R1 source-level guard).
-2. R2 �?Executor postvalidation exception-safe abort
+2. R2 �?Executor postvalidation exception-safe abort
    (this packet implements the missing rescue
    boundary; post-read raise / malformed / non-finite
    no longer escape with the operation open).
-3. R3 �?Endpoint live-read fallback contract
+3. R3 �?Endpoint live-read fallback contract
    correction (per-endpoint handle + adapter lacks
-   `vertex_position` �?cached fallback allowed;
-   4-element / 2-element Array position �?fail
+   `vertex_position` �?cached fallback allowed;
+   4-element / 2-element Array position �?fail
    closed; nil / raise / non-finite fail closed).
-4. R4 �?Presenter actual V1.8 `loops`[].unresolved_flags
+4. R4 �?Presenter actual V1.8 `loops`[].unresolved_flags
    + `closed_loop_count` / `region_count` /
    `hole_count` read shape (preferred path with legacy
    fallback).
-5. R5 �?TRUE orchestrated Owner-equivalent E2E
+5. R5 �?TRUE orchestrated Owner-equivalent E2E
    regression (uses
    `CadPrepWorkflowOrchestrator.start` +
    `apply_planar_and_refresh` +
    `apply_gap_and_refresh`; does NOT manually call
    `compute_gap_repair` or
    `compute_structure_reconstruction`).
-6. R6 �?Fresh normal/full-suite + rebuilt RBZ
+6. R6 �?Fresh normal/full-suite + rebuilt RBZ
    evidence (rebuild from corrected source; run
    normal full suite; report RBZ bytes / entries /
    SHA-256).
-7. R7 �?Restore `deep_nesting` / `嵌套层级`
+7. R7 �?Restore `deep_nesting` / `嵌套层级`
    current-attention chip semantics (add to
    `PROBLEM_METRIC_LABELS`; add regression proving
    `嵌套层级` surfaces in current-attention chips).
@@ -3950,7 +3960,7 @@ MCP / LLM / Agent.
 
 ---
 
-## 3. R1 �?strict preflight before mutation
+## 3. R1 �?strict preflight before mutation
 
 R1 is satisfied by the BLOCK-P0-04 fix already
 merged into HEAD at commit `ec6ab57` BEFORE this
@@ -3998,7 +4008,7 @@ test (1 begin / N primitives / 1 commit).
 This packet adds one new test that re-verifies the
 R1 source-level guard from the dispatch:
 
-- `V19A-P0 (R1 source-level)` �?pins the
+- `V19A-P0 (R1 source-level)` �?pins the
   preflight / one-outer-operation /
   one-primitive-per-physical-occurrence architecture
   in the executor source.
@@ -4009,7 +4019,7 @@ frozen); it only verifies + pins the contract.
 
 ---
 
-## 4. R2 �?postvalidation host-read exception safety
+## 4. R2 �?postvalidation host-read exception safety
 
 The prior executor's postvalidation read:
 
@@ -4022,7 +4032,7 @@ post_positions = handles.map { |h|
 was NOT wrapped in `begin/rescue StandardError`. If
 one host read raised after the mutation, the
 exception could escape the function while the outer
-operation was still open �?a violation of the
+operation was still open �?a violation of the
 amendment §4.4 atomicity contract.
 
 This packet wraps each per-occurrence post-read in
@@ -4038,7 +4048,7 @@ the audit row's `reason` itself stays the GENERIC
 `post_validation_failed` (per dispatch final
 narrow residual guidance 2026-09-09: the class is
 preserved in the failed workspace's `last_error`;
-the audit row's `reason` stays generic �?the
+the audit row's `reason` stays generic �?the
 production code is NOT to be changed to fit an
 older report wording that put the class directly
 into the audit row's `reason`).
@@ -4057,19 +4067,19 @@ The post-validation block additionally:
 On any postvalidation failure (raise / malformed /
 non-finite / drift) the executor still publishes:
 
-- `end_operation(commit: false)` �?abort ONCE.
-- `_mark_workspace_failed(workspace, ...)` �?  transitions through the existing failed-workspace
+- `end_operation(commit: false)` �?abort ONCE.
+- `_mark_workspace_failed(workspace, ...)` �?  transitions through the existing failed-workspace
   path.
 - `audit[:applied_count] == 0`,
   `audit[:logical_applied_count] == 0`,
-  `audit[:physical_applied_count] == 0` �?  zero committed logical / physical applied success.
+  `audit[:physical_applied_count] == 0` �?  zero committed logical / physical applied success.
 
 ### R2 new tests (this packet, in
 `tests/test_v19a_final_p0_live_coordinates.rb`):
 
 - `V19A-P0 (R2): post-position read raises -> one
   begin, one abort, no commit, FAILED, exception
-  suppressed` �?verifies the exception does NOT
+  suppressed` �?verifies the exception does NOT
   escape the function (rescue StandardError guard)
   + the operation control surface is consistent
   (1 begin / 1 abort / 0 commit).
@@ -4091,7 +4101,7 @@ modes).
 
 ---
 
-## 5. R3 �?endpoint live-read fallback contract correction
+## 5. R3 �?endpoint live-read fallback contract correction
 
 Per the frozen amendment §6.2 + R3 §4, the
 endpoint-live-read fallback matrix is:
@@ -4103,7 +4113,7 @@ endpoint-live-read fallback matrix is:
 | `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + call raises | `raise LiveVertexPositionUnreadable(endpoint_key:, underlying: e)` (fail closed) |
 | `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns `nil` | `raise LiveVertexPositionUnreadable` (fail closed) |
 | `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns non-Array OR non-Numeric OR non-finite | `raise LiveVertexPositionUnreadable` (fail closed) |
-| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns 4-element OR 2-element Array | `raise LiveVertexPositionUnreadable` (fail closed; R3 correction �?was previously `length >= 3` which let 4-element arrays through) |
+| `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns 4-element OR 2-element Array | `raise LiveVertexPositionUnreadable` (fail closed; R3 correction �?was previously `length >= 3` which let 4-element arrays through) |
 | `per_endpoint_handle` is non-nil + adapter exposes `vertex_position` + returns finite 3-Array | `[x.to_f, y.to_f, z.to_f]` (live authority wins) |
 
 The two corrections are:
@@ -4125,15 +4135,15 @@ The two corrections are:
 `tests/test_v19a_final_p0_live_coordinates.rb`):
 
 - `V19A-P0 (R3): endpoint handle + adapter lacks
-  vertex_position -> cached fallback` �?verifies
+  vertex_position -> cached fallback` �?verifies
   the cached fallback path is now permitted (no
   fail closed).
 - `V19A-P0 (R3): endpoint handle + nil adapter ->
-  cached fallback` �?same matrix coverage.
+  cached fallback` �?same matrix coverage.
 - `V19A-P0 (R3): endpoint handle + 4-element
-  position Array -> LiveVertexPositionUnreadable` �?  verifies the exactly-3 shape constraint.
+  position Array -> LiveVertexPositionUnreadable` �?  verifies the exactly-3 shape constraint.
 - `V19A-P0 (R3): endpoint handle + 2-element
-  position Array -> LiveVertexPositionUnreadable` �?  same coverage.
+  position Array -> LiveVertexPositionUnreadable` �?  same coverage.
 
 The pre-existing fail-closed tests
 (`FAILCLOSED-MALFORMED` / `FAILCLOSED-RAISE` /
@@ -4143,7 +4153,7 @@ PASS.
 
 ---
 
-## 6. R4 �?presenter actual V1.8 result shape
+## 6. R4 �?presenter actual V1.8 result shape
 
 Per amendment §7.1 + R4 §5, the presenter MUST read
 the actual V1.8 production result shape:
@@ -4182,9 +4192,9 @@ warning).
 3. `_structure_label_for(k)` now labels the new V1.8
    keys (and their legacy aliases) with the matching
    Simplified Chinese labels: `closed_loop_count`
-   / `closed_loops` �?`闭合轮廓`,
-   `region_count` / `regions` �?`区域`,
-   `hole_count` / `holes` �?`洞`.
+   / `closed_loops` �?`闭合轮廓`,
+   `region_count` / `regions` �?`区域`,
+   `hole_count` / `holes` �?`洞`.
 
 ### R4 new tests (this packet, in
 `tests/test_v19a_cad_prep_workflow_presenter.rb`):
@@ -4207,7 +4217,7 @@ warning).
 
 ---
 
-## 7. R5 �?TRUE orchestrated Owner-equivalent E2E regression
+## 7. R5 �?TRUE orchestrated Owner-equivalent E2E regression
 
 Per amendment §10.7 + R5 §6, the TRUE E2E Owner-
 equivalent regression MUST exercise the real V1.9A
@@ -4240,7 +4250,7 @@ no loops[].unresolved_flags contains non_planar_loop
 
 - `V19A-P0 (R5): orchestrated Owner-equivalent
   E2E: start -> apply_planar_and_refresh ->
-  apply_gap_and_refresh -> ready 0/1/0/1` �?  exercises the FULL orchestrator chain on the
+  apply_gap_and_refresh -> ready 0/1/0/1` �?  exercises the FULL orchestrator chain on the
   Owner fixture (A-B-C-D-E almost-closed rectangle
   with 0.2 mm Z residue on B and 1 mm gap at
   E-A). Verifies:
@@ -4270,7 +4280,7 @@ R5 contract.
 
 ---
 
-## 8. R6 �?fresh normal/full-suite + rebuilt RBZ evidence
+## 8. R6 �?fresh normal/full-suite + rebuilt RBZ evidence
 
 Per R6 §7, this packet rebuilds
 `dist/SU-AI-Plugin.rbz` from the corrected source and
@@ -4312,7 +4322,7 @@ P0 NARROW RECHECK FIX corrected source).
 ### Normal/full Ruby suite result
 
 This packet runs `tests/run_all.rb` directly (the
-NORMAL test runner �?not the prior packet's custom
+NORMAL test runner �?not the prior packet's custom
 RBZ-excluding synthetic runner). The full synthetic
 Ruby suite result:
 
@@ -4339,7 +4349,7 @@ isolated re-run before and after this packet):
   `capability.HtmlDialog` (outside SU returns false
   R002 + S2-BLOCK-006),
   `V14 production call chain` (dialog callback ->
-  WorkingModeRunner -> workspace reaches :ready �?  NoMethodError on `nil.call`),
+  WorkingModeRunner -> workspace reaches :ready �?  NoMethodError on `nil.call`),
   `V17-L1` (host_state_changed invalidates the
   workspace via validate-on-next-interaction).
 
@@ -4381,7 +4391,7 @@ v19a_presenter: 78 tests, 77 pass, 0 fail, 1 error
   - 1 R7 source-level guard test.
 - The 1 error is the pre-existing `v19a_presenter
   (FINAL P1-B): CLEAN structure metrics ... MUST
-  NOT inflate issue chips` �?see pre-existing
+  NOT inflate issue chips` �?see pre-existing
   failures list above.
 
 ### Orchestrator focused suite result
@@ -4414,9 +4424,9 @@ packet).
   assertions PASS, final line `PASS` (unchanged from
   HEAD).
 - `tests/test_rbz_smoke.rb`: 7/8 PASS + 1 pre-existing
-  ERROR (`install smoke �?extracted entry-point boots
+  ERROR (`install smoke �?extracted entry-point boots
   through FakeUI; menu registered; on_analyze_selection
-  no-op fallback` �?`NoMethodError: undefined method
+  no-op fallback` �?`NoMethodError: undefined method
   'file_loaded?' for main:Object` from a pre-existing
   FakeUI stub limitation, unrelated to this packet).
 
@@ -4428,7 +4438,7 @@ on this packet's working tree.
 
 ---
 
-## 9. R7 �?restore `deep_nesting` / `嵌套层级` current-attention chip semantics
+## 9. R7 �?restore `deep_nesting` / `嵌套层级` current-attention chip semantics
 
 Per the R7 addendum, the baseline
 `PROBLEM_METRIC_LABELS` included `嵌套层级` so that
@@ -4451,7 +4461,7 @@ from the current-attention chip / headline total.
 
 ```ruby
 PROBLEM_METRIC_LABELS = %w[
-  可校�?  异常�?  可安全修�?  需人工确认
+  可校�?  异常�?  可安全修�?  需人工确认
   失败
   短边
   坐标异常
@@ -4469,7 +4479,7 @@ attention chips list.
 
 - `v19a_presenter (R7): current deep_nesting issue
   appears on the other card AND as a
-  current-attention chip` �?proves a current
+  current-attention chip` �?proves a current
   `deep_nesting` secondary issue:
   - surfaces on the `other` card as
     `{ value: N, label: '嵌套层级' }`,
@@ -4477,10 +4487,10 @@ attention chips list.
     `嵌套层级`,
   - matches the headline total.
 - `v19a_presenter (R7 source-level):
-  PROBLEM_METRIC_LABELS contains 嵌套层级` �?  pins the contract at the source level.
+  PROBLEM_METRIC_LABELS contains 嵌套层级` �?  pins the contract at the source level.
 - `v19a_presenter (R7): CLEAN/APPLIED success
   metrics MUST still NOT inflate issue chips after
-  R7` �?defense-in-depth: the R7 fix MUST NOT
+  R7` �?defense-in-depth: the R7 fix MUST NOT
   regress the existing P1-B exclusion.
 
 ---
@@ -4490,13 +4500,13 @@ attention chips list.
 Unchanged from the prior V1.9A P0 SHARED-VERTEX
 CORRECTION packet. The frozen count schema:
 
-- `logical_applied_count` �?logical moves fully
+- `logical_applied_count` �?logical moves fully
   applied.
-- `physical_applied_count` �?physical Vertex
+- `physical_applied_count` �?physical Vertex
   occurrences actually mutated + postvalidated.
-- `applied_count` �?backward-compat alias of
+- `applied_count` �?backward-compat alias of
   `physical_applied_count`.
-- `moved_vertex_count` �?physical-count semantics
+- `moved_vertex_count` �?physical-count semantics
   (legacy consumer surface).
 
 The presenter prefers `logical_applied_count` for
@@ -4533,13 +4543,13 @@ The existing tests (already PASS in HEAD before this
 packet began):
 
 - `V19A-P0 §10.5 MID-MUTATION-FAILURE`: second
-  primitive raises �?exactly 1 `begin_operation`,
+  primitive raises �?exactly 1 `begin_operation`,
   1 successful primitive, 1
   `end_operation(commit: false)`, status `:failed`,
   zero committed logical / physical / applied
   success.
 - `V19A-P0 §10.6 POSTVALIDATION-FAILURE`: one
-  post-mutation Z drift �?exactly 1
+  post-mutation Z drift �?exactly 1
   `begin_operation`, all primitives invoke, 1
   `end_operation(commit: false)`, status `:failed`,
   zero committed logical / physical / applied
@@ -4549,7 +4559,7 @@ This packet additionally covers:
 
 - `V19A-P0 (R2): post-position read raises -> one
   begin, one abort, no commit, FAILED, exception
-  suppressed` �?exception-safe abort; the exception
+  suppressed` �?exception-safe abort; the exception
   MUST NOT escape the function.
 - `V19A-P0 (R2): post-position returns malformed
   non-Array -> one begin, one abort, no commit,
@@ -4644,11 +4654,11 @@ remain unchanged.
 ---
 
 END OF V1.9A P0 NARROW RECHECK FIX REPORT.
-# CURRENT PI REPORT �?V1.9A P0 SHARED-VERTEX CORRECTION (PREVIOUS UPDATE)
+# CURRENT PI REPORT �?V1.9A P0 SHARED-VERTEX CORRECTION (PREVIOUS UPDATE)
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Final Block Fix Source Review
+Stage: V1.9A �?Final Block Fix Source Review
 Packet: P0 SHARED-VERTEX CORRECTION
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A P0
 SHARED-VERTEX CORRECTION, 2026-09-08) + amendment
@@ -4683,7 +4693,7 @@ P0 attempt; the P1-A / P1-B / P1-C / P2-A / P2-B /
 test-debt items from the FINAL BLOCK FIX packet
 remain PASS and are not reopened).
 CODEX_RISK_TRIGGER: **YES** (post-implementation,
-narrow) �?the V1.6 -> V1.7 current-geometry authority
+narrow) �?the V1.6 -> V1.7 current-geometry authority
 seam + the V1.6 physical-fan-out identity dedupe
 boundary (the highest-cost single seam in V1.x).
 AIPM_REVIEW: **PENDING**.
@@ -4945,7 +4955,7 @@ The same rule is used in the
 `vh.object_id -> occurrence` map built during
 proposal expansion; a second encounter with the
 same identity in another analyzer move is
-suppressed). This is defense-in-depth �?the
+suppressed). This is defense-in-depth �?the
 analyzer already dedupes positions, and the
 cluster-level `_physical_occurrence_present?`
 already dedupes by identity, but the
@@ -5125,7 +5135,7 @@ operations; perform ZERO transform calls" on
 preflight failure is verified by 6 new focused
 regressions (see §10.4a below).
 
-### Tests (§10.4a �?BLOCK-P0-04 focused regressions)
+### Tests (§10.4a �?BLOCK-P0-04 focused regressions)
 
 Six new focused regressions (in addition to the
 two previously-existing `§10.5 MID-MUTATION-FAILURE`
@@ -5413,15 +5423,15 @@ and `cta_callback = nil`.
     - 5 FAIL on `html_render` source-level guards
       on `.recovery-banner[hidden]` CSS order +
       `app.js` `payload.groups` / `cta_callback`
-      textual content �?these test the actual file
+      textual content �?these test the actual file
       contents against source-reviewed PASS items
       that pre-date this packet.
-    - 1 FAIL on `v19a_presenter (FINAL P1-B)` �?      also pre-existing source-level guard on the
+    - 1 FAIL on `v19a_presenter (FINAL P1-B)` �?      also pre-existing source-level guard on the
       V1.8 structure metrics.
     - 3 ERROR on `capability.HtmlDialog` (outside
       SU returns false), `V14 production call
       chain` (NoMethodError on `nil.call`), `V17-L1
-      host_state_changed` �?pre-existing test-
+      host_state_changed` �?pre-existing test-
       environment / FakeUI limitations per
       CURRENT_STATE.md.
 
@@ -5457,7 +5467,7 @@ RBZ-dependent tests as documented above):
   the only ones that fail in this run are the
   V1.9A FINAL P1-A / P1-C source-level guards on
   the same files which are pre-existing failures
-  on HEAD �?see §14 above).
+  on HEAD �?see §14 above).
 - V19A OWNER UI HIDDEN-SEMANTICS: 9 / 9 PASS
   (unchanged). The single FAIL on the
   `.recovery-banner[hidden]` cascade-order guard
@@ -5465,7 +5475,7 @@ RBZ-dependent tests as documented above):
   `.recovery-banner[hidden]` BEFORE `.recovery-banner`
   in `style.css`; the test was added in the
   HIDDEN-SEMANTICS FOLLOW-UP packet and is known
-  to require a CSS source reorder to PASS �?not
+  to require a CSS source reorder to PASS �?not
   part of this P0 packet's scope).
 - V1.6 planar normalization: 33 / 33 PASS (unchanged).
 - V1.6 close-autodiscard: 7 / 7 PASS (unchanged).
@@ -5496,7 +5506,7 @@ packet's RBZ
 SHA-256 `06a54af0b11264b43c3f4af8a024d989ec75ff563222a2f72d190c25d48f3de1`,
 entries 73) is a pre-existing artifact that already
 contains the corrupted bytes (stray `\x01` /
-`\x1B` / `\x12` in several `.rb` entries �?the
+`\x1B` / `\x12` in several `.rb` entries �?the
 RBZ smoke test currently fails on this RBZ before
 this packet started, and is unchanged by this
 packet).
@@ -5614,19 +5624,19 @@ END OF V1.9A P0 SHARED-VERTEX CORRECTION REPORT.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION
+# CURRENT PI REPORT �?V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: A2 �?ERROR BOUNDARY NARROW CORRECTION
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: A2 �?ERROR BOUNDARY NARROW CORRECTION
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A2 ERROR
 BOUNDARY NARROW CORRECTION, 2026-09-07) + the prior A2
 dispatch that defined the orchestrator architecture +
 the frozen V1.8 Blueprint.
 Baseline HEAD: `8e621bb9e33f374a000cce5f977ce4318a6ab070`
 (dev/v1.9 V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
-complete state �?the architecture accepted by AIPM; the
+complete state �?the architecture accepted by AIPM; the
 error-boundary defect addressed by this packet).
 Baseline branch: `dev/v1.9`
 TARGET_BRANCH: **dev/v1.9**
@@ -5643,7 +5653,7 @@ review of the error-boundary propagation +
 presenter FAILED-copy + resilience regression tests +
 dialog_runner error-boundary tests + RBZ hashes.
 A0 prototype: `Prototype/V1_9A/` (preserved unchanged).
-CODEX_RISK_TRIGGER: **NO** (dispatch §13 �?narrow
+CODEX_RISK_TRIGGER: **NO** (dispatch §13 �?narrow
 error-boundary + presenter UX copy corrections + their
 regression tests; no canonical graph / V1.7 segment
 conflict / tolerance authority / source-derived ownership /
@@ -5699,8 +5709,8 @@ This packet is ONLY:
    log channel.
 
 Preserved unchanged (per dispatch §5):
-- A2 call order (prepare �?duplicate �?planar �?gap
-  �?structure).
+- A2 call order (prepare �?duplicate �?planar �?gap
+  �?structure).
 - Refresh semantics.
 - post-Z V1.7 invalidation seam.
 - post-Z gap + structure recompute.
@@ -5759,7 +5769,7 @@ NO executable `rescue StandardError` (verified by
 `tests/test_v19a_cad_prep_workflow_orchestrator.rb` new
 source-level guard test
 `orchestrator (resilience A2-ERR-01): source has NO
-rescue StandardError at public entry points` �?PASS).
+rescue StandardError at public entry points` �?PASS).
 
 The header comment in `cad_prep_workflow_orchestrator.rb`
 was updated to document the rule:
@@ -5780,7 +5790,7 @@ Expected runner-state failures (`:failed` / `:building`
 snapshots via the runner's own state machine. The
 orchestrator's `_workspace_ready?(snap)` guard inside
 each entry point returns the truthful non-ready
-snapshot for those states �?those are NOT exceptions,
+snapshot for those states �?those are NOT exceptions,
 they are truthful runner states and remain UNCHANGED.
 
 ---
@@ -5833,18 +5843,18 @@ correct per V1.4 V14-RUNTIME-BLOCK-004) is the
 canonical production error boundary. Its contract:
 
 1. Capture any StandardError raised by the yielded
-   block (do NOT raise further �?toast / push_data
+   block (do NOT raise further �?toast / push_data
    paths must run).
 2. Log the exception class / message + first 5
-   backtrace lines via `_safe_log` (defensive �?never
+   backtrace lines via `_safe_log` (defensive �?never
    propagates).
 3. Emit a toast `V1.4 <action_name> failed:
    <ExceptionClass>: <message>` via `_toast`
-   (defensive �?never propagates).
+   (defensive �?never propagates).
 4. UNCONDITIONALLY re-push the payload via
    `push_data` (the existing `push_data` ->
    `execute_script("window.SUAIP.render(<json>)")`
-   path; defensive �?never propagates).
+   path; defensive �?never propagates).
 
 After this packet's orchestrator change, the
 synthetic orchestrator failures reach this boundary
@@ -5884,7 +5894,7 @@ A2 packet:
 `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`).
 The fix is entirely on the orchestrator side; the
 dialog_runner was already correctly handling
-exceptions �?it just was never seeing the orchestrator
+exceptions �?it just was never seeing the orchestrator
 exceptions before this packet.
 
 ---
@@ -5897,7 +5907,7 @@ The `_failure_subtitle(snap)` helper no longer slices
 `snap['last_error']`:
 
 ```ruby
-# BEFORE (A1 truncation path �?RETIRED per dispatch
+# BEFORE (A1 truncation path �?RETIRED per dispatch
 # §4):
 def _failure_subtitle(snap)
   last = snap['last_error'].to_s
@@ -5909,7 +5919,7 @@ end
 
 # AFTER (A2 ERROR BOUNDARY NARROW CORRECTION):
 FAILED_SUBTITLE_CN =
-  '检查过程中遇到错误，请重试或查看详�?.freeze
+  '检查过程中遇到错误，请重试或查看详�?.freeze
 
 def _failure_subtitle(_snap)
   # Primary FAILED copy is the FROZEN generic
@@ -5927,7 +5937,7 @@ The `snap` argument is intentionally retained (with an
 underscore prefix) so existing call sites
 (`_build_issue_summary` for FAILED and
 `_build_headlines` for FAILED) continue to compile
-unchanged �?the call sites did not need to be touched.
+unchanged �?the call sites did not need to be touched.
 
 Rules enforced (per dispatch §4):
 
@@ -5982,8 +5992,8 @@ Focused test results:
   rebuild / invalidation seam tests are all
   UNCHANGED and PASS; the 5 ERROR lines are the
   pre-existing test-infrastructure limitations
-  �?the runner lacks `refute_includes` / `refute`
-  helpers �?and are NOT failures caused by this
+  �?the runner lacks `refute_includes` / `refute`
+  helpers �?and are NOT failures caused by this
   packet; they match the prior A2 packet's `14
   PASS + 5 ERROR` baseline for the same test
   methods).
@@ -6046,7 +6056,7 @@ contract).
   (CHANGED).
 - Packaged `dialog_runner.rb` SHA-256:
   `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
-  (UNCHANGED �?its `_safe_invoke` boundary was
+  (UNCHANGED �?its `_safe_invoke` boundary was
   already correct; the fix is on the orchestrator
   side).
 - Packaged `html/index.html` SHA-256:
@@ -6066,7 +6076,7 @@ contract).
 
 Per dispatch §5 (Do NOT change), confirmed unchanged:
 
-- Start call order (prepare �?duplicate �?planar �?  gap �?structure): UNCHANGED.
+- Start call order (prepare �?duplicate �?planar �?  gap �?structure): UNCHANGED.
 - Refresh semantics: UNCHANGED.
 - post-Z V1.7 invalidation seam:
   `WorkingModeRunner.invalidate_topology_state_after_geometry_mutation`
@@ -6122,7 +6132,7 @@ V1.6 / V1.7 / V1.8 algorithm change. No V1.9B. No MCP
 algorithm / UI-architecture change. The A2
 orchestrator's existing architecture (call order /
 invalidation / callback wiring) is FROZEN
-UNCHANGED �?only the error-boundary behavior + the
+UNCHANGED �?only the error-boundary behavior + the
 presenter's FAILED subtitle are corrected.
 
 AIPM primary review is the expected next step. No
@@ -6142,7 +6152,7 @@ Codex escalation is required.
    Header comment + 1 documenting inline comment
    updated to reflect the rule.
 3. **New unexpected-exception test behavior**: 12 new
-   tests pin the corrected contract �?6
+   tests pin the corrected contract �?6
    orchestrator-level (entry-point propagation for
    all 5 entry points + 1 source-level guard) and 6
    dialog_runner-level (synthetic orchestrator
@@ -6158,7 +6168,7 @@ Codex escalation is required.
 5. **FAILED-copy change**: `_failure_subtitle(_snap)`
    now returns the frozen
    `FAILED_SUBTITLE_CN = '检查过程中遇到错误，请重试
-   或查看详�?` constant. The A1 truncation path
+   或查看详�?` constant. The A1 truncation path
    `last[0, 80]` is RETIRED. The `snap` argument is
    retained for backward compatibility (existing call
    sites unchanged).
@@ -6200,12 +6210,12 @@ detailed dispatch §0-§7 evidence.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
+# CURRENT PI REPORT �?V1.9A-A2 ONE-CLICK DIAGNOSTICS ORCHESTRATOR
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: A2 �?ONE-CLICK DIAGNOSTICS + AUTO REFRESH
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: A2 �?ONE-CLICK DIAGNOSTICS + AUTO REFRESH
 Authority:
 - `Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`
 - `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A2)
@@ -6220,7 +6230,7 @@ CLOSURE predecessor packets).
 A2 packet: COMPLETE on `dev/v1.9`; awaiting AIPM source
 review.
 A0 prototype: `Prototype/V1_9A/` (preserved unchanged)
-CODEX_RISK_TRIGGER: **NO** (dispatch §13 �?orchestrator
+CODEX_RISK_TRIGGER: **NO** (dispatch §13 �?orchestrator
 + invalidation seam + presenter IDLE copy + gap-ordering
 safety + frontend CTA mapping + test infrastructure; no
 canonical graph / V1.7 segment conflict / tolerance
@@ -6351,7 +6361,7 @@ SHA-256: 197c8552f6c8f51bf423404bcc48cbe697c4c20eaa0fa72f658852713e70f03e
 | `su_ai_plugin/dialog_runner.rb`                         | `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94` (NEW) |
 | `su_ai_plugin/core/working_mode_runner.rb`              | `2962F45A06338D929C38FB885ED129373E67C3F2E6E220FE075AF07DCEF02214` (NEW) |
 | `su_ai_plugin/html/index.html`                          | `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A` (unchanged) |
-| `su_ai_plugin/html/app.js`                              | `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F` (NEW �?A2 CTA mapping) |
+| `su_ai_plugin/html/app.js`                              | `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F` (NEW �?A2 CTA mapping) |
 | `su_ai_plugin/html/style.css`                           | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36` (unchanged) |
 
 ## 2. Orchestrator public API (this packet)
@@ -6495,20 +6505,20 @@ diagnostics.
 
 ## 9. IDLE copy (dispatch §8.1)
 
-Before (A1 truthful): "开始后将创建安全工作副本并自动清理高置信度重复�? / "点击"开始处�?以创建安全工作副本并自动清理高置信度重复�?
+Before (A1 truthful): "开始后将创建安全工作副本并自动清理高置信度重复�? / "点击"开始处�?以创建安全工作副本并自动清理高置信度重复�?
 
-After (A2 truthful): "开始后将创建安全工作副本并自动完成全部检�? / "点击"开始处�?以创建安全工作副本并自动完成全部检�?
+After (A2 truthful): "开始后将创建安全工作副本并自动完成全部检�? / "点击"开始处�?以创建安全工作副本并自动完成全部检�?
 
 ## 10. Frontend CTA mapping (dispatch §8.2)
 
 | `overall_state`         | Label (CN)    | Callback              | Enabled |
 |-------------------------|---------------|-----------------------|---------|
-| `IDLE`                  | 开始处�?      | `start_cad_prep`     | true    |
+| `IDLE`                  | 开始处�?      | `start_cad_prep`     | true    |
 | `SCANNING`              | 正在准备...    | `start_cad_prep`     | false   |
-| `NEEDS_ATTENTION`       | 重新检�?      | `refresh_cad_prep`   | true    |
-| `READY_FOR_VALIDATION`  | 重新检�?      | `refresh_cad_prep`   | true    |
-| `STALE`                 | (recovery banner �?primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | false |
-| `FAILED`                | (recovery banner �?primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | true |
+| `NEEDS_ATTENTION`       | 重新检�?      | `refresh_cad_prep`   | true    |
+| `READY_FOR_VALIDATION`  | 重新检�?      | `refresh_cad_prep`   | true    |
+| `STALE`                 | (recovery banner �?primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | false |
+| `FAILED`                | (recovery banner �?primary action 重新生成工作副本) | `rebuild_workspace` (rebuilt) | true |
 
 The A1 IDLE CTA `prepare_workspace` is RETIRED
 (the A1 prepare path is now orchestrated inside
@@ -6529,7 +6539,7 @@ When `planar_normalization.state == READY_TO_NORMALIZE`:
 
 - Presenter gate: the `gap_endpoint` card's
   `primary_action.enabled` is `false`; the card
-  `summary` reads "需先完�?Z 轴校正后重新确认".
+  `summary` reads "需先完�?Z 轴校正后重新确认".
 - Orchestrator backstop: the orchestrator's
   `apply_gap_and_refresh` returns the truthful
   snapshot unchanged; the runner's `apply_gap_repair`
@@ -6541,7 +6551,7 @@ When `planar_normalization.state` is `APPLIED`,
 `BLOCKED`, or `NOT_COMPUTED`, the gap repair action
 is enabled (REVIEW_REQUIRED is a non-actionable
 warning that V1.7's own conservative rules already
-handle �?per dispatch §5.2).
+handle �?per dispatch §5.2).
 
 ## 12. Top-level risk boundary (dispatch §13)
 
@@ -6652,7 +6662,7 @@ RUBY-DEBT-CLOSURE).
   CLEAN (`无重复线`) in that case.
 - The orchestrator's `apply_gap_and_refresh` does
   NOT re-run `compute_gap_repair` after the apply
-  (per dispatch §4.2 �?re-running would erase the
+  (per dispatch §4.2 �?re-running would erase the
   applied audit; the apply path already published
   the post-gap audit). The presenter continues to
   show the gap card as APPLIED.
@@ -6715,13 +6725,13 @@ submission. STOP. Return control to AIPM.
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: A1 �?PRODUCTION UI SHELL + PRESENTATION MODEL (AIPM FIX REQUIRED CONTINUATION)
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: A1 �?PRODUCTION UI SHELL + PRESENTATION MODEL (AIPM FIX REQUIRED CONTINUATION)
 Authority:
 - `Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A_V1_9B_2026-09-04.md`
 - `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A-A1)
 - AIPM FIX REQUIRED re-issue (BLOCK 1 + BLOCK 2 + non-blocking
-  presenter-fault cleanup) �?2026-09-04
+  presenter-fault cleanup) �?2026-09-04
 Baseline HEAD: `bbe423cce3f4136ddd4d0673fbce02527e36de15`
 (dev/v1.8 V18-OWNER-SU2020-UI-WIRING complete state)
 Baseline branch: `dev/v1.8`
@@ -6732,7 +6742,7 @@ extends it without rewriting any frozen authority).
 Final HEAD on dev/v1.9: see `git rev-parse HEAD` after push.
 A0 Owner UX Gate: PASS
 A0 prototype: `Prototype/V1_9A/` (preserved unchanged)
-CODEX_RISK_TRIGGER: **NO** (dispatch §0 �?no frozen boundary
+CODEX_RISK_TRIGGER: **NO** (dispatch §0 �?no frozen boundary
 crossed; V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithms UNCHANGED;
 no source CAD mutation; no Face / Observer architecture;
 no PreparedCadDataset / persistence; no V1.9B; no MCP / LLM /
@@ -6823,21 +6833,21 @@ SHA-256: 539b36ccbe82dfd17b96c79fa7d566fa40f7e1a72ca2df1c9073903d5e36a3d4
 
 ### Approved 4-tab IA
 
-1. **处理** �?default (`aria-selected="true"`, `panel-process` visible).
-2. **问题** �?current unresolved-problem browser (locatable / non-locatable rows; click-to-locate preserved per CodeX Round 020 L3).
-3. **图层** �?secondary; renders legacy `layerGroups` payload.
-4. **详情** �?technical / audit (source snapshot / fingerprint / config digest / raw inventory / per-action repair audit / canonical / structure digest).
+1. **处理** �?default (`aria-selected="true"`, `panel-process` visible).
+2. **问题** �?current unresolved-problem browser (locatable / non-locatable rows; click-to-locate preserved per CodeX Round 020 L3).
+3. **图层** �?secondary; renders legacy `layerGroups` payload.
+4. **详情** �?technical / audit (source snapshot / fingerprint / config digest / raw inventory / per-action repair audit / canonical / structure digest).
 
 ### Top-level layout (处理 panel)
 
 ```
-┌────────────────────────────────────────────────────────────────�?�?SU AI · CAD Prep         当前选择：别墅平面图 · 12 图层  [状态] �?├────────────────────────────────────────────────────────────────�?�? 处理 | 问题 | 图层 | 详情                                       �?├────────────────────────────────────────────────────────────────�?�?┌──── Recovery banner (STALE / FAILED only) ────────────────�? �?�?�?工作副本已失�?  [重新生成工作副本] [放弃工作副本]            �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── CTA row ──────────────────────────────────────────────�? �?�?�?CAD 尚未处理                          [开始处理]              �? �?�?�?开始后将创建安全工作副本并完成全部检�?                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Issue summary (error-only) ───────────────────────────�? �?�?�?CAD 尚未处理                                                �? �?�?�?点击"开始处�?以创建安全工作副本并完成全部检�?              �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 1: 重复线清�?── [未检查] ─────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 2: Z �?/ 平面校正 ── [未检查] ────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 3: 间隙与断�?── [未检查] ──────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 4: 轮廓与区�?── [未检查] ──────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 5: 其他需检查项 ── [未检查] ────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?└────────────────────────────────────────────────────────────────�?```
+┌────────────────────────────────────────────────────────────────�?�?SU AI · CAD Prep         当前选择：别墅平面图 · 12 图层  [状态] �?├────────────────────────────────────────────────────────────────�?�? 处理 | 问题 | 图层 | 详情                                       �?├────────────────────────────────────────────────────────────────�?�?┌──── Recovery banner (STALE / FAILED only) ────────────────�? �?�?�?工作副本已失�?  [重新生成工作副本] [放弃工作副本]            �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── CTA row ──────────────────────────────────────────────�? �?�?�?CAD 尚未处理                          [开始处理]              �? �?�?�?开始后将创建安全工作副本并完成全部检�?                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Issue summary (error-only) ───────────────────────────�? �?�?�?CAD 尚未处理                                                �? �?�?�?点击"开始处�?以创建安全工作副本并完成全部检�?              �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 1: 重复线清�?── [未检查] ─────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 2: Z �?/ 平面校正 ── [未检查] ────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 3: 间隙与断�?── [未检查] ──────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 4: 轮廓与区�?── [未检查] ──────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?�?┌──── Card 5: 其他需检查项 ── [未检查] ────────────────────�? �?�?�?将在开始处理后自动检�?                                      �? �?�?└────────────────────────────────────────────────────────────�? �?└────────────────────────────────────────────────────────────────�?```
 
 ### Visual language (frozen A0 palette)
 
 - Cool near-white background (`--bg-app: #f4f6fa`).
 - White / lightly tinted surfaces.
-- Blue-violet primary CTA gradient (`--accent-1: #5b6cff` �?`--accent-2: #8a5cf6`).
+- Blue-violet primary CTA gradient (`--accent-1: #5b6cff` �?`--accent-2: #8a5cf6`).
 - Emerald success / amber warning / red failure.
 - 12px card radius; restrained shadow; generous spacing.
 - System fonts only (`system-ui`, `"PingFang SC"`, `"Microsoft YaHei"`, fallback sans-serif).
@@ -6845,11 +6855,11 @@ SHA-256: 539b36ccbe82dfd17b96c79fa7d566fa40f7e1a72ca2df1c9073903d5e36a3d4
 
 ### Legacy-aware constraints (frozen dispatch §10)
 
-- **No CSS Grid** �?flex + explicit margins only.
-- **No flex `gap`** �?explicit margins on children.
-- **No `backdrop-filter`** �?graceful degradation required.
-- **No `@import`** �?single self-contained CSS file.
-- **No remote `url(...)`** �?only inline SVG fragments.
+- **No CSS Grid** �?flex + explicit margins only.
+- **No flex `gap`** �?explicit margins on children.
+- **No `backdrop-filter`** �?graceful degradation required.
+- **No `@import`** �?single self-contained CSS file.
+- **No remote `url(...)`** �?only inline SVG fragments.
 - No web font / no CDN / no remote runtime dependency.
 
 ---
@@ -6860,11 +6870,11 @@ SHA-256: 539b36ccbe82dfd17b96c79fa7d566fa40f7e1a72ca2df1c9073903d5e36a3d4
 
 ```
 AnalysisResult + WorkingModeRunner.snapshot
-  �?CadPrepWorkflowPresenter   (pure / deterministic / idempotent)
-  �?cadPrepWorkflow (additive top-level key on UIBridge payload)
-  �?UIBridge.as_html_data (legacy keys preserved)
-  �?app.js#render(payload)
-  �?DOM (4 tabs / 5 cards / error-only summary)
+  �?CadPrepWorkflowPresenter   (pure / deterministic / idempotent)
+  �?cadPrepWorkflow (additive top-level key on UIBridge payload)
+  �?UIBridge.as_html_data (legacy keys preserved)
+  �?app.js#render(payload)
+  �?DOM (4 tabs / 5 cards / error-only summary)
 ```
 
 ### `cadPrepWorkflow` schema (this commit)
@@ -6874,7 +6884,7 @@ AnalysisResult + WorkingModeRunner.snapshot
   "schema_version": "1",
   "overall_state": "IDLE",                          // 6 enum values (see below)
   "headline":       "CAD 尚未处理",
-  "subheadline":    "开始后将创建安全工作副本并完成全部检�?,
+  "subheadline":    "开始后将创建安全工作副本并完成全部检�?,
   "selection":      { "type": "Group", "label": "..." },
   "issue_summary":  { /* kind / headline / subtitle / chips / cta */ },
   "cards": [
@@ -6888,11 +6898,11 @@ AnalysisResult + WorkingModeRunner.snapshot
 
 | Enum                    | CN label              | Description                                                       |
 |-------------------------|----------------------|-------------------------------------------------------------------|
-| `IDLE`                  | 尚未处理             | No workspace; default home; primary CTA = `开始处理` �?`prepare_workspace` |
-| `SCANNING`              | 正在检�?            | Workspace building (`state == 'building'`); CTA disabled          |
+| `IDLE`                  | 尚未处理             | No workspace; default home; primary CTA = `开始处理` �?`prepare_workspace` |
+| `SCANNING`              | 正在检�?            | Workspace building (`state == 'building'`); CTA disabled          |
 | `NEEDS_ATTENTION`       | 发现需要处理的问题   | At least one card is ACTIONABLE / REVIEW_REQUIRED                |
-| `READY_FOR_VALIDATION`  | 已完成检�?          | All cards CLEAN / APPLIED (no actionable / review)              |
-| `STALE`                 | 工作副本已失�?      | `state == 'failed'` + `last_error` contains `host_state_changed` |
+| `READY_FOR_VALIDATION`  | 已完成检�?          | All cards CLEAN / APPLIED (no actionable / review)              |
+| `STALE`                 | 工作副本已失�?      | `state == 'failed'` + `last_error` contains `host_state_changed` |
 | `FAILED`                | 处理失败             | `state == 'failed'` for any other reason                          |
 
 Raw enum strings are NEVER exposed to the user (frozen CN labels
@@ -6919,10 +6929,10 @@ via `OVERALL_STATE_LABELS_CN`).
 
 ### Card fixed order (frozen)
 
-1. `duplicate_cleanup` �?重复线清�?2. `planar_normalization` �?Z �?/ 平面校正
-3. `gap_endpoint` �?间隙与断�?4. `structure_region` �?轮廓与区�?5. `other` �?其他需检查项
+1. `duplicate_cleanup` �?重复线清�?2. `planar_normalization` �?Z �?/ 平面校正
+3. `gap_endpoint` �?间隙与断�?4. `structure_region` �?轮廓与区�?5. `other` �?其他需检查项
 
-### Raw state �?Presentation state mapping (Truth table)
+### Raw state �?Presentation state mapping (Truth table)
 
 | `state` (workspace) | `planar_normalization.state` | `topology_repair.state` | `structure_reconstruction.state` | `overall_state`         | Card states                                                                  |
 |---------------------|------------------------------|-------------------------|----------------------------------|-------------------------|------------------------------------------------------------------------------|
@@ -6937,7 +6947,7 @@ via `OVERALL_STATE_LABELS_CN`).
 | `ready`             | `NO_CANDIDATE`               | `NO_CANDIDATE`          | `READY`                          | `READY_FOR_VALIDATION`  | structure `CLEAN` (结构可用)                                                 |
 | `ready`             | `NO_CANDIDATE`               | `NO_CANDIDATE`          | `READY_WITH_WARNINGS`            | `NEEDS_ATTENTION`       | structure `REVIEW_REQUIRED` + `查看问题`                                     |
 | `ready`             | `NO_CANDIDATE`               | `NO_CANDIDATE`          | `FAILED`                         | `NEEDS_ATTENTION`       | structure `FAILED`                                                            |
-| `ready`             | `APPLIED`                    | `NO_CANDIDATE`          | `READY`                          | `READY_FOR_VALIDATION`  | planar `APPLIED` (已校�?                                                     |
+| `ready`             | `APPLIED`                    | `NO_CANDIDATE`          | `READY`                          | `READY_FOR_VALIDATION`  | planar `APPLIED` (已校�?                                                     |
 | `failed`            | (any)                        | (any)                   | (any)                            | `STALE` (if host_state) | All 5 cards `STALE`; recovery banner shown                                  |
 | `failed`            | (any)                        | (any)                   | (any)                            | `FAILED`                | All 5 cards `STALE` (visual); recovery banner shown                         |
 
@@ -6959,25 +6969,25 @@ prevents A2 from silently inheriting a green "clean" state.
 
 | `overall_state`         | Primary CTA label    | Callback                | Enabled |
 |-------------------------|---------------------|-------------------------|---------|
-| `IDLE`                  | 开始处�?            | `prepare_workspace`     | yes     |
+| `IDLE`                  | 开始处�?            | `prepare_workspace`     | yes     |
 | `SCANNING`              | 正在准备...         | `prepare_workspace`     | no      |
-| `NEEDS_ATTENTION`       | 重新检�?            | `rebuild_workspace`     | yes     |
-| `READY_FOR_VALIDATION`  | 重新检�?            | `rebuild_workspace`     | yes     |
-| `STALE`                 | 重新检�?            | `rebuild_workspace`     | no      |
-| `FAILED`                | 重新检�?            | `rebuild_workspace`     | yes     |
+| `NEEDS_ATTENTION`       | 重新检�?            | `rebuild_workspace`     | yes     |
+| `READY_FOR_VALIDATION`  | 重新检�?            | `rebuild_workspace`     | yes     |
+| `STALE`                 | 重新检�?            | `rebuild_workspace`     | no      |
+| `FAILED`                | 重新检�?            | `rebuild_workspace`     | yes     |
 
 ### Per-card primary actions (existing callbacks only)
 
 | Card                 | When                            | Action label  | Callback                              |
 |----------------------|---------------------------------|---------------|----------------------------------------|
-| duplicate_cleanup    | (never �?high-confidence auto)  | (none)        | (none)                                 |
-| planar_normalization | UNCOMPUTED                      | 检查平面偏�? | `compute_planar_normalization`          |
-| planar_normalization | ACTIONABLE                      | 修复 Z �?   | `apply_planar_normalization`            |
+| duplicate_cleanup    | (never �?high-confidence auto)  | (none)        | (none)                                 |
+| planar_normalization | UNCOMPUTED                      | 检查平面偏�? | `compute_planar_normalization`          |
+| planar_normalization | ACTIONABLE                      | 修复 Z �?   | `apply_planar_normalization`            |
 | planar_normalization | REVIEW_REQUIRED                 | 查看问题     | `view_issues` (frontend pseudo)        |
-| gap_endpoint         | UNCOMPUTED                      | 检查间�?    | `compute_gap_repair`                   |
+| gap_endpoint         | UNCOMPUTED                      | 检查间�?    | `compute_gap_repair`                   |
 | gap_endpoint         | ACTIONABLE                      | 修复间隙     | `apply_gap_repair`                     |
 | gap_endpoint         | REVIEW_REQUIRED                 | 查看问题     | `view_issues`                          |
-| structure_region     | UNCOMPUTED                      | 检查结�?    | `compute_structure_reconstruction`     |
+| structure_region     | UNCOMPUTED                      | 检查结�?    | `compute_structure_reconstruction`     |
 | structure_region     | REVIEW_REQUIRED                 | 查看问题     | `view_issues`                          |
 
 ### All 11 existing callbacks preserved verbatim
@@ -7017,9 +7027,9 @@ orchestration.
 
 The 1 fail + 2 error are PRE-EXISTING on the dev/v1.8 baseline
 (confirmed via `git checkout dev/v1.8 + re-run`):
-- `capability.HtmlDialog: outside SU returns false (R002 + S2-BLOCK-006)` �?pre-existing test-environment limitation.
-- `V14 production call chain: dialog callback -> WorkingModeRunner -> workspace reaches :ready` �?pre-existing FakeUI setup limitation.
-- `V17-L1: host_state_changed invalidates the workspace via validate-on-next-interaction` �?pre-existing FakeUI setup limitation.
+- `capability.HtmlDialog: outside SU returns false (R002 + S2-BLOCK-006)` �?pre-existing test-environment limitation.
+- `V14 production call chain: dialog callback -> WorkingModeRunner -> workspace reaches :ready` �?pre-existing FakeUI setup limitation.
+- `V17-L1: host_state_changed invalidates the workspace via validate-on-next-interaction` �?pre-existing FakeUI setup limitation.
 
 All three are unrelated to V1.9A-A1 scope (test-environment /
 pre-existing failures, NOT regressions caused by this packet),
@@ -7069,7 +7079,7 @@ per dispatch §13 reporting rule.
 - 5 capability cards rendered in fixed order.
 - Selection line uses `cadPrepWorkflow.selection.label`.
 - Status chip carries `overall_state`.
-- Primary CTA text = "开始处�? + dispatch = `prepare_workspace`.
+- Primary CTA text = "开始处�? + dispatch = `prepare_workspace`.
 - Clicking primary CTA invokes `window.sketchup.prepare_workspace`.
 - Planar ACTIONABLE primary button data-action = `apply_planar_normalization`.
 - STALE shows recovery banner + rebuild/discard buttons.
@@ -7150,7 +7160,7 @@ separately and NOT labeled PASS.
 | Scope item                                                    | Started? | Evidence                                                  |
 |---------------------------------------------------------------|----------|-----------------------------------------------------------|
 | `CadPrepWorkflowOrchestrator`                                  | NO       | Not present in any file; no `start_cad_prep` callback.   |
-| Automatic full diagnostics after `prepare_workspace`           | NO       | The dialog_runner `on_prepare_workspace` runs the duplicate-repair batch (V1.5) only �?UNCHANGED. |
+| Automatic full diagnostics after `prepare_workspace`           | NO       | The dialog_runner `on_prepare_workspace` runs the duplicate-repair batch (V1.5) only �?UNCHANGED. |
 | `start_cad_prep` orchestration callback                         | NO       | Not registered in `dialog_runner.rb`.                     |
 | Automatic downstream recompute after Z repair                  | NO       | `apply_planar_normalization` invalidates V1.8 cache (SR18-05) but does NOT trigger `compute_gap_repair` or `compute_structure_reconstruction`. |
 | Automatic structure recompute after gap repair                 | NO       | `apply_gap_repair` invalidates V1.8 cache (SR18-05) but does NOT trigger `compute_structure_reconstruction`. |
@@ -7182,7 +7192,7 @@ Per dispatch §0 + AGENTS.md / Master Plan §13:
 2. **Files changed**: see §1 + `git log -1 --stat` for the full list.
 3. **Presenter architecture**: see §3 (pure / idempotent / JSON-safe additive module at `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`).
 4. **Actual cadPrepWorkflow schema**: see §3 (locked schema_version "1"; 5-card frozen order; 6 overall states).
-5. **Raw-state �?presentation-state mapping table**: see §3 truth table.
+5. **Raw-state �?presentation-state mapping table**: see §3 truth table.
 6. **DOM / Ruby / RBZ evidence**: see §5.
 7. **RBZ identity**: see §6 (1,094,204 bytes / 70 entries / SHA-256 `539b36cc…`).
 8. **Known limitations**: see §7 (3 pre-existing failures on V1.8 baseline, unrelated to A1).
@@ -7213,18 +7223,18 @@ THREE bounded corrections (no architecture change, no
 algorithmic change, no V1.x scope expansion):
 
 - **BLOCK 1 (copy)**: IDLE user-facing copy must NOT claim
-  “开始后将创建安全工作副本并完成全部检查�?because full
+  “开始后将创建安全工作副本并完成全部检查�?because full
   automatic diagnostics belong to A2. The copy was rewritten
-  to truthfully describe the A1 actual behavior (“开始后将创�?  工作副本并自动清理高置信度重复线�?.
+  to truthfully describe the A1 actual behavior (“开始后将创�?  工作副本并自动清理高置信度重复线�?.
 - **BLOCK 2 (overall state)**: `overall_state` for a `ready`
   workspace MUST be derived from the actual rendered
   capability card states, not from a subset of sub-snapshot
   raw states. Implemented via the new
   `_overall_state_for_ready_workspace(cards)` helper:
-    - any ACTIONABLE / BLOCKED / FAILED card �?NEEDS_ATTENTION;
-    - any REVIEW_REQUIRED card �?NEEDS_ATTENTION;
-    - any stage-bound UNCOMPUTED �?NEEDS_ATTENTION
-      with the truthful headline “仍有未检查项�?
+    - any ACTIONABLE / BLOCKED / FAILED card �?NEEDS_ATTENTION;
+    - any REVIEW_REQUIRED card �?NEEDS_ATTENTION;
+    - any stage-bound UNCOMPUTED �?NEEDS_ATTENTION
+      with the truthful headline “仍有未检查项�?
     - READY_FOR_VALIDATION only when all stage-bound cards
       are CLEAN / APPLIED and nothing else needs attention.
 - **NON-BLOCKING (presenter-fault UX)**: the main product UI
@@ -7237,12 +7247,12 @@ All six required regression tests are pinned in
 `tests/test_v19a_cad_prep_workflow_presenter.rb` and
 `tests/test_v19a_ui_bridge.rb`:
 
-1. ready + all stage snapshots absent �?NEEDS_ATTENTION.
-2. ready + planar NOT_COMPUTED �?NEEDS_ATTENTION.
-3. ready + structure FAILED �?NEEDS_ATTENTION.
-4. ready + `other` card REVIEW_REQUIRED �?NEEDS_ATTENTION.
+1. ready + all stage snapshots absent �?NEEDS_ATTENTION.
+2. ready + planar NOT_COMPUTED �?NEEDS_ATTENTION.
+3. ready + structure FAILED �?NEEDS_ATTENTION.
+4. ready + `other` card REVIEW_REQUIRED �?NEEDS_ATTENTION.
 5. all required stages genuinely CLEAN + no review + no
-   APPLIED �?READY_FOR_VALIDATION (clean).
+   APPLIED �?READY_FOR_VALIDATION (clean).
 6. IDLE copy must not claim full automatic diagnostics.
 
 ## Files changed by this continuation
@@ -7259,7 +7269,7 @@ M tests/test_rbz_smoke.rb
 
 During this continuation, the first attempt to run the
 focused presenter tests showed all BLOCK 1 / BLOCK 2
-assertions failing with the OLD presenter behavior �?but
+assertions failing with the OLD presenter behavior �?but
 running the SAME test in isolation produced the correct
 NEW behavior. The root cause was traced to
 `tests/test_rbz_smoke.rb`:
@@ -7290,30 +7300,30 @@ re-binding the methods to the in-tree source location.
 After the fix, all v19a presenter / bridge tests pass in
 both the focused filter and the full suite run.
 
-## Evidence �?focused filter
+## Evidence �?focused filter
 
 ```
-tests/run_all.rb v19a_presenter   �?38 tests: 38 pass, 0 fail, 0 error
-tests/run_all.rb v19a_bridge      �?10 tests: 10 pass, 0 fail, 0 error
-tests/run_all.rb html_render      �?24 tests: 24 pass, 0 fail, 0 error
+tests/run_all.rb v19a_presenter   �?38 tests: 38 pass, 0 fail, 0 error
+tests/run_all.rb v19a_bridge      �?10 tests: 10 pass, 0 fail, 0 error
+tests/run_all.rb html_render      �?24 tests: 24 pass, 0 fail, 0 error
 ```
 
-## Evidence �?required regressions
+## Evidence �?required regressions
 
 ```
-tests/run_all.rb V17   �?127 tests: 127 pass, 0 fail, 0 error
-tests/run_all.rb V18   �? 71 tests:  71 pass, 0 fail, 0 error
-tests/run_all.rb V18-SR18 �?32 tests: 32 pass, 0 fail, 0 error
-tests/run_all.rb V17-INT  �?33 tests: 33 pass, 0 fail, 0 error
-tests/run_all.rb V16-CLOSE  �?7 tests: 7 pass, 0 fail, 0 error
-tests/run_all.rb LEGACY-COMPAT �?4 tests: 4 pass, 0 fail, 0 error
-tests/run_all.rb RBZ    �?9 tests: 9 pass, 0 fail, 0 error
+tests/run_all.rb V17   �?127 tests: 127 pass, 0 fail, 0 error
+tests/run_all.rb V18   �? 71 tests:  71 pass, 0 fail, 0 error
+tests/run_all.rb V18-SR18 �?32 tests: 32 pass, 0 fail, 0 error
+tests/run_all.rb V17-INT  �?33 tests: 33 pass, 0 fail, 0 error
+tests/run_all.rb V16-CLOSE  �?7 tests: 7 pass, 0 fail, 0 error
+tests/run_all.rb LEGACY-COMPAT �?4 tests: 4 pass, 0 fail, 0 error
+tests/run_all.rb RBZ    �?9 tests: 9 pass, 0 fail, 0 error
 ```
 
-## Evidence �?full suite
+## Evidence �?full suite
 
 ```
-tests/run_all.rb �?1070 tests: 1067 pass, 1 fail, 2 error
+tests/run_all.rb �?1070 tests: 1067 pass, 1 fail, 2 error
 ```
 
 The 1 fail + 2 error are the SAME pre-existing
@@ -7323,21 +7333,21 @@ baseline). They are unrelated to V1.9A-A1 scope and are
 reported separately per dispatch §13:
 
 - `capability.HtmlDialog: outside SU returns false
-  (R002 + S2-BLOCK-006)` �?pre-existing test-env capability check.
-- `V14 production call chain: dialog callback �?  WorkingModeRunner �?workspace reaches :ready` �?pre-existing
+  (R002 + S2-BLOCK-006)` �?pre-existing test-env capability check.
+- `V14 production call chain: dialog callback �?  WorkingModeRunner �?workspace reaches :ready` �?pre-existing
   FakeUI setup limitation.
 - `V17-L1: host_state_changed invalidates the workspace via
-  validate-on-next-interaction` �?pre-existing FakeUI host-state
+  validate-on-next-interaction` �?pre-existing FakeUI host-state
   validator setup limitation.
 
-## Evidence �?Node DOM
+## Evidence �?Node DOM
 
 ```
-node tests/test_html_render_dom.js �?all assertions PASS,
+node tests/test_html_render_dom.js �?all assertions PASS,
                                      final line `PASS`
 ```
 
-## Evidence �?`git diff --check`
+## Evidence �?`git diff --check`
 
 Clean (no whitespace warnings).
 
@@ -7359,11 +7369,11 @@ Packaged su_ai_plugin/html/style.css
 ```
 
 (app.js / index.html / style.css SHA-256 unchanged from the
-original V1.9A-A1 packet �?the FIX REQUIRED continuation
+original V1.9A-A1 packet �?the FIX REQUIRED continuation
 touches Ruby only. The new RBZ differs only in the embedded
 `cad_prep_workflow_presenter.rb`.)
 
-## Confirmation �?no A2 / V1.9B / scope creep
+## Confirmation �?no A2 / V1.9B / scope creep
 
 | Scope item                                                    | Started? | Evidence                                                  |
 |---------------------------------------------------------------|----------|-----------------------------------------------------------|
@@ -7407,11 +7417,11 @@ REQUIRED continuation only.
 
 ---
 
-# CURRENT PI REPORT �?V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX
+# CURRENT PI REPORT �?V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
 Packet: **A1 LEGACY COMPATIBILITY NARROW FIX** (AIPM narrow
 recheck follow-up)
 Authority: `Prompt/CURRENT_PI_DISPATCH.md`
@@ -7445,21 +7455,21 @@ ordering, no card mapping, no visual behavior change.
 |---|-------------------------------------------------------|-----------------------------------------------------|----------------------------------------------------------------|
 | 1 | NEEDS_ATTENTION headline length gate                  | `chips.length.positive?`                            | `chips.length > 0`                                             |
 | 2 | NEEDS_ATTENTION headline chip total                   | `chips.map { |c| c['value'].to_i }.sum`             | `chip_total = chips.inject(0) { |acc, c| acc + c['value'].to_i }` |
-| 3 | NEEDS_ATTENTION headlines �?actionable gate           | `actionable_count.positive?`                        | `actionable_count > 0`                                         |
-| 4 | duplicate_cleanup card metrics �?applied              | `applied.positive?` (3rd site)                       | `applied > 0`                                                  |
-| 5 | duplicate_cleanup card metrics �?skipped              | `skipped.positive?`                                 | `skipped > 0`                                                  |
-| 6 | duplicate_cleanup card �?state_label                  | `applied.positive? ? "已自动处�?#{applied} �? : '无重复线'` | `applied > 0 ? "已自动处�?#{applied} �? : '无重复线'`         |
-| 7 | duplicate_cleanup card �?state field                  | `applied.positive? ? 'APPLIED' : 'CLEAN'`           | `applied > 0 ? 'APPLIED' : 'CLEAN'`                            |
-| 8 | duplicate_cleanup card �?summary field                 | `applied.positive? ? '...' : '...'`                  | `applied > 0 ? '...' : '...'`                                  |
-| 9 | planar_safe_summary �?movable                         | `movable.is_a?(Integer) && movable.positive?`        | `movable.is_a?(Integer) && movable > 0`                         |
-|10 | planar_safe_summary �?outliers                        | `outliers.is_a?(Integer) && outliers.positive?`     | `outliers.is_a?(Integer) && outliers > 0`                      |
+| 3 | NEEDS_ATTENTION headlines �?actionable gate           | `actionable_count.positive?`                        | `actionable_count > 0`                                         |
+| 4 | duplicate_cleanup card metrics �?applied              | `applied.positive?` (3rd site)                       | `applied > 0`                                                  |
+| 5 | duplicate_cleanup card metrics �?skipped              | `skipped.positive?`                                 | `skipped > 0`                                                  |
+| 6 | duplicate_cleanup card �?state_label                  | `applied.positive? ? "已自动处�?#{applied} �? : '无重复线'` | `applied > 0 ? "已自动处�?#{applied} �? : '无重复线'`         |
+| 7 | duplicate_cleanup card �?state field                  | `applied.positive? ? 'APPLIED' : 'CLEAN'`           | `applied > 0 ? 'APPLIED' : 'CLEAN'`                            |
+| 8 | duplicate_cleanup card �?summary field                 | `applied.positive? ? '...' : '...'`                  | `applied > 0 ? '...' : '...'`                                  |
+| 9 | planar_safe_summary �?movable                         | `movable.is_a?(Integer) && movable.positive?`        | `movable.is_a?(Integer) && movable > 0`                         |
+|10 | planar_safe_summary �?outliers                        | `outliers.is_a?(Integer) && outliers.positive?`     | `outliers.is_a?(Integer) && outliers > 0`                      |
 |11 | structure_metrics filter                               | `v.is_a?(Integer) && v.positive?`                   | `v.is_a?(Integer) && v > 0`                                    |
 |12 | other card secondary filter                           | `n.positive?`                                       | `n > 0`                                                        |
 
 Total: 12 mechanical / semantics-preserving replacements
 across 4 separate presenter methods. Zero product-facing
 change. The headline string format
-`"发现 N �?· M 项问�?` is preserved verbatim (M is now
+`"发现 N �?· M 项问�?` is preserved verbatim (M is now
 computed via `inject(0) { ... }` instead of `.sum`).
 
 ## Repo-local V1.9-introduced compatibility scan (extension/)
@@ -7507,9 +7517,9 @@ explicitly out of scope per dispatch §4.
 Implementation: same file-walking + regex approach as the
 existing endless-range regression test (no new framework).
 Three regex patterns:
-  - `/\.[ ]?positive\?[ ]?/` �?`Integer#positive?`
-  - `/\.[ ]?negative\?[ ]?/` �?`Integer#negative?`
-  - `/\.[ ]?sum(?![A-Za-z0-9_=!?])/` �?`Array#sum` /
+  - `/\.[ ]?positive\?[ ]?/` �?`Integer#positive?`
+  - `/\.[ ]?negative\?[ ]?/` �?`Integer#negative?`
+  - `/\.[ ]?sum(?![A-Za-z0-9_=!?])/` �?`Array#sum` /
     `Enumerable#sum` (lookahead `(?![A-Za-z0-9_=!?])`
     ensures no match against identifier-shaped names
     like `edge_length_sum:` or `consumed`).
@@ -7569,7 +7579,7 @@ Total LEGACY-COMPAT: **5 / 5 PASS** (4 prior + 1 new).
 - The 1 fail + 2 error are the SAME pre-existing
   test-environment / FakeUI limitations from the V1.8
   baseline (confirmed via direct re-run of the offending
-  tests in isolation, where they PASS �?the failures are
+  tests in isolation, where they PASS �?the failures are
   test-order-dependent pollution from the larger suite):
   - `capability.HtmlDialog: outside SU returns false
     (R002 + S2-BLOCK-006)`
@@ -7602,7 +7612,7 @@ Total LEGACY-COMPAT: **5 / 5 PASS** (4 prior + 1 new).
 | `html/style.css`                    | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`    | UNCHANGED   |
 | `cad_prep_workflow_presenter.rb`    | `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`    | NEW (Ruby 2.2 compat) |
 
-## Confirmation �?no A2 / V1.9B / scope creep (this packet)
+## Confirmation �?no A2 / V1.9B / scope creep (this packet)
 
 | Scope item                                                    | Started? | Evidence                                                                          |
 |---------------------------------------------------------------|----------|-----------------------------------------------------------------------------------|
@@ -7650,7 +7660,7 @@ Legacy Ruby Compatibility narrow fix only.
 
 ---
 
-# CURRENT PI REPORT �?V1X-LEGACY-RUBY-DEBT-CLOSURE
+# CURRENT PI REPORT �?V1X-LEGACY-RUBY-DEBT-CLOSURE
 
 Project: `SU-AI-Plugin`
 Version: V1.X (pre-A2)
@@ -7680,7 +7690,7 @@ Per dispatch §0 / §1: AIPM verified the V1.9A presenter
 compatibility fix but exposed three pre-existing production
 `.sum` calls (V1.4 / V1.6 era) that remain incompatible
 with the SU2017 Ruby 2.2 baseline. This packet is a
-bounded compatibility closure ONLY �?three production
+bounded compatibility closure ONLY �?three production
 `.sum` sites replaced with `inject(0)` / `inject(0.0)` plus
 a regression-guard extension. No algorithm change. No
 contract change. No schema change. No count / min / max /
@@ -7761,7 +7771,7 @@ end
 
 Preserved: V1.6 count / min / max / mean semantics
 unchanged (mean = total / count); normalization policy
-unchanged (this is `_z_summary` �?a pure summary helper,
+unchanged (this is `_z_summary` �?a pure summary helper,
 no mutation); host mutation behavior unchanged (no
 mutation code added or removed); tolerance unchanged
 (no tolerance value reference inside `_z_summary`);
@@ -7888,7 +7898,7 @@ scanner).
   **33 / 33 PASS** (covers V16-T1..T3, V16-I1..I3, V16-H1..H6,
   V16-P1..P7 etc., including the V16-H6 discard /
   rebuild invariant and the V16-I3 discard-clears-state
-  invariant �?the close-autodiscard contract).
+  invariant �?the close-autodiscard contract).
 - V1.7 focused: **127 / 127 PASS** (baseline preserved).
 - V1.8 focused: **71 / 71 PASS** (baseline preserved).
 - V1.8 SR18 set: **32 / 32 PASS**.
@@ -7906,7 +7916,7 @@ scanner).
 - The 1 fail + 2 error are the SAME pre-existing
   test-environment / FakeUI limitations from the V1.8
   baseline (confirmed via direct re-run of each in
-  isolation �?each PASSes individually; the failures
+  isolation �?each PASSes individually; the failures
   are test-order-dependent pollution from the larger
   suite):
   - `capability.HtmlDialog: outside SU returns false
@@ -7939,10 +7949,10 @@ scanner).
 | `html/app.js`                              | `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`    | UNCHANGED                                        |
 | `html/style.css`                           | `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`    | UNCHANGED                                        |
 | `cad_prep_workflow_presenter.rb`           | `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`    | UNCHANGED from V1.9A-A1 LEGACY RUBY COMPAT baseline |
-| `core/source_fingerprint.rb`               | `949CE3FF1E9A05D9FFEB4D5377ED2B2F265C4B62BC464E5573442FB0C6AD6B24`    | NEW (V1.4 �?`.sum` �?`inject(0.0)` / `inject(0)`) |
-| `core/planar_normalization_executor.rb`    | `7EF4D2DE2C61A305D16278C830438F72EB75B9C363C51AA10162D7F4AA773E9B`    | NEW (V1.6 �?`.sum` �?`inject(0.0)`)              |
+| `core/source_fingerprint.rb`               | `949CE3FF1E9A05D9FFEB4D5377ED2B2F265C4B62BC464E5573442FB0C6AD6B24`    | NEW (V1.4 �?`.sum` �?`inject(0.0)` / `inject(0)`) |
+| `core/planar_normalization_executor.rb`    | `7EF4D2DE2C61A305D16278C830438F72EB75B9C363C51AA10162D7F4AA773E9B`    | NEW (V1.6 �?`.sum` �?`inject(0.0)`)              |
 
-## Confirmation �?no A2 / V1.9B / scope creep (this packet)
+## Confirmation �?no A2 / V1.9B / scope creep (this packet)
 
 | Scope item                                                    | Started? | Evidence                                                                          |
 |---------------------------------------------------------------|----------|-----------------------------------------------------------------------------------|
@@ -7986,7 +7996,7 @@ Per AGENTS.md §13 / §10 + dispatch §0:
 ## STOP (this packet)
 
 - AIPM_REVIEW = PENDING (narrow recheck of the 3
-  mechanical `.sum` �?`inject(0)` replacements in
+  mechanical `.sum` �?`inject(0)` replacements in
   `core/source_fingerprint.rb` and
   `core/planar_normalization_executor.rb` AND the global
   guard extension in `tests/test_v15_legacy_compat_guard.rb`)
@@ -8000,12 +8010,12 @@ V1X-LEGACY-RUBY-DEBT-CLOSURE only.
 
 END
 
-# CURRENT PI REPORT �?V1.9A3 NATIVE TOOLBAR & PRODUCT ENTRY
+# CURRENT PI REPORT �?V1.9A3 NATIVE TOOLBAR & PRODUCT ENTRY
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: A3 �?NATIVE TOOLBAR & PRODUCT ENTRY
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: A3 �?NATIVE TOOLBAR & PRODUCT ENTRY
 Authority: `Prompt/CURRENT_PI_DISPATCH.md`
 (V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY, 2026-09-07) +
 `Prompt/AIPM_STAGE_PRODUCT_TECHNICAL_BLUEPRINT_V1_9A3_NATIVE_TOOLBAR_2026-09-07.md`.
@@ -8031,13 +8041,13 @@ AIPM source review of the native toolbar / shared
 UI::Command / icons / no-selection UX + regression tests
 + RBZ hashes. Implementation SHA produced by this packet:
 see `git log -1 --format=%H dev/v1.9`.
-CODEX_RISK_TRIGGER: **NO** (Blueprint §10 �?toolbar is an
+CODEX_RISK_TRIGGER: **NO** (Blueprint §10 �?toolbar is an
 entry point only; no algorithm / contract / source-
 ownership / transaction / Undo / Face / Observer / V1.6 /
 V1.7 / V1.8 / A2 orchestrator / Presenter / DialogRunner
 callbacks / V1.9B change).
 
-## A3 �?2026-09-07
+## A3 �?2026-09-07
 
 - Starting HEAD for this packet:
   `1de098b5d3ab8872294ace3fdb504511512faf13` (the
@@ -8054,7 +8064,7 @@ callbacks / V1.9B change).
   SHA-256 **`b51fd3f2084fbeb83524f220a9cb95d87bdd4f0b0a8e7cdedabf8f376cfa4dca`**.
 - Packaged `extension/su_ai_plugin/loader.rb` SHA-256:
   **`3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5`**
-  (NEW �?V1.9A3 shared command + toolbar + no-selection UX
+  (NEW �?V1.9A3 shared command + toolbar + no-selection UX
   refactor).
 - Packaged icons (NEW this packet):
   - `extension/su_ai_plugin/icons/cad_prep_24.png`
@@ -8109,7 +8119,7 @@ callbacks / V1.9B change).
   - Delta vs prior A2-ERR packet (1116): +16 tests (the
     V1.9A3 focused tests + 1 PNG dimension test).
 - V1.9A3 focused tests (NEW this packet):
-  - `tests/test_loader.rb` �?V1.9A3 section:
+  - `tests/test_loader.rb` �?V1.9A3 section:
     **17 / 17 PASS** (16 V1.9A3 contract tests + 1 PNG
     dimension test):
     - A3-01/A3-02 toolbar named 'SU AI' with exactly one button
@@ -8143,7 +8153,7 @@ callbacks / V1.9B change).
 - V1.9A dialog_runner (full): **48 / 48 PASS** (the
   dialog_runner wiring is untouched; only the
   `on_analyze_selection` semantics are shared with the
-  new toolbar entry �?no callback surface change).
+  new toolbar entry �?no callback surface change).
 - V1.9A bridge: **10 / 10 PASS** (unchanged).
 - V1.9A DOM (`tests/test_html_render.rb`): **24 / 24
   PASS** (unchanged; no HTML change in this packet).
@@ -8170,7 +8180,7 @@ callbacks / V1.9B change).
 - `git diff --check`: clean (0 warnings on production /
   test code; the trailing whitespace in
   `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing and
-  outside Pi's scope �?`Prompt/` is read-only per
+  outside Pi's scope �?`Prompt/` is read-only per
   AGENTS.md §2).
 
 Frozen V1.8 Blueprint preserved unchanged on the assigned
@@ -8186,7 +8196,7 @@ HTML / CSS / JS change.
 Corrections / additions by this packet:
 
 - **Shared UI::Command + native toolbar (dispatch §2)**:
-  `extension/su_ai_plugin/loader.rb` �?Loader now constructs
+  `extension/su_ai_plugin/loader.rb` �?Loader now constructs
   exactly ONE `@cad_prep_command` (`UI::Command.new('CAD
   Prep') { on_analyze_selection }`) and attaches the SAME
   command object to BOTH the existing `SU-AI-Plugin`
@@ -8196,7 +8206,7 @@ Corrections / additions by this packet:
   - `menu_text` (the UI::Command name) = `'CAD Prep'`.
   - `tooltip` = `'SU AI · CAD Prep'`.
   - `status_bar_text` =
-    `'检查并准备当前选择�?CAD 几何'`.
+    `'检查并准备当前选择�?CAD 几何'`.
   - `small_icon` =
     `<__dir__>/icons/cad_prep_24.png`.
   - `large_icon` =
@@ -8209,7 +8219,7 @@ Corrections / additions by this packet:
   the toolbar button (object identity asserted by test).
 
 - **Native `SU AI` toolbar (dispatch §3)**:
-  `extension/su_ai_plugin/loader.rb` �?Loader now creates
+  `extension/su_ai_plugin/loader.rb` �?Loader now creates
   `UI::Toolbar.new('SU AI')` (the `TOOLBAR_NAME`
   constant), retained in `@toolbar`, and adds the SAME
   `@cad_prep_command` to it. The toolbar contains
@@ -8219,7 +8229,7 @@ Corrections / additions by this packet:
   in the toolbar.
 
 - **Toolbar visibility policy (dispatch §4 + Blueprint §6)**:
-  `extension/su_ai_plugin/loader.rb` �?  `apply_toolbar_visibility_policy(toolbar)` consults
+  `extension/su_ai_plugin/loader.rb` �?  `apply_toolbar_visibility_policy(toolbar)` consults
   `toolbar.get_last_state`:
   - If state == `TB_NEVER_SHOWN`, call `toolbar.show`
     (Blueprint §6 first-discovery path).
@@ -8231,11 +8241,11 @@ Corrections / additions by this packet:
     on legacy baseline).
 
 - **No-selection UX (dispatch §5 + Blueprint §3)**:
-  `extension/su_ai_plugin/loader.rb` �?The shared
+  `extension/su_ai_plugin/loader.rb` �?The shared
   `on_analyze_selection` now consults the selection. If
   `selection.nil? || selection.count.zero?`, it calls
   `show_no_selection_message` which displays the frozen
-  product message `'请先选择需要检查和处理�?CAD 几何�?`
+  product message `'请先选择需要检查和处理�?CAD 几何�?`
   via `UI.messagebox(message, buttons)` (with a defensive
   `UI::MB_OK` constant lookup so the test env / legacy
   hosts do not NameError). Both menu and toolbar receive
@@ -8246,11 +8256,11 @@ Corrections / additions by this packet:
   `DialogRunner.show` path (A2 architecture unchanged).
 
 - **Bundled local PNG icons (dispatch §6 + Blueprint §7)**:
-  - `extension/su_ai_plugin/icons/cad_prep_24.png` �?    exactly 24x24, RGBA8, blue-violet rounded square +
+  - `extension/su_ai_plugin/icons/cad_prep_24.png` �?    exactly 24x24, RGBA8, blue-violet rounded square +
     white CAD polyline/loop motif, transparent
     background.
-  - `extension/su_ai_plugin/icons/cad_prep_32.png` �?    exactly 32x32, RGBA8, same motif at larger size.
-  - `scripts/gen_icons.rb` �?deterministic PNG generator
+  - `extension/su_ai_plugin/icons/cad_prep_32.png` �?    exactly 32x32, RGBA8, same motif at larger size.
+  - `scripts/gen_icons.rb` �?deterministic PNG generator
     (no external image dependency; no internet download;
     pure-Ruby Zlib-based PNG encoding).
   - The PNG dimensions are asserted by
@@ -8258,14 +8268,14 @@ Corrections / additions by this packet:
     (parses the PNG signature + IHDR chunk directly).
 
 - **Idempotency / retained references (dispatch §3 + Blueprint §5)**:
-  `extension/su_ai_plugin/loader.rb` �?Loader retains
+  `extension/su_ai_plugin/loader.rb` �?Loader retains
   `@cad_prep_command` and `@toolbar` for the process
   lifetime. Repeated `register!` calls return the SAME
   command object (Blueprint §4 idempotency requirement)
   and produce no duplicate menu item, no duplicate
   toolbar, and no duplicate toolbar button. The
   `FakeUI::FakeToolbar#add_item` is idempotent on
-  command identity (same object identity �?single entry),
+  command identity (same object identity �?single entry),
   matching the production intent.
 
 - **Legacy Ruby compatibility (dispatch §6 + Blueprint §9)**:
@@ -8285,10 +8295,10 @@ Corrections / additions by this packet:
     packet).
 
 - **FakeUI extensions**:
-  `tests/_fake_ui.rb` �?`FakeCommand` extended with the
+  `tests/_fake_ui.rb` �?`FakeCommand` extended with the
   Blueprint §2 setters (`tooltip=`, `status_bar_text=`,
   `small_icon=`, `large_icon=`); `extension=` is
-  INTENTIONALLY missing �?`method_missing` raises
+  INTENTIONALLY missing �?`method_missing` raises
   `NoMethodError` if a future test reaches for it, so
   the Blueprint §9 contract is enforced at the test
   boundary. `FakeToolbar` class added (name, add_item,
@@ -8299,7 +8309,7 @@ Corrections / additions by this packet:
   `UI.messagebox`.
 
 - **Focused tests (dispatch §8 + Blueprint §11)**:
-  `tests/test_loader.rb` �?new V1.9A3 section adds 17
+  `tests/test_loader.rb` �?new V1.9A3 section adds 17
   tests covering A3-01..A3-13 + Blueprint §2 / §9
   contracts + frozen orchestrator / presenter
   parseability guards. The pre-existing 12 loader
@@ -8308,7 +8318,7 @@ Corrections / additions by this packet:
   per the new Blueprint §2 contract; the 12 tests
   remain green.
 
-  `tests/test_rbz_smoke.rb` �?one assertion updated
+  `tests/test_rbz_smoke.rb` �?one assertion updated
   from `'Analyze selection'` to `'CAD Prep'` to match
   the Blueprint §2 menu text inside the extracted-RBZ
   smoke path. All other RBZ smoke assertions
@@ -8334,12 +8344,12 @@ NOT STARTED.
 
 END
 
-# CURRENT PI REPORT �?V1.9A OWNER UI TAB SWITCH BLOCK
+# CURRENT PI REPORT �?V1.9A OWNER UI TAB SWITCH BLOCK
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: OWNER UI TAB SWITCH BLOCK �?narrow frontend fix
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: OWNER UI TAB SWITCH BLOCK �?narrow frontend fix
 Authority: AIPM chat instruction (root-cause traced by
 AIPM) + dispatch-aligned narrow scope continuation of the
 V1.9A-A2 Owner Gate A2 work (the A2 packet's "Next
@@ -8381,7 +8391,7 @@ regression tests only; no algorithm / contract / source-
 ownership / transaction / Undo / Face / Observer / V1.6 /
 V1.7 / V1.8 / A2 / A3 / V1.9B change).
 
-## Owner Gate A2 BLOCK �?2026-09-07
+## Owner Gate A2 BLOCK �?2026-09-07
 
 - Starting HEAD for this packet:
   `e3be03dc343657b1d315dbcc7727eeb23a4ad1db` (the
@@ -8403,7 +8413,7 @@ V1.7 / V1.8 / A2 / A3 / V1.9B change).
   `extension/su_ai_plugin/html/style.css`
   SHA-256:
   **`ceac7aeec04f5c3aeed88cd768e0ec4794e7656c01644af3419d89386a61c752`**
-  (CHANGED �?contains the scoped
+  (CHANGED �?contains the scoped
   `.panel[hidden] { display: none; }` rule).
 - HTML / JS / Ruby production SHAs UNCHANGED
   (verified via packaged-RBZ extraction; all 6
@@ -8445,7 +8455,7 @@ V1.7 / V1.8 / A2 / A3 / V1.9B change).
     focused tests in `tests/test_html_render.rb`).
 - V1.9A OWNER UI TAB SWITCH BLOCK focused tests
   (NEW this packet):
-  - `tests/test_html_render.rb` �?**7 / 7 PASS**:
+  - `tests/test_html_render.rb` �?**7 / 7 PASS**:
     - style.css has the `.panel[hidden] { display:
       none }` rule (presence guard).
     - `.panel[hidden]` rule appears AFTER the
@@ -8465,7 +8475,7 @@ V1.7 / V1.8 / A2 / A3 / V1.9B change).
       preference: scoped > global).
     - tab map covers all 4 panels (process /
       issues / layers / details).
-  - `tests/test_html_render_dom.js` �?**4 new
+  - `tests/test_html_render_dom.js` �?**4 new
     click-through assertions** (all PASS):
     - Click 问题 shows panel-issues + hides the
       other 3 + aria-selected flips.
@@ -8510,7 +8520,7 @@ V1.7 / V1.8 / A2 / A3 / V1.9B change).
 - `git diff --check`: clean (0 warnings on
   production / test code; the trailing whitespace
   in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
-  and outside Pi's scope �?`Prompt/` is read-only).
+  and outside Pi's scope �?`Prompt/` is read-only).
 
 Frozen V1.8 Blueprint preserved unchanged on the
 assigned `dev/v1.9`. Pi did NOT rewrite any frozen
@@ -8528,7 +8538,7 @@ MCP / LLM / Agent.
 Corrections / additions by this packet:
 
 - **CSS scoped rule (the fix)**:
-  `extension/su_ai_plugin/html/style.css` �?added
+  `extension/su_ai_plugin/html/style.css` �?added
   one scoped rule immediately after the existing
   `.panel { display: flex; flex-direction: column; }`
   rule:
@@ -8551,7 +8561,7 @@ Corrections / additions by this packet:
 
 - **Focused CSS source-level guards (NEW this
   packet)**:
-  `tests/test_html_render.rb` �?7 new tests that
+  `tests/test_html_render.rb` �?7 new tests that
   pin the fix at the CSS source level so future
   edits cannot silently regress the hidden
   contract. The tests assert:
@@ -8572,7 +8582,7 @@ Corrections / additions by this packet:
     intact.
 
 - **DOM click-through regression (NEW this packet)**:
-  `tests/test_html_render_dom.js` �?4 new
+  `tests/test_html_render_dom.js` �?4 new
   click-through assertions that simulate the Owner
   Gate A2 BLOCK scenario end-to-end. Each
   assertion verifies that after the click:
@@ -8606,12 +8616,12 @@ review remains mandatory later regardless.
 
 END
 
-# CURRENT PI REPORT �?V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP
+# CURRENT PI REPORT �?V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: OWNER UI HIDDEN-SEMANTICS FOLLOW-UP �?narrow
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: OWNER UI HIDDEN-SEMANTICS FOLLOW-UP �?narrow
 frontend fix (continuation of Owner Gate A2 BLOCK
 fix work).
 Authority: AIPM chat instruction (root-cause traced by
@@ -8658,7 +8668,7 @@ ownership / transaction / Undo / Face / Observer / V1.6 /
 V1.7 / V1.8 / A2 / A3 / V1.9B / TAB SWITCH BLOCK /
 host-state validation / WorkingModeRunner change).
 
-## HIDDEN-SEMANTICS FOLLOW-UP �?2026-09-07
+## HIDDEN-SEMANTICS FOLLOW-UP �?2026-09-07
 
 - Starting HEAD for this packet:
   `1d1f9c821c7050268743a7acd6fe502cd3baddeb` (the
@@ -8678,7 +8688,7 @@ host-state validation / WorkingModeRunner change).
 - Packaged
   `extension/su_ai_plugin/html/style.css` SHA-256:
   **`fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c`**
-  (CHANGED �?contains both scoped
+  (CHANGED �?contains both scoped
   `.recovery-banner[hidden] { display: none; }` and
   `.tab-badge[hidden] { display: none; }` rules).
 - HTML / JS / Ruby production SHAs UNCHANGED
@@ -8722,7 +8732,7 @@ host-state validation / WorkingModeRunner change).
     `tests/test_html_render.rb`).
 - V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP focused
   tests (NEW this packet):
-  - `tests/test_html_render.rb` �?**9 / 9 PASS**:
+  - `tests/test_html_render.rb` �?**9 / 9 PASS**:
     - style.css has the
       `.recovery-banner[hidden] { display: none }`
       rule (presence guard).
@@ -8742,14 +8752,14 @@ host-state validation / WorkingModeRunner change).
       > global).
     - COMPLETE audit of all current `[hidden]`
       elements (panel×4 / recovery-banner /
-      tab-badge / toast) �?each is either covered
+      tab-badge / toast) �?each is either covered
       by a scoped override rule OR explicitly marked
       unaffected because its CSS class does NOT set
       `display:`.
     - `recovery-banner` / `tab-issues-badge` static
       `hidden` attributes present in HTML by
       default.
-  - `tests/test_html_render_dom.js` �?**8 new
+  - `tests/test_html_render_dom.js` �?**8 new
     click-through assertions** (all PASS):
     - recovery-banner default carries hidden
       attribute.
@@ -8804,7 +8814,7 @@ host-state validation / WorkingModeRunner change).
 - `git diff --check`: clean (0 warnings on
   production / test code; the trailing whitespace
   in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
-  and outside Pi's scope �?`Prompt/` is read-only).
+  and outside Pi's scope �?`Prompt/` is read-only).
 
 Frozen V1.8 Blueprint preserved unchanged on the
 assigned `dev/v1.9`. Pi did NOT rewrite any frozen
@@ -8823,7 +8833,7 @@ MCP / LLM / Agent.
 Corrections / additions by this packet:
 
 - **CSS scoped rules (the fix)**:
-  `extension/su_ai_plugin/html/style.css` �?added
+  `extension/su_ai_plugin/html/style.css` �?added
   2 scoped rules immediately after the existing
   `.recovery-banner { display: flex }` and
   `.tab-badge { display: inline-flex }` rules:
@@ -8847,24 +8857,24 @@ Corrections / additions by this packet:
   element)**:
   - `panel-process` / `panel-issues` / `panel-layers`
     / `panel-details`: `.panel { display: flex }`
-    override �?fixed by prior `.panel[hidden]`
+    override �?fixed by prior `.panel[hidden]`
     packet.
   - `recovery-banner`: `.recovery-banner { display:
-    flex }` override �?fixed by THIS packet
+    flex }` override �?fixed by THIS packet
     `.recovery-banner[hidden]`.
   - `tab-issues-badge`: `.tab-badge { display:
-    inline-flex }` override �?fixed by THIS packet
+    inline-flex }` override �?fixed by THIS packet
     `.tab-badge[hidden]`.
   - `toast`: `.toast { ... }` does NOT set
     `display:` (only `position` / `padding` /
-    `background` / etc.) �?the browser default
+    `background` / etc.) �?the browser default
     `[hidden] { display: none }` works correctly
     for it. NOT AFFECTED. The complete-audit test
     pins this classification.
 
 - **Focused CSS source-level guards (NEW this
   packet)**:
-  `tests/test_html_render.rb` �?9 new tests that
+  `tests/test_html_render.rb` �?9 new tests that
   pin the fix at the CSS source level so future
   edits cannot silently regress the hidden contract:
   - The 2 scoped rules MUST be present.
@@ -8889,7 +8899,7 @@ Corrections / additions by this packet:
 
 - **DOM click-through regression (NEW this
   packet)**:
-  `tests/test_html_render_dom.js` �?8 new
+  `tests/test_html_render_dom.js` �?8 new
   click-through assertions that simulate the Owner
   Gate A2 BLOCK follow-up scenario end-to-end.
   Each assertion verifies that:
@@ -8932,12 +8942,12 @@ later regardless.
 
 END
 
-# CURRENT PI REPORT �?V1.9A FINAL BLOCK FIX
+# CURRENT PI REPORT �?V1.9A FINAL BLOCK FIX
 
 Project: `SU-AI-Plugin`
 Version: V1.9A
-Stage: V1.9A �?Product UX + Diagnostics Orchestration
-Packet: FINAL BLOCK FIX �?Current Geometry + Current
+Stage: V1.9A �?Product UX + Diagnostics Orchestration
+Packet: FINAL BLOCK FIX �?Current Geometry + Current
 Issue Semantics
 Authority: `Prompt/CURRENT_PI_DISPATCH.md` (V1.9A
 FINAL BLOCK FIX, 2026-09-07) + primary guidance
@@ -8990,7 +9000,7 @@ block-fix packet:
 ### 1.1 Production (3 files)
 
 - `extension/su_ai_plugin/core/endpoint_record.rb`
-  �?**P0** live-coordinate authority in
+  �?**P0** live-coordinate authority in
   `DerivedTopologySnapshotBuilder.build`. New
   helper `_live_coordinate_for` consults
   `adapter.vertex_position(handle)` for each
@@ -9006,7 +9016,7 @@ block-fix packet:
   NEVER rewritten.
 
 - `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-  �?**(P1-B)** new `PROBLEM_METRIC_LABELS`
+  �?**(P1-B)** new `PROBLEM_METRIC_LABELS`
   whitelist + state-gated `_collect_chips` filter
   that excludes CLEAN / APPLIED success metrics
   (`closed_loops` / `regions` / `holes` /
@@ -9023,7 +9033,7 @@ block-fix packet:
   (authoritative) with `moved` / `moved_applied`
   fallback for APPLIED. `_planar_safe_summary`
   no longer contradicts READY_TO_NORMALIZE with
-  `"未发现需�?Z 校正的点"` �?uses generic
+  `"未发现需�?Z 校正的点"` �?uses generic
   `"发现可安全校正的 Z 偏差"` copy when the
   state is READY_TO_NORMALIZE but no exact count
   is available. **(P2-B)** new
@@ -9032,15 +9042,15 @@ block-fix packet:
   `_structure_loop_flags`,
   `_structure_warning_metric_keys`) map specific
   evidence to specific copy: open_chains > 0
-  -> `"存在未闭合轮�?`;
+  -> `"存在未闭合轮�?`;
   invalid_loop_count > 0 AND unresolved_flags
-  includes `non_planar_loop` -> `"存在非平面闭�?  轮廓，暂不能形成区域"`; invalid_loop_count > 0
+  includes `non_planar_loop` -> `"存在非平面闭�?  轮廓，暂不能形成区域"`; invalid_loop_count > 0
   without non_planar_loop -> `"存在无效轮廓或需确认
-  结构"`; fallback -> `"结构已重建，但存在需要人�?  查看的项"`. Metric chips for structure warnings
+  结构"`; fallback -> `"结构已重建，但存在需要人�?  查看的项"`. Metric chips for structure warnings
   only surface problem metrics
   (`open_chains` / `invalid_loop_count`).
 
-- `extension/su_ai_plugin/html/app.js` �?  **(P1-A)** `_buildIssueRows(payload, cadPrep)`
+- `extension/su_ai_plugin/html/app.js` �?  **(P1-A)** `_buildIssueRows(payload, cadPrep)`
   no longer appends raw `payload.groups` rows to
   the primary current-issue list. Current-issue
   rows come ONLY from cadPrepWorkflow cards
@@ -9049,7 +9059,7 @@ block-fix packet:
   longer counts `payload.groups`. Legacy
   source-registry data remains reachable via
   `_buildLegacySourceRows` under 详情 /
-  原始检查记�? **(P1-C)** `renderIssueSummary`
+  原始检查记�? **(P1-C)** `renderIssueSummary`
   CTA wiring now uses the additive
   `summary.cta_callback` field explicitly (the
   hard-wired `data-action="rebuild_workspace"`
@@ -9060,31 +9070,31 @@ block-fix packet:
 ### 1.2 Tests (4 files)
 
 - **NEW**: `tests/test_v19a_final_p0_live_coordinates.rb`
-  �?11 P0 focused tests covering live vs cached
+  �?11 P0 focused tests covering live vs cached
   coordinate authority, fail-closed malformed /
   non-finite / nil / Infinity / no-adapter paths,
   the owner-fixture 0.2 mm residue regression,
   error-class / source-level guards.
 
 - **EXTENDED**: `tests/test_v19a_cad_prep_workflow_presenter.rb`
-  �?18 new V1.9A FINAL BLOCK FIX focused tests:
+  �?18 new V1.9A FINAL BLOCK FIX focused tests:
   P2-A (5), P2-B (4), P1-B (2), P1-C (5), and
   presenter source-level guards (2).
 
-- **EXTENDED**: `tests/test_html_render.rb` �?  new `hr_strip_css_comments` helper + 2 new CSS
+- **EXTENDED**: `tests/test_html_render.rb` �?  new `hr_strip_css_comments` helper + 2 new CSS
   comment regression guard tests + 5 new app.js
   frontend behavior tests.
 
-- **EXTENDED**: `tests/test_html_render_dom.js` �?  6 new DOM assertions covering P1-A current
+- **EXTENDED**: `tests/test_html_render_dom.js` �?  6 new DOM assertions covering P1-A current
   issue separation, P1-C additive cta_callback
   schema, IDLE null-callback CTA hides.
 
 ### 1.3 Build script (1 file)
 
-- **NEW**: `scripts/build_rbz.ps1` �?PowerShell
+- **NEW**: `scripts/build_rbz.ps1` �?PowerShell
   port of `scripts/build_rbz.rb` used to produce
   the .rbz candidate (system Ruby runtime is
-  broken on this host �?see §5 environment
+  broken on this host �?see §5 environment
   limitation).
 
 ### 1.4 UNCHANGED (verified via packaged-RBZ
@@ -9117,12 +9127,12 @@ fixed; production CSS was not reordered).
 
 ## 2. Root-cause confirmation
 
-### 2.1 P0 �?V1.7 reads stale pre-Z coordinates
+### 2.1 P0 �?V1.7 reads stale pre-Z coordinates
 
 Real SU2020 Owner evidence (per dispatch §1.1):
 after `Start -> Apply Z -> Apply Gap`, the
 reconstructed loop carried `z =
-0.007874015748031498 in` (exactly 0.2 mm �?the
+0.007874015748031498 in` (exactly 0.2 mm �?the
 pre-normalization Z drift). This proves V1.6
 host mutation happened, the orchestrator
 invalidated downstream stages, V1.7 canonical
@@ -9156,7 +9166,7 @@ change, no V1.8 reconstruction / containment /
 region algorithm change, no source CAD mutation,
 no geometry_summary rewrite.
 
-### 2.2 P1 �?Current Issues tab shows historical
+### 2.2 P1 �?Current Issues tab shows historical
 source-registry rows
 
 Bug: `payload.groups` (derived from the
@@ -9183,7 +9193,7 @@ legacy source-registry data remains reachable via
 `_buildLegacySourceRows` (per-issue-type counts
 from `summary.issues`).
 
-### 2.3 P1 �?`重新检测` hard-wired to
+### 2.3 P1 �?`重新检测` hard-wired to
 `rebuild_workspace`
 
 Frozen A2 contract (per dispatch §3): `重新检测`
@@ -9191,14 +9201,14 @@ checks the CURRENT workspace only. It must not
 silently rebuild the workspace. The previous
 issue-summary CTA button was hard-wired to
 `data-action="rebuild_workspace"`. **Fixed via
-additive `cta_callback` field** �?`refresh_cad_prep` for healthy NEEDS_ATTENTION /
+additive `cta_callback` field** �?`refresh_cad_prep` for healthy NEEDS_ATTENTION /
 READY / FAILED; `nil` for IDLE / SCANNING /
 STALE. `rebuild_workspace` remains available
 only for explicit recovery actions (STALE /
-FAILED recovery banner �?`recovery.primary_callback`
+FAILED recovery banner �?`recovery.primary_callback`
 unchanged).
 
-### 2.4 P2 �?Planar card / structure warning copy
+### 2.4 P2 �?Planar card / structure warning copy
 
 Planar presenter was reading legacy
 `movable` / `proposed_movable` fields; the
@@ -9206,15 +9216,15 @@ production proposer publishes `movable_count`.
 APPLIED audit was reading legacy `moved` /
 `moved_applied`; the production executor
 publishes `applied_count`. READY_TO_NORMALIZE
-without exact count contradicted with "未发现需�?Z 校正的点". Structure warning copy was a single
-generic "结构已重建，但存在需要人工查看的�?
+without exact count contradicted with "未发现需�?Z 校正的点". Structure warning copy was a single
+generic "结构已重建，但存在需要人工查看的�?
 regardless of current evidence. **Fixed via
 explicit `_planar_count_field` helper with
 authoritative-key-first / legacy-fallback
 lookup + `_planar_safe_summary` generic copy +
 `_structure_warning_summary` mapping**.
 
-### 2.5 Test debt �?Hidden CSS regression guard
+### 2.5 Test debt �?Hidden CSS regression guard
 false-pass
 
 The previous source-level test used naive
@@ -9276,16 +9286,16 @@ OUTGOING `DerivedEdgeRecord` /
 
 | Suite | New tests | Total | Status |
 |---|---|---|---|
-| `tests/test_v19a_final_p0_live_coordinates.rb` | 11 (NEW file) | 11 | Ruby runtime broken on this host �?NOT EXECUTABLE |
-| `tests/test_v19a_cad_prep_workflow_presenter.rb` | 18 | (existing + 18) | Ruby runtime broken on this host �?NOT EXECUTABLE |
-| `tests/test_html_render.rb` | 7 | (existing + 7) | Ruby runtime broken on this host �?NOT EXECUTABLE |
+| `tests/test_v19a_final_p0_live_coordinates.rb` | 11 (NEW file) | 11 | Ruby runtime broken on this host �?NOT EXECUTABLE |
+| `tests/test_v19a_cad_prep_workflow_presenter.rb` | 18 | (existing + 18) | Ruby runtime broken on this host �?NOT EXECUTABLE |
+| `tests/test_html_render.rb` | 7 | (existing + 7) | Ruby runtime broken on this host �?NOT EXECUTABLE |
 | `tests/test_html_render_dom.js` (Node DOM) | 6 | 97 (Node ASSERTs) | **ALL 97 PASS**, final line `PASS` |
 
 ### 4.1 Full-suite counts
 
 The system Ruby runtime
 (`C:\Ruby27-x64\bin\ruby.exe`) is broken on
-this host �?every invocation reports
+this host �?every invocation reports
 "Application cannot run, side-by-side
 configuration has problems, see sxstrace.exe"
 (a Visual C++ runtime conflict). Per AGENTS.md
@@ -9321,7 +9331,7 @@ assertions:
 
 1. Current issue rows come from
    cadPrepWorkflow cards only (NOT from
-   `payload.groups`) �?count must equal the
+   `payload.groups`) �?count must equal the
    number of REVIEW_REQUIRED / FAILED /
    BLOCKED cards.
 2. Current issue rows are non-locatable (cards
@@ -9332,7 +9342,7 @@ assertions:
 4. `issue_summary` CTA button is NOT hard-wired
    to `rebuild_workspace`.
 5. Legacy source-registry per-type counts
-   remain reachable in 详情 / 原始检查记�?   surface.
+   remain reachable in 详情 / 原始检查记�?   surface.
 6. IDLE / empty-idle summary hides the CTA
    button when `cta_callback` is null.
 
@@ -9343,19 +9353,19 @@ contract + four-tab + five-card tests).
 
 ---
 
-## 5. Environment limitation �?Ruby runtime
+## 5. Environment limitation �?Ruby runtime
 
 The system Ruby runtime
 (`C:\Ruby27-x64\bin\ruby.exe`) is broken on
 this host. Every invocation reports
 "Application cannot run, side-by-side
 configuration has problems, see sxstrace.exe"
-(a Visual C++ runtime conflict �?likely
+(a Visual C++ runtime conflict �?likely
 missing or corrupted msvcp140.dll /
 concrt140.dll / vcruntime140.dll).
 
 Per AGENTS.md §16 / PROJECT_HANDOFF.md §15
-+ §3 (Pi bootstrap �?HARD RULE): environment
++ §3 (Pi bootstrap �?HARD RULE): environment
 failure is NOT product-code failure and Pi
 MUST NOT reinstall Ruby or rewrite PATH
 because one shell path fails. Pi MUST NOT
@@ -9442,7 +9452,7 @@ confirmation
   `planar_z_snap`) change. No host mutation
   behavior change. No audit shape change
   (`applied_count` / `moved` /
-  `moved_count` semantics preserved �?only the
+  `moved_count` semantics preserved �?only the
   presenter's authoritative-key-first lookup
   was added, with legacy fallback).
 - **V1.7 Endpoint / Gap Repair + Canonical
@@ -9499,7 +9509,7 @@ confirmation
 ## 8. `CODEX_RISK_TRIGGER` acknowledgment
 
 `CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW)` �?per dispatch §11:
+NARROW)` �?per dispatch §11:
 
 > P0 touches the V1.6 -> V1.7 current-geometry
 > authority seam feeding canonical topology.
@@ -9608,7 +9618,7 @@ AIPM direct source / diff review of this packet:
 - `tests/test_html_render_dom.js` 6 new DOM
   assertions (all 97 PASS).
 - `scripts/build_rbz.ps1` PowerShell port
-  (system Ruby runtime broken on this host �?  see §5).
+  (system Ruby runtime broken on this host �?  see §5).
 
 AIPM narrow Codex review (POST-IMPLEMENTATION)
 on the P0 V1.6 -> V1.7 current-geometry authority
