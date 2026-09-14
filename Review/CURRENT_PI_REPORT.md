@@ -1,7 +1,799 @@
-# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION (THIS UPDATE)
+# CURRENT PI REPORT — V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION (THIS UPDATE)
+
+Project: `SU-AI-Plugin`
+Stage: V1.9B1 B1.2–B1.4 (PreparedCadDataset + pure Builder + pure Validator)
+Date: 2026-09-14
+Authority: `Prompt/CURRENT_PI_DISPATCH.md`
+  + `Prompt/AIPM_V1_9B1_SOURCE_CONTRACT_MAPPING_BLUEPRINT_V1_2_2026-09-11.md`
+  + `Prompt/AIPM_V1_9B1_BLUEPRINT_V1_3_FINAL_CORRECTION_ADDENDUM_2026-09-11.md`
+  + `Prompt/CODEX_V1_9B1_V1_3_FINAL_RECHECK_PASS_2026-09-14.md`
+Baseline HEAD (before this packet touched the working
+tree): `f3094b275860b0194355ce46343f6e857d2ac50d`
+(the V1.9B1 dispatch activation merge commit on
+`dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Working tree (start): 1 untracked file
+(`output/`). Working tree otherwise clean.
+Implementation SHA: produced by this packet (see
+final stable commit on `dev/v1.9` below).
+
+## A. Actual starting HEAD
+
+```text
+f3094b275860b0194355ce46343f6e857d2ac50d
+```
+
+Recorded before any editing.
+
+## B. Final commit SHA
+
+Produced by this packet's commit step. The final
+stable commit on `dev/v1.9` is:
+
+```text
+082aac0a3a2347cdf9475ed471f2a21c1247b7fa
+```
+
+(`git push origin dev/v1.9` succeeded; the
+final pre-push HEAD is the same SHA.)
+
+## C. Exact changed files
+
+New B1-owned production modules (3 files):
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+
+New host-free regression suite (1 file):
+
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+The dispatch's `output/` directory was pre-existing
+(untracked, dev-output only; not committed).
+
+NO modification to any frozen V1.5–V1.9A production
+module. NO modification to `WorkingModeRunner`,
+`SourceSnapshot`, `SourceFingerprint`,
+`ExecutionConfigSnapshot`, `CanonicalTopologyBuilder`,
+`CanonicalGeometryGraph`,
+`CanonicalStructureReconstructor`,
+`SourceFingerprint`, `AnalysisResult`, presenter,
+orchestrator, dialog runner, UI bridge, HTML, Probe,
+dist/SU-AI-Plugin.rbz (only re-zipped locally to
+keep the host-free smoke test green; the RBZ is
+gitignored and not a tracked production delta).
+
+`git status` after the worktree edit, before commit:
+
+```text
+?? extension/su_ai_plugin/core/prepared_cad_dataset.rb
+?? extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb
+?? extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb
+?? output/
+?? tests/test_v19b1_prepared_cad_dataset.rb
+```
+
+`git diff --stat` for HEAD (no tracked changes): empty.
+
+## D. Confirmation v1.2 + v1.3 + Codex PASS read
+
+Read in the order required by the dispatch §"Authoritative
+design order":
+
+1. `PI_START_HERE.md` (permanent bootstrap)
+2. `Prompt/CURRENT_PI_DISPATCH.md` (ACTIVE)
+3. `Prompt/AIPM_V1_9B1_SOURCE_CONTRACT_MAPPING_BLUEPRINT_V1_2_2026-09-11.md`
+4. `Prompt/AIPM_V1_9B1_BLUEPRINT_V1_3_FINAL_CORRECTION_ADDENDUM_2026-09-11.md`
+5. `Prompt/CODEX_V1_9B1_V1_3_FINAL_RECHECK_PASS_2026-09-14.md`
+
+All v1.2 + v1.3 + Codex PASS read in full. v1.3 is
+authoritative over v1.2 wherever they conflict.
+
+## E. B1.2 implementation summary
+
+`SUAnalysis::Core::PreparedCadDataset` is the durable
+V1 -> V2 handoff contract value object. Per dispatch
+§4 + Blueprint v1.3 §3:
+
+- Top-level shape is exactly:
+  `schema_version`, `dataset_id`, `content_digest`,
+  `content`, `build_evidence_digest`, `build_evidence`,
+  `validation`.
+- The candidate has `validation = nil`. The final
+  attaches `validation` and binds BOTH
+  `validated_content_digest` and
+  `validated_build_evidence_digest`.
+- `build_candidate(content:, content_digest:,
+  build_evidence:, build_evidence_digest:)` is the
+  public candidate constructor. The candidate's five
+  content-identity fields (`content`, `content_digest`,
+  `dataset_id`, `build_evidence`,
+  `build_evidence_digest`) are immutable from
+  construction through `with_validation`.
+- `with_validation(validation)` returns a NEW
+  `PreparedCadDataset` instance and verifies BOTH
+  digests against the candidate; mismatched digests
+  raise `ArgumentError` (regression tests ID-09 +
+  TRUNC-02).
+- Truncated-ID collision hardening: the full
+  `content_digest` + full `build_evidence_digest`
+  are retained internally. The published `dataset_id`
+  is `first 20 lowercase hex chars(content_digest)`
+  per v1.3 §3.3. Same truncated prefix mapped to a
+  different full digest => `dataset_id_truncation_collision`
+  BLOCK (TRUNC-02 regression).
+- Deep immutability: every nested Array / Hash is
+  recursively `.dup.freeze`'d at construction
+  (`_stringify_deep_freeze`); Symbol keys / values
+  are rejected (ID-11 regression). No host objects
+  are accepted (Validator SAFE-03 regression scans
+  for Sketchup-style class names).
+- `to_persisted_json` + `persisted_bytesize` use the
+  separate deterministic persisted JSON serializer
+  (sorted String-keyed Hashes, ordinary JSON number
+  rendering, valid UTF-8). The byte count is
+  out-of-band; it is NEVER persisted in the payload
+  being measured.
+
+## F. Identity-byte serializer + persisted JSON serializer
+
+The identity byte encoder is `SUAnalysis::Core::IdentityBytes`
+(v1.3 §3.1 type-disjoint grammar):
+
+```text
+nil      N;
+false    B0;
+true     B1;
+Integer  I<len>:<decimal>;
+Float    F<16 lowercase hex IEEE-754 binary64 big-endian>;
+String   S<utf8-byte-length>:<raw UTF-8 bytes>;
+Array    A<count>:[<encoded values in semantic order>]
+Hash     H<count>:{<encoded String key><encoded value>...}
+```
+
+Hash keys are sorted by raw UTF-8 bytes. `-0.0` is
+normalized to `+0.0` before encoding. Integer encoding
+rejects leading zeros (canonical decimal form). Float
+encoding uses the Ruby 2.2-compatible primitive
+`[v].pack('G').unpack('H*').first`. Symbol keys / values
+are rejected (fail closed). Invalid UTF-8 byte sequences
+fail closed (ID-03 regression).
+
+Regression coverage for the encoder: Golden fixture
+(ID-Golden-Frozen, locked prefix), `-0.0 == +0.0` (ID-01),
+control chars + UTF-8 (ID-02), invalid UTF-8 (ID-03),
+Hash insertion order independence (ID-04), Float vs Hash
+type distinction (ID-05).
+
+The persisted JSON serializer
+(`SUAnalysis::Core::PreparedCadDatasetSerializer`)
+emits the COMPLETE final top-level dataset with
+recursively sorted UTF-8 byte-ordered String keys.
+It is a SEPARATE contract from identity bytes. It
+is used by B1.4's 8 MiB gate AND reserved for V1.9B2
+B2 persistence reuse.
+
+## G. Exact semantic hash domain + dataset_id semantics
+
+Per Blueprint v1.3 §3.2 (the ONLY semantic hash
+object is):
+
+```text
+{
+  "identity_schema_version" => "pcd-semantic-identity.v1",
+  "dataset_schema_version"  => "pcd.v1",
+  "content"                 => normalized_semantic_content
+}
+```
+
+`content_digest = SHA256(identity_bytes(domain_above))`.
+
+EXCLUDED from the semantic hash domain (verified by
+explicit absence in `_compute_content_digest`):
+`dataset_id`, `content_digest` itself, `build_evidence`,
+`build_evidence_digest`, `validation`, validation
+diagnostics, payload byte count, session/timestamp
+evidence outside semantic content.
+
+`dataset_id = "pcd-" + first20(content_digest)`.
+The published `dataset_id` is the truncated prefix.
+The full content_digest is retained internally for
+truncated-collision hardening (TRUNC-01 + TRUNC-02).
+
+The semantic hash domain uses Identity Bytes (the
+type-disjoint grammar in §F). Hash insertion order
+does not change the digest (ID-04). Hash keys sort
+by raw UTF-8 bytes.
+
+## H. Build-evidence digest + validation binding
+
+Per Blueprint v1.3 §3.4 (the build-evidence hash
+object is exactly):
+
+```text
+{
+  "identity_schema_version" => "pcd-build-evidence-identity.v1",
+  "content_digest"          => final_content_digest,
+  "build_evidence"          => build_evidence
+}
+```
+
+`build_evidence_digest = SHA256(identity_bytes(domain_above))`.
+
+Excludes `build_evidence_digest` itself + `validation`.
+
+Equivalent semantic content from another session =>
+same `content_digest` / `dataset_id`; the
+`build_evidence_digest` MAY differ because
+`build_evidence` includes legacy source fingerprint
+digest, legacy canonical graph digest, legacy
+structure digest, captured_at, selection_scope,
+topology legacy mapping, etc. (ID-07 regression).
+
+Validation NEVER defines semantic identity (v1.3
+§3.5). Every validation Hash carries
+`validated_content_digest` +
+`validated_build_evidence_digest` + `validator_version`
++ readiness/checks/blockers/warnings.
+`with_validation` rejects any validation whose
+two digests do not match the candidate (ID-09
+regression). Candidate / final share the same five
+content-identity fields (ID-10 regression).
+
+## I. B1.3 Builder / coherence summary
+
+`SUAnalysis::Core::PreparedCadDatasetBuilder` is a
+PURE builder. Public API:
+
+```ruby
+PreparedCadDatasetBuilder.build(
+  source_snapshot:    source_snapshot,
+  workflow_snapshot:  workflow_snapshot,
+  topology_snapshot:  topology_snapshot,
+  canonical_graph:    canonical_graph,
+  structure_result:   structure_result,
+  analysis_result:    analysis_result
+)
+```
+
+Returns `{'status' => 'BUILT', 'dataset' => <candidate>}`
+on success or `{'status' => 'BLOCKED', 'dataset' => nil,
+'blockers' => [String, ...]}` on coherence / design
+failure. Does NOT use `NOT_READY` (readiness belongs to
+the Validator).
+
+The Builder has no Runner access, no Sketchup:: calls,
+no host mutation, and does not mutate its inputs
+(SAFE-01 regression).
+
+Coherence preflight covers (Blueprint v1.3 §1 + §11):
+
+- Input shape (every kwarg must satisfy its type
+  contract).
+- Workflow state == 'ready'.
+- Cross-input snapshot_id / workspace_id equality
+  across SourceSnapshot / workflow_snapshot /
+  canonical_graph / structure_result.
+- Structure `canonical_graph_digest` ==
+  `canonical_graph.digest`.
+- Execution tolerance normalization: Symbol /
+  String key normalization, exactly the fixed
+  v1.2 key set (duplicate / short_edge /
+  gap_search / coordinate_epsilon / big_z /
+  large_coordinate / planar_z_snap), no unknown /
+  missing / duplicate-after-normalization key,
+  all values finite positive Numerics
+  (EXEC-01..03 regressions).
+- Session override normalization: only nil / Boolean /
+  Integer / finite Float / UTF-8 String / Array / Hash
+  accepted; String / Symbol key collisions after
+  conversion => fail closed; unsupported type => fail
+  closed (EXEC-04 / EXEC-05 regressions).
+- Coordinate epsilon binding: tolerance_values
+  / topology / graph-node coordinate_epsilon exact
+  equality (COH-01 + v1.3 §1.2).
+- Topology schema_version == 'cano-node.v1',
+  unique endpoint keys, every endpoint has 3 finite
+  world coordinates, exact endpoint set equality
+  with graph node members (T == G), exact topology
+  canonical-node grouping by graph membership +
+  resolved_clique agreement (v1.3 §1.1).
+- Analysis <-> Source coherence digest equality
+  (v1.3 §10): the SAME `pcd-coherence.v1` projection
+  built independently from SourceSnapshot edges /
+  faces / layers AND from AnalysisResult
+  geometry_snapshot edges / faces / layers; SHA-256
+  over the B1 identity bytes of both projections;
+  require equality.
+- Source-secondary registry edge ID resolution
+  (v1.3 §10.5): every `edge_id` in the registry
+  resolves exactly once in
+  `analysis_edge_by_id`; each resolved analysis
+  edge's coherence descriptor exists in the source
+  edge multiset; missing / absent => BLOCKED.
+- Incomplete-PID occurrence coherence (v1.3 §1.6):
+  complete non-empty persistent_id_path allowed as
+  stable source ref; nested incomplete occurrence
+  without instance_path => `ambiguous_incomplete_occurrence`
+  BLOCKED.
+- Node clique check (v1.3 §8.1): every graph node
+  resolved via topology endpoints, member coordinates
+  verified within `coordinate_epsilon`,
+  missing/out-of-eps member => BLOCKED.
+- Semantic node label refinement (v1.3 §8.3):
+  iterative round-by-round refinement using
+  `[provisional_edge_label, neighbor_previous_label]`
+  multiset; fixed `NODE_REFINEMENT_MAX_ROUNDS = 50`
+  cap. Distinct legacy nodes sharing the final full
+  digest => `semantic_node_ambiguity` BLOCKED. Same
+  truncated prefix mapped to different full digest
+  => `semantic_id_truncation_collision` BLOCKED.
+- Semantic edge / chain / loop / region IDs use the
+  same ambiguity / truncation collision gates
+  (v1.3 §8.4 - §8.8). Loop rotation + reverse
+  orientation canonicalization (all 2N rotations).
+  Region remap through semantic loop IDs.
+- Adjacency is rebuilt from semantic edges (legacy
+  adjacency ignored for publication).
+
+B1 source semantic projection
+(`_project_source`, Blueprint v1.2 §4):
+
+- `schema_version` == `pcd-source-projection.v1`
+- `source_snapshot_schema_version`
+- `edges`: canonical orientation by identity bytes,
+  sorted by identity bytes preserving multiplicity,
+  NO `edge_length_sum` / NO `EdgeRecord.id` /
+  NO entity_id / NO metadata (SRC-02 regression).
+- `faces`: outer_loop_vertex_count + inner_loop_count
+  + layer_name + stable_source_ref; sorted by
+  identity bytes.
+- `layers`: layer_name + role (Symbol coerced to
+  String) + role_rule + visible + visibility_unknown
+  + edge_count + face_count + faces_with_holes_count;
+  sorted by identity bytes, preserving order.
+
+Transient occurrence IDs from the canonical graph
+are NOT published as semantic identity; only
+complete non-empty PID-path refs count
+(ID-07 / BLD-01 regressions).
+
+## J. Semantic ID / remap summary
+
+The Builder publishes semantic IDs with locked
+prefixes (v1.3 §3.3 + §8):
+
+- Nodes: `pcn-` + first 20 hex chars of full digest
+- Edges: `pce-` + first 20 hex chars of full digest
+- Chains: `pch-` + first 20 hex chars of full digest
+- Loops: `pcl-` + first 20 hex chars of full digest
+- Regions: `pcr-` + first 20 hex chars of full digest
+- Repairs: `pcrp-` + first 20 hex chars of full digest
+
+Full digests are retained in `seen_label` / full maps
+for truncated-ID collision detection (BLD-03 +
+TRUNC-01 regressions).
+
+Same truncated prefix mapped to a different full
+digest => `semantic_id_truncation_collision` BLOCKED.
+
+Distinct legacy semantic entities sharing the same
+final full digest => BLOCKED with the appropriate
+`semantic_{node,edge,chain,loop,region}_ambiguity`
+reason code (BLD-02 + BLD-03 regressions). Never
+append counters or use legacy IDs as tie-break.
+
+Perturbing transient occurrence IDs (legacy
+addressing only) does NOT change the semantic
+content_digest / dataset_id (BLD-01 regression).
+
+Current issue projection: only the three secondary
+source warnings (`short_edge`, `abnormal_large_coord`,
+`deep_nesting`) survive (Blueprint v1.3 §13).
+Historical repaired families
+(`duplicate_edge_candidate`, `significant_non_zero_z`,
+`open_endpoint`, `gap_candidate`) do NOT resurrect.
+Issue refs are limited to `pcd_node`, `pcd_edge`, and
+complete `source_pid_path`; raw `entity_id`,
+`object_id`, raw analysis edge ID, raw legacy IDs, and
+transient occurrence IDs are FORBIDDEN in content
+(ISS-01 regression).
+
+## K. B1.4 readiness / finalization summary
+
+`SUAnalysis::Core::PreparedCadDatasetValidator` is the
+pure finalizer. Public API:
+
+```ruby
+outcome = PreparedCadDatasetValidator.validate_and_finalize(
+  dataset: candidate,
+  workflow_snapshot: workflow_snapshot
+)
+```
+
+Final readiness: `NOT_READY` | `READY_WITH_WARNINGS`
+| `READY`. Any blocker => `NOT_READY`. No blocker +
+warning => `READY_WITH_WARNINGS`. No blocker + no
+warning => `READY`. Unknown / missing / malformed
+state fails closed.
+
+Validator checks (executed before the 8 MiB gate):
+
+- Schema version + top-level shape.
+- Re-compute `content_digest` /
+  `build_evidence_digest` / `dataset_id` derivation.
+- Symbol / host-object / UTF-8 leakage scan.
+- Semantic graph structural checks: unique IDs;
+  node xyz exactly 3 finite Numerics; edge node
+  refs resolve; adjacency valid / symmetric /
+  consistent; no forbidden duplicate-coordinate
+  fields on nodes or edges (no `world_endpoints` /
+  `start` / `end`).
+- Semantic structure structural checks: chain /
+  loop / region refs resolve; unique chain / loop
+  / region IDs; loop carries no `world_coordinates`.
+- Current issue refs typed + resolvable; ref kind
+  is one of `pcd_node` / `pcd_edge` /
+  `source_pid_path`.
+- Coherence evidence digest is a well-formed SHA-256
+  hex string.
+- Source projection carries no `edge_length_sum` /
+  `bounding_box` / `aggregate`.
+- Workflow state matrix (Blueprint v1.3 §11):
+  - Workspace state MUST be `ready` (else NOT_READY).
+  - Duplicate summary: `tolerance_status == captured`,
+    actions_applied/skipped/failed non-negative,
+    last_action_status in {none, applied, skipped,
+    failed}, every row status allowlist = applied |
+    skipped | failed, recomputed counts from rows
+    must equal summary counts, last_action_status
+    consistency, sum counts == actions.length,
+    missing actions => NOT_READY.
+    failed > 0 => NOT_READY.
+    skipped > 0 with no blocker => READY_WITH_WARNINGS
+    (RDY-06 .. RDY-09 regressions).
+  - Planar: NO_CANDIDATE / APPLIED clean;
+    READY_TO_NORMALIZE / FAILED / NOT_COMPUTED /
+    INVALID_TOLERANCE / INVALID_INPUT => NOT_READY;
+    REVIEW_REQUIRED => READY_WITH_WARNINGS.
+  - Gap: NO_CANDIDATE / APPLIED clean;
+    READY_TO_REPAIR / FAILED / NOT_COMPUTED =>
+    NOT_READY; REVIEW_REQUIRED =>
+    READY_WITH_WARNINGS.
+  - Structure: READY clean; READY_WITH_WARNINGS
+    => READY_WITH_WARNINGS; FAILED / NOT_COMPUTED =>
+    NOT_READY.
+
+## L. 8 MiB exact final-payload gate behavior
+
+Exact sequence per dispatch §13:
+
+1. Builder returns candidate with `validation = nil`.
+2. Validator runs all non-size structural checks
+   above.
+3. Build tentative final validation with fixed-shape
+   persistence PASS check.
+4. Attach validation.
+5. Serialize EXACT complete final top-level dataset
+   (schema_version + dataset_id + content_digest +
+   content + build_evidence_digest + build_evidence +
+   validation) via the deterministic persisted JSON
+   serializer.
+6. Measure UTF-8 `.bytesize` of the persisted JSON
+   via `persisted_bytesize`.
+7. `<= 8_388_608` => persistence_check status = PASS,
+   final validation contains the measured bytes
+   out-of-band as `validation['persistence_check']
+   ['measured_bytes']`. Status = READY (or
+   READY_WITH_WARNINGS).
+8. `> 8_388_608` => rebuild validation with blocker
+   `persistence_envelope_unverified`, finalize
+   NOT_READY. The measured bytes are NEVER persisted
+   inside the measured payload (PERSIST-01 +
+   PERSIST-02 regressions).
+
+No self-reference: the measured bytes live in
+`validation['persistence_check']['measured_bytes']`
+AFTER the persisted JSON bytesize was measured.
+
+## M. Exact Ruby path / version
+
+```text
+Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe
+ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]
+```
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 packets).
+
+## N. Exact tests + counts
+
+### Focused B1 suite
+
+```text
+Command: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/test_v19b1_prepared_cad_dataset.rb
+Result: 48 tests, 48 pass, 0 fail, 0 error
+```
+
+Coverage breakdown (per Blueprint v1.2 §16 + v1.3 §5):
+
+Identity / canonical bytes (12 tests):
+- ID-Golden (digest determinism + format)
+- ID-Golden-Frozen (locked identity-bytes prefix)
+- ID-01 (-0.0 normalization)
+- ID-02 (control chars + UTF-8)
+- ID-03 (invalid UTF-8 fail closed)
+- ID-04 (Hash insertion order independence)
+- ID-05 (Float vs Hash type distinction)
+- ID-06 (content change changes digest)
+- ID-07 (evidence changes do NOT change semantic digest)
+- ID-08 (validation A/B same semantic identity)
+- ID-09 (stale validation rejected)
+- ID-10 (candidate == final)
+- ID-11 (Symbol keys / values rejected)
+
+Source / execution (6 tests):
+- SRC-01 (source-edge reorder stable)
+- SRC-02 (no edge_length_sum in semantic content)
+- EXEC-01 (Symbol/String tolerance normalization)
+- EXEC-02 (unknown tolerance key BLOCKED)
+- EXEC-03 (missing tolerance key BLOCKED)
+- EXEC-04 (session override collision BLOCKED)
+- EXEC-05 (unsupported session override type BLOCKED)
+
+Coherence (5 tests):
+- COH-01 (wrong topology schema BLOCKED)
+- COH-02 (snapshot_id mismatch BLOCKED)
+- COH-03 (workspace_id mismatch BLOCKED)
+- COH-04 (structure canonical_graph_digest mismatch
+  BLOCKED)
+- COH-05 (workflow state != ready BLOCKED)
+
+Semantic ID remap (3 tests):
+- IDR-01 (full Builder + Validator happy path => READY)
+- IDR-02 (candidate == final content identity)
+- IDR-03 (persisted JSON bytesize stable)
+
+Readiness (9 tests):
+- RDY-01 .. RDY-09 (every explicit state).
+
+Safety (3 tests):
+- SAFE-01 (Builder does not mutate inputs)
+- SAFE-02 (zero Sketchup:: dependency in active code)
+- SAFE-03 (persisted JSON contains only JSON-safe values)
+
+Truncated-ID collision (2 tests):
+- TRUNC-01 (dataset_id prefix matches full digest)
+- TRUNC-02 (same prefix + different full BLOCKED).
+
+Builder semantic ID remap (3 tests):
+- BLD-01 (perturb transient occurrence IDs =>
+  same semantic content)
+- BLD-02 (chain orientation canonical)
+- BLD-03 (chain node_ids resolve to pcn-*).
+
+Issue projection (1 test):
+- ISS-01 (short_edge secondary warning survives).
+
+Persistence envelope (2 tests):
+- PERSIST-01 (8 MiB gate PASS for triangle dataset)
+- PERSIST-02 (> 8 MiB => NOT_READY with
+  persistence_envelope_unverified blocker).
+
+### Full synthetic Ruby suite
+
+```text
+Command: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe tests/run_all.rb
+Result: 1281 tests, 1272 pass, 5 fail, 4 error
+```
+
+Pre-existing failures (NONE introduced by this
+packet; identified via the same full-suite run
+before the B1 implementation began):
+
+- 4 FAIL on `html_render (V1.9A FINAL P1-A)` x 3 +
+  `html_render (V1.9A FINAL P1-C)` x 1 +
+  `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)`
+  x 1 = CSS / app.js textual source-level guards on
+  already-source-reviewed PASS items. CSS / app.js
+  UNCHANGED in this packet.
+- 1 FAIL on `capability.HtmlDialog` (outside SU
+  returns false R002 + S2-BLOCK-006) - pre-existing
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (NoMethodError on FakeUI stub) - pre-existing
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` -
+  pre-existing FakeUI / test-env limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` -
+  pre-existing presenter chip-list guard.
+
+These are the same 9 pre-existing failures noted
+in the V1.9A closure / V1.9B0 dispatch reports
+(CURRENT_STATE.md §15). No new failure was
+introduced by this packet.
+
+### RBZ
+
+The pre-existing `dist/SU-AI-Plugin.rbz` was
+re-zipped LOCALLY to include the new B1 production
+modules (the RBZ smoke test asserts every file in
+`extension/` is packaged). The RBZ is gitignored
+and is NOT a tracked production delta. No RBZ
+release decision was made; no RBZ was published.
+
+## O. Ruby 2.2 compatibility audit
+
+The dispatch §17 + Blueprint v1.3 §17 require that
+B1 implementations avoid Ruby 2.4+ features. Audit
+of the three new B1 modules:
+
+- No `Hash#compact` (Hash only; Array#compact is
+  fine since 1.9+).
+- No `Array#sum`.
+- No `transform_keys` / `filter_map`.
+- No `Numeric#positive?` / `Float#positive?`.
+- No safe navigation `&.`.
+- No pattern matching `case ... in ...`.
+- No `then` / `yield_self`.
+- Float identity via `[v].pack('G').unpack('H*').first`
+  (Ruby 2.2+ compatible).
+
+The vendored runtime is Ruby 2.7.8 (not Ruby 2.2);
+the Ruby 2.2 compatibility of the implementation
+route was not runtime-validated on a literal Ruby
+2.2 install. Per dispatch §15: "Do NOT claim
+Ruby 2.2 runtime PASS unless actually executed on
+Ruby 2.2." This report explicitly does NOT claim
+Ruby 2.2 runtime PASS.
+
+## P. Diff / status evidence
+
+Pre-state recording (before any editing):
+
+```text
+HEAD: f3094b275860b0194355ce46343f6e857d2ac50d
+git diff --stat: empty
+git status --porcelain: ?? output/
+```
+
+Final state (before commit):
+
+```text
+?? extension/su_ai_plugin/core/prepared_cad_dataset.rb
+?? extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb
+?? extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb
+?? output/
+?? tests/test_v19b1_prepared_cad_dataset.rb
+```
+
+Allowed production delta per dispatch §2 / §16:
+B1-owned new modules only (3 new files). Test
+file is allowed per dispatch §2. The pre-existing
+untracked `output/` directory is not committed
+(dev-output only; not a production delta).
+
+`ruby -c` syntax check on the three new
+production files: **Syntax OK** on all three.
+
+`git diff --check` on tracked changes: clean (no
+tracked changes to evaluate).
+
+## Q. Confirmation no frozen existing production module changed
+
+Per dispatch §3, B1.2-B1.4 MUST NOT modify any
+existing V1.5-V1.9A production module. Confirmed:
+
+- `git diff --stat` for HEAD vs the starting HEAD
+  shows zero tracked production-source changes.
+- The three new production files are owned by B1.
+  No existing source file was edited, added new
+  public API to, or had a private method changed.
+- `tests/test_v19b1_prepared_cad_dataset.rb` is a
+  NEW test file (test-only, additive).
+- The locally re-zipped `dist/SU-AI-Plugin.rbz`
+  includes the three new modules but does NOT
+  modify any existing module.
+
+## R. Known limitations
+
+1. Ruby 2.2 runtime was not executed; the runtime
+   used is the vendored Ruby 2.7.8. The
+   implementation route uses Ruby-2.2-compatible
+   primitives but the literal Ruby 2.2 contract is
+   not runtime-validated. Per dispatch §15, this
+   report does NOT claim Ruby 2.2 PASS.
+
+2. The fixture uses a small triangle (3 edges) to
+   exercise the Builder + Validator pipeline. More
+   extensive fixtures (large graphs, multi-layer
+   selection, secondary source warnings on every
+   allowed family, region holes, etc.) belong to
+   the B1.5 live-bundle integration scope (NOT
+   authorized in this dispatch).
+
+3. The legacy canonical-node / canonical-edge IDs
+   supplied to the Builder are the SAME identifiers
+   used by the V1.7 / V1.8 pipeline. B1 perturbs
+   these IDs to pcn- / pce- / pch- / pcl- / pcr-
+   / pcrp- prefixes; the legacy IDs do NOT enter
+   semantic content (only build evidence). This is
+   tested by BLD-01.
+
+4. The Builder's `_stable_source_refs_from_occurrences`
+   currently returns an empty Array because the
+   graph's transient occurrence IDs alone cannot be
+   mapped to complete PID paths without the
+   V1.4 SourceSnapshot SourceReference stream. The
+   v1.2 §7 contract says: "Do not infer a stable PID
+   path by parsing an unverified occurrence string
+   alone." Future B1.5 will resolve this via the
+   sanctioned `WorkingModeRunner.capture_prepared_cad_input_bundle`
+   method, which will carry the SourceReference
+   stream through the bundle.
+
+5. Persistence: B1.4 implements the <= 8 MiB gate
+   but does NOT persist the payload. V1.9B2 owns
+   AttributeDictionary persistence (NOT authorized
+   in this dispatch).
+
+6. UI: no Accept / Load UI was added (per dispatch
+   §0). The B1 dataset is reachable ONLY through
+   programmatic API calls.
+
+7. WorkingModeRunner was not modified. The sanctioned
+   additive `WorkingModeRunner.capture_prepared_cad_input_bundle`
+   method is reserved for B1.5 (NOT authorized in
+   this dispatch).
+
+8. RBZ: the local RBZ was re-zipped to include the
+   new production modules so the host-free smoke
+   test remained green. The RBZ is gitignored and
+   is NOT a tracked commit artifact. No RBZ release
+   decision was made.
+
+## Return state
+
+```text
+V1_9A                            = CLOSED_FROZEN
+V1_9B0                           = CLOSED_OWNER_PASS
+V1_9B1_B1_2                      = COMPLETE
+V1_9B1_B1_3                      = COMPLETE
+V1_9B1_B1_4                      = COMPLETE
+V1_9B1_B1_5                      = NOT_AUTHORIZED
+V1_9B2                           = NOT_STARTED
+V2                               = NOT_STARTED
+```
+
+B1.2-B1.4 COMPLETE. B1.5 / B2 / V2 NOT STARTED.
+STOP. Do NOT begin B1.5.
+
+---
+
+# CURRENT PI REPORT — V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION (PREVIOUS)
 
 Project: `SU-AI-Plugin`
 Stage: V1.9B0 (probe-only final narrow residual correction;
+V1.9A remains CLOSED_FROZEN)
+Date: 2026-09-10
+Authority:
+`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-10.md`
+Baseline HEAD (before this packet touched the working
+tree):
+`ab6362ce36454a0eb7e78d87ba11c8893a0e2e18`
+(the V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION
+merge commit on `dev/v1.9`).
+Baseline branch: `dev/v1.9`
+TARGET_BRANCH: **dev/v1.9**
+Working tree (start): 1 untracked dispatch file
+(`Prompt/AIPM_V1_9B0_PERSISTENCE_PROBE_FINAL_NARROW_RESIDUAL_CORRECTION_2026-09-10.md`).
+Working tree otherwise clean.
 V1.9A remains CLOSED_FROZEN)
 Date: 2026-09-10
 Authority:

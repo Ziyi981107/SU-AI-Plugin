@@ -1,4 +1,231 @@
-## V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION — 2026-09-10 (THIS UPDATE)
+## V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION — 2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 dispatch EXECUTION
+on assigned `dev/v1.9` per
+`Prompt/CURRENT_PI_DISPATCH.md` + Blueprint v1.3 + Codex
+PASS recheck). This packet implements ONLY:
+
+- **B1.2** — `SUAnalysis::Core::PreparedCadDataset`
+  immutable value object: schema_version + dataset_id +
+  content_digest + content + build_evidence_digest +
+  build_evidence + validation. Canonical identity byte
+  encoder (type-disjoint grammar per v1.3 §3.1).
+  Deterministic persisted JSON serializer (separate
+  contract from identity bytes).
+- **B1.3** — pure `PreparedCadDatasetBuilder` with
+  explicit-input coherence preflight, semantic source
+  projection (`pcd-source-projection.v1`), semantic
+  execution projection (fixed v1.2 tolerance key set),
+  semantic geometry ID remap (`pcn` / `pce` / `pch` /
+  `pcl` / `pcr` / `pcrp`) with truncated-ID collision
+  hardening + ambiguity detection.
+- **B1.4** — pure `PreparedCadDatasetValidator` /
+  finalizer with NOT_READY / READY_WITH_WARNINGS / READY
+  readiness matrix, JSON-safe / UTF-8 / host-object /
+  Symbol-key leakage scan, current workflow readiness
+  matrix (workspace / planar / gap / structure + the
+  full duplicate action row / status / count matrix),
+  and the exact <= 8 MiB final-payload gate.
+
+Allowed scope: ONLY
+`extension/su_ai_plugin/core/prepared_cad_dataset.rb` +
+`extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb` +
+`extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb` +
+`tests/test_v19b1_prepared_cad_dataset.rb`. No frozen
+V1.5–V1.9A module modified. No `WorkingModeRunner`
+modification (the v1.3 sanction for ONE additive
+`WorkingModeRunner.capture_prepared_cad_input_bundle`
+method applies to FUTURE B1.5 only and is NOT
+authorized in this dispatch). No persistence. No UI.
+No RBZ release. No V1.9B2 / V2 / MCP / LLM / Agent.
+
+V1.9B1 B1.2–B1.4 — 2026-09-14:
+
+- Starting HEAD (before Pi touched the working tree):
+  `f3094b275860b0194355ce46343f6e857d2ac50d`
+  (the V1.9B1 dispatch activation merge commit on
+  `dev/v1.9`).
+- Starting working-tree state: 1 untracked directory
+  (`output/`, dev-output only). Working tree
+  otherwise clean.
+- Implementation SHA: produced by this packet (see
+  final stable commit below).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD`
+  after push.
+
+Validation:
+
+- `ruby -c` on the three new production files:
+  **Syntax OK** (all three).
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **48 / 48 PASS, 0 fail, 0 error**.
+  Coverage: identity / canonical bytes (Golden +
+  -0.0 + UTF-8 + Hash order + Float/Hash type +
+  content/evidence/validation digests + Symbol
+  rejection); source / execution normalization
+  (reorder stable, no edge_length_sum, Symbol /
+  String tolerance normalization, unknown / missing
+  tolerance key BLOCKED, session override collision
+  / unsupported type BLOCKED); coherence (topology
+  schema / cross-ID / epsilon / digests / state);
+  semantic ID remap (perturb transient occurrence
+  IDs => same content, chain orientation canonical,
+  node_ids resolve to pcn-); readiness (every
+  explicit state for planar / gap / structure +
+  the full duplicate action row / count / status
+  matrix); safety (no input mutation, no
+  Sketchup:: dependency, JSON-safe payload);
+  truncated-ID collision (full digest retained
+  internally, BLOCKED on truncation collision);
+  current issue projection (only the 3 allowed
+  secondary source warnings survive); persistence
+  envelope (PASS for triangle dataset, BLOCKED +
+  NOT_READY for > 8 MiB).
+- Full synthetic Ruby suite: **1281 tests, 1272
+  pass, 5 fail, 4 error**. All 9 failures /
+  errors are the pre-existing V1.9A / V1.9B0
+  failures already enumerated in §15 below
+  (html_render CSS / app.js textual guards,
+  capability.HtmlDialog / V14 production call chain
+  / V17-L1 host_state_changed / v19a_presenter
+  FINAL P1-B — all FakeUI / test-env limitations
+  or pre-existing PASS-items that have textual
+  guards). NO new failure was introduced by this
+  packet (verified via isolated re-run before vs
+  after).
+
+Packaged file SHAs (vs the V1.9B1 dispatch
+activation merge):
+
+- `su_ai_plugin/core/prepared_cad_dataset.rb`
+  SHA-256: **NEW** (B1.2).
+- `su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  SHA-256: **NEW** (B1.3).
+- `su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+  SHA-256: **NEW** (B1.4).
+- All other `su_ai_plugin/core/*.rb` files,
+  `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`,
+  `html/index.html`, `html/app.js`,
+  `html/style.css`, icons: **UNCHANGED** (verified
+  via `git diff --stat` for HEAD vs the starting
+  HEAD, which is empty for the tracked production
+  tree).
+- `dist/SU-AI-Plugin.rbz` was re-zipped LOCALLY to
+  include the three new modules so the host-free
+  smoke test (`tests/test_rbz_smoke.rb`) remained
+  green. The RBZ is gitignored and is NOT a tracked
+  production delta. No RBZ release decision was
+  made.
+
+Frozen V1.9B1 design authority preserved unchanged
+on the assigned `dev/v1.9`. Pi did NOT rewrite any
+frozen design authority. No V1.4 / V1.5 / V1.6 /
+V1.7 / V1.8 algorithm change. No source /
+provenance / workspace ownership change. No host
+mutation / Face / Observer. No V1.9A re-open. No
+tolerance change. No
+`planar_normalization_proposer.rb` /
+`planar_normalization_executor.rb` /
+`working_mode_runner.rb` /
+`canonical_topology_builder.rb` /
+`canonical_geometry_graph.rb` /
+`canonical_structure_reconstructor.rb` /
+`cad_prep_workflow_*.rb` /
+`source_snapshot.rb` /
+`source_fingerprint.rb` /
+`execution_config_snapshot.rb` /
+`dialog_runner.rb` /
+`ui_bridge.rb` change. No HTML / app.js / CSS /
+toolbar change. No Observer / Face. No site
+semantics. No Loader / toolbar / V1.9A3 contract
+change. No persistence / Accept / Load UI. No RBZ
+release. No V1.9B2 / V2 / MCP / LLM / Agent.
+
+`git diff --check`: clean (no tracked changes).
+LF line endings on the three new production files.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 packets).
+
+Per dispatch §15: this report does NOT claim
+Ruby 2.2 runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; no Hash#compact, no Array#sum, no
+transform_keys / filter_map, no Numeric#positive?,
+no safe navigation, no pattern matching, no then /
+yield_self), but the literal Ruby 2.2 contract is
+not runtime-validated in this packet.
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (the V1.9B1
+  B1.2–B1.4 section is prepended above the existing
+  V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL
+  CORRECTION section).
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = COMPLETE
+V1_9B1_B1_3                          = COMPLETE
+V1_9B1_B1_4                          = COMPLETE
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this
+   packet's B1.2 / B1.3 / B1.4 production code on
+   `dev/v1.9`.
+2. Narrow Codex xHigh recheck on the B1 pipeline.
+3. Owner real-SU2020 evidence (B1 does not run
+   inside SketchUp; B1 is host-free; Owner evidence
+   only matters once B1.5 introduces the live bundle
+   capture seam).
+4. Only then may AIPM authorize B1.5 + V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch §"Codex review": the B1
+modules own a new persistent identity contract
+(`pcd-semantic-identity.v1`,
+`pcd-build-evidence-identity.v1`), a new identity
+byte encoder (type-disjoint grammar), the
+deterministic persisted JSON serializer, and the
+<= 8 MiB envelope gate. Each is narrow within its
+respective seam; none reopens any already-PASS
+frozen V1.5–V1.9A surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the implementation + tests + local RBZ rezip +
+commit (pending) + push (pending) for this packet
+and now returns control to AIPM for direct source
+review.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = REQUIRED.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
+## V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION — 2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9B0 AIPM final narrow residual
 correction per
