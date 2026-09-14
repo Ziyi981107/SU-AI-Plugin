@@ -28,19 +28,24 @@ Recorded before any editing.
 
 ## B. Final commit SHA
 
-Produced by this packet's commit step. The final
-stable commit on `dev/v1.9` at packet completion is:
+The substantive B1.2-B1.4 implementation commit
+on `dev/v1.9` is:
 
 ```text
-1ce2acf6775301210b12d3f3b557229d0ffbab3b
+3ec33564e9b16cc6df80a1b1e2bd52eb0373aa06
 ```
 
-(`git push origin dev/v1.9` succeeded; the
-final pre-push HEAD is the same SHA.) The
-implementation commit (the substantive B1.2-B1.4
-code) is `3ec33564e9b16cc6df80a1b1e2bd52eb0373aa06`.
-Follow-up commits only amend the report's SHA
-pointer.
+Follow-up commits amend the report's SHA pointer
+and pin the final stable commit to the most
+recent `dev/v1.9` HEAD; see `git log --oneline -5`
+on `dev/v1.9` at packet completion for the full
+history. The implementation commit (`3ec3356`)
+introduced the three new production modules +
+the new test file + the report + the state update;
+the follow-up commits do NOT modify any production
+source.
+
+(`git push origin dev/v1.9` succeeded.)
 
 ## C. Exact changed files
 
