@@ -1,3 +1,182 @@
+## V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW R2 CORRECTION — 2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW
+R2 correction dispatch EXECUTION on assigned `dev/v1.9`
+per `Prompt/AIPM_V1_9B1_B1_2_B1_4_FINAL_SOURCE_REVIEW_R2_CORRECTION_2026-09-14.md`
++ Blueprint v1.3 + Codex PASS recheck). This packet
+addresses exactly the 8 R2 issues proven by direct
+source review of the 9-FR FINAL RESIDUAL implementation
+(commit `bc6db6f`):
+
+- **R2-00** — Report integrity. Never synthesize commit
+  SHAs. The implementation SHA below is the LITERAL output
+  of `git rev-parse HEAD` after push. The historical wrong
+  SHA in the prior FR report section (`bc6db6f7f7d4be7c5c2b8d6a7c2e0d7a8b3c4d5e`)
+  is preserved verbatim (older historical sections are
+  not rewritten). The actual remote implementation commit
+  for the FR packet is `bc6db6f4ee01442ef36593c38ab975b98dc2ab4c`.
+- **R2-01** — FR-04 production path: `_remap_graph`
+  now accepts `truncation_context:` kwarg and threads it
+  to `_semantic_repair_id`. The pcrp truncated-prefix
+  collision blocker now uses
+  `semantic_id_truncation_collision:repair` (NOT
+  `semantic_repair_ambiguity`). Public-path tests cover
+  the public Builder path with a real gap_bridge edge +
+  repair_action_id.
+- **R2-02** — FR-03 Source<->Analysis coherence (deterministic).
+  Replaced the vacuous `['BUILT','BLOCKED'].include?`
+  assertion with strict expectations: same incomplete-PID
+  tuple Source vs Analysis => BUILT; mismatch on
+  instance_path / persistent_id_path / structural_depth /
+  entity_id / persistent_id / layer_name => BLOCKED;
+  nil / duplicate Analysis EdgeRecord.id => BLOCKED.
+- **R2-03** — Legacy loop id leak + unresolved refs
+  fail-closed. `loop_records` now delete `legacy_id` (not
+  only `full_digest`) before publication. `_remap_chain_nodes`
+  / `_remap_chain_edges` return `[resolved, missing_ids]`;
+  callers BLOCK on missing. `_remap_loop_id` returns nil
+  on unresolved inner refs; region section now BLOCKs on
+  nil outer / hole loop. Structural cardinality validated:
+  chain node_count == edge_count + 1; loop node_count ==
+  edge_count, non-empty.
+- **R2-04** — FR-05 / FR-06 acceptance-grade tests. Real
+  open-chain reversed input => same pch + same content_digest
+  (REAL triangle graph node/edge IDs, not fake). Real loop
+  rotation + reverse orientation => same pcl + same
+  content_digest. Loop preserves edge-to-consecutive-node
+  alignment. Two distinct legacy chains => distinct pchs.
+- **R2-05** — FR-07 FAIL-side exact +1. FAIL path tentative
+  measurement == input bytesize (e.g. `8_388_609`). FAIL path
+  dataset bytesize MAY differ from the tentative measurement
+  (because of added blocker metadata); the byte-identical
+  invariant applies ONLY to the PASS path. Removed /
+  disabled the fail-path `final_payload_size_mismatch_with_measurement`
+  logic that compared intentionally different payloads.
+- **R2-06** — FR-08 Validator strict UTF-8 + adjacency
+  missing. `_scan_for_leakage` now requires
+  `encoding.name == 'UTF-8' && valid_encoding?` (was
+  `valid_encoding?` only). Validator-level US-ASCII /
+  ASCII-8BIT rejection tests. Missing / nil / non-Hash
+  adjacency => `invalid_adjacency` blocker (fail-closed).
+  Same-type duplicate ID tests for edge / chain.
+- **R2-07** — FR-02 negative test matrix. Raw tolerance
+  values unreadable / non-Hash => BLOCKED. Unexpected
+  non-empty graph `execution_config_digest` => BLOCKED.
+  Graph-node `coordinate_epsilon` malformed object =>
+  BLOCKED (no raise). Topology epsilon malformed
+  non-Numeric => BLOCKED (no raise).
+
+Allowed scope (frozen modules untouched):
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb` (untouched this packet)
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW R2 CORRECTION — 2026-09-14:
+
+- Starting HEAD (before pi touched the working tree):
+  `7e2228a146cbc62036fdee6cef1fb42ba29110e0` (the previous
+  V1.9B1 B1.2–B1.4 docs HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 modified dispatch file
+  (`Prompt/CURRENT_PI_DISPATCH.md`, replaced by AIPM with
+  the R2 dispatch), 3 untracked dispatch files (the R2
+  correction + the prior FR + SR correction Prompt
+  artifacts), 1 untracked directory (`output/`, dev-output
+  only), 1 untracked leftover tmp file
+  (`D:tmpfix_loop_amb.rb`, from a previous session, not
+  related to this packet). Working tree otherwise clean.
+- Implementation SHA: produced by this packet (see final
+  stable commit below).
+- Final HEAD on `dev/v1.9`: see `git rev-parse HEAD` after
+  push (recorded below).
+- Push: `git push origin dev/v1.9` succeeded.
+
+Validation:
+
+- `ruby -c` on the three B1 production files (only two
+  modified this packet): **Syntax OK**.
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **115 / 115 PASS, 0 fail, 0 error**. Coverage:
+  - R2-01-A: gap_bridge edge + repair_action_id =>
+    BUILT, pcrp published.
+  - R2-01-B: pre-seeded pcrp prefix + different full
+    digest => BLOCKED with
+    `semantic_id_truncation_collision:repair`.
+  - R2-01-C: stable repair facts + changed legacy
+    repair_action_id => same pcrp + same content_digest.
+  - R2-01-D: no NameError / no MethodError escapes.
+  - R2-02-A: identical incomplete-PID tuple Source vs
+    Analysis => BUILT.
+  - R2-02-B: same entity_id + distinct instance_path
+    => BLOCKED (Source vs Analysis mismatch).
+  - R2-02-C: nil Analysis EdgeRecord.id => BLOCKED.
+  - R2-02-D: duplicate Analysis EdgeRecord.id => BLOCKED.
+  - R2-03-A: no `legacy_id` key anywhere in published
+    `semantic_structure`.
+  - R2-03-B: perturb legacy loop_id only => identical
+    content_digest + pcl.
+  - R2-03-C: unknown chain node legacy ref => BLOCKED.
+  - R2-03-D: unknown loop edge legacy ref => BLOCKED.
+  - R2-03-E: chain cardinality violation => BLOCKED.
+  - R2-03-F: unknown region outer loop ref => BLOCKED.
+  - R2-04-A: two distinct legacy chains => distinct pchs.
+  - R2-04-B: real open-chain reversed input => same pch
+    + same content_digest.
+  - R2-04-C: real loop rotation => same pcl + same
+    content_digest.
+  - R2-04-D: real loop reversed orientation => same pcl
+    + same content_digest.
+  - R2-04-E: loop preserves edge-to-consecutive-node
+    alignment.
+  - R2-05-A: FAIL at exactly `8_388_609` bytes =>
+    NOT_READY with persistence_envelope_unverified
+    blocker referencing exactly `bytes=8388609`; no
+    `final_payload_size_mismatch_with_measurement`
+    false-positive blocker.
+  - R2-06-A: Validator-level `_scan_for_leakage` rejects
+    US-ASCII String.
+  - R2-06-B: Validator-level `_scan_for_leakage` rejects
+    ASCII-8BIT String.
+  - R2-06-C: adjacency missing (nil) => NOT_READY.
+  - R2-06-D: adjacency non-Hash (Array) => NOT_READY.
+  - R2-06-E: adjacency missing expected pair => NOT_READY.
+  - R2-06-F: adjacency extra pair => NOT_READY.
+  - R2-06-G: duplicate edge_id in semantic_graph =>
+    NOT_READY.
+  - R2-06-H: duplicate chain_id in semantic_structure =>
+    NOT_READY.
+  - R2-07-A: raw tolerance values unreadable (non-Hash)
+    => BLOCKED.
+  - R2-07-B: unexpected non-empty graph
+    `execution_config_digest` => BLOCKED.
+  - R2-07-C: graph-node `coordinate_epsilon` malformed
+    object => BLOCKED (no raise).
+  - R2-07-D: topology epsilon malformed non-Numeric =>
+    BLOCKED (no raise).
+  - All pre-existing B1.2-ID / SRC / EXEC / COH / RDY /
+    PID / ISO / BLD / ISS / SAFE / LOOP / FR02 / FR04 /
+    FR06 / FR07 / FR08 / FR09 / PERSIST / TRUNC tests
+    still PASS.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1349 tests, 1340 pass, 5 fail, 4 error.
+```
+
+This packet added the +32 net new B1 tests (83 → 115)
+all passing.
+
+Pre-existing failures (NONE introduced by this packet;
+confirmed via `git diff --name-only` filter + isolated
+re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)`:
+    `.recovery-banner[hidden]` rule ordering.
+  - `html_render (V1.9A FINAL P1-A)` × 3: `app
 ## V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL RESIDUAL

@@ -1,3 +1,224 @@
+## V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW R2 CORRECTION — 2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW
+R2 correction dispatch EXECUTION on assigned `dev/v1.9`
+per `Prompt/AIPM_V1_9B1_B1_2_B1_4_FINAL_SOURCE_REVIEW_R2_CORRECTION_2026-09-14.md`
++ Blueprint v1.3 + Codex PASS recheck). This packet
+addresses exactly the 8 R2 issues proven by direct
+source review of the 9-FR FINAL RESIDUAL implementation
+(commit `bc6db6f`).
+
+The literal `git rev-parse HEAD` after push is recorded
+below; no SHAs are synthesized. R2-00 preserves the
+historical (incorrect) FR SHA `bc6db6f7f7d4be7c5c2b8d6a7c2e0d7a8b3c4d5e`
+in the older historical sections verbatim and notes
+the actual remote implementation commit
+`bc6db6f4ee01442ef36593c38ab975b98dc2ab4c` for the FR
+packet.
+
+### R2-01 — FR-04 production path: `_remap_graph` now threads `truncation_context`
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`:
+
+- `_remap_graph` signature now accepts `truncation_context: nil`
+  kwarg.
+- The public `build(...)` caller now passes the per-build
+  `truncation_context` to `_remap_graph`.
+- The pcrp truncated-prefix collision blocker now uses
+  `REASON_SEMANTIC_ID_TRUNCATION_COLLISION + ':repair'`
+  (NOT `REASON_SEMANTIC_REPAIR_AMBIGUITY +
+  ':pcrp_truncation_collision'`).
+
+Public-path tests added (4):
+
+- **R2-01-A** gap_bridge edge with repair_action_id =>
+  BUILT + pcrp published (no NameError).
+- **R2-01-B** pre-seeded pcrp prefix + different full
+  digest => BLOCKED with
+  `semantic_id_truncation_collision:repair`.
+- **R2-01-C** stable repair facts + changed legacy
+  repair_action_id => same pcrp + same content_digest.
+- **R2-01-D** no NameError / no NoMethodError escapes.
+
+### R2-02 — FR-03 Source vs Analysis coherence (deterministic)
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`:
+no production code change; the FR-03 production behavior
+was already directionally correct.
+
+`tests/test_v19b1_prepared_cad_dataset.rb`: replaced the
+vacuous `['BUILT', 'BLOCKED'].include?(out['status'])`
+assertions with strict expectations (4 tests):
+
+- **R2-02-A** identical incomplete-PID tuple Source vs
+  Analysis => BUILT (coherence PASS).
+- **R2-02-B** same entity_id + distinct instance_path =>
+  BLOCKED (Source vs Analysis mismatch).
+- **R2-02-C** nil Analysis EdgeRecord.id => BLOCKED
+  with `analysis_edge_id_nil`.
+- **R2-02-D** duplicate Analysis EdgeRecord.id => BLOCKED
+  with `analysis_edge_id_duplicate`.
+
+### R2-03 — Legacy loop id leak + unresolved refs fail-closed
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`:
+
+- `loop_records` now delete `legacy_id` (not only
+  `full_digest`) before publication.
+- `_remap_chain_nodes` / `_remap_chain_edges` return
+  `[resolved, missing]` tuples; the callers BLOCK on
+  missing IDs.
+- The chain / loop remap sections validate structural
+  cardinality (chain node_count == edge_count + 1; loop
+  node_count == edge_count, non-empty) and BLOCK on
+  violation.
+- `_remap_loop_id` returns nil when any inner legacy
+  node/edge ref cannot resolve.
+- The region section now BLOCKs when outer or hole loop
+  refs cannot resolve.
+
+Tests added (6):
+
+- **R2-03-A** no `legacy_id` key anywhere in published
+  `semantic_structure`.
+- **R2-03-B** perturb legacy loop_id only => identical
+  content_digest + pcl.
+- **R2-03-C** unknown chain node legacy ref => BLOCKED.
+- **R2-03-D** unknown loop edge legacy ref => BLOCKED.
+- **R2-03-E** chain cardinality violation => BLOCKED.
+- **R2-03-F** unknown region outer loop ref => BLOCKED.
+
+### R2-04 — FR-05 / FR-06 acceptance-grade tests (real IDs)
+
+`tests/test_v19b1_prepared_cad_dataset.rb`:
+
+- Old vacuous `B1.2-FR06-01` (fake IDs `cn-aaa / ce-aaa-bbb`)
+  replaced by stubs that preserve the test name but
+  defer to the real-fixture tests below.
+- **R2-04-A** two distinct legacy chains => distinct
+  pchs (FR-05 unambiguous).
+- **R2-04-B** real open-chain reversed input => same pch
+  + same content_digest (REAL triangle graph IDs).
+- **R2-04-C** real loop rotation => same pcl + same
+  content_digest.
+- **R2-04-D** real loop reversed orientation => same
+  pcl + same content_digest.
+- **R2-04-E** loop preserves edge-to-consecutive-node
+  alignment.
+
+### R2-05 — FR-07 FAIL-side exact +1
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`:
+
+- PASS path: byte-identical measured-vs-final invariant
+  retained (B1-SR-11).
+- FAIL path: the `final_payload_size_mismatch_with_measurement`
+  blocker is removed. The FAIL path's dataset bytesize
+  MAY differ from the tentative measurement because the
+  blocker metadata is added to the final validation.
+
+Test added (1):
+
+- **R2-05-A** FAIL at exactly `8_388_609` bytes =>
+  `outcome['persisted_bytes'] == 8_388_609`,
+  `status == NOT_READY`, blocker text
+  `persistence_envelope_unverified:bytes=8388609:limit=8388608`,
+  NO `final_payload_size_mismatch_with_measurement`
+  blocker.
+
+### R2-06 — FR-08 Validator strict UTF-8 + adjacency missing
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`:
+
+- `_scan_for_leakage` now requires
+  `encoding.name == 'UTF-8' && valid_encoding?` (was
+  `valid_encoding?` only). Valid-but-non-UTF-8 encodings
+  (US-ASCII, ASCII-8BIT, etc.) are REJECTED by the
+  Validator scan.
+- Adjacency check: missing / nil / non-Hash adjacency
+  => `invalid_adjacency:missing_or_malformed=` blocker
+  (fail-closed). The exact adjacency rebuild check
+  remains inside the `if adj.is_a?(Hash)` branch.
+
+Tests added (8):
+
+- **R2-06-A** Validator-level `_scan_for_leakage` rejects
+  US-ASCII String.
+- **R2-06-B** Validator-level `_scan_for_leakage` rejects
+  ASCII-8BIT String.
+- **R2-06-C** adjacency missing (nil) in semantic_graph
+  => NOT_READY.
+- **R2-06-D** adjacency non-Hash (Array) in semantic_graph
+  => NOT_READY.
+- **R2-06-E** adjacency missing expected pair => NOT_READY.
+- **R2-06-F** adjacency extra pair => NOT_READY.
+- **R2-06-G** duplicate edge_id in semantic_graph =>
+  NOT_READY.
+- **R2-06-H** duplicate chain_id in semantic_structure =>
+  NOT_READY.
+
+### R2-07 — FR-02 negative test matrix
+
+`tests/test_v19b1_prepared_cad_dataset.rb`:
+
+- **R2-07-A** raw tolerance values unreadable (non-Hash)
+  => BLOCKED.
+- **R2-07-B** unexpected non-empty graph
+  `execution_config_digest` => BLOCKED.
+- **R2-07-C** graph-node `coordinate_epsilon` malformed
+  object => BLOCKED (no raise).
+- **R2-07-D** topology epsilon malformed non-Numeric
+  => BLOCKED (no raise).
+
+### Validation
+
+- `ruby -c` on the two modified B1 production files
+  (`prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`): **Syntax OK**.
+  `prepared_cad_dataset.rb` is UNCHANGED.
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **115 / 115 PASS, 0 fail, 0 error** (was 83 / 83 in
+  the previous FR packet; this packet added +32 net
+  new tests, all passing).
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1349 tests, 1340 pass, 5 fail, 4 error.
+```
+
+This packet added the +32 net new B1 tests
+all passing.
+
+Pre-existing failures (NONE introduced by this packet;
+confirmed via `git diff --name-only` filter + isolated
+re-run comparison):
+
+- 5 FAIL on `html_render` (V1.9A FINAL P1-A / HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-C): CSS / `app.js` textual source-level
+  guards on already-source-reviewed PASS items. CSS /
+  `app.js` are UNCHANGED in this packet.
+- 1 FAIL on `capability.HtmlDialog` (outside SU returns
+  false R002 + S2-BLOCK-006): pre-existing test-environment
+  / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for nil:NilClass`):
+  pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed`: pre-existing
+  FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`: pre-existing
+  presenter test guard (`开放链` chip-list).
+
+`html_render` / `v19a_presenter` / `capability` / V14 /
+V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code paths.
+CSS / `app.js` / Presenter / Runner are NOT modified by
+this packet. These failures were pre-existing in the
+previous V1.9B1 packets.
+
+### Frozen-file delta
+
+`git diff --name-on
 ## V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL RESIDUAL
