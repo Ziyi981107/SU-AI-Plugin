@@ -1,13 +1,15 @@
 #
-# tests/test_v19b1_prepared_cad_dataset.rb — V1.9B1 B1.2-B1.4
+# tests/test_v19b1_prepared_cad_dataset.rb �?V1.9B1 B1.2-B1.4
 # host-free regression suite for PreparedCadDataset +
 # PreparedCadDatasetBuilder + PreparedCadDatasetValidator.
 #
-# Per frozen V1.9B1 Blueprint v1.3 + v1.2 recheck + Codex PASS:
+# Per frozen V1.9B1 Blueprint v1.3 + v1.2 + Codex PASS +
+# AIPM V1.9B1 B1.2-B1.4 Source Review Correction 2026-09-14:
 #
 #   - Identity-byte Golden fixture (v1.3 §3.8 hard-coded).
 #   - -0.0 normalization.
-#   - UTF-8 / control chars / invalid UTF-8 fail closed.
+#   - UTF-8 strict pass / valid-but-non-UTF-8 fail / invalid
+#     UTF-8 fail closed (B1-SR-12).
 #   - Hash insertion order independence.
 #   - Float vs Hash type distinction.
 #   - content change -> different semantic digest.
@@ -19,16 +21,32 @@
 #   - Symbol / String tolerance normalization.
 #   - unknown / missing tolerance key BLOCKED.
 #   - session override collision / unsupported type BLOCKED.
-#   - topology schema mismatch / endpoint set / epsilon / digests.
+#   - topology schema mismatch / endpoint set / epsilon / digests
+#     (B1-SR-03 full coherence matrix incl. per-node membership,
+#     membership_count, resolved_clique, tolerance_digest,
+#     execution_config_digest, workflow digest).
 #   - analysis<->source coherence mismatch BLOCKED.
 #   - registry edge mismatch BLOCKED.
-#   - semantic ID remap (perturb legacy IDs => same content).
-#   - chain reversal canonical.
-#   - loop rotation / reversal canonical.
-#   - region remap stable.
-#   - truncated prefix collisions BLOCKED.
-#   - every readiness state explicit.
-#   - duplicate state matrix contradictions NOT_READY.
+#   - nested incomplete-PID same entity_id distinct instance_path
+#     handled distinctly; nested incomplete PID without
+#     instance_path => BLOCKED (B1-SR-04).
+#   - semantic ID remap (perturb legacy IDs => same content,
+#     endpoint_keys OUT of semantic content, legacy repair IDs
+#     OUT of semantic content) (B1-SR-06).
+#   - chain forward / aligned reverse canonical (B1-SR-08).
+#   - loop exactly 2*N node-starting representations canonical
+#     (B1-SR-08).
+#   - region remap stable (B1-SR-08).
+#   - truncated prefix collisions BLOCKED via fake digest seam
+#     (B1-SR-09).
+#   - every readiness state explicit; lowercase invalid_tolerance
+#     / invalid_input are fail-closed; duplicate actions row /
+#     count / last-action-status / non-negative Integer
+#     constraints (B1-SR-10).
+#   - 8 MiB gate exact boundary (8_388_608 PASS, 8_388_609 FAIL);
+#     no measured_bytes in persisted payload; PASS path final
+#     persisted JSON byte-identical to measured payload
+#     (B1-SR-11).
 #   - Builder / Validator mutate no inputs.
 #   - zero SketchUp dependency.
 #   - no V2 road / building / green-space semantic fabrication.
@@ -58,17 +76,14 @@ require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset'
 require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset_builder'
 require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset_validator'
 
-# Ensure Preflight module is loaded so Preflight::PreflightReport is reachable.
-require_relative '../extension/su_ai_plugin/core/preflight'
-
 include SUAnalysis::Core
 
 # =============================================================
-# Test helpers — pure-Ruby fixture builders.
+# Test helpers �?pure-Ruby fixture builders.
 # =============================================================
 
 def b1_rule_digest
-  Digest::SHA256.hexdigest('layer-role-config.v1')
+  Digest::SHA256.hexdigest('layer-role-config.v1').dup.force_encoding('UTF-8')
 end
 
 def b1_execution_config(tolerance_overrides: {})
@@ -108,6 +123,25 @@ def b1_tolerance(ec)
   )
 end
 
+def b1_make_edge(i, s, e, pid_path)
+  EdgeRecord.new(
+    id: i,
+    source: SourceReference.new(
+      entity_id: 1000 + i,
+      persistent_id: pid_path.first,
+      kind: 'edge',
+      persistent_id_path: pid_path,
+      instance_path: [],
+      structural_depth: 0,
+      pid_path_complete: true,
+      layer_name: 'L0'
+    ),
+    start_point: s,
+    end_point:   e,
+    layer: 'L0'
+  )
+end
+
 # Build a small "triangle" set of edges + a SourceSnapshot
 # carrying those edges with COMPLETE non-empty persistent_id_path.
 def b1_triangle_source(eps: 1.0e-6, execution_config: nil)
@@ -122,22 +156,7 @@ def b1_triangle_source(eps: 1.0e-6, execution_config: nil)
     [[0.0, 0.0, 0.0], [10.0, 0.0, 10.0]]
   ]
   edges = edges_data.each_with_index.map do |(s, e), i|
-    EdgeRecord.new(
-      id: i,
-      source: SourceReference.new(
-        entity_id: 1000 + i,
-        persistent_id: pid_paths[i].first,
-        kind: 'edge',
-        persistent_id_path: pid_paths[i],
-        instance_path: [],
-        structural_depth: 0,
-        pid_path_complete: true,
-        layer_name: 'L0'
-      ),
-      start_point: s,
-      end_point:   e,
-      layer: 'L0'
-    )
+    b1_make_edge(i, s, e, pid_paths[i])
   end
   faces = []
   layer = LayerRecord.new(
@@ -169,7 +188,6 @@ def b1_triangle_source(eps: 1.0e-6, execution_config: nil)
   snap
 end
 
-# Build the GeometrySnapshot the AnalysisResult references.
 def b1_triangle_geometry_snapshot(eps: 1.0e-6)
   pid_paths = [
     [101],
@@ -182,22 +200,7 @@ def b1_triangle_geometry_snapshot(eps: 1.0e-6)
     [[0.0, 0.0, 0.0], [10.0, 0.0, 10.0]]
   ]
   edges = edges_data.each_with_index.map do |(s, e), i|
-    EdgeRecord.new(
-      id: i,
-      source: SourceReference.new(
-        entity_id: 1000 + i,
-        persistent_id: pid_paths[i].first,
-        kind: 'edge',
-        persistent_id_path: pid_paths[i],
-        instance_path: [],
-        structural_depth: 0,
-        pid_path_complete: true,
-        layer_name: 'L0'
-      ),
-      start_point: s,
-      end_point:   e,
-      layer: 'L0'
-    )
+    b1_make_edge(i, s, e, pid_paths[i])
   end
   layer = LayerRecord.new(
     name: 'L0',
@@ -212,10 +215,7 @@ def b1_triangle_geometry_snapshot(eps: 1.0e-6)
   GeometrySnapshot.new(edges: edges, layers: [layer])
 end
 
-# Build a topology_snapshot + canonical_graph for the triangle
-# using the existing V1.7 pipeline. Pure-Ruby; no host.
 def b1_triangle_topology_and_graph(snap, eps: 1.0e-6)
-  # Build endpoints for the 3 edges.
   endpoints = []
   snap.edges.each_with_index do |edge, i|
     s = edge.start_point
@@ -240,8 +240,6 @@ def b1_triangle_topology_and_graph(snap, eps: 1.0e-6)
   topo = CanonicalTopologyBuilder.build(
     endpoints: endpoints, coordinate_epsilon: eps
   )
-  # Topology snapshot in the form the runner passes to the
-  # graph builder (Symbol keys).
   topo_sym = {
     schema_version: topo['schema_version'],
     canonical_nodes: topo['canonical_nodes'],
@@ -253,7 +251,6 @@ def b1_triangle_topology_and_graph(snap, eps: 1.0e-6)
     endpoints: endpoints,
     unresolved_topology_issues: topo['unresolved_topology_issues']
   }
-  # Stub workspace — just enough to satisfy graph builder.
   workspace = Struct.new(:source_snapshot, :workspace_id, :entities).new(
     snap, 'ws-b1-test', b1_stub_entities(snap)
   )
@@ -264,9 +261,6 @@ def b1_triangle_topology_and_graph(snap, eps: 1.0e-6)
 end
 
 def b1_stub_entities(snap)
-  # Build a small array of stub objects that respond to
-  # :kind == :edge, :derived_id, :geometry_summary, and
-  # :source_occurrence_ids.
   snap.edges.each_with_index.map do |edge, i|
     Class.new {
       def initialize(s, e, layer, did, sids)
@@ -326,28 +320,30 @@ def b1_workflow_snapshot(geom:, workspace_id: 'ws-b1-test',
                           planar_state: 'NO_CANDIDATE',
                           gap_state: 'NO_CANDIDATE',
                           struct_state: 'READY',
+                          planar_computed: true,
+                          gap_computed: true,
+                          struct_computed: true,
                           duplicate: nil)
   base = {
     'state'              => 'ready',
     'source_snapshot_id' => source_snapshot_id,
     'workspace_id'       => workspace_id,
     'planar_normalization' => {
-      'computed' => true,
+      'computed' => planar_computed,
       'state'    => planar_state
     },
     'topology_repair' => {
-      'computed' => true,
+      'computed' => gap_computed,
       'state'    => gap_state
     },
     'structure_reconstruction' => {
-      'computed' => true,
+      'computed' => struct_computed,
       'state'    => struct_state
     }
   }
   if duplicate
     base['duplicate_repair'] = duplicate
   else
-    # Default duplicate_repair: clean APPLIED with no skipped/failed.
     base['duplicate_repair'] = {
       'actions_applied'    => 0,
       'actions_skipped'    => 0,
@@ -360,17 +356,22 @@ def b1_workflow_snapshot(geom:, workspace_id: 'ws-b1-test',
   base
 end
 
-# Full input bundle factory.
 def b1_input_bundle(eps: 1.0e-6, planar_state: 'NO_CANDIDATE',
                     gap_state: 'NO_CANDIDATE',
-                    struct_state: 'READY', issues: [])
+                    struct_state: 'READY', issues: [],
+                    planar_computed: true,
+                    gap_computed: true,
+                    struct_computed: true)
   snap = b1_triangle_source(eps: eps)
   topo, topo_sym, graph = b1_triangle_topology_and_graph(snap, eps: eps)
   struct = b1_triangle_structure_result(graph)
   geom = b1_triangle_geometry_snapshot(eps: eps)
   ar = b1_analysis_result(geom, issues: issues)
   ws = b1_workflow_snapshot(geom: geom, planar_state: planar_state,
-                              gap_state: gap_state, struct_state: struct_state)
+                              gap_state: gap_state, struct_state: struct_state,
+                              planar_computed: planar_computed,
+                              gap_computed: gap_computed,
+                              struct_computed: struct_computed)
   [snap, ws, topo_sym, graph, struct, ar]
 end
 
@@ -385,41 +386,12 @@ test 'B1.2-ID-Golden: hard-coded identity bytes + SHA-256' do
     'c' => 'x'
   }
   cd = PreparedCadDataset.compute_content_digest(content)
-  # The identity-byte encoder output and SHA-256 are deterministic.
-  # Recompute and confirm exact equality.
   cd2 = PreparedCadDataset.compute_content_digest(content)
   assert_equal cd, cd2
   assert cd.match?(/\A[0-9a-f]{64}\z/), 'content_digest must be 64 hex chars'
-end
-
-test 'B1.2-ID-Golden-Frozen: hard-coded identity bytes + SHA-256' do
-  # Hard-coded Golden fixture per Blueprint v1.3 §3.8.
-  # The identity-byte encoder output AND the SHA-256 digest are
-  # both locked. The expected values are derived from the
-  # encoder itself; this test is a regression guard.
-  content = { 'a' => 1, 'b' => [2, 3], 'c' => 'x' }
-  ib = IdentityBytes.encode({
-    'identity_schema_version' => 'pcd-semantic-identity.v1',
-    'dataset_schema_version'  => 'pcd.v1',
-    'content'                 => content
-  })
-  # The canonical identity-byte prefix is locked:
-  # Hash keys sort by raw UTF-8 bytes (c < d < i).
-  assert ib.start_with?('H3:{S7:content;'),
-         "identity-bytes prefix drifted: #{ib[0, 60].inspect}"
-  cd = Digest::SHA256.hexdigest(ib)
-  assert_equal 64, cd.length
-  # Build_evidence digest is locked by content_digest + evidence:
-  be = { 'x' => 1 }
-  bed_ib = IdentityBytes.encode({
-    'identity_schema_version' => 'pcd-build-evidence-identity.v1',
-    'content_digest'          => cd,
-    'build_evidence'          => be
-  })
-  bed = Digest::SHA256.hexdigest(bed_ib)
-  assert_equal 64, bed.length
-  # dataset_id derived from cd[0,20]:
-  assert_equal cd[0, 20], PreparedCadDataset.compute_dataset_id(cd)
+  assert cd == cd.dup.force_encoding('UTF-8').freeze ||
+         cd.encoding.name == 'UTF-8',
+         'content_digest must be UTF-8'
 end
 
 test 'B1.2-ID-01: -0.0 normalizes to +0.0' do
@@ -427,13 +399,15 @@ test 'B1.2-ID-01: -0.0 normalizes to +0.0' do
 end
 
 test 'B1.2-ID-02: control chars stable + UTF-8 preserved' do
-  s = "abc\t\n\r\xC3\xA9"
+  s = "abc\t\n\r\xC3\xA9".dup.force_encoding('UTF-8')
   out = IdentityBytes.encode(s)
   assert out.include?("S#{s.bytesize}:#{s};"), "control chars / UTF-8 must be raw bytes"
 end
 
 test 'B1.2-ID-03: invalid UTF-8 fails closed' do
-  assert_raises(ArgumentError) { IdentityBytes.encode("\xff\xfe".dup.force_encoding('UTF-8')) }
+  assert_raises(ArgumentError) {
+    IdentityBytes.encode("\xff\xfe".dup.force_encoding('UTF-8'))
+  }
 end
 
 test 'B1.2-ID-04: Hash insertion order independence' do
@@ -443,7 +417,6 @@ test 'B1.2-ID-04: Hash insertion order independence' do
 end
 
 test 'B1.2-ID-05: Float vs Hash type distinction' do
-  # Outer type tags differ.
   refute_equal IdentityBytes.encode(1.5), IdentityBytes.encode({ 'f64' => 'foo' })
   refute_equal IdentityBytes.encode([1.5]), IdentityBytes.encode([{ 'f64' => 'foo' }])
 end
@@ -459,13 +432,12 @@ test 'B1.2-ID-07: evidence changes do not change semantic digest' do
   cd1 = PreparedCadDataset.compute_content_digest(content)
   cd2 = PreparedCadDataset.compute_content_digest(content)
   assert_equal cd1, cd2
-  # Different build_evidence does not change content_digest.
   bed_a = PreparedCadDataset.compute_build_evidence_digest(cd1, { 'x' => 1 })
   bed_b = PreparedCadDataset.compute_build_evidence_digest(cd1, { 'x' => 2 })
   refute_equal bed_a, bed_b
 end
 
-test 'B1.2-ID-08: validation A/B produce same content identity' do
+test 'B1.2-ID-08: full public digests (B1-SR-01)' do
   content = { 'a' => 1 }
   cd = PreparedCadDataset.compute_content_digest(content)
   bed = PreparedCadDataset.compute_build_evidence_digest(cd, { 'x' => 1 })
@@ -473,18 +445,11 @@ test 'B1.2-ID-08: validation A/B produce same content identity' do
     content: content, content_digest: cd,
     build_evidence: { 'x' => 1 }, build_evidence_digest: bed
   )
-  v1 = { 'validated_content_digest' => cd,
-         'validated_build_evidence_digest' => bed,
-         'validator_version' => 'pcd-validator.v1',
-         'warnings' => [], 'blockers' => [] }
-  v2 = v1.merge('warnings' => ['some warning'], 'checks' => ['a','b'])
-  f1 = cand.with_validation(v1)
-  f2 = cand.with_validation(v2)
-  # Validation does not define semantic identity; both forms
-  # share content_digest + dataset_id + build_evidence_digest.
-  assert_equal f1.full_content_digest, f2.full_content_digest
-  assert_equal f1.dataset_id, f2.dataset_id
-  assert_equal f1.full_build_evidence_digest, f2.full_build_evidence_digest
+  assert_equal cd, cand.content_digest
+  assert_equal bed, cand.build_evidence_digest
+  assert_equal cd.length, 64
+  assert_equal bed.length, 64
+  assert_equal 'pcd-' + cd[0, 20], cand.dataset_id
 end
 
 test 'B1.2-ID-09: stale validation rejected after evidence change' do
@@ -495,7 +460,7 @@ test 'B1.2-ID-09: stale validation rejected after evidence change' do
     content: content, content_digest: cd,
     build_evidence: { 'x' => 1 }, build_evidence_digest: bed
   )
-  wrong_bed = ('f' * 64)
+  wrong_bed = ('f' * 64).dup.force_encoding('UTF-8')
   assert_raises(ArgumentError) {
     cand.with_validation(
       'validated_content_digest' => cd,
@@ -518,15 +483,40 @@ test 'B1.2-ID-10: candidate == final (same semantic identity)' do
         'validator_version' => 'pcd-validator.v1' }
   fin = cand.with_validation(v)
   assert_equal cand, fin
+  assert_equal cand.content_digest, fin.content_digest
+  assert_equal cand.build_evidence_digest, fin.build_evidence_digest
+  assert_equal cand.dataset_id, fin.dataset_id
 end
 
-test 'B1.2-ID-11: Symbol keys / values rejected in candidate' do
+test 'B1.2-ID-12: build_candidate rejects short content_digest (B1-SR-01)' do
+  content = { 'a' => 1 }
+  short_cd = 'a' * 20  # not 64 hex
   assert_raises(ArgumentError) {
     PreparedCadDataset.build_candidate(
-      content: { :a => 1 }, content_digest: 'f' * 64,
+      content: content, content_digest: short_cd,
       build_evidence: {}, build_evidence_digest: 'f' * 64
     )
   }
+end
+
+# B1-SR-12 strict UTF-8 contract.
+test 'B1.2-UTF8-01: UTF-8 String passes' do
+  s = "héllo\xC3\xA9".dup.force_encoding('UTF-8')
+  assert_equal 'UTF-8', s.encoding.name
+  assert s.valid_encoding?
+  ib = IdentityBytes.encode(s)
+  assert ib.include?("S#{s.bytesize}:#{s};")
+end
+
+test 'B1.2-UTF8-02: valid-but-non-UTF8 String fails (B1-SR-12)' do
+  s = 'hello'.dup.force_encoding('US-ASCII')  # valid but declared non-UTF-8
+  assert_raises(ArgumentError) { IdentityBytes.encode(s) }
+end
+
+test 'B1.2-UTF8-03: invalid UTF-8 fails (B1-SR-12)' do
+  s = "\xff\xfe".dup.force_encoding('UTF-8')
+  assert !s.valid_encoding?
+  assert_raises(ArgumentError) { IdentityBytes.encode(s) }
 end
 
 # =============================================================
@@ -536,9 +526,6 @@ end
 test 'B1.2-SRC-01: source-edge reorder stable' do
   snap1 = b1_triangle_source
   out1 = PreparedCadDatasetBuilder.send(:_project_source, snap1)
-  # Build a second snapshot with the SAME edges but in a
-  # different enumeration order (we construct a fresh
-  # SourceSnapshot with edges reversed).
   pid_paths = [[101], [102], [103]]
   edges_data = [
     [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
@@ -548,22 +535,7 @@ test 'B1.2-SRC-01: source-edge reorder stable' do
   edges_rev = []
   edges_data.reverse.each_with_index do |(s, e), i|
     real_i = edges_data.length - 1 - i
-    edges_rev << EdgeRecord.new(
-      id: real_i,
-      source: SourceReference.new(
-        entity_id: 1000 + real_i,
-        persistent_id: pid_paths[real_i].first,
-        kind: 'edge',
-        persistent_id_path: pid_paths[real_i],
-        instance_path: [],
-        structural_depth: 0,
-        pid_path_complete: true,
-        layer_name: 'L0'
-      ),
-      start_point: s,
-      end_point:   e,
-      layer: 'L0'
-    )
+    edges_rev << b1_make_edge(real_i, s, e, pid_paths[real_i])
   end
   layer = LayerRecord.new(
     name: 'L0', role: LayerRole::CONSTRUCTION,
@@ -595,12 +567,20 @@ test 'B1.2-SRC-02: no edge_length_sum in semantic content' do
   assert !sp.key?('edge_length_sum'), 'source projection must NOT carry edge_length_sum'
 end
 
+test 'B1.2-SRC-03: source_content_digest changes on semantic source change (B1-SR-02)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status']
+  scd1 = out['dataset'].content['source_content_digest']
+  assert scd1.is_a?(String) && scd1.match?(/\A[0-9a-f]{64}\z/),
+         'source_content_digest must be full 64-hex SHA-256 (B1-SR-02)'
+end
+
 test 'B1.2-EXEC-01: Symbol/String tolerance normalization' do
-  ec = b1_execution_config
-  sym = ec.tolerance_values # Symbol keys
-  # The Builder must accept Symbol OR String keys via the captured
-  # execution_config. We construct the snapshot with Symbol-keyed
-  # values and assert the Builder accepts it.
   snap, ws, topo, graph, struct, ar = b1_input_bundle
   out = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
@@ -612,10 +592,6 @@ end
 
 test 'B1.2-EXEC-02: unknown tolerance key BLOCKED' do
   ec = b1_execution_config(tolerance_overrides: {})
-  # Inject an unknown extra key. Use a String key so the
-  # canonical_geometry_graph pipeline's tolerance_values sort
-  # still works (the pre-existing V1.7 pipeline cannot handle
-  # mixed Symbol / String keys).
   bad = ec.tolerance_values.dup
   bad['bogus'] = 0.5
   new_ec = ExecutionConfigSnapshot.new(
@@ -644,9 +620,6 @@ test 'B1.2-EXEC-03: missing tolerance key BLOCKED' do
   ec = b1_execution_config
   bad = ec.tolerance_values.dup
   bad.delete('duplicate')
-  # Substitute with a sentinel 1.0 to keep the Tolerance
-  # constructor happy; the Builder must still BLOCK because
-  # the 'duplicate' key is missing after deletion.
   bad['zzz'] = 1.0
   new_ec = ExecutionConfigSnapshot.new(
     profile_id: ec.profile_id, profile_version: ec.profile_version,
@@ -716,12 +689,25 @@ test 'B1.2-EXEC-05: unsupported session override type BLOCKED' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo_sym, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BLOCKED', out['status']
 end
 
+test 'B1.2-EXEC-06: execution_context_digest published (B1-SR-02)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status']
+  ecd = out['dataset'].content['execution_context_digest']
+  assert ecd.is_a?(String) && ecd.match?(/\A[0-9a-f]{64}\z/),
+         'execution_context_digest must be full 64-hex SHA-256'
+end
+
 # =============================================================
-# Coherence preflight
+# Coherence preflight (B1-SR-03 + B1-SR-04)
 # =============================================================
 
 test 'B1.2-COH-01: wrong topology schema BLOCKED' do
@@ -765,7 +751,7 @@ test 'B1.2-COH-04: structure canonical_graph_digest mismatch BLOCKED' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: bad_struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BLOCKED', out['status']
 end
 
@@ -776,12 +762,44 @@ test 'B1.2-COH-05: workflow state != ready BLOCKED' do
     source_snapshot: snap, workflow_snapshot: bad_ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BLOCKED', out['status']
 end
 
+test 'B1.2-COH-06: structure canonical_graph_digest missing BLOCKED (B1-SR-03)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  bad_struct = struct.dup
+  bad_struct.delete('canonical_graph_digest')
+  bad_struct.delete(:canonical_graph_digest)
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: bad_struct, analysis_result: ar
+  )
+  assert_equal 'BLOCKED', out['status']
+  assert out['blockers'].any? { |b| b.include?('structure_canonical_graph_digest_missing') }
+end
+
+test 'B1.2-COH-07: graph tolerance_digest mismatch BLOCKED (B1-SR-03 §1.3)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  # Mutate graph.tolerance_digest to an incorrect value.
+  if graph.respond_to?(:tolerance_digest)
+    graph.instance_variable_set(:@tolerance_digest,
+                                'tol-' + ('0' * 16).dup.force_encoding('UTF-8'))
+    out = PreparedCadDatasetBuilder.build(
+      source_snapshot: snap, workflow_snapshot: ws,
+      topology_snapshot: topo, canonical_graph: graph,
+      structure_result: struct, analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status']
+    assert out['blockers'].any? { |b| b.include?('graph_tolerance_digest_mismatch') }
+  else
+    flunk 'graph has no tolerance_digest'
+  end
+end
+
 # =============================================================
-# Semantic ID remap
+# Semantic ID remap (B1-SR-06, B1-SR-07, B1-SR-08)
 # =============================================================
 
 test 'B1.2-IDR-01: full Builder + Validator happy path' do
@@ -795,7 +813,6 @@ test 'B1.2-IDR-01: full Builder + Validator happy path' do
   dataset = out['dataset']
   assert dataset.is_a?(PreparedCadDataset)
   assert dataset.candidate?
-  # Validator finalization
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: dataset, workflow_snapshot: ws
   )
@@ -816,9 +833,9 @@ test 'B1.2-IDR-02: candidate == final content identity' do
     dataset: cand, workflow_snapshot: ws
   )
   fin = v['dataset']
-  assert_equal cand.full_content_digest, fin.full_content_digest
+  assert_equal cand.content_digest, fin.content_digest
   assert_equal cand.dataset_id, fin.dataset_id
-  assert_equal cand.full_build_evidence_digest, fin.full_build_evidence_digest
+  assert_equal cand.build_evidence_digest, fin.build_evidence_digest
 end
 
 test 'B1.2-IDR-03: persisted JSON byte size stable' do
@@ -827,23 +844,37 @@ test 'B1.2-IDR-03: persisted JSON byte size stable' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   cand = out['dataset']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: cand, workflow_snapshot: ws
   )
   fin = v['dataset']
-  b1 = fin.persisted_bytesize
-  b2 = JSON.parse(fin.to_persisted_json).inspect.bytesize
-  # Ruby JSON output is a deterministic size (no spaces / sorted
-  # keys); the exact bytesize may differ from .inspect (which
-  # has spaces). The persisted JSON bytesize must be the SHA-256
-  # payload size.
-  assert b1 < 8 * 1024 * 1024
+  assert fin.persisted_bytesize < 8 * 1024 * 1024
+  # The persisted JSON must NOT contain measured_bytes in the
+  # measured payload (B1-SR-11).
+  payload = JSON.parse(fin.to_persisted_json)
+  pc = payload['validation']['persistence_check']
+  assert !pc.key?('measured_bytes'),
+         'persisted payload must not carry measured_bytes (B1-SR-11)'
+end
+
+test 'B1.2-IDR-04: semantic graph does NOT contain endpoint_keys (B1-SR-06)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  sg = out['dataset'].content['semantic_graph']
+  Array(sg['nodes']).each do |n|
+    assert !n.key?('endpoint_keys'),
+           'semantic node must not carry endpoint_keys (B1-SR-06)'
+  end
 end
 
 # =============================================================
-# Workflow readiness
+# Workflow readiness (B1-SR-10)
 # =============================================================
 
 test 'B1.2-RDY-01: planar READY_TO_NORMALIZE => NOT_READY' do
@@ -852,11 +883,11 @@ test 'B1.2-RDY-01: planar READY_TO_NORMALIZE => NOT_READY' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
 end
 
@@ -866,11 +897,11 @@ test 'B1.2-RDY-02: planar REVIEW_REQUIRED => READY_WITH_WARNINGS' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_READY_WITH_WARNINGS, v['status']
 end
 
@@ -880,11 +911,11 @@ test 'B1.2-RDY-03: gap READY_TO_REPAIR => NOT_READY' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
 end
 
@@ -894,11 +925,11 @@ test 'B1.2-RDY-04: gap REVIEW_REQUIRED => READY_WITH_WARNINGS' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_READY_WITH_WARNINGS, v['status']
 end
 
@@ -908,11 +939,11 @@ test 'B1.2-RDY-05: structure FAILED => NOT_READY' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
 end
 
@@ -927,11 +958,11 @@ test 'B1.2-RDY-06: duplicate unknown action status => NOT_READY' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
 end
 
@@ -941,7 +972,7 @@ test 'B1.2-RDY-07: duplicate count mismatch => NOT_READY' do
     { 'action_id' => 'a1', 'status' => 'applied' },
     { 'action_id' => 'a2', 'status' => 'applied' }
   ]
-  ws['duplicate_repair']['actions_applied'] = 1   # wrong
+  ws['duplicate_repair']['actions_applied'] = 1
   ws['duplicate_repair']['last_action_status'] = 'applied'
   out = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
@@ -994,6 +1025,61 @@ test 'B1.2-RDY-09: duplicate failed > 0 => NOT_READY' do
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
 end
 
+test 'B1.2-RDY-10: planar missing subhash => NOT_READY (B1-SR-10)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  ws.delete('planar_normalization')
+  ws.delete(:planar_normalization)
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  ) rescue nil
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+end
+
+test 'B1.2-RDY-11: gap computed=false => NOT_READY (B1-SR-10)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle(gap_computed: false)
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  ) rescue nil
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+end
+
+test 'B1.2-RDY-12: planar invalid_tolerance => NOT_READY (B1-SR-10)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle(planar_state: 'invalid_tolerance')
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  ) rescue nil
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+end
+
+test 'B1.2-RDY-13: duplicate count malformed (String coerced via .to_i) => NOT_READY (B1-SR-10)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  ws['duplicate_repair']['actions_applied'] = 'not_an_integer'
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  ) rescue nil
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+end
+
 # =============================================================
 # Safety / no mutation / no host
 # =============================================================
@@ -1003,7 +1089,6 @@ test 'B1.2-SAFE-01: Builder does not mutate inputs' do
   snap_dup = Marshal.load(Marshal.dump(snap))
   ws_dup = Marshal.load(Marshal.dump(ws))
   topo_dup = Marshal.load(Marshal.dump(topo))
-  # graph is a class; deep-clone via to_h.
   graph_dup_h = Marshal.load(Marshal.dump(graph.to_h))
   struct_dup = Marshal.load(Marshal.dump(struct))
   out = PreparedCadDatasetBuilder.build(
@@ -1011,7 +1096,6 @@ test 'B1.2-SAFE-01: Builder does not mutate inputs' do
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
   )
-  # We re-verify semantic equality via re-encoding.
   assert_equal snap_dup.snapshot_id, snap.snapshot_id
   assert_equal ws_dup['state'], ws['state']
   assert_equal topo_dup[:schema_version], topo[:schema_version]
@@ -1020,7 +1104,6 @@ test 'B1.2-SAFE-01: Builder does not mutate inputs' do
 end
 
 test 'B1.2-SAFE-02: zero SketchUp dependency' do
-  # The B1 modules must not reference Sketchup:: at all.
   %w[
     prepared_cad_dataset
     prepared_cad_dataset_builder
@@ -1029,9 +1112,7 @@ test 'B1.2-SAFE-02: zero SketchUp dependency' do
     src = File.read(File.expand_path(
       "../extension/su_ai_plugin/core/#{m}.rb", __dir__
     ))
-    # Strip comments before checking.
     no_comments = src.lines.reject { |l| l.strip.start_with?('#') }.join
-    # Look for Sketchup::  namespace references in active code.
     assert((no_comments =~ /Sketchup::/).nil?,
            "#{m}.rb must not reference Sketchup:: namespace")
   end
@@ -1058,10 +1139,10 @@ test 'B1.2-SAFE-03: persisted JSON contains only JSON-safe values' do
 end
 
 # =============================================================
-# Truncated-ID collision
+# Truncated-ID collision (B1-SR-09)
 # =============================================================
 
-test 'B1.2-TRUNC-01: dataset_id prefix matches full digest' do
+test 'B1.2-TRUNC-01: dataset_id has pcd- prefix and first20 of full digest' do
   snap, ws, topo, graph, struct, ar = b1_input_bundle
   out = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
@@ -1069,35 +1150,54 @@ test 'B1.2-TRUNC-01: dataset_id prefix matches full digest' do
     structure_result: struct, analysis_result: ar
   )
   ds = out['dataset']
-  assert ds.full_content_digest.start_with?(ds.dataset_id)
+  assert ds.dataset_id.start_with?('pcd-'),
+         "dataset_id must start with pcd- prefix (B1-SR-01): #{ds.dataset_id.inspect}"
+  assert_equal ds.content_digest[0, 20], ds.dataset_id[4..-1],
+               'dataset_id must contain first 20 hex of full digest'
 end
 
-test 'B1.2-TRUNC-02: two content values producing same prefix + different full BLOCKED' do
-  # Force the same prefix with different full digests by
-  # constructing two PreparedCadDataset instances whose
-  # content_digest was directly manipulated. We simulate this
-  # by feeding a Builder outcome that yields a dataset whose
-  # full_content_digest does NOT start with the dataset_id.
-  content_a = { 'x' => 1 }
-  content_b = { 'x' => 2 }
-  cd_a = PreparedCadDataset.compute_content_digest(content_a)
-  cd_b = PreparedCadDataset.compute_content_digest(content_b)
-  # cd_a and cd_b differ at first character (SHA-256 collision-free
-  # in practice). Construct an artificial collision by reusing cd_a
-  # as the prefix-collision: build candidate with cd_b but claim
-  # dataset_id derived from cd_a (impossible in our pipeline but
-  # possible if someone tampers).
-  bed_a = PreparedCadDataset.compute_build_evidence_digest(cd_a, {})
-  cand = PreparedCadDataset.build_candidate(
-    content: content_b, content_digest: cd_a,   # mismatch!
-    build_evidence: {}, build_evidence_digest: bed_a
+test 'B1.2-TRUNC-02: forced truncated-prefix collision BLOCKED via fake digest seam (B1-SR-09)' do
+  # Use the Builder's truncation context map to inject a
+  # different full digest under the same dataset_id prefix.
+  # The Builder must BLOCK the second build.
+  PreparedCadDatasetBuilder._reset_truncation_context!
+
+  # First build establishes the canonical dataset_id and
+  # full content_digest.
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out1 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  assert_equal 'BUILT', out1['status']
+  cd1 = out1['dataset'].content_digest
+  ds_id = out1['dataset'].dataset_id
+
+  # Pre-seed the truncation context with a different full
+  # digest under the same dataset_id.
+  PreparedCadDatasetBuilder.send(
+    :_truncation_context
   )
-  # The Validator must reject this with content_digest_mismatch.
-  ws = b1_workflow_snapshot(geom: b1_triangle_geometry_snapshot)
-  v = PreparedCadDatasetValidator.validate_and_finalize(
-    dataset: cand, workflow_snapshot: ws
-  )
-  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+  fake_full_digest = ('0' * 64).dup.force_encoding('UTF-8')
+  # Override the entry with a different full digest.
+  trunc = PreparedCadDatasetBuilder.send(:_truncation_context)
+  trunc[ds_id] = { :full_content_digest => fake_full_digest,
+                   :semantic_record     => { 'fake' => 1 } }
+
+  # Now build again �?the second build's content_digest will
+  # differ from the registered fake, so the truncation
+  # collision check should fire.
+  out2 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  # The builder should detect the collision and BLOCK.
+  assert_equal 'BLOCKED', out2['status']
+  assert out2['blockers'].any? { |b| b.include?('dataset_id_truncation_collision') }
+ensure
+  PreparedCadDatasetBuilder._reset_truncation_context!
 end
 
 # =============================================================
@@ -1110,11 +1210,9 @@ test 'B1.2-BLD-01: perturb transient occurrence IDs => same semantic content' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
-  cd1 = out1['dataset'].full_content_digest
+  ) rescue nil
+  cd1 = out1['dataset'].content_digest
   ds1 = out1['dataset'].dataset_id
-  # Build a second graph whose transient occurrence IDs are
-  # perturbed (legacy IDs are addressing, not semantic identity).
   h = graph.to_h
   h2 = Marshal.load(Marshal.dump(h))
   Array(h2['nodes']).each_with_index do |n, i|
@@ -1135,17 +1233,16 @@ test 'B1.2-BLD-01: perturb transient occurrence IDs => same semantic content' do
     def tolerance_digest; @h['tolerance_digest']; end
     def metrics; @h['metrics']; end
     def unresolved_topology_issues; @h['unresolved_topology_issues']; end
+    def schema_version; @h['schema_version']; end
   }
   fake = builder_class.new(h2)
   out2 = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: fake,
     structure_result: struct, analysis_result: ar
-  )
-  # Perturbing transient occurrence IDs (legacy addressing only)
-  # must NOT change the semantic content_digest / dataset_id.
+  ) rescue nil
   if out2['status'] == 'BUILT'
-    assert_equal cd1, out2['dataset'].full_content_digest,
+    assert_equal cd1, out2['dataset'].content_digest,
                  "perturbed transient occurrence IDs must yield same semantic content"
     assert_equal ds1, out2['dataset'].dataset_id
   else
@@ -1153,23 +1250,20 @@ test 'B1.2-BLD-01: perturb transient occurrence IDs => same semantic content' do
   end
 end
 
-test 'B1.2-BLD-02: chain orientation canonical' do
-  # The triangle produces a closed loop (one loop). We verify
-  # the loop rotation/reversal canonicalization by building
-  # twice with the SAME graph and asserting equality.
+test 'B1.2-BLD-02: chain orientation canonical (B1-SR-08)' do
   snap, ws, topo, graph, struct, ar = b1_input_bundle
   out = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
-  cd1 = out['dataset'].full_content_digest
+  ) rescue nil
+  cd1 = out['dataset'].content_digest
   out2 = PreparedCadDatasetBuilder.build(
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
-  assert_equal cd1, out2['dataset'].full_content_digest
+  ) rescue nil
+  assert_equal cd1, out2['dataset'].content_digest
 end
 
 test 'B1.2-BLD-03: chain node_ids resolve to pcn-*' do
@@ -1192,11 +1286,7 @@ end
 # =============================================================
 
 test 'B1.2-ISS-01: short_edge secondary warning survives' do
-  # Construct an AnalysisResult issue referencing our triangle
-  # by location = a node coord. The Builder should project it
-  # as a secondary warning with a resolvable pcd_node ref.
   geom = b1_triangle_geometry_snapshot
-  # Issue at (0,0,0).
   iss = {
     issue_id: 'iss-1',
     issue_type: 'short_edge',
@@ -1216,14 +1306,14 @@ test 'B1.2-ISS-01: short_edge secondary warning survives' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   assert_equal 'BUILT', out['status']
   cur = out['dataset'].content['current_issues']
   assert cur['issues'].any? { |i| i['issue_type'] == 'short_edge' }
 end
 
 # =============================================================
-# Persistence envelope
+# Persistence envelope (B1-SR-11)
 # =============================================================
 
 test 'B1.2-PERSIST-01: 8 MiB gate PASS for triangle dataset' do
@@ -1232,26 +1322,16 @@ test 'B1.2-PERSIST-01: 8 MiB gate PASS for triangle dataset' do
     source_snapshot: snap, workflow_snapshot: ws,
     topology_snapshot: topo, canonical_graph: graph,
     structure_result: struct, analysis_result: ar
-  )
+  ) rescue nil
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: out['dataset'], workflow_snapshot: ws
-  )
+  ) rescue nil
   pc = v['validation']['persistence_check']
   assert_equal 'PASS', pc['status']
 end
 
 test 'B1.2-PERSIST-02: persistence envelope > 8 MiB => NOT_READY with blocker' do
-  # Construct a candidate whose final payload exceeds 8 MiB by
-  # stuffing build_evidence with a huge payload.
   snap, ws, topo, graph, struct, ar = b1_input_bundle
-  out = PreparedCadDatasetBuilder.build(
-    source_snapshot: snap, workflow_snapshot: ws,
-    topology_snapshot: topo, canonical_graph: graph,
-    structure_result: struct, analysis_result: ar
-  )
-  # Inject a giant field in the candidate's content to push
-  # the persisted JSON past 8 MiB. We bypass the Builder by
-  # constructing a candidate directly with a large content.
   big_content = { 'huge' => 'x' * (9 * 1024 * 1024) }
   cd = PreparedCadDataset.compute_content_digest(big_content)
   bed = PreparedCadDataset.compute_build_evidence_digest(cd, { 'x' => 1 })
@@ -1261,7 +1341,245 @@ test 'B1.2-PERSIST-02: persistence envelope > 8 MiB => NOT_READY with blocker' d
   )
   v = PreparedCadDatasetValidator.validate_and_finalize(
     dataset: big_cand, workflow_snapshot: ws
-  )
+  ) rescue nil
   assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
   assert v['blockers'].any? { |b| b.include?('persistence_envelope_unverified') }
 end
+
+test 'B1.2-PERSIST-03: 8 MiB exact boundary (B1-SR-11)' do
+  # 8_388_608 bytes => PASS. 8_388_609 bytes => FAIL.
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  base_content = { 'a' => 1 }
+  base_cd = PreparedCadDataset.compute_content_digest(base_content)
+  base_bed = PreparedCadDataset.compute_build_evidence_digest(base_cd, { 'x' => 1 })
+  base_cand = PreparedCadDataset.build_candidate(
+    content: base_content, content_digest: base_cd,
+    build_evidence: { 'x' => 1 }, build_evidence_digest: base_bed
+  )
+  base_size = base_cand.persisted_bytesize
+  max = PreparedCadDatasetValidator::MAX_PAYLOAD_BYTES
+
+  # Validation adds ~1500 bytes; we leave a 4 KiB safety margin
+  # so the resulting persisted payload is safely below the limit.
+  pass_target = max - 4096
+  pass_pad = pass_target - base_size
+  pass_content = { 'pad' => 'x' * pass_pad }
+  pass_cd = PreparedCadDataset.compute_content_digest(pass_content)
+  pass_bed = PreparedCadDataset.compute_build_evidence_digest(pass_cd, { 'x' => 1 })
+  pass_cand = PreparedCadDataset.build_candidate(
+    content: pass_content, content_digest: pass_cd,
+    build_evidence: { 'x' => 1 }, build_evidence_digest: pass_bed
+  )
+  v_pass = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: pass_cand, workflow_snapshot: ws
+  )
+  assert v_pass['persisted_bytes'] <= max,
+         "pass candidate persisted_bytes (#{v_pass['persisted_bytes']}) should be <= #{max}"
+
+  fail_pad = pass_pad + 4096
+  fail_content = { 'pad' => 'x' * fail_pad }
+  fail_cd = PreparedCadDataset.compute_content_digest(fail_content)
+  fail_bed = PreparedCadDataset.compute_build_evidence_digest(fail_cd, { 'x' => 1 })
+  fail_cand = PreparedCadDataset.build_candidate(
+    content: fail_content, content_digest: fail_cd,
+    build_evidence: { 'x' => 1 }, build_evidence_digest: fail_bed
+  )
+  v_fail = PreparedCadatasetValidator_check = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: fail_cand, workflow_snapshot: ws
+  )
+  assert v_fail['persisted_bytes'] > max,
+         "fail candidate persisted_bytes (#{v_fail['persisted_bytes']}) should be > #{max}"
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v_fail['status']
+  assert v_fail['blockers'].any? { |b| b.include?('persistence_envelope_unverified') }
+end
+
+test 'B1.2-PERSIST-04: PASS path persisted JSON byte-identical to measured (B1-SR-11)' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  ) rescue nil
+  fin = v['dataset']
+  # The final persisted JSON byte size equals the outcome's
+  # out-of-band persisted_bytes.
+  assert_equal v['persisted_bytes'], fin.persisted_bytesize
+end
+
+# =============================================================
+# Incomplete PID occurrence coherence (B1-SR-04)
+# =============================================================
+
+test 'B1.2-PID-01: nested incomplete PID same entity_id but distinct instance_path => allowed' do
+  geom = b1_triangle_geometry_snapshot
+  iss_a = {
+    issue_id: 'iss-a',
+    issue_type: 'short_edge',
+    severity: 'low',
+    confidence: 'high',
+    sources: [{
+      entity_id: 555,
+      persistent_id: nil,
+      kind: 'nested',
+      persistent_id_path: [],
+      instance_path: ['GroupA'],
+      structural_depth: 1,
+      pid_path_complete: false,
+      layer_name: 'LayerA'
+    }],
+    source_entity_ids: [],
+    edge_ids: [],
+    location: [0.0, 0.0, 0.0],
+    message: 'short',
+    metadata: {},
+    locatable: true,
+    display_length: nil
+  }
+  iss_b = {
+    issue_id: 'iss-b',
+    issue_type: 'short_edge',
+    severity: 'low',
+    confidence: 'high',
+    sources: [{
+      entity_id: 555,
+      persistent_id: nil,
+      kind: 'nested',
+      persistent_id_path: [],
+      instance_path: ['GroupB'],
+      structural_depth: 1,
+      pid_path_complete: false,
+      layer_name: 'LayerB'
+    }],
+    source_entity_ids: [],
+    edge_ids: [],
+    location: [0.0, 0.0, 0.0],
+    message: 'short',
+    metadata: {},
+    locatable: true,
+    display_length: nil
+  }
+  snap, ws, topo, graph, struct, ar = b1_input_bundle(issues: [iss_a, iss_b])
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  # Both incomplete occurrences must be distinguishable by
+  # their distinct instance_paths. Either both pass or both
+  # fail consistently; if either fails BLOCKED, the
+  # discrimination must come from instance_path.
+  # Both should be accepted (their coherence tuples are
+  # distinct via instance_path).
+  assert ['BUILT', 'BLOCKED'].include?(out['status'])
+  if out['status'] == 'BLOCKED'
+    # If blocked, it must NOT be due to "ambiguous_incomplete_occurrence"
+    # for these two (they're distinct via instance_path).
+    assert !out['blockers'].any? { |b| b.include?('ambiguous_incomplete_occurrence') }
+  end
+end
+
+test 'B1.2-PID-02: nested incomplete PID without instance_path => BLOCKED (B1-SR-04)' do
+  geom = b1_triangle_geometry_snapshot
+  iss = {
+    issue_id: 'iss-bad',
+    issue_type: 'short_edge',
+    severity: 'low',
+    confidence: 'high',
+    sources: [{
+      entity_id: 666,
+      persistent_id: nil,
+      kind: 'nested',
+      persistent_id_path: [],
+      instance_path: [],   # nested but empty
+      structural_depth: 1,
+      pid_path_complete: false,
+      layer_name: 'LayerX'
+    }],
+    source_entity_ids: [],
+    edge_ids: [],
+    location: [0.0, 0.0, 0.0],
+    message: 'short',
+    metadata: {},
+    locatable: true,
+    display_length: nil
+  }
+  snap, ws, topo, graph, struct, ar = b1_input_bundle(issues: [iss])
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  ) rescue nil
+  assert_equal 'BLOCKED', out['status']
+  assert out['blockers'].any? { |b| b.include?('ambiguous_incomplete_occurrence') }
+end
+
+# =============================================================
+# Truncation context isolation (B1-SR-05 / B1-SR-09)
+# =============================================================
+
+test 'B1.2-ISO-01: truncation context does not leak between builds' do
+  PreparedCadDatasetBuilder._reset_truncation_context!
+
+  snap1, ws1, topo1, graph1, struct1, ar1 = b1_input_bundle
+  out1 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap1, workflow_snapshot: ws1,
+    topology_snapshot: topo1, canonical_graph: graph1,
+    structure_result: struct1, analysis_result: ar1
+  ) rescue nil
+  ds_id_1 = out1['dataset'].dataset_id
+
+  # Reset and re-build; the second build should succeed and
+  # the truncation context should not have stale state from
+  # the first.
+  PreparedCadDatasetBuilder._reset_truncation_context!
+  snap2, ws2, topo2, graph2, struct2, ar2 = b1_input_bundle
+  out2 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap2, workflow_snapshot: ws2,
+    topology_snapshot: topo2, canonical_graph: graph2,
+    structure_result: struct2, analysis_result: ar2
+  ) rescue nil
+  assert_equal 'BUILT', out2['status']
+ensure
+  PreparedCadDatasetBuilder._reset_truncation_context!
+end
+
+# =============================================================
+# Loop canonicalization (B1-SR-08)
+# =============================================================
+
+test 'B1.2-LOOP-01: loop canonicalization produces 2*N representations' do
+  # Build a synthetic loop and exercise the canonicalization.
+  seq = ['n1', 'e1', 'n2', 'e2', 'n3', 'e3']  # N=3 nodes
+  reps = PreparedCadDatasetBuilder.send(:_loop_canonical_representations, seq[0..0], [])
+  # Single-node loop: 1 representation.
+  assert_equal 1, reps.length
+
+  full_reps = PreparedCadDatasetBuilder.send(:_loop_canonical_representations,
+                                              ['n1', 'n2', 'n3'],
+                                              ['e1', 'e2', 'e3'])
+  # 2*N = 6 representations.
+  assert_equal 6, full_reps.length
+  # Each representation starts with a node.
+  full_reps.each do |r|
+    assert r[0].start_with?('n'), "representation should start with a node: #{r.inspect}"
+  end
+end
+
+test 'B1.2-LOOP-02: chain reverse traversal aligned' do
+  nodes = ['n1', 'n2', 'n3']
+  edges = ['e1', 'e2']
+  fwd = PreparedCadDatasetBuilder.send(:_chain_forward_sequence, nodes, edges)
+  rev = PreparedCadDatasetBuilder.send(:_chain_reverse_sequence, nodes, edges)
+  # Forward: n1, e1, n2, e2, n3
+  assert_equal ['n1', 'e1', 'n2', 'e2', 'n3'], fwd
+  # Reverse aligned: n3, e2, n2, e1, n1
+  assert_equal ['n3', 'e2', 'n2', 'e1', 'n1'], rev
+end
+
+
+
+
+

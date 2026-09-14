@@ -1,7 +1,8 @@
 #
 # core/prepared_cad_dataset_validator.rb — V1.9B1 B1.4 Validator / Finalizer.
 #
-# Per frozen V1.9B1 Blueprint v1.3 (authoritative over v1.2):
+# Per frozen V1.9B1 Blueprint v1.3 (authoritative over v1.2)
+# AND AIPM V1.9B1 B1.2-B1.4 Source Review Correction 2026-09-14:
 #
 #   PreparedCadDatasetValidator is the pure finalizer. It:
 #
@@ -12,13 +13,44 @@
 #       dataset_id derivation to ensure they match the stored
 #       values.
 #     - Validates the workflow readiness state matrix
-#       (workspace / planar / gap / structure).
+#       (workspace / planar / gap / structure) in FAIL-CLOSED
+#       mode (B1-SR-10).
 #     - Validates the final persisted JSON payload is
-#       <= 8_388_608 bytes; if not, attaches the
+#       <= 8_388_608 bytes (B1-SR-11). If not, attaches the
 #       `persistence_envelope_unverified` blocker and finalizes
 #       NOT_READY.
 #     - Attaches a validation Hash that binds BOTH digests
-#       (validated_content_digest, validated_build_evidence_digest).
+#       (validated_content_digest, validated_build_evidence_digest)
+#       using the SAME full 64-hex values published on the
+#       candidate (B1-SR-01).
+#
+#   Source Review Correction contracts implemented here:
+#     B1-SR-01: validated_content_digest / validated_build_evidence_digest
+#               are the SAME full 64-hex values the candidate
+#               publishes.
+#     B1-SR-02: recompute + verify source_content_digest /
+#               execution_context_digest.
+#     B1-SR-10: workspace / planar / gap / structure subhashes
+#               are each REQUIRED; computed is an explicit
+#               Boolean coherent with state; missing /
+#               malformed / computed=false / unknown /
+#               contradiction => NOT_READY. Production
+#               lowercase invalid_tolerance / invalid_input
+#               treated as fail-closed. Duplicate actions
+#               array is required and must be Array; each row
+#               Hash with required allowlisted status; counts
+#               must be non-negative Integers (no .to_i coercion
+#               from malformed values); last_action_status exact
+#               allowlist / consistency.
+#     B1-SR-11: 8 MiB gate. PASS path: the FINAL persisted
+#               JSON (the one actually attached to the dataset)
+#               is BYTE-IDENTICAL to the measured payload; no
+#               `measured_bytes` is persisted inside the
+#               measured payload. measured_bytes is exposed
+#               OUT-OF-BAND in the outcome / report. Boundary
+#               tests at 8_388_608 PASS and 8_388_609 FAIL.
+#     B1-SR-12: valid UTF-8 required for identity / public
+#               semantic Strings.
 #
 #   The Validator returns:
 #     outcome = {
@@ -28,7 +60,8 @@
 #       'validation'  => <validation Hash (may include blockers)>,
 #       'blockers'    => [String, ...],
 #       'warnings'    => [String, ...],
-#       'checks'      => [String, ...]
+#       'checks'      => [String, ...],
+#       'persisted_bytes' => <Integer> (out-of-band measurement)
 #     }
 #
 #   Rules:
@@ -95,6 +128,10 @@ module SUAnalysis
       BLOCKER_FORBIDDEN_FIELD      = 'forbidden_duplicate_coordinate_field'.freeze
       BLOCKER_COHERENCE_DIGEST_MISMATCH = 'coherence_digest_mismatch'.freeze
       BLOCKER_NODE_REF_INVALID     = 'node_ref_invalid'.freeze
+      BLOCKER_SOURCE_CONTENT_DIGEST_MISMATCH = 'source_content_digest_mismatch'.freeze
+      BLOCKER_EXECUTION_CONTEXT_DIGEST_MISMATCH = 'execution_context_digest_mismatch'.freeze
+      BLOCKER_WORKFLOW_SUBHASH_MISSING = 'workflow_subhash_missing'.freeze
+      BLOCKER_WORKFLOW_SUBHASH_BAD_TYPE = 'workflow_subhash_bad_type'.freeze
 
       WARNING_DUPLICATE_SKIPPED   = 'duplicate_actions_skipped'.freeze
 
@@ -106,13 +143,13 @@ module SUAnalysis
         unless dataset.is_a?(PreparedCadDataset)
           return _outcome_blocked(
             nil, [BLOCKER_DATASET_NOT_BUILT], [], [],
-            'candidate_nil'
+            'candidate_nil', nil
           )
         end
         unless workflow_snapshot.is_a?(Hash)
           return _outcome_blocked(
             dataset, [BLOCKER_WORKFLOW_NOT_READY], [], [],
-            'workflow_nil'
+            'workflow_nil', nil
           )
         end
 
@@ -138,7 +175,7 @@ module SUAnalysis
 
         if content.is_a?(Hash) && build_evidence.is_a?(Hash)
           cd_recomputed = PreparedCadDataset.compute_content_digest(content)
-          unless cd_recomputed == dataset.full_content_digest
+          unless cd_recomputed == dataset.content_digest
             blockers << BLOCKER_CONTENT_DIGEST_MISMATCH
           end
           ds_id_recomputed = PreparedCadDataset.compute_dataset_id(cd_recomputed)
@@ -146,14 +183,45 @@ module SUAnalysis
             blockers << BLOCKER_DATASET_ID_MISMATCH +
                           ":got=#{dataset.dataset_id.inspect}:want=#{ds_id_recomputed.inspect}"
           end
-          unless cd_recomputed.start_with?(dataset.dataset_id)
+          # B1-SR-09: dataset_id MUST start with the first 20
+          # chars of the full content_digest (after the "pcd-"
+          # prefix). Detect truncation collision: same prefix
+          # but different full digest.
+          # The dataset_id is "pcd-" + content_digest[0,20].
+          unless dataset.dataset_id.start_with?(PreparedCadDataset::DATASET_ID_PREFIX) &&
+                 dataset.dataset_id[4..-1] == cd_recomputed[0, PreparedCadDataset::DATASET_ID_TRUNCATED_LEN]
             blockers << BLOCKER_DATASET_ID_TRUNCATION_COLLISION
           end
           bed_recomputed = PreparedCadDataset.compute_build_evidence_digest(
             cd_recomputed, build_evidence
           )
-          unless bed_recomputed == dataset.full_build_evidence_digest
+          unless bed_recomputed == dataset.build_evidence_digest
             blockers << BLOCKER_BUILD_EVIDENCE_DIGEST_MISMATCH
+          end
+          # B1-SR-02: source_content_digest + execution_context_digest
+          # recompute + verify.
+          cd_norm = PreparedCadDataset.send(:_normalize_strings_utf8, content)
+          sp = cd_norm['source_projection']
+          ep = cd_norm['execution']
+          if sp.is_a?(Hash)
+            expected_sc = Digest::SHA256.hexdigest(
+              PreparedCadDataset::IdentityBytes.encode(sp)
+            ).dup.force_encoding('UTF-8')
+            if cd_norm['source_content_digest'] != expected_sc
+              blockers << BLOCKER_SOURCE_CONTENT_DIGEST_MISMATCH
+            end
+          else
+            blockers << BLOCKER_SOURCE_CONTENT_DIGEST_MISMATCH + ':missing'
+          end
+          if ep.is_a?(Hash)
+            expected_ec = Digest::SHA256.hexdigest(
+              PreparedCadDataset::IdentityBytes.encode(ep)
+            ).dup.force_encoding('UTF-8')
+            if cd_norm['execution_context_digest'] != expected_ec
+              blockers << BLOCKER_EXECUTION_CONTEXT_DIGEST_MISMATCH
+            end
+          else
+            blockers << BLOCKER_EXECUTION_CONTEXT_DIGEST_MISMATCH + ':missing'
           end
         end
 
@@ -172,7 +240,6 @@ module SUAnalysis
         # ----- Semantic graph structural checks ------------------------
         graph = content.is_a?(Hash) ? content['semantic_graph'] : nil
         if graph.is_a?(Hash)
-          # Unique semantic IDs.
           seen_ids = {}
           Array(graph['nodes']).each do |n|
             id = n['node_id']
@@ -203,20 +270,17 @@ module SUAnalysis
             end
             seen_ids[id] = :edge
             edge_ids_set << id.to_s
-            # Edge refs resolve.
             [e['node_a_id'], e['node_b_id']].each do |nid|
               unless node_ids_set.include?(nid.to_s)
                 blockers << BLOCKER_UNRESOLVED_EDGE_REF + ":edge=#{id}:node=#{nid}"
               end
             end
-            # Forbidden duplicate coordinate fields.
-            %w[world_endpoints start end].each do |fk|
+            %w[world_endpoints start end endpoint_keys].each do |fk|
               if e.key?(fk)
                 blockers << BLOCKER_FORBIDDEN_FIELD + ":edge=#{id}:#{fk}"
               end
             end
           end
-          # Adjacency valid / symmetric / consistent.
           adj = graph['adjacency']
           if adj.is_a?(Hash)
             adj.each do |nid, neighbors|
@@ -278,7 +342,6 @@ module SUAnalysis
                 blockers << BLOCKER_UNRESOLVED_LOOP_REF + ":loop=#{lid}:edge=#{eid}"
               end
             end
-            # Forbidden duplicate coordinate fields.
             %w[world_coordinates].each do |fk|
               if lp.key?(fk)
                 blockers << BLOCKER_FORBIDDEN_FIELD + ":loop=#{lid}:#{fk}"
@@ -337,10 +400,6 @@ module SUAnalysis
         if content.is_a?(Hash)
           coh = content['coherence_evidence']
           if coh.is_a?(Hash) && coh['digest'].is_a?(String)
-            # Recompute by hashing the source_projection + analysis
-            # projection if present. The Builder binds the digest
-            # at construction; here we verify the digest is a
-            # well-formed SHA-256 hex string of length 64.
             unless coh['digest'].match?(/\A[0-9a-f]{64}\z/)
               blockers << BLOCKER_COHERENCE_DIGEST_MISMATCH + ':format'
             end
@@ -357,7 +416,7 @@ module SUAnalysis
           end
         end
 
-        # ----- Workflow readiness matrix -------------------------------
+        # ----- Workflow readiness matrix (B1-SR-10) -------------------
         workflow_state = (workflow_snapshot[:state] ||
                           workflow_snapshot['state']).to_s
         unless workflow_state == 'ready'
@@ -368,30 +427,38 @@ module SUAnalysis
         dup = _duplicate_summary(workflow_snapshot)
         if dup[:has_summary]
           actions = Array(dup[:actions])
-          actions_statuses = actions.map { |a| a['status'] || a[:status] }.compact.map(&:to_s)
-          # Allowed status set.
+          actions_statuses = actions.map do |a|
+            status = a['status'] || a[:status]
+            raise ArgumentError, "action row not Hash: #{a.inspect}" unless a.is_a?(Hash)
+            status.to_s
+          end
           unless actions_statuses.all? { |s| %w[applied skipped failed].include?(s) }
             blockers << BLOCKER_DUPLICATE_STATE + ':action_status_unknown'
           end
-          # Recompute counts.
           recomputed = { 'applied' => 0, 'skipped' => 0, 'failed' => 0 }
           actions_statuses.each do |s|
             recomputed[s] += 1 if recomputed.key?(s)
           end
-          # Tolerances.
           tol_status = (dup[:tolerance_status] || '').to_s
           unless tol_status == 'captured'
             blockers << BLOCKER_DUPLICATE_STATE + ':tolerance_status'
           end
-          # Count consistency.
+          # Counts must match summary (no .to_i coercion from
+          # malformed values).
           %w[applied skipped failed].each do |k|
             sum_k = dup[:summary]['actions_' + k]
+            unless sum_k.is_a?(Integer) && sum_k >= 0
+              blockers << BLOCKER_DUPLICATE_STATE + ":count_#{k}_malformed"
+              next
+            end
             unless sum_k == recomputed[k]
               blockers << BLOCKER_DUPLICATE_STATE + ":count_#{k}"
             end
           end
-          # last_action_status consistency.
           last = (dup[:last_action_status] || '').to_s
+          unless %w[none applied skipped failed].include?(last)
+            blockers << BLOCKER_DUPLICATE_STATE + ':last_action_status_invalid'
+          end
           if actions.empty?
             unless last == 'none'
               blockers << BLOCKER_DUPLICATE_STATE + ':last_action_status_nonempty'
@@ -406,153 +473,170 @@ module SUAnalysis
                 blockers << BLOCKER_DUPLICATE_STATE + ':last_action_status_failed'
               end
             elsif recomputed['skipped'] > 0
-              # Allowed: 'skipped' or 'none' (skipped-only).
               unless %w[skipped none].include?(last)
                 blockers << BLOCKER_DUPLICATE_STATE + ':last_action_status_skipped'
               end
             end
           end
-          # Failure count.
           if recomputed['failed'] > 0
             blockers << BLOCKER_DUPLICATE_STATE + ':failed_actions_present'
           end
-          # Skip with no blocker = warning.
           if recomputed['skipped'] > 0 && recomputed['failed'] == 0
             warnings << WARNING_DUPLICATE_SKIPPED
           end
         else
-          # Missing actions => NOT_READY.
           blockers << BLOCKER_DUPLICATE_STATE + ':missing_summary'
         end
 
-        # Planar substate.
+        # ----- Planar substate (B1-SR-10 fail-closed) ----------------
         planar = workflow_snapshot[:planar_normalization] ||
-                   workflow_snapshot['planar_normalization'] || {}
-        if planar.is_a?(Hash) && planar['computed']
-          ps = planar['state'].to_s
-          case ps
-          when 'NO_CANDIDATE', 'APPLIED'
-            # clean
-          when 'READY_TO_NORMALIZE'
-            blockers << BLOCKER_PLANAR_STATE + ':' + ps
-          when 'REVIEW_REQUIRED'
-            warnings << BLOCKER_PLANAR_STATE + ':' + ps
-          when 'FAILED', 'NOT_COMPUTED', 'INVALID_TOLERANCE', 'INVALID_INPUT'
-            blockers << BLOCKER_PLANAR_STATE + ':' + ps
-          else
-            blockers << BLOCKER_PLANAR_STATE + ':unknown'
-          end
-        end
+                   workflow_snapshot['planar_normalization']
+        planar_state_res, planar_blockers, planar_warnings =
+          _check_substate(planar, 'planar_normalization',
+                          BLOCKER_PLANAR_STATE, {
+                            'clean' => %w[NO_CANDIDATE APPLIED],
+                            'block' => %w[READY_TO_NORMALIZE FAILED
+                                           NOT_COMPUTED
+                                           INVALID_TOLERANCE INVALID_INPUT],
+                            'warn' => %w[REVIEW_REQUIRED]
+                          })
+        blockers.concat(planar_blockers)
+        warnings.concat(planar_warnings)
 
-        # Gap substate.
+        # ----- Gap substate (B1-SR-10 fail-closed) -------------------
         gap = workflow_snapshot[:topology_repair] ||
-                workflow_snapshot['topology_repair'] || {}
-        if gap.is_a?(Hash) && gap['computed']
-          gs = gap['state'].to_s
-          case gs
-          when 'NO_CANDIDATE', 'APPLIED'
-            # clean
-          when 'READY_TO_REPAIR'
-            blockers << BLOCKER_GAP_STATE + ':' + gs
-          when 'REVIEW_REQUIRED'
-            warnings << BLOCKER_GAP_STATE + ':' + gs
-          when 'FAILED', 'NOT_COMPUTED'
-            blockers << BLOCKER_GAP_STATE + ':' + gs
-          else
-            blockers << BLOCKER_GAP_STATE + ':unknown'
-          end
-        end
+                workflow_snapshot['topology_repair']
+        gap_state_res, gap_blockers, gap_warnings =
+          _check_substate(gap, 'topology_repair',
+                          BLOCKER_GAP_STATE, {
+                            'clean' => %w[NO_CANDIDATE APPLIED],
+                            'block' => %w[READY_TO_REPAIR FAILED
+                                           NOT_COMPUTED],
+                            'warn' => %w[REVIEW_REQUIRED]
+                          })
+        blockers.concat(gap_blockers)
+        warnings.concat(gap_warnings)
 
-        # Structure substate.
+        # ----- Structure substate (B1-SR-10 fail-closed) ------------
         struct_sub = workflow_snapshot[:structure_reconstruction] ||
-                       workflow_snapshot['structure_reconstruction'] || {}
-        if struct_sub.is_a?(Hash) && struct_sub['computed']
-          ss = struct_sub['state'].to_s
-          case ss
-          when 'READY'
-            # clean
-          when 'READY_WITH_WARNINGS'
-            warnings << BLOCKER_STRUCTURE_STATE + ':' + ss
-          when 'FAILED', 'NOT_COMPUTED'
-            blockers << BLOCKER_STRUCTURE_STATE + ':' + ss
-          else
-            blockers << BLOCKER_STRUCTURE_STATE + ':unknown'
-          end
-        end
+                       workflow_snapshot['structure_reconstruction']
+        struct_state_res, struct_blockers, struct_warnings =
+          _check_substate(struct_sub, 'structure_reconstruction',
+                          BLOCKER_STRUCTURE_STATE, {
+                            'clean' => %w[READY],
+                            'block' => %w[FAILED NOT_COMPUTED],
+                            'warn' => %w[READY_WITH_WARNINGS]
+                          })
+        blockers.concat(struct_blockers)
+        warnings.concat(struct_warnings)
 
         checks << 'workflow_state_matrix'
 
-        # ----- 8 MiB persistence gate -----------------------------------
-        # Tentative: build a provisional final dataset (no
-        # validation yet) and measure the persisted JSON bytesize.
-        # If <= 8 MiB, attach the persistence PASS validation. If
-        # > 8 MiB, attach persistence_envelope_unverified blocker
-        # and finalize NOT_READY.
+        # ----- 8 MiB persistence gate (B1-SR-11) ---------------------
+        # Add 'persistence_envelope' BEFORE the size measurement
+        # so the measurement uses the SAME checks array as the
+        # final payload (B1-SR-11 byte-identical invariant).
+        checks << 'persistence_envelope'
+        checks = checks.uniq.sort
+        blockers = blockers.uniq.sort
+        warnings = warnings.uniq.sort
+
+        # Build the EXACT final validation FIRST with the
+        # current checks / warnings / blockers arrays, then
+        # measure its bytesize. The measured size is the size
+        # of the EXACT final payload that will be published.
+        # measured_bytes is OUT-OF-BAND and is NOT persisted in
+        # the measured payload.
         tentative_validation = {
-          'validated_content_digest'        => dataset.full_content_digest,
-          'validated_build_evidence_digest' => dataset.full_build_evidence_digest,
+          'validated_content_digest'        => dataset.content_digest,
+          'validated_build_evidence_digest' => dataset.build_evidence_digest,
           'validator_version'               => VALIDATOR_VERSION,
           'persistence_check'               => {
             'envelope' => 'pcd-final.v1',
-            'status'   => 'PASS'
+            'status'   => 'PASS'  # tentative; replaced below if too big
           },
-          'checks'    => checks.dup,
-          'warnings'  => warnings.dup,
-          'blockers'  => []
+          'checks'   => checks,
+          'warnings' => warnings,
+          'blockers' => blockers
         }
-        tentative_final = dataset.with_validation(tentative_validation)
-        size = tentative_final.persisted_bytesize
+        size = dataset.with_validation(tentative_validation).persisted_bytesize
 
         if size > MAX_PAYLOAD_BYTES
           blockers << BLOCKER_PERSISTENCE_ENVELOPE_UNVERIFIED +
                         ":bytes=#{size}:limit=#{MAX_PAYLOAD_BYTES}"
+          # Re-sort after mutation.
+          blockers = blockers.uniq.sort
         end
 
-        checks << 'persistence_envelope'
-
-        # ----- Build final validation ----------------------------------
-        validation = {
-          'validated_content_digest'        => dataset.full_content_digest,
-          'validated_build_evidence_digest' => dataset.full_build_evidence_digest,
+        # ----- Build final validation (B1-SR-11) ----------------------
+        # The final persisted JSON is BYTE-IDENTICAL to the
+        # payload measured above (same validation shape).
+        # The only difference: persistence_check.status reflects
+        # the actual size verdict. The validator ensures that
+        # the byte size does not change between the tentative
+        # measurement and the final persisted payload.
+        final_validation = {
+          'validated_content_digest'        => dataset.content_digest,
+          'validated_build_evidence_digest' => dataset.build_evidence_digest,
           'validator_version'               => VALIDATOR_VERSION,
           'persistence_check'               => {
             'envelope' => 'pcd-final.v1',
-            'status'   => (size <= MAX_PAYLOAD_BYTES ? 'PASS' : 'FAIL'),
-            'measured_bytes' => size
+            'status'   => (size <= MAX_PAYLOAD_BYTES ? 'PASS' : 'FAIL')
           },
-          'checks'   => checks.uniq.sort,
-          'warnings' => warnings.uniq.sort,
-          'blockers' => blockers.uniq.sort
+          'checks'   => checks,
+          'warnings' => warnings,
+          'blockers' => blockers
         }
+        final_dataset = dataset.with_validation(final_validation)
 
-        status = if validation['blockers'].any?
+        # ----- Byte-identical measured / persisted assertion ---------
+        # The final persisted JSON MUST equal the size that we
+        # measured above. Because the validation shapes are
+        # identical except for persistence_check.status (which
+        # is a fixed-width string 'PASS' / 'FAIL'), the bytesize
+        # should be the same.
+        final_size = final_dataset.persisted_bytesize
+        unless final_size == size
+          blockers << BLOCKER_PERSISTENCE_ENVELOPE_UNVERIFIED +
+                        ':final_payload_size_mismatch_with_measurement'
+          blockers = blockers.uniq.sort
+        end
+
+        status = if final_validation['blockers'].any?
                    STATUS_NOT_READY
-                 elsif validation['warnings'].any?
+                 elsif final_validation['warnings'].any?
                    STATUS_READY_WITH_WARNINGS
                  else
                    STATUS_READY
                  end
 
-        final_dataset = dataset.with_validation(validation)
+        # Re-attach final_dataset with the up-to-date blockers/
+        # warnings arrays (since with_validation froze the
+        # earlier copy).
+        if final_validation['blockers'] != blockers.uniq.sort ||
+           final_validation['warnings'] != warnings.uniq.sort
+          final_dataset = final_dataset.with_validation(final_validation)
+        end
 
         {
           'status'    => status,
           'dataset'   => final_dataset,
-          'validation' => validation,
-          'blockers'  => validation['blockers'],
-          'warnings'  => validation['warnings'],
-          'checks'    => validation['checks']
+          'validation' => final_validation,
+          'blockers'  => final_validation['blockers'],
+          'warnings'  => final_validation['warnings'],
+          'checks'    => final_validation['checks'],
+          'persisted_bytes' => size
         }
       end
 
       # ----- Helpers --------------------------------------------------------
 
-      def _outcome_blocked(dataset, blockers, warnings, checks, reason)
+      def _outcome_blocked(dataset, blockers, warnings, checks, reason, persisted_bytes)
         validation = {
-          'validated_content_digest'        => dataset && dataset.respond_to?(:full_content_digest) ?
-                                               dataset.full_content_digest : '',
-          'validated_build_evidence_digest' => dataset && dataset.respond_to?(:full_build_evidence_digest) ?
-                                               dataset.full_build_evidence_digest : '',
+          'validated_content_digest'        => dataset && dataset.respond_to?(:content_digest) ?
+                                               dataset.content_digest : '',
+          'validated_build_evidence_digest' => dataset && dataset.respond_to?(:build_evidence_digest) ?
+                                               dataset.build_evidence_digest : '',
           'validator_version'               => VALIDATOR_VERSION,
           'persistence_check'               => { 'envelope' => 'pcd-final.v1', 'status' => 'FAIL' },
           'checks'    => checks,
@@ -566,8 +650,43 @@ module SUAnalysis
           'validation' => validation,
           'blockers'  => blockers,
           'warnings'  => warnings,
-          'checks'    => checks
+          'checks'    => checks,
+          'persisted_bytes' => persisted_bytes
         }
+      end
+
+      # B1-SR-10 fail-closed substate check.
+      def _check_substate(sub, name, blocker_code, classification)
+        return [:missing, [BLOCKER_WORKFLOW_SUBHASH_MISSING + ':' + name], []] if sub.nil?
+        return [:bad_type, [BLOCKER_WORKFLOW_SUBHASH_BAD_TYPE + ':' + name], []] unless sub.is_a?(Hash)
+        computed = sub['computed']
+        unless computed == true || computed == false
+          return [:bad_computed,
+                  [blocker_code + ':computed_not_boolean'], []]
+        end
+        # computed=false => not-computed-state => blocker if
+        # there's any state published, otherwise fail closed.
+        state = sub['state'].to_s
+        if computed == false
+          # If a state IS published but computed is false, that
+          # is a contradiction.
+          if state.empty?
+            return [:not_computed, [blocker_code + ':NOT_COMPUTED'], []]
+          else
+            return [:contradiction,
+                    [blocker_code + ':computed_false_with_state'], []]
+          end
+        end
+        # computed=true: classify state.
+        if classification['clean'].include?(state)
+          [:clean, [], []]
+        elsif classification['block'].include?(state)
+          [state, [blocker_code + ':' + state], []]
+        elsif classification['warn'].include?(state)
+          [state, [], [blocker_code + ':' + state]]
+        else
+          [state, [blocker_code + ':unknown'], []]
+        end
       end
 
       def _scan_for_leakage(obj, path = [])
@@ -590,14 +709,9 @@ module SUAnalysis
           unless obj.respond_to?(:encoding) && obj.valid_encoding?
             out << BLOCKER_INVALID_UTF8 + ":path=#{path.join('.')}"
           end
-          # Host object detection: SketchUp entity paths.
-          if obj =~ /\ASKETCHUP|sketchup::|SU::|onIs[A-Z]/
-            # Heuristic only; do not block.
-          end
         when Numeric, TrueClass, FalseClass, NilClass
           # safe
         else
-          # Host objects (or arbitrary objects) leaked.
           if obj.respond_to?(:entityID) || obj.respond_to?(:persistent_id) ||
              (obj.class.name && obj.class.name.start_with?('Sketchup'))
             out << BLOCKER_HOST_OBJECT_LEAKED + ":path=#{path.join('.')}"
@@ -607,23 +721,21 @@ module SUAnalysis
       end
 
       def _duplicate_summary(workflow_snapshot)
-        # Workflow snapshot in the runner shape carries a
-        # duplicate_repair sub-hash with summary counts. We
-        # also accept legacy "duplicate_repair_summary" shapes.
         dup = workflow_snapshot[:duplicate_repair] ||
                 workflow_snapshot['duplicate_repair']
         return { :has_summary => false } unless dup.is_a?(Hash)
-        actions = Array(dup[:actions] || dup['actions'])
+        actions_raw = dup[:actions] || dup['actions']
+        return { :has_summary => false } unless actions_raw.is_a?(Array)
         tolerance_status = (dup[:tolerance_status] || dup['tolerance_status']).to_s
         summary = {
-          'actions_applied' => (dup[:actions_applied] || dup['actions_applied']).to_i,
-          'actions_skipped' => (dup[:actions_skipped] || dup['actions_skipped']).to_i,
-          'actions_failed'  => (dup[:actions_failed]  || dup['actions_failed']).to_i
+          'actions_applied' => (dup[:actions_applied] || dup['actions_applied']),
+          'actions_skipped' => (dup[:actions_skipped] || dup['actions_skipped']),
+          'actions_failed'  => (dup[:actions_failed]  || dup['actions_failed'])
         }
         last_action_status = (dup[:last_action_status] || dup['last_action_status']).to_s
         {
           :has_summary => true,
-          :actions => actions,
+          :actions => actions_raw,
           :tolerance_status => tolerance_status,
           :summary => summary,
           :last_action_status => last_action_status
