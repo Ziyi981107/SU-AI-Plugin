@@ -1,3 +1,327 @@
+## V1.9B1 B1.2–B1.4 R3 CONTRACT CLOSURE — 2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 R3 CONTRACT
+CLOSURE dispatch EXECUTION on assigned `dev/v1.9`
+per `Prompt/AIPM_V1_9B1_B1_2_B1_4_R3_CONTRACT_CLOSURE_CORRECTION_2026-09-14.md`
++ Blueprint v1.3 + Codex PASS recheck). This packet
+addresses exactly the 4 R3 closure items proven
+necessary by direct source review of the R2
+implementation (commit `2b5e9c5`).
+
+The literal `git rev-parse HEAD` after the implementation
+push is recorded below; NO third commit is created to
+embed the just-created final HEAD into the report.
+
+### R3-01 — Incomplete SourceReference shape validated for ALL coherence participants
+
+`extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`:
+
+- New pure helper `_validate_coherence_source_reference(source_ref)`
+  returns `[blockers, descriptor]`.
+- Complete stable PID branch (`pid_path_complete == true`
+  AND `persistent_id_path` non-empty) now uses a MINIMAL
+  descriptor: `{kind: 'stable_pid', persistent_id_path: [...]}`
+  ONLY. The transient fields (entity_id, instance_path,
+  structural_depth, persistent_id leaf copy,
+  SourceReference.layer_name) are NOT part of coherence
+  identity for this branch.
+- Incomplete branch (pid_path_complete == false OR
+  persistent_id_path empty) uses the full v1.3 §1.6
+  descriptor: kind + structural_depth + persistent_id_path +
+  instance_path + entity_id + persistent_id (when present) +
+  layer_name.
+- Incomplete shape gate (per v1.3 §1.6):
+  - structural_depth MUST be Integer >= 0, else
+    `ambiguous_incomplete_occurrence:bad_structural_depth`.
+  - nested structural_depth > 0: instance_path MUST be
+    non-empty, each element a non-empty valid UTF-8
+    String, else
+    `ambiguous_incomplete_occurrence:nested_instance_path_empty`
+    / `:nested_instance_path_element_invalid`.
+  - root structural_depth == 0: empty instance_path OK;
+    entity_id MUST be Integer, else
+    `ambiguous_incomplete_occurrence:rooted_incomplete_entity_id_required`.
+- `_compute_coherence_digest` now runs a pre-pass that
+  collects every SourceReference participating in
+  Source↔Analysis coherence (SourceSnapshot edges,
+  SourceSnapshot faces, Analysis geometry edges, Analysis
+  geometry faces) and validates each via
+  `_validate_coherence_source_reference`. Any blocker
+  causes early return before any digest is computed.
+- The pre-existing registry-issue-source hash gate
+  (v1.3 §1.6 shape for Hash literals on
+  `registry.issues[].sources`) is RETAINED (registry
+  issue sources are Hash literals describing incomplete
+  occurrences that may not be present as a
+  SourceReference on any edge/face — they participate
+  in the B1 issue projection, not the coherence
+  descriptor computation).
+- The legacy `_coherence_source_ref(source_ref)` wrapper
+  is RETAINED (returns descriptor only via the new
+  helper) so any external callers stay source-
+  compatible.
+
+Public-path tests added (12):
+
+- **R3-01-1** identical valid nested incomplete tuple
+  Source vs Analysis => BUILT.
+- **R3-01-2** nested incomplete SourceReference with
+  empty instance_path => BLOCKED with
+  `ambiguous_incomplete_occurrence`.
+- **R3-01-3** nested incomplete SourceReference with
+  non-UTF8 instance_path element => BLOCKED.
+- **R3-01-4** root incomplete SourceReference with nil
+  entity_id => BLOCKED.
+- **R3-01-5** Source vs Analysis incomplete
+  instance_path mismatch => BLOCKED with
+  `analysis_source_coherence_mismatch`.
+- **R3-01-6** partial persistent_id_path mismatch =>
+  BLOCKED.
+- **R3-01-7** structural_depth mismatch => BLOCKED.
+- **R3-01-8** incomplete entity_id mismatch => BLOCKED.
+- **R3-01-9** incomplete persistent_id mismatch =>
+  BLOCKED.
+- **R3-01-10** SourceRef layer_name mismatch on
+  incomplete ref => BLOCKED.
+- **R3-01-11** same COMPLETE persistent_id_path with
+  different transient fields (entity_id /
+  instance_path / structural_depth / persistent_id
+  leaf copy) => BUILT (stable_pid uses minimal
+  descriptor; transient fields do not affect
+  coherence).
+- **R3-01-12** FACE SourceReference with empty
+  nested instance_path => BLOCKED (face participation
+  in Source↔Analysis coherence is now validated).
+
+### R3-02 — FR-05 ambiguity acceptance tests (real production-resolvable legacy IDs)
+
+`tests/test_v19b1_prepared_cad_dataset.rb`:
+
+- **R3-02-1** duplicate one real chain's exact
+  semantic node/edge sequence under a DIFFERENT
+  legacy `chain_id` => BLOCKED with
+  `semantic_chain_ambiguity`.
+- **R3-02-2** duplicate one real loop's exact
+  semantic node/edge sequence under a DIFFERENT
+  legacy `loop_id` => BLOCKED with
+  `semantic_loop_ambiguity`.
+- **R3-02-3** duplicate one real region's semantic
+  outer/hole/layer/stable refs/flags under a
+  DIFFERENT legacy `region_id` => BLOCKED with
+  `semantic_region_ambiguity`.
+
+Production logic for these ambiguity blockers was
+already in place in `_remap_chain*` / `_remap_loop_id`
+/ region sections of
+`prepared_cad_dataset_builder.rb` (lines 1614-1727,
+1810-1820); these tests verify the production path.
+
+### R3-03 — Structure invariance + Validator adjacency + duplicate semantic ID acceptance matrix
+
+`tests/test_v19b1_prepared_cad_dataset.rb`:
+
+- **R3-03-1** perturb ONLY legacy region_id => same
+  pcr + same content_digest.
+- **R3-03-2** reorder equivalent region input
+  collection => same content_digest.
+- **R3-03-3** reorder hole_loop_ids => same pcr +
+  same content_digest (uses two synthesized
+  degenerate loops with matched cardinalities).
+- **R3-03-4** semantic_graph adjacency as String =>
+  NOT_READY with `invalid_adjacency` (fail-closed).
+- **R3-03-5** exact edge-derived adjacency => no
+  `invalid_adjacency` blocker.
+- **R3-03-6** duplicate loop_id in
+  semantic_structure => NOT_READY with
+  `duplicate_semantic_id:loop`.
+- **R3-03-7** duplicate region_id in
+  semantic_structure => NOT_READY with
+  `duplicate_semantic_id:region`.
+
+Validator was NOT modified. All R3-03 Validator-side
+assertions pass against the existing Validator code.
+
+### R3-04 — Non-self-referential SHA reporting
+
+The implementation SHA below is the LITERAL output
+of `git rev-parse HEAD` after the implementation
+push. Per dispatch: NO third commit is created
+solely to embed the just-created final HEAD into
+the report. AIPM independently verifies the remote
+final HEAD.
+
+### Validation
+
+- `ruby -c` on the modified B1 production file
+  (`prepared_cad_dataset_builder.rb`): **Syntax OK**.
+- `ruby -c` on the focused test file
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **Syntax OK**.
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **137 / 137 PASS, 0 fail, 0 error** (was 115/115 in
+  the previous R2 packet; this packet added +22 net
+  new B1 tests, all passing).
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1371 tests, 1362 pass, 5 fail, 4 error.
+```
+
+This packet added the +22 net new B1 tests
+all passing.
+
+Pre-existing failures (NONE introduced by this packet;
+confirmed via `git diff --name-only` filter +
+isolated re-run comparison):
+
+- 5 FAIL on `html_render` (V1.9A FINAL P1-A /
+  HIDDEN-SEMANTICS FOLLOW-UP / FINAL P1-C): CSS /
+  `app.js` textual source-level guards on
+  already-source-reviewed PASS items. CSS / `app.js`
+  are UNCHANGED in this packet.
+- 1 FAIL on `capability.HtmlDialog` (outside SU
+  returns false R002 + S2-BLOCK-006): pre-existing
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`): pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed`: pre-existing
+  FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`: pre-existing
+  presenter test guard (`开放链` chip-list).
+
+`html_render` / `v19a_presenter` / `capability` / V14 /
+V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code paths.
+CSS / `app.js` / Presenter / Runner are NOT modified by
+this packet. These failures were pre-existing in the
+previous V1.9B1 packets.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD`:
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb`
+  → UNCHANGED.
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  → modified (R3-01 only).
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+  → UNCHANGED.
+- `tests/test_v19b1_prepared_cad_dataset.rb` → modified
+  (R3-01 / R3-02 / R3-03 tests added).
+
+All other `extension/su_ai_plugin/core/*.rb` files,
+`su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+`su_ai_plugin/loader.rb`,
+`su_ai_plugin/cad_prep_workflow_*.rb`,
+`su_ai_plugin/dialog_runner.rb`,
+`su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+`html/app.js`, `html/style.css`, icons: UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this packet.
+The previous V1.9B1 packet's RBZ is gitignored and is
+NOT a tracked production delta. No RBZ release decision
+was made.
+
+Frozen V1.5–V1.9A design authority preserved unchanged
+on the assigned `dev/v1.9`. Pi did NOT rewrite any
+frozen design authority. No V1.4 / V1.5 / V1.6 / V1.7
+/ V1.8 algorithm change. No source / provenance
+authority change. No workspace ownership change. No
+host mutation / Face / Observer. No site semantics.
+No Loader / A2 orchestrator / A3 toolbar / V1.9A3
+contract change. No V1.9B2 / V2 / MCP / LLM / Agent.
+No persistence / Accept / Load UI. No RBZ release.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used by
+prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; no Hash#compact, no Array#sum, no
+transform_keys / filter_map, no Numeric#positive?,
+no safe navigation, no pattern matching, no
+then / yield_self), but the literal Ruby 2.2
+contract is not runtime-validated in this packet.
+
+### R3-00 — Implementation SHA (literal `git rev-parse HEAD`)
+
+The R3 implementation commit on `dev/v1.9` is:
+
+```
+82b723d1fa612cc89771d119972d8e9c14046843
+```
+
+This is the literal output of `git rev-parse HEAD`
+recorded immediately after the implementation commit
+and before the docs commit. It is NOT synthesized. The
+commit subject is:
+
+```
+fix(v1.9b1-b1-r3): B1.2-B1.4 R3 CONTRACT CLOSURE (R3-01 + R3-02 + R3-03)
+```
+
+Push result for the implementation commit:
+
+```
+1514b34..82b723d  dev/v1.9 -> dev/v1.9
+```
+
+The current `git rev-parse HEAD` after the docs/report
+commit is recorded below (this section is prepended
+by the docs commit).
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CORRECTED_PENDING_AIPM_REVIEW
+V1_9B1_B1_3                          = CORRECTED_PENDING_AIPM_REVIEW
+V1_9B1_B1_4                          = CORRECTED_PENDING_AIPM_REVIEW
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this packet's
+   R3 closure corrections on `dev/v1.9`.
+2. Narrow Codex xHigh recheck on the same narrow
+   seam that originally surfaced the R3 items.
+3. Only then may AIPM authorize B1.5 + V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch: this packet addresses the
+B1 R3 contract closure; each of the 4 R3 items is
+narrow within its respective seam. None reopens any
+already-PASS frozen V1.5–V1.9A surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the R3 closure implementation + tests + commit
+(`82b723d`) + push
+(`1514b34..82b723d  dev/v1.9 -> dev/v1.9`) for this
+packet and now returns control to AIPM for direct
+source review of the R3 corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
 ## V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW R2 CORRECTION — 2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL SOURCE REVIEW
