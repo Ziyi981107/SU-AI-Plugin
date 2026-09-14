@@ -218,8 +218,78 @@ previous V1.9B1 packets.
 
 ### Frozen-file delta
 
-`git diff --name-on
-## V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
+`git diff --name-only HEAD`:
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb`
+  → UNCHANGED.
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  → modified (R2-01, R2-03 only).
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+  → modified (R2-05, R2-06 only).
+- `tests/test_v19b1_prepared_cad_dataset.rb` → modified
+  (R2-01..R2-07 tests added).
+
+All other `extension/su_ai_plugin/core/*.rb` files,
+`su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+`su_ai_plugin/loader.rb`,
+`su_ai_plugin/cad_prep_workflow_*.rb`,
+`su_ai_plugin/dialog_runner.rb`,
+`su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+`html/app.js`, `html/style.css`, icons: UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this packet.
+The previous V1.9B1 packet's RBZ is gitignored and is
+NOT a tracked production delta. No RBZ release decision
+was made.
+
+### R2-00 — Implementation SHA (literal `git rev-parse HEAD`)
+
+The R2 implementation commit on `dev/v1.9` is:
+
+```
+2b5e9c5d922bc7cde1deb24c9cd01f195f7088d3
+```
+
+This is the literal output of `git rev-parse HEAD`
+recorded immediately after the implementation commit
+and before the docs commit. It is NOT synthesized. The
+commit subject is:
+
+```
+fix(v1.9b1-b1-sr-r2): B1.2-B1.4 FINAL SOURCE REVIEW R2 correction
+```
+
+Push result for the implementation commit:
+
+```
+7e2228a..2b5e9c5  dev/v1.9 -> dev/v1.9
+```
+
+The current `git rev-parse HEAD` after the docs/report
+commit is:
+
+```
+a08363aef6ef0ecb061394571e8a52614ec1e4bf
+```
+
+(commit
+`docs(v1.9b1-b1-sr-r2): add CURRENT_STATE + PI report for R2 correction`).
+
+The previous V1.9B1 B1.2–B1.4 FINAL RESIDUAL implementation
+commit (the one whose SHA was incorrectly recorded in the
+prior FR report) is:
+
+```
+bc6db6f4ee01442ef36593c38ab975b98dc2ab4c
+```
+
+That historical section is preserved verbatim below
+without rewriting the recorded wrong SHA, per R2-00.
+
+---
+
+## V1.9B1 B1.2–B1.4 FINAL RESIDUAL CORRECTION — 2026-09-14 (THIS UPDATE)
+ B1.2–B1.4 FINAL RESIDUAL CORRECTION �?2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 FINAL RESIDUAL
 CORRECTION dispatch EXECUTION on assigned `dev/v1.9`
