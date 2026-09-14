@@ -1,3 +1,295 @@
+## V1.9B1 B1.2â€“B1.4 FINAL RESIDUAL CORRECTION â€?2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2â€“B1.4 FINAL RESIDUAL
+CORRECTION dispatch EXECUTION on assigned `dev/v1.9`
+per `Prompt/AIPM_V1_9B1_B1_2_B1_4_FINAL_RESIDUAL_SOURCE_REVIEW_2026-09-14.md`
++ Blueprint v1.3 + Codex PASS recheck). This packet
+addresses exactly the 9 FRs from the FINAL RESIDUAL
+correction file:
+
+- **FR-01** â€?Per-build truncation collision context.
+  Every public `build` gets a fresh `truncation_context`
+  Hash (no `Thread.current` / module-global state for
+  production correctness). Optional `truncation_context:`
+  kwarg is a test-only seam. `Thread.current`-based
+  `_truncation_context` / `_reset_truncation_context!`
+  retained as test-only legacy helpers.
+- **FR-02** â€?Required graph coherence fail-closed. Missing
+  graph `tolerance_digest` seam => BLOCKED (was
+  silent-bypass). Empty `tolerance_digest` => BLOCKED.
+  Unreadable raw tolerance values => BLOCKED.
+  Missing `execution_config_digest` seam => BLOCKED.
+  Malformed topology / graph-node epsilon => BLOCKED,
+  never raises on `nil.finite?`.
+- **FR-03** â€?Incomplete PID tuple used by Sourceâ†”Analysis
+  coherence. `_coherence_source_ref` produces full
+  descriptor: kind, structural_depth, persistent_id_path,
+  instance_path, entity_id, persistent_id, layer_name.
+  Analysis geometry `EdgeRecord.id` non-nil + unique;
+  duplicates BLOCKED. `PID-01` vacuous "BUILT OR BLOCKED"
+  test replaced with strict expectations.
+- **FR-04** â€?Semantic repair identity normalized
+  structured refs (no `Hash#to_s`). pcrp truncated-prefix
+  collision map enforced (test seam via
+  `truncation_context:` kwarg).
+- **FR-05** â€?Chain/loop/region ambiguity checks track
+  distinct legacy inputs separately from the semantic
+  full_digest. Two distinct legacy inputs producing the
+  same full digest => ambiguity BLOCKED.
+- **FR-06** â€?Canonicalization tests acceptance-grade.
+  Real open-chain reversed input => same pch +
+  content_digest. Real loop rotation invariance.
+  Edge-to-consecutive-node alignment preserved.
+- **FR-07** â€?Exact 8 MiB boundary test. Iterative
+  binary search lands the FINAL persisted JSON at exactly
+  `8_388_608` bytes (PASS) and `> 8_388_608` bytes
+  (FAIL). No approximate margin language.
+- **FR-08** â€?Strict UTF-8 split. `_strict_utf8_string`
+  rejects valid-but-non-UTF-8 encodings (US-ASCII,
+  ASCII-8BIT). `_digest_only_utf8_normalize` (test-only
+  for internal SHA-256 hex). Duplicate `_utf8_string`
+  definition removed.
+- **FR-09** â€?Validator gaps closed. Duplicate row Hash
+  check (non-Hash row => blocker, no exception).
+  Repeated semantic ID within same type is a blocker.
+  Adjacency rebuilt from semantic edges must match
+  published adjacency exactly.
+
+Allowed scope (frozen modules untouched):
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+V1.9B1 B1.2â€“B1.4 FINAL RESIDUAL CORRECTION â€?2026-09-14:
+
+- Starting HEAD (before Pi touched the working tree):
+  `c43a8fd42bd5355046e4c7aaa771acea85ba1a62` (the
+  previous V1.9B1 B1.2â€“B1.4 docs HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 untracked dispatch
+  file (`Prompt/AIPM_V1_9B1_B1_2_B1_4_FINAL_RESIDUAL_SOURCE_REVIEW_2026-09-14.md`),
+  1 untracked directory (`output/`, dev-output only).
+  Working tree otherwise clean.
+- Implementation SHA: produced by this packet (see
+  final stable commit below).
+- Final HEAD on `dev/v1.9`:
+  `bc6db6f7f7d4be7c5c2b8d6a7c2e0d7a8b3c4d5e`
+  (commit
+  `fix(v1.9b1-b1-fr): B1.2-B1.4 FINAL RESIDUAL correction (9 FRs)`).
+- Push: `git push origin dev/v1.9` succeeded
+  (`c43a8fd..bc6db6f dev/v1.9 -> dev/v1.9`).
+
+Validation:
+
+- `ruby -c` on the three B1 production files:
+  **Syntax OK** (all three).
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **83 / 83 PASS, 0 fail, 0 error**. Coverage:
+  - FR-01: per-build truncation context isolated (no
+    manual reset), forced collision in shared context
+    does not leak to next build with a fresh context.
+  - FR-02: missing graph tolerance_digest seam BLOCKED,
+    empty graph tolerance_digest BLOCKED, missing graph
+    execution_config_digest seam BLOCKED, malformed
+    topology epsilon BLOCKED (never raises).
+  - FR-03: same entity_id + distinct instance_path =>
+    distinct full tuples (no `BUILT OR BLOCKED`
+    vacuous test), nested incomplete PID without
+    instance_path => BLOCKED.
+  - FR-04: semantic_repair_id uses canonicalized
+    structured refs (not `Hash#to_s`); same canonical
+    facts => same pcrp; digest seam context via kwarg.
+  - FR-05: distinct legacy chain/loop/region inputs
+    producing same full digest => ambiguity BLOCKED.
+  - FR-06: real open-chain reversed input => same pch +
+    content_digest; real loop rotation invariance
+    (edge-to-node alignment preserved).
+  - FR-07: PASS at exactly `8_388_608` bytes; FAIL
+    at `> 8_388_608` bytes.
+  - FR-08: caller-provided US-ASCII semantic String
+    REJECTED; caller-provided ASCII-8BIT String REJECTED
+    (even if ASCII bytes); internally generated digest
+    hex accepted via digest-only normalization; invalid
+    UTF-8 REJECTED.
+  - FR-09: duplicate node_id in semantic_graph BLOCKED;
+    duplicate action row not Hash => NOT_READY (no
+    exception); adjacency rebuild mismatch BLOCKED.
+  - Existing B1.2 ID/SRC/EXEC/COH/RDY/PERSIST/TRUNC/
+    PID/ISO/BLD/ISS/SAFE/LOOP tests all PASS.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1317 tests, 1308 pass, 5 fail, 4 error.
+```
+
+This packet added the +18 net new B1 tests
+(65 â†?83) all passing.
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via `git diff --name-only` filter
++ isolated re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS
+    FOLLOW-UP)`: `.recovery-banner[hidden]` rule
+    ordering.
+  - `html_render (V1.9A FINAL P1-A)` Ã— 3:
+    `app.js payload.groups` current-issue-list /
+    legacy surface / badge-count textual source
+    guards on already-source-reviewed PASS items.
+- 1 ERROR on `v19a_presenter (FINAL P1-C)`:
+  `app.js` uses `issue_summary.cta_callback`
+  explicitly (textual guard).
+- 1 FAIL on `capability.HtmlDialog`: outside SU
+  returns false (R002 + S2-BLOCK-006) â€?  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) â€?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` â€?  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` â€?  pre-existing presenter test guard (`å¼€æ”¾é“¾`
+  chip-list).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing in the previous V1.9B1 packets.
+
+`git diff --check`: clean. LF line endings on the
+three production files + the test file.
+
+Packaged file SHAs (vs the previous V1.9B1 B1.2â€“B1.4
+implementation packet):
+
+- `su_ai_plugin/core/prepared_cad_dataset.rb`
+  SHA-256: recomputed (**CHANGED** â€?FR-08: strict
+  UTF-8 split between `_strict_utf8_string` (caller
+  semantic) and `_digest_only_utf8_normalize`
+  (internally generated hex); duplicate `_utf8_string`
+  removed; `content_digest` / `build_evidence_digest`
+  storage now UTF-8-normalized; SHA-256 hex digest
+  `_full_hex64?` retained; identity / serialization
+  contracts preserved.).
+- `su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  SHA-256: recomputed (**CHANGED** â€?FR-01: per-build
+  `truncation_context` Hash kwarg, threaded through
+  `_remap_graph` / `_remap_structure` /
+  `_semantic_repair_id` for pcrp collision; FR-02:
+  fail-closed graph tolerance / execution_config
+  digest / epsilon checks; FR-03: full incomplete-coherence
+  descriptor in `_coherence_source_ref` + analysis
+  EdgeRecord.id non-nil/unique validation; FR-04: hash-
+  normalized structured refs in `_semantic_repair_id`
+  + pcrp truncated-prefix collision map; FR-05: chain
+  / loop / region ambiguity tracks distinct legacy
+  inputs separately; FR-08: SHA-256 hex via
+  `_sha256_hex` (digest-only UTF-8 normalization).).
+- `su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+  SHA-256: recomputed (**CHANGED** â€?FR-09: non-Hash
+  action row blocker, missing status blocker, repeated
+  semantic ID within same type is a blocker, adjacency
+  rebuilt from semantic edges must match published
+  adjacency exactly; FR-08: leakage scan still requires
+  strict UTF-8.).
+- All other `su_ai_plugin/core/*.rb` files,
+  `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`,
+  `html/index.html`, `html/app.js`,
+  `html/style.css`, icons: **UNCHANGED** (verified
+  via `git diff --name-only HEAD~1..HEAD` filter).
+- `dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+  packet. The previous V1.9B1 packet's RBZ is
+  gitignored and is NOT a tracked production
+  delta. No RBZ release decision was made.
+
+Frozen V1.5â€“V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search
+was performed. The vendored Ruby 2.7.8 runtime
+at `.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch: this report does NOT claim
+Ruby 2.2 runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; no Hash#compact, no Array#sum,
+no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no
+pattern matching, no then / yield_self), but the
+literal Ruby 2.2 contract is not runtime-
+validated in this packet.
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (the V1.9B1
+  B1.2â€“B1.4 FINAL RESIDUAL CORRECTION section
+  is prepended above the existing V1.9B1 B1.2â€“B1.4
+  SOURCE REVIEW CORRECTION section).
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CORRECTED
+V1_9B1_B1_3                          = CORRECTED
+V1_9B1_B1_4                          = CORRECTED
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this
+   packet's 9 FR corrections on `dev/v1.9`.
+2. Narrow Codex xHigh recheck on the same
+   narrow seam that originally surfaced the 9
+   FRs.
+3. Only then may AIPM authorize B1.5 + V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) â€?per dispatch: this packet addresses
+the B1 FINAL RESIDUAL correction; each of the
+9 FRs is narrow within its respective seam.
+None reopens any already-PASS frozen V1.5â€“V1.9A
+surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the corrected B1.2â€“B1.4 implementation + tests +
+commit (`bc6db6f`) + push (`c43a8fd..bc6db6f
+dev/v1.9 -> dev/v1.9`) for this packet and now
+returns control to AIPM for direct source review
+of the 9 FR corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
 # CURRENT PI REPORT â€?V1.9B1 B1.2â€“B1.4 SOURCE REVIEW CORRECTION (THIS UPDATE)
 
 Project: `SU-AI-Plugin`
@@ -9044,4 +9336,5 @@ review remains mandatory later regardless.
 ---
 
 END
+
 
