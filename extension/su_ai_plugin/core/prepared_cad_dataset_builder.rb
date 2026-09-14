@@ -2115,6 +2115,38 @@ module SUAnalysis
         source_layers = source_snapshot.respond_to?(:layers) ?
                           Array(source_snapshot.layers) : []
 
+        # R3-01: pre-pass validate every SourceReference
+        # participating in Source<->Analysis coherence. The
+        # Blueprint v1.3 §1.6 shape gate must apply to
+        # ALL participants, not only to registry issue
+        # sources. Done BEFORE coherence digest acceptance.
+        geom = analysis_result.respond_to?(:geometry_snapshot) ?
+                 analysis_result.geometry_snapshot : nil
+        all_participants = []
+        source_edges.each do |e|
+          all_participants << (e.respond_to?(:source) ? e.source : nil)
+        end
+        source_faces.each do |f|
+          all_participants << (f.respond_to?(:source) ? f.source : nil)
+        end
+        if geom && geom.respond_to?(:edges)
+          Array(geom.edges).each do |e|
+            all_participants << (e.respond_to?(:source) ? e.source : nil)
+          end
+        end
+        if geom && geom.respond_to?(:faces)
+          Array(geom.faces).each do |f|
+            all_participants << (f.respond_to?(:source) ? f.source : nil)
+          end
+        end
+        all_participants.each do |src|
+          shape_blockers, _desc =
+            _validate_coherence_source_reference(src)
+          blockers.concat(shape_blockers)
+          break unless blockers.empty?
+        end
+        return [nil, blockers] unless blockers.empty?
+
         source_edge_descs = source_edges.map do |e|
           s = _endpoint_xyz(e.start_point)
           t = _endpoint_xyz(e.end_point)
@@ -2163,8 +2195,6 @@ module SUAnalysis
         analysis_edges = []
         analysis_faces = []
         analysis_layers = []
-        geom = analysis_result.respond_to?(:geometry_snapshot) ?
-                 analysis_result.geometry_snapshot : nil
         if geom && geom.respond_to?(:edges)
           Array(geom.edges).each do |e|
             ref = _coherence_source_ref(e.respond_to?(:source) ? e.source : nil)
@@ -2234,15 +2264,16 @@ module SUAnalysis
         end
 
         # ----- B1-SR-04: incomplete PID occurrence coherence -----------
-        # The incomplete-path coherence tuple is:
-        # kind + structural_depth + persistent_id_path +
-        # instance_path + entity_id + persistent_id-if-present +
-        # layer_name.
-        # For nested occurrences (structural_depth > 0):
-        # instance_path MUST be non-empty, each element a
-        # non-empty valid UTF-8 String.
-        # For root-level incomplete occurrences: empty
-        # instance_path is allowed; entity_id still required.
+        # R3-01: the v1.3 §1.6 shape gate is now applied to
+        # ALL SourceReference participants (SourceSnapshot +
+        # Analysis geometry edges/faces) in the pre-pass at
+        # the top of this method. The registry-issue-source
+        # hash gate is ALSO retained (registry issue sources
+        # are Hash literals describing incomplete occurrences
+        # that may not be present as a SourceReference on any
+        # edge/face in the SourceSnapshot / Analysis geometry
+        # — they participate in the B1 issue projection,
+        # not the coherence descriptor computation).
         registry = analysis_result.registry
         registry_issues = registry && registry.respond_to?(:issues) ?
                             Array(registry.issues) : []
@@ -2250,7 +2281,6 @@ module SUAnalysis
           Array(iss[:sources]).each do |src|
             next unless src.is_a?(Hash)
             next if src[:pid_path_complete]
-            # Incomplete PID source. Validate per v1.3 §1.6.
             struct_depth = src[:structural_depth]
             unless struct_depth.is_a?(Integer) && struct_depth >= 0
               blockers << REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
@@ -2277,8 +2307,6 @@ module SUAnalysis
               end
               break if blockers.any?
             else
-              # Root-level incomplete: empty instance_path OK;
-              # entity_id required.
               unless entity_id.is_a?(Integer)
                 blockers << REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
                                 ':rooted_incomplete_entity_id_required'
@@ -2288,6 +2316,7 @@ module SUAnalysis
           end
           break if blockers.any?
         end
+        return [nil, blockers] unless blockers.empty?
 
         # ----- Registry edge ID resolution ----------------------------
         # FR-03: Analysis geometry EdgeRecord.id MUST be
@@ -2346,37 +2375,52 @@ module SUAnalysis
         [source_digest, blockers]
       end
 
-      # FR-03: complete incomplete-coherence descriptor. The
-      # same descriptor shape is used for Source and
-      # Analysis, so Source↔Analysis inequality is directly
-      # visible.
+      # R3-01: validate every SourceReference participating
+      # in Source↔Analysis coherence and return the proper
+      # descriptor.
       #
-      # Required fields:
-      #   kind, structural_depth, persistent_id_path,
-      #   instance_path, entity_id, persistent_id (when
-      #   present), layer_name
-      def _coherence_source_ref(source_ref)
-        if source_ref.nil?
-          return {
-            'kind'                => 'unresolved',
-            'structural_depth'    => 0,
-            'persistent_id_path'  => [],
-            'instance_path'       => [],
-            'entity_id'           => nil,
-            'persistent_id'       => nil,
-            'layer_name'          => ''
-          }
-        end
-        unless source_ref.is_a?(SourceReference)
-          return {
-            'kind'                => 'unresolved',
-            'structural_depth'    => 0,
-            'persistent_id_path'  => [],
-            'instance_path'       => [],
-            'entity_id'           => nil,
-            'persistent_id'       => nil,
-            'layer_name'          => ''
-          }
+      # Returns [blockers, descriptor].
+      #
+      # Complete stable PID branch (pid_path_complete == true
+      # AND persistent_id_path non-empty):
+      #   - minimal descriptor: kind + persistent_id_path ONLY.
+      #   - Stable path alone determines coherence provenance.
+      #   - Does NOT depend on entity_id, instance_path,
+      #     structural_depth, persistent_id leaf copy, or
+      #     SourceReference.layer_name.
+      #   - Edge/face `layer_name` is a separate field on the
+      #     containing coherence descriptor (not on this
+      #     source ref).
+      #
+      # Incomplete branch (pid_path_complete == false OR
+      # persistent_id_path empty):
+      #   - full descriptor per v1.3 §1.6:
+      #     kind + structural_depth + persistent_id_path +
+      #     instance_path + entity_id + persistent_id
+      #     (when present) + layer_name.
+      #   - nested structural_depth > 0: instance_path MUST be
+      #     non-empty, each element a non-empty valid UTF-8
+      #     String. Missing/empty/non-UTF8 =>
+      #     ambiguous_incomplete_occurrence BLOCKED.
+      #   - root structural_depth == 0: empty instance_path
+      #     allowed; entity_id MUST be Integer. Missing =>
+      #     BLOCKED.
+      #   - bad structural_depth (not Integer / < 0) => BLOCKED.
+      #
+      # nil or non-SourceReference => unresolved descriptor,
+      # no blockers (nil source is a legitimate test fixture).
+      def _validate_coherence_source_reference(source_ref)
+        unresolved = {
+          'kind'                => 'unresolved',
+          'structural_depth'    => 0,
+          'persistent_id_path'  => [],
+          'instance_path'       => [],
+          'entity_id'           => nil,
+          'persistent_id'       => nil,
+          'layer_name'          => ''
+        }
+        if source_ref.nil? || !source_ref.is_a?(SourceReference)
+          return [[], unresolved]
         end
         pp = Array(source_ref.persistent_id_path).map(&:to_i)
         sd = source_ref.respond_to?(:structural_depth) ?
@@ -2389,27 +2433,63 @@ module SUAnalysis
                 source_ref.persistent_id : nil
         layer = source_ref.respond_to?(:layer_name) ?
                   source_ref.layer_name.to_s : ''
+        # Complete stable PID branch: minimal descriptor;
+        # transient fields are NOT part of coherence identity
+        # for this branch.
         if source_ref.pid_path_complete && !pp.empty?
-          {
+          return [[], {
             'kind'                => 'stable_pid',
-            'structural_depth'    => sd,
-            'persistent_id_path'  => pp,
-            'instance_path'       => ip,
-            'entity_id'           => eid,
-            'persistent_id'       => pid,
-            'layer_name'          => layer
-          }
-        else
-          {
-            'kind'                => 'transient_entity',
-            'structural_depth'    => sd,
-            'persistent_id_path'  => pp,
-            'instance_path'       => ip,
-            'entity_id'           => eid,
-            'persistent_id'       => pid,
-            'layer_name'          => layer
-          }
+            'persistent_id_path'  => pp
+          }]
         end
+        # Incomplete branch: validate exact v1.3 §1.6 shape.
+        unless sd.is_a?(Integer) && sd >= 0
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':bad_structural_depth'], unresolved]
+        end
+        if sd > 0
+          if ip.empty?
+            return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                       ':nested_instance_path_empty'], unresolved]
+          end
+          ip.each do |el|
+            unless el.is_a?(String) && !el.empty? &&
+                   el.respond_to?(:encoding) &&
+                   el.encoding.name == 'UTF-8' &&
+                   el.valid_encoding?
+              return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                         ':nested_instance_path_element_invalid'],
+                      unresolved]
+            end
+          end
+        else
+          # Root-level incomplete: empty instance_path OK;
+          # entity_id MUST be Integer.
+          unless eid.is_a?(Integer)
+            return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                       ':rooted_incomplete_entity_id_required'],
+                    unresolved]
+          end
+        end
+        [[], {
+          'kind'                => 'transient_entity',
+          'structural_depth'    => sd,
+          'persistent_id_path'  => pp,
+          'instance_path'       => ip,
+          'entity_id'           => eid,
+          'persistent_id'       => pid,
+          'layer_name'          => layer
+        }]
+      end
+
+      # Legacy wrapper: returns descriptor only. Kept for
+      # source compatibility with callers that don't need the
+      # blocker list. Internal _compute_coherence_digest uses
+      # _validate_coherence_source_reference directly so it
+      # can collect blockers for ALL participants.
+      def _coherence_source_ref(source_ref)
+        _blockers, desc = _validate_coherence_source_reference(source_ref)
+        desc
       end
 
       # ----- build_evidence assembly --------------------------------------

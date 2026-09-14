@@ -3369,3 +3369,964 @@ test 'R2-07-D: topology epsilon malformed non-Numeric => BLOCKED (no raise)' do
   }, "expected epsilon_mismatch blocker, got: #{out['blockers'].inspect}"
 end
 
+# =============================================================
+# R3-01 — Incomplete SourceReference shape must be
+# validated for ALL coherence participants
+# (SourceSnapshot edges/faces + Analysis geometry
+# edges/faces), not only registry issue sources.
+# =============================================================
+
+# Helper: rebuild a SourceSnapshot from the input bundle
+# with `sref_src` substituted on edge index `idx`. Other
+# edges/faces are cloned from the original SourceSnapshot.
+def b1_r3_swap_source_edge_in_snapshot(orig_snap, idx, sref_src)
+  orig_edges = Array(orig_snap.edges)
+  orig_faces = Array(orig_snap.faces)
+  orig_layers = Array(orig_snap.layers)
+  new_edges = orig_edges.each_with_index.map do |e, i|
+    if i == idx
+      EdgeRecord.new(
+        id: e.id, source: sref_src,
+        start_point: e.start_point, end_point: e.end_point,
+        layer: e.layer, length: e.length, metadata: e.metadata
+      )
+    else
+      e
+    end
+  end
+  new_faces = orig_faces.each_with_index.map do |f, i|
+    if i == idx
+      FaceRecord.new(
+        id: f.id, source: sref_src,
+        layer: f.layer,
+        outer_loop_vertex_count: f.outer_loop_vertex_count,
+        inner_loop_count: f.inner_loop_count,
+        metadata: f.metadata
+      )
+    else
+      f
+    end
+  end
+  # The SourceSnapshot constructor freezes its inputs; we
+  # must construct a fresh snapshot with the new edge/face
+  # arrays.
+  SourceSnapshot.new(
+    snapshot_id: orig_snap.snapshot_id,
+    edges: new_edges, faces: new_faces, layers: orig_layers,
+    execution_config: orig_snap.respond_to?(:execution_config) ?
+                        orig_snap.execution_config : nil,
+    selection_scope: orig_snap.respond_to?(:selection_scope) ?
+                       orig_snap.selection_scope : [],
+    transform_context: orig_snap.respond_to?(:transform_context) ?
+                         orig_snap.transform_context : {},
+    fingerprint: orig_snap.respond_to?(:fingerprint) ?
+                   orig_snap.fingerprint : nil
+  )
+end
+
+# Helper: rebuild the analysis geometry with `sref_an`
+# substituted on edge index `idx`. The geometry's other
+# edges/faces/layers are cloned unchanged.
+def b1_r3_swap_analysis_edge(geom, idx, sref_an)
+  orig_edges = Array(geom.edges)
+  orig_faces = Array(geom.faces)
+  orig_layers = Array(geom.layers)
+  new_edges = orig_edges.each_with_index.map do |e, i|
+    if i == idx
+      EdgeRecord.new(
+        id: e.id, source: sref_an,
+        start_point: e.start_point, end_point: e.end_point,
+        layer: e.layer, length: e.length, metadata: e.metadata
+      )
+    else
+      e
+    end
+  end
+  new_faces = orig_faces.each_with_index.map do |f, i|
+    if i == idx
+      FaceRecord.new(
+        id: f.id, source: sref_an,
+        layer: f.layer,
+        outer_loop_vertex_count: f.outer_loop_vertex_count,
+        inner_loop_count: f.inner_loop_count,
+        metadata: f.metadata
+      )
+    else
+      f
+    end
+  end
+  GeometrySnapshot.new(
+    edges: new_edges, faces: new_faces, layers: orig_layers
+  )
+end
+
+# Helper: rebuild a SourceSnapshot carrying a single
+# FaceRecord whose source is `sref_face`. Used by R3-01-12.
+def b1_r3_face_only_source_snapshot(sref_face)
+  face = FaceRecord.new(
+    id: 'face-r3-1', source: sref_face, layer: sref_face.layer_name,
+    outer_loop_vertex_count: 3, inner_loop_count: 0
+  )
+  layer_rec = LayerRecord.new(
+    name: sref_face.layer_name, role: LayerRole::CONSTRUCTION,
+    role_rule: 'default_layer', visible: true, visibility_unknown: false,
+    edge_count: 0, face_count: 1, faces_with_holes_count: 0
+  )
+  ec = b1_execution_config
+  fp = SourceFingerprint.from_snapshot(
+    GeometrySnapshot.new(edges: [], faces: [face], layers: [layer_rec]),
+    selection: [], host: nil
+  )
+  SourceSnapshot.new(
+    snapshot_id: 'snap-r3-face',
+    edges: [], faces: [face], layers: [layer_rec],
+    execution_config: ec, selection_scope: [],
+    transform_context: { 'active_edit_seed' => 'identity' },
+    fingerprint: fp
+  )
+end
+
+# Helper: rebuild an analysis geometry carrying a single
+# FaceRecord whose source is `sref_face`. Used by R3-01-12.
+def b1_r3_face_only_analysis_geometry(sref_face)
+  face = FaceRecord.new(
+    id: 'face-r3-1', source: sref_face, layer: sref_face.layer_name,
+    outer_loop_vertex_count: 3, inner_loop_count: 0
+  )
+  layer_rec = LayerRecord.new(
+    name: sref_face.layer_name, role: LayerRole::CONSTRUCTION,
+    role_rule: 'default_layer', visible: true, visibility_unknown: false,
+    edge_count: 0, face_count: 1, faces_with_holes_count: 0
+  )
+  GeometrySnapshot.new(
+    edges: [], faces: [face], layers: [layer_rec]
+  )
+end
+
+test 'R3-01-1: Source + Analysis identical valid nested incomplete tuple, no registry issue => BUILT' do
+  sref = SourceReference.new(
+    entity_id: 7777, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [7777],
+    instance_path: ['ContainerR3-1'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "identical Source vs Analysis nested incomplete tuples must BUILT, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-2: nested incomplete SourceReference with empty instance_path => BLOCKED' do
+  sref = SourceReference.new(
+    entity_id: 7778, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [7778],
+    instance_path: [],   # nested but empty => BLOCKED
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "nested incomplete PID without instance_path must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence')
+  }, "expected ambiguous_incomplete_occurrence blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-3: nested incomplete SourceReference with non-UTF8 instance_path element => BLOCKED' do
+  bad_el = "\xC3\x28".dup.force_encoding('UTF-8')  # invalid UTF-8 byte sequence
+  sref = SourceReference.new(
+    entity_id: 7779, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [7779],
+    instance_path: [bad_el],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "nested incomplete PID with non-UTF8 instance_path element must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence')
+  }, "expected ambiguous_incomplete_occurrence blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-4: root incomplete SourceReference with nil entity_id => BLOCKED' do
+  sref = SourceReference.new(
+    entity_id: nil, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [],   # empty path
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "root incomplete PID with nil entity_id must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence')
+  }, "expected ambiguous_incomplete_occurrence blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-5: Source vs Analysis incomplete instance_path mismatch => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8001, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8001],
+    instance_path: ['ContainerSrc'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8001, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8001],
+    instance_path: ['ContainerAn'],   # mismatching instance_path
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "Source vs Analysis incomplete instance_path mismatch must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-6: Source vs Analysis partial persistent_id_path mismatch => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8002, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8002],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8002, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8003],   # mismatching partial pid path
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "partial pid_path mismatch must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-7: Source vs Analysis incomplete structural_depth mismatch => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8004, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8004],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8004, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [8004],
+    instance_path: [],   # root: empty instance_path OK
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "structural_depth mismatch must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-8: Source vs Analysis incomplete entity_id mismatch => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8005, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8005],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8006, persistent_id: nil, kind: 'nested',  # mismatching entity_id
+    persistent_id_path: [8005],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "incomplete entity_id mismatch must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-9: Source vs Analysis incomplete persistent_id mismatch => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8007, persistent_id: 9007, kind: 'nested',
+    persistent_id_path: [8007],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8007, persistent_id: 9008, kind: 'nested',  # mismatching persistent_id
+    persistent_id_path: [8007],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "incomplete persistent_id mismatch must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-10: SourceReference layer_name mismatch on incomplete SourceRef => BLOCKED' do
+  sref_src = SourceReference.new(
+    entity_id: 8008, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8008],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'LayerSrc'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 8008, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [8008],
+    instance_path: ['ContainerA'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'LayerAn'   # mismatching layer_name
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "SourceReference layer_name mismatch on incomplete ref must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('analysis_source_coherence_mismatch')
+  }, "expected coherence mismatch blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-11: Same COMPLETE persistent_id_path but different transient fields => coherence PASS' do
+  sref_src = SourceReference.new(
+    entity_id: 9001, persistent_id: 7001, kind: 'edge',
+    persistent_id_path: [101],    # COMPLETE, non-empty
+    instance_path: ['ContainerSrc'],
+    structural_depth: 1,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 9002, persistent_id: 7002, kind: 'edge',
+    persistent_id_path: [101],    # COMPLETE, SAME pid path
+    instance_path: ['ContainerAn'],   # DIFFERENT transient
+    structural_depth: 0,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "same complete pid_path with different transient fields must BUILT (stable_pid uses minimal descriptor), got: #{out['blockers'].inspect}"
+end
+
+test 'R3-01-12: FACE SourceReference incomplete malformed (empty nested instance_path) => BLOCKED' do
+  sref_face = SourceReference.new(
+    entity_id: 9100, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [9100],
+    instance_path: [],   # nested but empty => BLOCKED
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  # Take the triangle fixture (3 edges) and ADD a face with
+  # the bad SourceReference on both SourceSnapshot and
+  # Analysis geometry. The triangle graph/topology/structure
+  # remain valid; the bad face SourceReference is caught by
+  # the R3-01 pre-pass.
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  bad_face = FaceRecord.new(
+    id: 'r3-bad-face', source: sref_face, layer: 'L0',
+    outer_loop_vertex_count: 3, inner_loop_count: 0
+  )
+  # Inject the bad face into the SourceSnapshot.
+  new_snap = SourceSnapshot.new(
+    snapshot_id: snap.snapshot_id,
+    edges: Array(snap.edges), faces: [bad_face], layers: Array(snap.layers),
+    execution_config: snap.respond_to?(:execution_config) ?
+                        snap.execution_config : nil,
+    selection_scope: snap.respond_to?(:selection_scope) ?
+                       snap.selection_scope : [],
+    transform_context: snap.respond_to?(:transform_context) ?
+                         snap.transform_context : {},
+    fingerprint: snap.respond_to?(:fingerprint) ?
+                   snap.fingerprint : nil
+  )
+  # Inject the bad face into the Analysis geometry.
+  new_geom = GeometrySnapshot.new(
+    edges: Array(ar.geometry_snapshot.edges),
+    faces: [bad_face],
+    layers: Array(ar.geometry_snapshot.layers)
+  )
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "FACE SourceReference with empty nested instance_path must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence')
+  }, "expected ambiguous_incomplete_occurrence blocker, got: #{out['blockers'].inspect}"
+end
+
+# =============================================================
+# R3-02 — FR-05 ambiguity acceptance tests (real IDs)
+# =============================================================
+
+test 'R3-02-1: two distinct legacy chains with same semantic record => BLOCKED + semantic_chain_ambiguity' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  node_ids = graph.nodes.map { |n| n['canonical_node_id'] }
+  edge_ids = graph.edges.map { |e| e['canonical_edge_id'] }
+  new_struct = Marshal.load(Marshal.dump(struct))
+  # Duplicate one real chain's exact node/edge sequence
+  # under a DIFFERENT legacy chain_id.
+  new_struct['chains'] = [
+    { 'chain_id' => 'chain-A-original',
+      'node_ids' => [node_ids[0], node_ids[1]],
+      'edge_ids' => [edge_ids[0]] },
+    { 'chain_id' => 'chain-B-duplicate',
+      'node_ids' => [node_ids[0], node_ids[1]],   # SAME sequence
+      'edge_ids' => [edge_ids[0]] }                # SAME sequence
+  ]
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: new_struct, analysis_result: ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "two distinct legacy chains with same semantic record must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('semantic_chain_ambiguity')
+  }, "expected semantic_chain_ambiguity blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-02-2: two distinct legacy loops with same semantic record => BLOCKED + semantic_loop_ambiguity' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  real_loop = struct['loops'].first
+  new_struct = Marshal.load(Marshal.dump(struct))
+  # Duplicate the same loop input under a DIFFERENT legacy loop_id.
+  new_struct['loops'] = [
+    real_loop.merge('loop_id' => 'loop-A-original'),
+    real_loop.merge('loop_id' => 'loop-B-duplicate')
+  ]
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: new_struct, analysis_result: ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "two distinct legacy loops with same semantic record must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('semantic_loop_ambiguity')
+  }, "expected semantic_loop_ambiguity blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R3-02-3: two distinct legacy regions with same semantic record => BLOCKED + semantic_region_ambiguity' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  # The triangle fixture does not auto-produce regions (the
+  # only loop is degenerate). Synthesize two regions
+  # referencing the real loop with the SAME outer/hole/layer
+  # /stable refs/flags but DIFFERENT legacy region_ids.
+  real_loop_id = struct['loops'].first['loop_id']
+  new_struct = Marshal.load(Marshal.dump(struct))
+  base_region = {
+    'outer_loop_id'   => real_loop_id,
+    'hole_loop_ids'   => [],
+    'layer_name'      => 'L0',
+    'stable_source_refs' => [],
+    'unresolved_flags' => []
+  }
+  new_struct['regions'] = [
+    base_region.merge('region_id' => 'region-A-original'),
+    base_region.merge('region_id' => 'region-B-duplicate')
+  ]
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: new_struct, analysis_result: ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "two distinct legacy regions with same semantic record must BLOCK"
+  assert out['blockers'].any? { |b|
+    b.include?('semantic_region_ambiguity')
+  }, "expected semantic_region_ambiguity blocker, got: #{out['blockers'].inspect}"
+end
+
+# =============================================================
+# R3-03 — Structure invariance + Validator adjacency + duplicate
+# semantic ID acceptance matrix
+# =============================================================
+
+test 'R3-03-1: perturb ONLY legacy region_id => same pcr + same content_digest' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  real_loop_id = struct['loops'].first['loop_id']
+  base_struct = Marshal.load(Marshal.dump(struct))
+  base_struct['regions'] = [
+    {
+      'region_id' => 'region-r3-original',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => [],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [],
+      'unresolved_flags' => []
+    }
+  ]
+  out1 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: base_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out1['status']
+  pcr1 = out1['dataset'].content['semantic_structure']['regions']
+           .first['region_id']
+  cd1  = out1['dataset'].content_digest
+  renamed_struct = Marshal.load(Marshal.dump(base_struct))
+  renamed_struct['regions'] = [
+    renamed_struct['regions'].first.merge(
+      'region_id' => 'region-renamed-different-legacy-id'
+    )
+  ]
+  out2 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: renamed_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out2['status'],
+               "perturbing legacy region_id only must still BUILT, got: #{out2['blockers'].inspect}"
+  pcr2 = out2['dataset'].content['semantic_structure']['regions']
+           .first['region_id']
+  cd2  = out2['dataset'].content_digest
+  assert_equal cd1, cd2,
+               "perturbing legacy region_id only must NOT change content_digest"
+  assert_equal pcr1, pcr2,
+               "perturbing legacy region_id only must NOT change pcr"
+end
+
+test 'R3-03-2: reorder equivalent region input collection => same content_digest' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  real_loop_id = struct['loops'].first['loop_id']
+  base_struct = Marshal.load(Marshal.dump(struct))
+  base_struct['regions'] = [
+    {
+      'region_id' => 'region-r3-A',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => [],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [
+        { 'kind' => 'source_pid_path', 'persistent_id_path' => [990, 991] }
+      ],
+      'unresolved_flags' => []
+    },
+    {
+      'region_id' => 'region-r3-B',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => [],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [
+        { 'kind' => 'source_pid_path', 'persistent_id_path' => [992, 993] }
+      ],
+      'unresolved_flags' => []
+    }
+  ]
+  out2 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: base_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out2['status'],
+               "two baseline regions must BUILT, got: #{out2['blockers'].inspect}"
+  cd2 = out2['dataset'].content_digest
+  reordered_struct = Marshal.load(Marshal.dump(base_struct))
+  reordered_struct['regions'] = [base_struct['regions'].last,
+                                 base_struct['regions'].first]
+  out3 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: reordered_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out3['status'],
+               "reordered regions must BUILT, got: #{out3['blockers'].inspect}"
+  cd3 = out3['dataset'].content_digest
+  assert_equal cd2, cd3,
+               "reorder equivalent region collection must not change content_digest"
+end
+
+test 'R3-03-3: reorder hole_loop_ids => same pcr + same content_digest' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  real_loop_id = struct['loops'].first['loop_id']
+  node_ids = graph.nodes.map { |n| n['canonical_node_id'] }
+  edge_ids = graph.edges.map { |e| e['canonical_edge_id'] }
+  # Two additional degenerate loops with matched cardinalities
+  # but distinct canonical sequences. Each uses 3 nodes and 3
+  # edges (one edge repeated) so the cardinality check passes.
+  extra_loops = [
+    { 'loop_id' => 'loop-extra-1',
+      'node_ids' => [node_ids[0], node_ids[1], node_ids[2]],
+      'edge_ids' => [edge_ids[0], edge_ids[1], edge_ids[0]] },
+    { 'loop_id' => 'loop-extra-2',
+      'node_ids' => [node_ids[0], node_ids[2], node_ids[1]],
+      'edge_ids' => [edge_ids[2], edge_ids[1], edge_ids[2]] }
+  ]
+  base_struct = Marshal.load(Marshal.dump(struct))
+  base_struct['loops'] = [struct['loops'].first,
+                          extra_loops[0],
+                          extra_loops[1]]
+  base_struct['regions'] = [
+    {
+      'region_id' => 'region-r3-hole',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => ['loop-extra-1', 'loop-extra-2'],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [],
+      'unresolved_flags' => []
+    }
+  ]
+  out1 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: base_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out1['status'],
+               "hole_loop_ids baseline must BUILT, got: #{out1['blockers'].inspect}"
+  pcr1 = out1['dataset'].content['semantic_structure']['regions']
+           .first['region_id']
+  cd1  = out1['dataset'].content_digest
+  reversed_struct = Marshal.load(Marshal.dump(base_struct))
+  reversed_struct['regions'] = [
+    reversed_struct['regions'].first.merge(
+      'hole_loop_ids' => ['loop-extra-2', 'loop-extra-1']
+    )
+  ]
+  out2 = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: reversed_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out2['status'],
+               "hole_loop_ids reversed must BUILT, got: #{out2['blockers'].inspect}"
+  pcr2 = out2['dataset'].content['semantic_structure']['regions']
+           .first['region_id']
+  cd2  = out2['dataset'].content_digest
+  assert_equal cd1, cd2,
+               "reordering hole_loop_ids must NOT change content_digest"
+  assert_equal pcr1, pcr2,
+               "reordering hole_loop_ids must NOT change pcr"
+end
+
+test 'R3-03-4: semantic_graph adjacency as String => NOT_READY / invalid_adjacency' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status']
+  cand = out['dataset']
+  mutated = Marshal.load(Marshal.dump(cand))
+  mutated.content['semantic_graph']['adjacency'] = 'not-a-hash'
+  cd = PreparedCadDataset.compute_content_digest(mutated.content)
+  bed = PreparedCadDataset.compute_build_evidence_digest(
+    cd, mutated.build_evidence
+  )
+  rebuilt = PreparedCadDataset.build_candidate(
+    content: mutated.content, content_digest: cd,
+    build_evidence: mutated.build_evidence, build_evidence_digest: bed
+  )
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: rebuilt, workflow_snapshot: ws
+  )
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+  assert v['blockers'].any? { |b| b.include?('invalid_adjacency') }
+end
+
+test 'R3-03-5: exact edge-derived adjacency => no invalid_adjacency blocker' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status']
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: out['dataset'], workflow_snapshot: ws
+  )
+  assert !v['blockers'].any? { |b| b.include?('invalid_adjacency') },
+         "exact edge-derived adjacency must produce no invalid_adjacency blocker, got: #{v['blockers'].inspect}"
+end
+
+test 'R3-03-6: duplicate loop_id in semantic_structure => NOT_READY / duplicate_semantic_id' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status']
+  cand = out['dataset']
+  mutated = Marshal.load(Marshal.dump(cand))
+  ss = mutated.content['semantic_structure']
+  if ss['loops'].length < 2
+    # Synthesize two loops sharing one forced loop_id by
+    # duplicating the existing loop's semantic record and
+    # forcing both to share an id.
+    first = ss['loops'].first
+    second = Marshal.load(Marshal.dump(first))
+    ss['loops'] = [first, second]
+  end
+  forced = 'pcl-sharedforcedidloop0'
+  ss['loops'][0]['loop_id'] = forced
+  ss['loops'][1]['loop_id'] = forced
+  cd = PreparedCadDataset.compute_content_digest(mutated.content)
+  bed = PreparedCadDataset.compute_build_evidence_digest(
+    cd, mutated.build_evidence
+  )
+  rebuilt = PreparedCadDataset.build_candidate(
+    content: mutated.content, content_digest: cd,
+    build_evidence: mutated.build_evidence, build_evidence_digest: bed
+  )
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: rebuilt, workflow_snapshot: ws
+  )
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+  assert v['blockers'].any? { |b|
+    b.include?('duplicate_semantic_id') && b.include?('loop')
+  }, "expected duplicate_semantic_id:loop blocker, got: #{v['blockers'].inspect}"
+end
+
+test 'R3-03-7: duplicate region_id in semantic_structure => NOT_READY / duplicate_semantic_id' do
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  real_loop_id = struct['loops'].first['loop_id']
+  base_struct = Marshal.load(Marshal.dump(struct))
+  base_struct['regions'] = [
+    {
+      'region_id' => 'region-r3-dup-A',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => [],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [],
+      'unresolved_flags' => []
+    },
+    {
+      'region_id' => 'region-r3-dup-B',
+      'outer_loop_id' => real_loop_id,
+      'hole_loop_ids' => [],
+      'layer_name' => 'L0',
+      'stable_source_refs' => [
+        { 'kind' => 'source_pid_path', 'persistent_id_path' => [801, 802] }
+      ],
+      'unresolved_flags' => []
+    }
+  ]
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: base_struct, analysis_result: ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "two distinct baseline regions must BUILT, got: #{out['blockers'].inspect}"
+  cand = out['dataset']
+  mutated = Marshal.load(Marshal.dump(cand))
+  ss = mutated.content['semantic_structure']
+  forced = 'pcr-sharedforcedidreg0'
+  ss['regions'][0]['region_id'] = forced
+  ss['regions'][1]['region_id'] = forced
+  cd = PreparedCadDataset.compute_content_digest(mutated.content)
+  bed = PreparedCadDataset.compute_build_evidence_digest(
+    cd, mutated.build_evidence
+  )
+  rebuilt = PreparedCadDataset.build_candidate(
+    content: mutated.content, content_digest: cd,
+    build_evidence: mutated.build_evidence, build_evidence_digest: bed
+  )
+  v = PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: rebuilt, workflow_snapshot: ws
+  )
+  assert_equal PreparedCadDatasetValidator::STATUS_NOT_READY, v['status']
+  assert v['blockers'].any? { |b|
+    b.include?('duplicate_semantic_id') && b.include?('region')
+  }, "expected duplicate_semantic_id:region blocker, got: #{v['blockers'].inspect}"
+end
+
