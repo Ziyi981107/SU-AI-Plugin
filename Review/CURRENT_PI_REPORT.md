@@ -29,14 +29,18 @@ Recorded before any editing.
 ## B. Final commit SHA
 
 Produced by this packet's commit step. The final
-stable commit on `dev/v1.9` is:
+stable commit on `dev/v1.9` at packet completion is:
 
 ```text
-3b760d87416d90eb4d6c2c79711a3ffd428afde6
+3415798a2a04a2b7e62b64c51476ce7598c99e7a
 ```
 
 (`git push origin dev/v1.9` succeeded; the
-final pre-push HEAD is the same SHA.)
+final pre-push HEAD is the same SHA.) The
+implementation commit (the substantive B1.2-B1.4
+code) is `3ec33564e9b16cc6df80a1b1e2bd52eb0373aa06`.
+Follow-up commits only amend the report's SHA
+pointer.
 
 ## C. Exact changed files
 
