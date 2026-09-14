@@ -299,7 +299,13 @@ module SUAnalysis
             expected_adj[eb] << ea
           end
           expected_adj.each_value { |v| v.uniq!; v.sort! }
-          if adj.is_a?(Hash)
+          # R2-06: adjacency MUST be a Hash. Missing / nil /
+          # non-Hash adjacency => invalid_adjacency blocker
+          # (fail-closed).
+          unless adj.is_a?(Hash)
+            blockers << BLOCKER_INVALID_ADJACENCY +
+                          ":missing_or_malformed=#{adj.class}"
+          else
             actual_adj = {}
             adj.each do |k, v|
               actual_adj[k.to_s] = Array(v).map(&:to_s).sort
@@ -620,12 +626,12 @@ module SUAnalysis
         end
 
         # ----- Build final validation (B1-SR-11) ----------------------
-        # The final persisted JSON is BYTE-IDENTICAL to the
-        # payload measured above (same validation shape).
-        # The only difference: persistence_check.status reflects
-        # the actual size verdict. The validator ensures that
-        # the byte size does not change between the tentative
-        # measurement and the final persisted payload.
+        # R2-05: PASS path is BYTE-IDENTICAL to the measured
+        # payload. FAIL path intentionally returns a
+        # NOT_READY dataset whose bytesize differs from the
+        # tentative measurement by the added persistence
+        # blocker metadata; the byte-identical invariant
+        # applies ONLY to the PASS path.
         final_validation = {
           'validated_content_digest'        => dataset.content_digest,
           'validated_build_evidence_digest' => dataset.build_evidence_digest,
@@ -641,16 +647,17 @@ module SUAnalysis
         final_dataset = dataset.with_validation(final_validation)
 
         # ----- Byte-identical measured / persisted assertion ---------
-        # The final persisted JSON MUST equal the size that we
-        # measured above. Because the validation shapes are
-        # identical except for persistence_check.status (which
-        # is a fixed-width string 'PASS' / 'FAIL'), the bytesize
-        # should be the same.
-        final_size = final_dataset.persisted_bytesize
-        unless final_size == size
-          blockers << BLOCKER_PERSISTENCE_ENVELOPE_UNVERIFIED +
-                        ':final_payload_size_mismatch_with_measurement'
-          blockers = blockers.uniq.sort
+        # R2-05: ONLY enforced on the PASS path. The FAIL
+        # path legitimately has different bytesize than the
+        # tentative measurement because of the added
+        # persistence blocker metadata in the final validation.
+        if size <= MAX_PAYLOAD_BYTES
+          final_size = final_dataset.persisted_bytesize
+          unless final_size == size
+            blockers << BLOCKER_PERSISTENCE_ENVELOPE_UNVERIFIED +
+                          ':final_payload_size_mismatch_with_measurement'
+            blockers = blockers.uniq.sort
+          end
         end
 
         status = if final_validation['blockers'].any?
@@ -757,7 +764,14 @@ module SUAnalysis
         when Symbol
           out << BLOCKER_SYMBOL_LEAKED + ":path=#{(path + [obj.inspect]).join('.')}"
         when String
-          unless obj.respond_to?(:encoding) && obj.valid_encoding?
+          # R2-06: strict UTF-8. Valid-but-non-UTF-8 encodings
+          # (US-ASCII, ASCII-8BIT, etc.) MUST be REJECTED by the
+          # Validator leakage scan. Only encoding.name == 'UTF-8'
+          # && valid_encoding? is acceptable for caller-provided
+          # semantic strings.
+          unless obj.respond_to?(:encoding) &&
+                 obj.encoding.name == 'UTF-8' &&
+                 obj.valid_encoding?
             out << BLOCKER_INVALID_UTF8 + ":path=#{path.join('.')}"
           end
         when Numeric, TrueClass, FalseClass, NilClass

@@ -278,11 +278,15 @@ module SUAnalysis
         )
 
         # ----- semantic geometry remap -------------------------------------
+        # R2-01: the per-build truncation_context MUST be
+        # threaded through `_remap_graph` so `_semantic_repair_id`
+        # can register / detect pcrp truncated-prefix collisions.
         graph_projection, graph_blockers, legacy_maps = _remap_graph(
           topology_snapshot: topology_snapshot,
           canonical_graph: canonical_graph,
           normalized_tolerance: normalized_tolerance,
-          source_projection: source_projection
+          source_projection: source_projection,
+          truncation_context: truncation_context
         )
         blockers.concat(graph_blockers)
 
@@ -1021,7 +1025,8 @@ module SUAnalysis
       # ----- semantic graph remap -----------------------------------------
 
       def _remap_graph(topology_snapshot:, canonical_graph:,
-                       normalized_tolerance:, source_projection:)
+                       normalized_tolerance:, source_projection:,
+                       truncation_context: nil)
         blockers = []
         schema = (topology_snapshot[:schema_version] ||
                   topology_snapshot['schema_version']).to_s
@@ -1246,12 +1251,15 @@ module SUAnalysis
                   unresolved_flags: unresolved,
                   truncation_context: truncation_context
                 )
-                # FR-04: nil return from _semantic_repair_id
-                # signals a pcrp truncated-prefix collision
-                # ambiguity.
+                # R2-01: nil return from _semantic_repair_id
+                # signals a pcrp truncated-prefix collision.
+                # Per dispatch R2-01: collision blocker MUST
+                # use the normal semantic-ID truncation collision
+                # family (`semantic_id_truncation_collision:repair`),
+                # NOT `semantic_repair_ambiguity`.
                 if semantic_repair_id.nil?
-                  blockers << REASON_SEMANTIC_REPAIR_AMBIGUITY +
-                                  ':pcrp_truncation_collision'
+                  blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                                  ':repair'
                   # continue to surface as many collisions as
                   # possible, but BLOCK at the end
                 end
@@ -1549,8 +1557,36 @@ module SUAnalysis
           nh = ch.is_a?(Hash) ? ch : (ch.respond_to?(:to_h) ? ch.to_h : {})
           legacy_node_ids = Array(nh['node_ids'] || nh[:node_ids]).map(&:to_s)
           legacy_edge_ids = Array(nh['edge_ids'] || nh[:edge_ids]).map(&:to_s)
-          remap_nodes = _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
-          remap_edges = _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+          # R2-03: do NOT silently fall back to the raw legacy
+          # id when lookup fails. Return [resolved, missing]
+          # so the caller can BLOCK on unresolved legacy refs.
+          remap_nodes, missing_nodes =
+            _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
+          remap_edges, missing_edges =
+            _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+          unless missing_nodes.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':chain_node_unresolved'
+            break
+          end
+          unless missing_edges.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':chain_edge_unresolved'
+            break
+          end
+          # R2-03: structural cardinality. A chain of L edges
+          # MUST have exactly L+1 nodes; an empty chain
+          # (no nodes / no edges) is BLOCKED.
+          if remap_nodes.empty? || remap_edges.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':chain_empty'
+            break
+          end
+          if remap_nodes.length != remap_edges.length + 1
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':chain_node_edge_cardinality'
+            break
+          end
           fwd_seq = _chain_forward_sequence(remap_nodes, remap_edges)
           rev_seq = _chain_reverse_sequence(remap_nodes, remap_edges)
           chosen = (_encode_normalized(fwd_seq) <=
@@ -1629,8 +1665,34 @@ module SUAnalysis
           lh = lp.is_a?(Hash) ? lp : (lp.respond_to?(:to_h) ? lp.to_h : {})
           legacy_node_ids = Array(lh['node_ids'] || lh[:node_ids]).map(&:to_s)
           legacy_edge_ids = Array(lh['edge_ids'] || lh[:edge_ids]).map(&:to_s)
-          remap_nodes = _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
-          remap_edges = _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+          # R2-03: fail closed if any legacy node/edge ref
+          # cannot resolve through the supplied maps.
+          remap_nodes, missing_nodes =
+            _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
+          remap_edges, missing_edges =
+            _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+          unless missing_nodes.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':loop_node_unresolved'
+            break
+          end
+          unless missing_edges.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':loop_edge_unresolved'
+            break
+          end
+          # R2-03: structural cardinality. A valid loop has
+          # node_count == edge_count and non-empty.
+          if remap_nodes.empty? || remap_edges.empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':loop_empty'
+            break
+          end
+          if remap_nodes.length != remap_edges.length
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':loop_node_edge_cardinality'
+            break
+          end
           rotations = _loop_canonical_representations(remap_nodes, remap_edges)
                     chosen = rotations.min_by do |s|
             _encode_normalized(s)
@@ -1690,7 +1752,15 @@ module SUAnalysis
           end
           loop_full_by_pid[pid] = lp['full_digest']
         end
-        loop_records.each { |lp| lp.delete('full_digest') }
+        loop_records.each do |lp|
+          # R2-03: legacy_id is a transient addressing ID and
+          # MUST be removed from the published semantic loop
+          # record. The published semantic content must NOT
+          # carry any chain_id / loop_id / region_id /
+          # canonical_* legacy IDs.
+          lp.delete('full_digest')
+          lp.delete('legacy_id')
+        end
 
         # ----- Regions (B1-SR-08) --------------------------------------
         regions_in = structure_result[:regions] || structure_result['regions'] || []
@@ -1703,10 +1773,22 @@ module SUAnalysis
           rh = r.is_a?(Hash) ? r : (r.respond_to?(:to_h) ? r.to_h : {})
           outer = rh['outer_loop_id'] || rh[:outer_loop_id]
           holes = Array(rh['hole_loop_ids'] || rh[:hole_loop_ids]).map(&:to_s)
+          # R2-03: outer loop ref MUST resolve; nil => BLOCKED.
           outer_semantic = _remap_loop_id(outer, legacy_node_to_pcn,
                                           legacy_edge_to_pce, loops_in, loop_records)
+          if outer_semantic.nil? && !Array(regions_in).empty?
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':region_outer_loop_unresolved'
+            break
+          end
           holes_semantic = holes.map { |h| _remap_loop_id(h, legacy_node_to_pcn,
                                                          legacy_edge_to_pce, loops_in, loop_records) }
+          # R2-03: hole loop refs MUST resolve. nil => BLOCKED.
+          if holes_semantic.any?(&:nil?)
+            blockers << REASON_SEMANTIC_ID_TRUNCATION_COLLISION +
+                            ':region_hole_loop_unresolved'
+            break
+          end
           holes_semantic = holes_semantic.compact.uniq.sort
           record_without_id = {
             'outer_loop_id'   => outer_semantic,
@@ -1783,11 +1865,38 @@ module SUAnalysis
       end
 
       def _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
-        legacy_node_ids.map { |id| legacy_node_to_pcn[id] || id }
+        # R2-03: return [resolved_ids, missing_ids]. The
+        # caller must fail closed when missing_ids is
+        # non-empty. DO NOT silently fall back to the raw
+        # legacy id.
+        resolved = []
+        missing = []
+        legacy_node_ids.each do |id|
+          mapped = legacy_node_to_pcn[id]
+          if mapped.nil?
+            missing << id
+            resolved << nil
+          else
+            resolved << mapped
+          end
+        end
+        [resolved, missing]
       end
 
       def _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
-        legacy_edge_ids.map { |id| legacy_edge_to_pce[id] || id }
+        # R2-03: return [resolved_ids, missing_ids].
+        resolved = []
+        missing = []
+        legacy_edge_ids.each do |id|
+          mapped = legacy_edge_to_pce[id]
+          if mapped.nil?
+            missing << id
+            resolved << nil
+          else
+            resolved << mapped
+          end
+        end
+        [resolved, missing]
       end
 
       # Forward chain sequence:
@@ -1889,8 +1998,16 @@ module SUAnalysis
                 (legacy_loop.respond_to?(:to_h) ? legacy_loop.to_h : {})
         legacy_node_ids = Array(lh['node_ids'] || lh[:node_ids]).map(&:to_s)
         legacy_edge_ids = Array(lh['edge_ids'] || lh[:edge_ids]).map(&:to_s)
-        remap_nodes = _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
-        remap_edges = _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+        # R2-03: fail closed if any legacy node/edge ref
+        # cannot resolve. The returned resolved arrays may
+        # contain nils; the caller checks for that.
+        remap_nodes, _missing_nodes =
+          _remap_chain_nodes(legacy_node_ids, legacy_node_to_pcn)
+        remap_edges, _missing_edges =
+          _remap_chain_edges(legacy_edge_ids, legacy_edge_to_pce)
+        if remap_nodes.any?(&:nil?) || remap_edges.any?(&:nil?)
+          return nil
+        end
         rotations = _loop_canonical_representations(remap_nodes, remap_edges)
         chosen = rotations.min_by do |s|
           _encode_normalized(s)
