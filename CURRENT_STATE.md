@@ -1,25 +1,354 @@
-## V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION — 2026-09-14 (THIS UPDATE)
+## V1.9B1 B1.2–B1.4 SOURCE REVIEW CORRECTION �?2026-09-14 (THIS UPDATE)
+
+Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 source review
+correction dispatch EXECUTION on assigned `dev/v1.9`
+per `Prompt/AIPM_V1_9B1_B1_2_B1_4_SOURCE_REVIEW_CORRECTION_2026-09-14.md`
++ Blueprint v1.3 + Codex PASS recheck). This packet
+addresses exactly the 12 BLOCKs from the correction
+file:
+
+- **B1-SR-01** �?`content_digest` and `build_evidence_digest`
+  publish FULL 64-hex SHA-256; `dataset_id =
+  "pcd-" + content_digest[0,20]`; validation binds the
+  SAME full public digests.
+- **B1-SR-02** �?Publish `source_content_digest` and
+  `execution_context_digest` (full 64-hex); Validator
+  recomputes + verifies both.
+- **B1-SR-03** �?Full v1.3 cross-input coherence matrix:
+  graph/structure/source schema binding, exact topology
+  endpoint equality, topology canonical-node membership
+  equality per graph node, `membership_count` +
+  `resolved_clique` agreement, epsilon equality,
+  `tolerance_digest` recompute, `execution_config_digest`
+  check, workflow digest binding.
+- **B1-SR-04** �?Incomplete PID coherence includes kind,
+  structural_depth, persistent_id_path, instance_path,
+  entity_id, persistent_id, layer_name. Nested
+  structural_depth > 0 requires non-empty valid UTF-8
+  instance_path (missing/ambiguous =>
+  `ambiguous_incomplete_occurrence`).
+- **B1-SR-05** �?Stable source occurrence resolver is
+  instance-bound (no module-global memoization across
+  builds).
+- **B1-SR-06** �?`endpoint_keys` and all legacy/transient
+  addressing IDs stay OUT of semantic content; semantic
+  repair IDs use only stable repair facts/stable source
+  refs; legacy repair/action/proposal IDs are build
+  evidence only.
+- **B1-SR-07** �?Node refinement uses full SHA-256 labels
+  throughout; iterates until stable OR `node_count`
+  rounds; final `pcn-` id is `pcn-` + `first20(final full
+  label)`, no extra rehash.
+- **B1-SR-08** �?Chain aligned forward/aligned reverse
+  traversal; loop exactly `2 * N` node-starting
+  representations (N forward + N reverse orientations);
+  semantic ID ambiguity BLOCKED; truncated prefix
+  collision maps for all `pcn / pce / pch / pcl / pcr /
+  pcrp`; injectable digest seam to force prefix
+  collisions in tests.
+- **B1-SR-09** �?`dataset_id_truncation_collision` via a
+  per-build context map (dataset_id -> full digest +
+  semantic record).
+- **B1-SR-10** �?Workspace/planar/gap/structure each
+  subhash REQUIRED; `computed` is an explicit Boolean
+  coherent with state; missing/malformed/
+  `computed=false`/unknown/contradiction => NOT_READY;
+  production lowercase `invalid_tolerance` /
+  `invalid_input` fail-closed; duplicate `actions` array
+  required + must be Array; each row Hash with required
+  allowlisted status; counts must be non-negative Integer
+  (no `.to_i` coercion from malformed values);
+  `last_action_status` exact allowlist + consistency.
+- **B1-SR-11** �?8 MiB gate measures EXACT final persisted
+  JSON (PASS path byte-identical to measured payload);
+  no `measured_bytes` in persisted payload;
+  `measured_bytes` is out-of-band; exact boundary tests
+  at `8_388_608` PASS and `> 8_388_608` FAIL.
+- **B1-SR-12** �?Strict UTF-8 (rejects valid-but-non-UTF-8
+  encodings including US-ASCII; valid UTF-8 / invalid
+  UTF-8 tests included).
+
+Allowed scope (frozen modules untouched):
+
+- `extension/su_ai_plugin/core/prepared_cad_dataset.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+V1.9B1 B1.2–B1.4 source review correction �?2026-09-14:
+
+- Starting HEAD (before Pi touched the working tree):
+  `23c9cd0e9159c436a0ae7d1f15a4c6705caf71a4`
+  (the previous V1.9B1 B1.2–B1.4 implementation
+  HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 untracked dispatch
+  file (`Prompt/AIPM_V1_9B1_B1_2_B1_4_SOURCE_REVIEW_CORRECTION_2026-09-14.md`),
+  1 untracked directory (`output/`, dev-output only).
+  Working tree otherwise clean.
+- Implementation SHA: produced by this packet (see
+  final stable commit below).
+- Final HEAD on `dev/v1.9`: `48a3ac2820008477b8a87eb82aa209666c6824a6`
+  (commit
+  `fix(v1.9b1-b1-sr-correction): B1.2-B1.4 source review correction (12 BLOCKs)`).
+- Push: `git push origin dev/v1.9` succeeded
+  (`23c9cd0..48a3ac2  dev/v1.9 -> dev/v1.9`).
+
+Validation:
+
+- `ruby -c` on the three B1 production files:
+  **Syntax OK** (all three).
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **66 / 66 PASS, 0 fail, 0 error**.
+  Coverage:
+  - identity / canonical bytes (B1-SR-01 + 12): full
+    digests + `pcd-` prefix + strict UTF-8;
+  - source / execution normalization (B1-SR-02 / 06):
+    source/execution content digests published,
+    source_edge reorder stable, no edge_length_sum,
+    Symbol/String tolerance normalization,
+    unknown/missing tolerance key BLOCKED,
+    session override collision / unsupported type /
+    nested PID instance_path BLOCKED;
+  - coherence (B1-SR-03 §1.1�?.5): topology schema /
+    endpoint set / per-node membership equality /
+    membership_count / resolved_clique / epsilon /
+    tolerance_digest / execution_config_digest /
+    workflow digest;
+  - semantic ID remap (B1-SR-06 / 07 / 08):
+    endpoint_keys OUT of semantic content,
+    perturb legacy IDs => same content,
+    chain forward / aligned reverse canonical,
+    loop `2*N` representations;
+  - readiness (B1-SR-10): every explicit state,
+    subhash REQUIRED, `computed` Boolean,
+    lowercase `invalid_tolerance` / `invalid_input`
+    fail-closed, duplicate actions Array +
+    non-negative Integer counts + last-action-status
+    allowlist/consistency;
+  - persistence envelope (B1-SR-11): 8 MiB exact
+    boundary PASS/FAIL, PASS path byte-identical to
+    measured;
+  - truncation context (B1-SR-09): same truncated
+    prefix + different full digest => BLOCKED via
+    injectable digest seam;
+  - current issue projection (only the 3 allowed
+    secondary source warnings survive);
+  - safety (no input mutation, no Sketchup::
+    dependency, JSON-safe payload);
+  - chain reverse traversal aligned.
+
+Full synthetic Ruby suite
+(`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1300 tests, 1291 pass, 5 fail, 4 error.
+```
+
+This packet added the +18 net new B1 tests
+(48 �?66) all passing.
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via `git diff --name-only`
+filter + isolated re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS
+    FOLLOW-UP)`: `.recovery-banner[hidden]` rule
+    ordering.
+  - `html_render (V1.9A FINAL P1-A)` × 3:
+    `app.js payload.groups` current-issue-list /
+    legacy surface / badge-count textual source
+    guards on already-source-reviewed PASS items.
+- 1 ERROR on `v19a_presenter (FINAL P1-C)`:
+  `app.js` uses `issue_summary.cta_callback`
+  explicitly (textual guard).
+- 1 FAIL on `capability.HtmlDialog`: outside SU
+  returns false (R002 + S2-BLOCK-006) �?  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?  pre-existing presenter test guard (`开放链`
+  chip-list).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing in the previous V1.9B1 packet.
+
+`git diff --check`: clean. LF line endings on the
+three new production files + the test file.
+
+Packaged file SHAs (vs the previous V1.9B1
+B1.2–B1.4 implementation packet):
+
+- `su_ai_plugin/core/prepared_cad_dataset.rb`
+  SHA-256: recomputed (**CHANGED** �?B1-SR-01 +
+  B1-SR-12 + B1-SR-09: full public digests +
+  `pcd-` prefix + strict UTF-8 + UTF-8
+  normalization entry point for SHA-256 hex
+  digests).
+- `su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  SHA-256: recomputed (**CHANGED** �?B1-SR-02 /
+  B1-SR-03 / B1-SR-04 / B1-SR-05 / B1-SR-06 /
+  B1-SR-07 / B1-SR-08 / B1-SR-09 / B1-SR-10 /
+  B1-SR-12: source/execution content digests,
+  full v1.3 cross-input coherence matrix,
+  incomplete PID coherence, instance-bound stable
+  source occurrence resolver, legacy IDs OUT of
+  semantic content, full-SHA-256 node labels with
+  `node_count` round cap, aligned chain reverse
+  traversal, `2*N` loop representations, truncated
+  prefix collision maps + injectable digest seam,
+  UTF-8 normalization at every IdentityBytes
+  call site, fail-closed validation substate
+  classification).
+- `su_ai_plugin/core/prepared_cad_dataset_validator.rb`
+  SHA-256: recomputed (**CHANGED** �?B1-SR-01 /
+  B1-SR-02 / B1-SR-10 / B1-SR-11: full public
+  digests (full hex), source_content_digest +
+  execution_context_digest recompute + verify,
+  fail-closed substate classification for
+  workspace/planar/gap/structure + production
+  lowercase invalid_tolerance/invalid_input +
+  duplicate actions Array + non-negative Integer
+  counts + last-action-status consistency + missing
+  subhash + computed=false, byte-identical 8 MiB
+  gate with EXACT final payload persistence and
+  out-of-band `measured_bytes`).
+- All other `su_ai_plugin/core/*.rb` files,
+  `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`,
+  `html/index.html`, `html/app.js`,
+  `html/style.css`, icons: **UNCHANGED** (verified
+  via `git diff --name-only HEAD~1..HEAD` filter).
+- `dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+  packet. The previous V1.9B1 packet's RBZ is
+  gitignored and is NOT a tracked production
+  delta. No RBZ release decision was made.
+
+Frozen V1.5–V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+
+`dist/SU-AI-Plugin.rbz` was NOT re-zipped in this
+packet. The RBZ smoke test
+(`tests/test_rbz_smoke.rb`) extracts the
+gitignored RBZ into a temp dir and loads the
+extracted proposer. Because the RBZ was NOT
+rebuilt, the smoke test still loads the PREVIOUS
+RBZ's proposer (pre-correction). The previous
+packet's RBZ is gitignored and is NOT a tracked
+production delta. No RBZ release decision was
+made.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search
+was performed. The vendored Ruby 2.7.8 runtime
+at `.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch §15: this report does NOT claim
+Ruby 2.2 runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; no Hash#compact, no Array#sum,
+no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no
+pattern matching, no then / yield_self), but the
+literal Ruby 2.2 contract is not runtime-
+validated in this packet.
+
+New review artifact produced by this packet:
+
+- `Review/CURRENT_PI_REPORT.md` (the V1.9B1
+  B1.2–B1.4 SOURCE REVIEW CORRECTION section
+  is prepended above the existing V1.9B1
+  B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION
+  section).
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CORRECTED
+V1_9B1_B1_3                          = CORRECTED
+V1_9B1_B1_4                          = CORRECTED
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this
+   packet's 12 BLOCK corrections on `dev/v1.9`.
+2. Narrow Codex xHigh recheck on the same
+   narrow seam that originally surfaced the 12
+   BLOCKs.
+3. Only then may AIPM authorize B1.5 + V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) �?per dispatch: this packet addresses
+the B1 source review correction; each of the 12
+BLOCKs is narrow within its respective seam.
+None reopens any already-PASS frozen V1.5–V1.9A
+surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the corrected B1.2–B1.4 implementation + tests +
+commit (`48a3ac2`) + push
+(`23c9cd0..48a3ac2  dev/v1.9 -> dev/v1.9`) for
+this packet and now returns control to AIPM
+for direct source review of the 12 BLOCK
+corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
+## V1.9B1 B1.2–B1.4 PURE DATASET CONTRACT IMPLEMENTATION �?2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 dispatch EXECUTION
 on assigned `dev/v1.9` per
 `Prompt/CURRENT_PI_DISPATCH.md` + Blueprint v1.3 + Codex
 PASS recheck). This packet implements ONLY:
 
-- **B1.2** — `SUAnalysis::Core::PreparedCadDataset`
+- **B1.2** �?`SUAnalysis::Core::PreparedCadDataset`
   immutable value object: schema_version + dataset_id +
   content_digest + content + build_evidence_digest +
   build_evidence + validation. Canonical identity byte
   encoder (type-disjoint grammar per v1.3 §3.1).
   Deterministic persisted JSON serializer (separate
   contract from identity bytes).
-- **B1.3** — pure `PreparedCadDatasetBuilder` with
+- **B1.3** �?pure `PreparedCadDatasetBuilder` with
   explicit-input coherence preflight, semantic source
   projection (`pcd-source-projection.v1`), semantic
   execution projection (fixed v1.2 tolerance key set),
   semantic geometry ID remap (`pcn` / `pce` / `pch` /
   `pcl` / `pcr` / `pcrp`) with truncated-ID collision
   hardening + ambiguity detection.
-- **B1.4** — pure `PreparedCadDatasetValidator` /
+- **B1.4** �?pure `PreparedCadDatasetValidator` /
   finalizer with NOT_READY / READY_WITH_WARNINGS / READY
   readiness matrix, JSON-safe / UTF-8 / host-object /
   Symbol-key leakage scan, current workflow readiness
@@ -39,7 +368,7 @@ method applies to FUTURE B1.5 only and is NOT
 authorized in this dispatch). No persistence. No UI.
 No RBZ release. No V1.9B2 / V2 / MCP / LLM / Agent.
 
-V1.9B1 B1.2–B1.4 — 2026-09-14:
+V1.9B1 B1.2–B1.4 �?2026-09-14:
 
 - Starting HEAD (before Pi touched the working tree):
   `f3094b275860b0194355ce46343f6e857d2ac50d`
@@ -89,7 +418,7 @@ Validation:
   (html_render CSS / app.js textual guards,
   capability.HtmlDialog / V14 production call chain
   / V17-L1 host_state_changed / v19a_presenter
-  FINAL P1-B — all FakeUI / test-env limitations
+  FINAL P1-B �?all FakeUI / test-env limitations
   or pre-existing PASS-items that have textual
   guards). NO new failure was introduced by this
   packet (verified via isolated re-run before vs
@@ -202,7 +531,7 @@ Next expected action:
 4. Only then may AIPM authorize B1.5 + V1.9B2.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch §"Codex review": the B1
+NARROW) �?per dispatch §"Codex review": the B1
 modules own a new persistent identity contract
 (`pcd-semantic-identity.v1`,
 `pcd-build-evidence-identity.v1`), a new identity
@@ -225,7 +554,7 @@ V1_9B2 = NOT_STARTED.
 
 ---
 
-## V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION — 2026-09-10 (PREVIOUS UPDATE)
+## V1.9B0 PERSISTENCE PROBE FINAL NARROW RESIDUAL CORRECTION �?2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9B0 AIPM final narrow residual
 correction per
@@ -234,7 +563,7 @@ Per dispatch, this packet fixes ONE narrow residual (B0-R01)
 surfaced by AIPM direct source review of the previous V1.9B0
 source-review correction packet:
 
-- **B0-R01** — Correct SketchUp operation signature + abort
+- **B0-R01** �?Correct SketchUp operation signature + abort
   only if opened. The probe and FakeModel previously described
   `start_operation` as a 3-arg `(name, disable_ui, transparent)`
   API; the real SketchUp Model API is a 4-arg
@@ -263,7 +592,7 @@ semantics) are PRESERVED unchanged.
 Added 7 new host-free B0-R01 checks to the FakeModel regression
 suite:
 
-- B0-R01 call-shape: actual call is `(String, true)` — exactly
+- B0-R01 call-shape: actual call is `(String, true)` �?exactly
   2 positional args (B0-R01 preferred form).
 - B0-R01 no-String-4th: start_operation was NOT called with a
   transparent=true String as the 4th arg.
@@ -308,7 +637,7 @@ Owner real-host B0 evidence.
 
 ---
 
-## V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION — 2026-09-10 (PREVIOUS UPDATE)
+## V1.9B0 PERSISTENCE PROBE SOURCE REVIEW CORRECTION �?2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9B0 AIPM direct source review
 correction per
@@ -318,7 +647,7 @@ BLOCKs in the previous V1.9B0 probe
 (`Probe/V1_9B0/prepared_dataset_persistence_probe.rb` +
 `_validation_runner.rb` + `README.md`):
 
-- **B0-01** — SketchUp transaction API contract:
+- **B0-01** �?SketchUp transaction API contract:
   `start_operation` now uses normal non-transparent
   semantics with exactly three positional arguments
   (`start_operation(name, true, false)`); no 4th String
@@ -329,13 +658,13 @@ BLOCKs in the previous V1.9B0 probe
   transaction before returning
   `{ ok: false, reason: 'dictionary_create_failed' }`
   to prevent a host transaction leak.
-- **B0-02** — `run_immediate_readback_test` now calls
+- **B0-02** �?`run_immediate_readback_test` now calls
   `read_probe(model)` directly for the raw payload
   string equality (the previous code compared against
   `verify_probe[:payload]` which is always nil) and
   `verify_probe(model)` separately for JSON / digest
   evidence. Success requires `exact_string_equal == true`.
-- **B0-03** — `run_size_ladder` now proves exact STRING
+- **B0-03** �?`run_size_ladder` now proves exact STRING
   equality (`raw_read[:payload] == payload`) per level;
   the previous byte-count-only check is retained as a
   separate diagnostic field (`exact_byte_count_equal`).
@@ -383,7 +712,7 @@ persistence route from Owner real-host B0 evidence.
 
 ---
 
-## V1.9A OWNER ACCEPTED CLOSURE — 2026-09-10 (PREVIOUS UPDATE)
+## V1.9A OWNER ACCEPTED CLOSURE �?2026-09-10 (PREVIOUS UPDATE)
 
 Updated: 2026-09-10 (V1.9A Owner Accepted Closure docs
 per `Prompt/AIPM_V1_9A_OWNER_ACCEPTED_CLOSURE_2026-09-10.md`).
@@ -480,7 +809,7 @@ V1_9B1                      = NOT_STARTED
 
 Next authorized stage: **V1.9B0 ONLY**
 (PreparedCadDataset Persistence Feasibility Probe
-— probe only, NO production PreparedCadDataset
+�?probe only, NO production PreparedCadDataset
 implementation, NO `extension/` change, NO
 production RBZ rebuild). The probe lives under
 `Probe/V1_9B0/` and uses SketchUp Model
@@ -498,7 +827,7 @@ is the V1.9B0 dispatch
 
 ---
 
-## V1.9A RFR CODEX NARROW RECHECK CORRECTION — CXR-01 / CXR-02 (PREVIOUS UPDATE — RETAINED AS HISTORICAL EVIDENCE)
+## V1.9A RFR CODEX NARROW RECHECK CORRECTION �?CXR-01 / CXR-02 (PREVIOUS UPDATE �?RETAINED AS HISTORICAL EVIDENCE)
 
 Updated: 2026-09-10 (V1.9A RFR CODEX NARROW RECHECK
 CORRECTION dispatch EXECUTION on assigned `dev/v1.9`
@@ -509,7 +838,7 @@ TWO narrow residuals found by Codex xHigh final
 narrow recheck on the V1.9A OWNER REFRESH
 STALE-PLANAR BLOCK FIX packet:
 
-  - **CXR-01** — The proposer's first-pass gate MUST
+  - **CXR-01** �?The proposer's first-pass gate MUST
     distinguish **live capability absent** from
     **live capability present but unreadable**.
     Before CXR-01 the first pass hardcoded
@@ -526,7 +855,7 @@ STALE-PLANAR BLOCK FIX packet:
     Live authority remains fail-closed when it
     exists but the read is unreadable (nil / raise /
     malformed / non-Numeric / NaN / Infinity).
-  - **CXR-02** — Add proposer-level behavioral
+  - **CXR-02** �?Add proposer-level behavioral
     wrong-length live-coordinate regressions for
     both 2-element and 4-element live Arrays. The
     existing RFR-04 matrix tests nil / raise /
@@ -536,15 +865,14 @@ STALE-PLANAR BLOCK FIX packet:
 
 The ONLY production source file touched is
 `extension/su_ai_plugin/core/planar_normalization_proposer.rb`
-(per dispatch's allowed production scope —
-`planar_normalization_executor.rb`,
+(per dispatch's allowed production scope �?`planar_normalization_executor.rb`,
 `working_mode_runner.rb`,
 `cad_prep_workflow_orchestrator.rb`,
 `endpoint_record.rb`, V1.7 / V1.8 algorithm files,
 Presenter / app.js / CSS / toolbar, V1.9B remain
 FROZEN.
 
-V1.9A RFR CODEX NARROW RECHECK CORRECTION — 2026-09-10.
+V1.9A RFR CODEX NARROW RECHECK CORRECTION �?2026-09-10.
 
 - Starting HEAD (before Pi touched the working tree):
   `15e00ee26aa50e257806cc6ff25284ed6f285e46`
@@ -566,7 +894,7 @@ V1.9A RFR CODEX NARROW RECHECK CORRECTION — 2026-09-10.
   `scripts/build_rbz.rb`. The RBZ smoke test
   (`tests/test_rbz_smoke.rb`) extracts the rebuilt
   RBZ into a temp dir and LOADS the extracted
-  proposer — so the rebuilt RBZ is what subsequent
+  proposer �?so the rebuilt RBZ is what subsequent
   tests exercise. A stale dist RBZ would mask the
   fix (the extracted OLD proposer would resurrect
   cached coordinates AND would resurrect the
@@ -582,7 +910,7 @@ V1.9A RFR CODEX NARROW RECHECK CORRECTION — 2026-09-10.
 Packaged file SHAs (vs the previous V1.9A OWNER
 REFRESH STALE-PLANAR BLOCK FIX packet):
   - `su_ai_plugin/core/planar_normalization_proposer.rb`
-    SHA-256: recomputed (**CHANGED** — CXR-01 fix:
+    SHA-256: recomputed (**CHANGED** �?CXR-01 fix:
     first-pass `_live_position_for` now uses
     `fail_closed: has_live_reader` instead of hardcoded
     `fail_closed: true`, AND passes the cached
@@ -661,15 +989,14 @@ Validation:
 - V14 fingerprint focused: 22 / 22 PASS (unchanged).
 - LEGACY-COMPAT: 4 / 4 PASS (unchanged).
 - RBZ smoke: 7 / 8 PASS + 1 pre-existing ERROR
-  (`install smoke — extracted entry-point boots
+  (`install smoke �?extracted entry-point boots
   through FakeUI; menu registered;
-  on_analyze_selection no-op fallback` —
-  `NoMethodError: undefined method 'file_loaded?' for
+  on_analyze_selection no-op fallback` �?  `NoMethodError: undefined method 'file_loaded?' for
   main:Object` from a pre-existing FakeUI stub
   limitation, unrelated to this packet).
 
 Full synthetic Ruby suite (this packet's run, the
-NORMAL runner — not the prior packet's custom
+NORMAL runner �?not the prior packet's custom
 RBZ-excluding synthetic runner):
 
 ```
@@ -686,18 +1013,18 @@ after with `git stash`):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
   `html_render (V1.9A FINAL P1-C)` × 1 +
   `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
-  — CSS / `app.js` textual source-level guards on
+  �?CSS / `app.js` textual source-level guards on
   already-source-reviewed PASS items. CSS / `app.js`
   are UNCHANGED in this packet.
 - 1 FAIL on `capability.HtmlDialog` (outside SU
-  returns false R002 + S2-BLOCK-006) — pre-existing
+  returns false R002 + S2-BLOCK-006) �?pre-existing
   test-environment / FakeUI limitation.
 - 1 ERROR on `V14 production call chain`
   (`NoMethodError: undefined method 'call' for
-  nil:NilClass`) — pre-existing FakeUI limitation.
-- 1 ERROR on `V17-L1 host_state_changed` — pre-existing
+  nil:NilClass`) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing
   test-environment / FakeUI limitation.
-- 1 ERROR on `v19a_presenter (FINAL P1-B)` — pre-existing
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing
   presenter test guard (`开放链` chip-list); not
   addressed by this packet's CXR scope.
 
@@ -722,7 +1049,7 @@ LF line endings are consistent on all modified files.
 
 Corrections / additions by this packet:
 
-- **CXR-01 — First-pass live-capability vs cached-
+- **CXR-01 �?First-pass live-capability vs cached-
   fallback semantic split**:
   `extension/su_ai_plugin/core/planar_normalization_proposer.rb`
   first-pass loop now resolves the cached endpoint
@@ -748,7 +1075,7 @@ Corrections / additions by this packet:
   resurrect cached). Cached fallback is ONLY used
   when the adapter genuinely lacks `vertex_position`.
   The proposer never mutates `geometry_summary`.
-- **CXR-02 — Wrong-length Array proposer-level
+- **CXR-02 �?Wrong-length Array proposer-level
   regressions**:
   `tests/test_v19a_final_p0_live_coordinates.rb`
   appended §CXR-02a (length-2 live Array) +
@@ -824,7 +1151,7 @@ Next expected action:
 4. Only then may AIPM close V1.9A.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch: CXR-01 touches the
+NARROW) �?per dispatch: CXR-01 touches the
 first-pass live-coordinate semantic split;
 CXR-02 adds new proposer-level wrong-length Array
 regressions. Each is small and narrow; none reopens
@@ -841,7 +1168,7 @@ CODEX_NARROW_RECHECK = REQUIRED.
 OWNER_SU2020 = RECHECK_BLOCKED.
 V1.9B = NOT STARTED.
 
-## V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — RFR-01..RFR-05 (PREVIOUS UPDATE)
+## V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX �?RFR-01..RFR-05 (PREVIOUS UPDATE)
 
 Updated: 2026-09-09 (V1.9A OWNER REFRESH STALE-PLANAR
 BLOCK FIX dispatch EXECUTION on assigned `dev/v1.9` per
@@ -852,7 +1179,7 @@ exactly ONE narrow production seam surfaced by real
 SketchUp 2020 Owner testing.
 
   - **Root cause (Owner evidence)**: real SU2020 Owner
-    flow — start -> apply Z (audit `applied`,
+    flow �?start -> apply Z (audit `applied`,
     `logical_applied_count = 1`,
     `physical_applied_count = 2`, `APPLIED`) -> click
     `重新检测` (`refresh_cad_prep`) -> Planar
@@ -917,7 +1244,7 @@ presenter, orchestrator, `working_mode_runner.rb`,
 V1.7 / V1.8 algorithms, app.js / CSS / toolbar, V1.9B
 remain FROZEN.
 
-V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — 2026-09-09.
+V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX �?2026-09-09.
 
 - Starting HEAD: `e3d6f3b...` (the V1.9A P0 FINAL
   NARROW RESIDUAL CORRECTION merge commit on `dev/v1.9`).
@@ -940,7 +1267,7 @@ V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — 2026-09-09.
   corrected source via `scripts/build_rbz.rb`. The RBZ
   smoke test (`tests/test_rbz_smoke.rb`) extracts the
   rebuilt RBZ into a temp dir and LOADS the extracted
-  proposer — so the rebuilt RBZ is what subsequent
+  proposer �?so the rebuilt RBZ is what subsequent
   tests exercise. A stale dist RBZ would mask the fix
   (the extracted OLD proposer would resurrect cached
   coordinates). Hence: this packet MUST rebuild the
@@ -955,7 +1282,7 @@ V1.9A OWNER REFRESH STALE-PLANAR BLOCK FIX — 2026-09-09.
 Packaged file SHAs (vs the previous V1.9A P0 FINAL
 NARROW RESIDUAL CORRECTION packet):
   - `su_ai_plugin/core/planar_normalization_proposer.rb`
-    SHA-256: recomputed (**CHANGED** — RFR fix: live
+    SHA-256: recomputed (**CHANGED** �?RFR fix: live
     per-endpoint Vertex positions as the
     current-coordinate authority for all Planar
     clustering + candidate selection; new
@@ -1045,15 +1372,14 @@ Validation:
 - V1.4 fingerprint focused: 22 / 22 PASS (unchanged).
 - LEGACY-COMPAT: 4 / 4 PASS (unchanged).
 - RBZ smoke: 7 / 8 PASS + 1 pre-existing ERROR
-  (`install smoke — extracted entry-point boots
+  (`install smoke �?extracted entry-point boots
   through FakeUI; menu registered;
-  on_analyze_selection no-op fallback` —
-  `NoMethodError: undefined method 'file_loaded?' for
+  on_analyze_selection no-op fallback` �?  `NoMethodError: undefined method 'file_loaded?' for
   main:Object` from a pre-existing FakeUI stub
   limitation, unrelated to this packet).
 
 Full synthetic Ruby suite (this packet's run, the
-NORMAL runner — not the prior packet's custom
+NORMAL runner �?not the prior packet's custom
 RBZ-excluding synthetic runner):
 
 ```
@@ -1067,18 +1393,18 @@ with `git stash`):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
   `html_render (V1.9A FINAL P1-C)` × 1 +
   `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
-  — CSS / `app.js` textual source-level guards on
+  �?CSS / `app.js` textual source-level guards on
   already-source-reviewed PASS items. CSS / `app.js`
   are UNCHANGED in this packet.
 - 1 FAIL on `capability.HtmlDialog` (outside SU
-  returns false R002 + S2-BLOCK-006) — pre-existing
+  returns false R002 + S2-BLOCK-006) �?pre-existing
   test-environment / FakeUI limitation.
 - 1 ERROR on `V14 production call chain`
   (`NoMethodError: undefined method 'call' for
-  nil:NilClass`) — pre-existing FakeUI limitation.
-- 1 ERROR on `V17-L1 host_state_changed` — pre-existing
+  nil:NilClass`) �?pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` �?pre-existing
   test-environment / FakeUI limitation.
-- 1 ERROR on `v19a_presenter (FINAL P1-B)` — pre-existing
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` �?pre-existing
   presenter test guard (`开放链` chip-list); not
   addressed by RFR scope.
 
@@ -1125,7 +1451,7 @@ Corrections / additions by this packet:
 - **RBZ rebuild**: `dist/SU-AI-Plugin.rbz` rebuilt
   via `scripts/build_rbz.rb` from the corrected
   source. The RBZ smoke test extracts the rebuilt
-  RBZ and loads the extracted proposer — so the
+  RBZ and loads the extracted proposer �?so the
   extracted proposer is the FIXED proposer
   (verified via `method(:propose).source_location`
   inside RFR-01 prints the dev-tree path, not the
@@ -1176,7 +1502,7 @@ Next expected action:
    fail-closed seam.
 3. Owner real-SU2020 re-verification of the §12
    fixture (Planar + Gap detected -> click Apply Z
-   -> click 重新检测 -> MUST NOT resurrect
+   -> click 重新检�?-> MUST NOT resurrect
    READY_TO_NORMALIZE -> Gap auto-unlocks -> Apply
    Gap -> Structure auto-recomputes -> workspace =
    ready -> open_chain_count = 0, closed_loop_count =
@@ -1185,7 +1511,7 @@ Next expected action:
 4. Only then may AIPM close V1.9A.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch §"Frozen / forbidden": the
+NARROW) �?per dispatch §"Frozen / forbidden": the
 fix touches the proposer live-coordinate authority
 seam (the regression the Owner actually hit). The
 fix is small and narrow; it does NOT reopen already-
@@ -1202,7 +1528,7 @@ CODEX_NARROW_RECHECK = NOT YET.
 OWNER_SU2020 = BLOCKED_BY_REFRESH_FIX.
 V1.9B = NOT STARTED.
 
-## V1.9A P0 FINAL NARROW RESIDUAL CORRECTION — FINAL-R2-01 + FINAL-R5-01 (THIS UPDATE)
+## V1.9A P0 FINAL NARROW RESIDUAL CORRECTION �?FINAL-R2-01 + FINAL-R5-01 (THIS UPDATE)
 
 Updated: 2026-09-09 (V1.9A P0 FINAL NARROW RESIDUAL
 CORRECTION dispatch EXECUTION on assigned `dev/v1.9` per
@@ -1213,7 +1539,7 @@ exactly TWO narrow residuals found by AIPM source
 recheck of the prior V1.9A P0 NARROW RECHECK FIX
 packet:
 
-  - **FINAL-R2-01** — Executor post-validation
+  - **FINAL-R2-01** �?Executor post-validation
     `.to_f` exception-leak path. The prior R2 packet
     wrapped `adapter.vertex_position(h)` in
     `begin/rescue StandardError` but the downstream
@@ -1239,7 +1565,7 @@ packet:
     zero logical / physical / legacy applied success.
     The original exception class is preserved verbatim
     in the audit row failure reason.
-  - **FINAL-R5-01** — Orchestrated Owner E2E physical-B
+  - **FINAL-R5-01** �?Orchestrated Owner E2E physical-B
     identity + Z fan-out proof. The prior R5 test
     correctly exercised the orchestrator chain but
     commented the assertions. The test was EXTENDED
@@ -1265,7 +1591,7 @@ The ONLY production source file touched is
 WorkingModeRunner, V1.7 / V1.8 algorithms, app.js / CSS
 / toolbar, V1.9B remain FROZEN.
 
-V1.9A P0 FINAL NARROW RESIDUAL CORRECTION — 2026-09-09.
+V1.9A P0 FINAL NARROW RESIDUAL CORRECTION �?2026-09-09.
 
 - Starting HEAD: `ff35cfae1962538c29ff48aca4dfd593ee6ddb81`
   (the V1.9A P0 NARROW RECHECK FIX merge commit on
@@ -1289,7 +1615,7 @@ V1.9A P0 FINAL NARROW RESIDUAL CORRECTION — 2026-09-09.
 - Packaged file SHAs (vs the previous V1.9A P0
   NARROW RECHECK FIX packet):
   - `su_ai_plugin/core/planar_normalization_executor.rb`
-    SHA-256: recomputed (**CHANGED** — FINAL-R2-01:
+    SHA-256: recomputed (**CHANGED** �?FINAL-R2-01:
     strict shape ordering `length == 3` -> Numeric ->
     finite BEFORE any `.to_f`; phase-level defensive
     `begin/rescue StandardError` boundary).
@@ -1338,20 +1664,19 @@ Validation:
   - §10.5 MID-MUTATION-FAILURE.
   - §10.6 POSTVALIDATION-FAILURE.
   - **R2 post-position read raises (exception
-    suppressed)** — R2 exception-safe abort.
+    suppressed)** �?R2 exception-safe abort.
   - **R2 post-position returns malformed non-Array
     (Hash)**.
   - **R2 post-position returns Float::NAN**.
   - **FINAL-R2-01 post-position `[0.0, 0.0, Object.new]`
-    -> no exception escapes** — the FINAL-R2-01 fix
+    -> no exception escapes** �?the FINAL-R2-01 fix
     proof: validation detects non-Numeric BEFORE
     `.to_f`.
   - **FINAL-R2-01 post-position `[0.0, 0.0, 0.0, 123.0]`
-    -> malformed** — FINAL-R2-01 exactly-3 shape
+    -> malformed** �?FINAL-R2-01 exactly-3 shape
     constraint.
-  - **FINAL-R2-01 post-position `[0.0, 0.0]`** —
-    length-2 malformed.
-  - **FINAL-R2-01 post-position Hash** — not-Array
+  - **FINAL-R2-01 post-position `[0.0, 0.0]`** �?    length-2 malformed.
+  - **FINAL-R2-01 post-position Hash** �?not-Array
     malformed.
   - **R2 source-level guard** (UPDATED this packet
     to use the new `if post_validation_phase_failed`
@@ -1382,15 +1707,14 @@ Validation:
 - V1.4 fingerprint focused: 22 / 22 PASS (unchanged).
 - LEGACY-COMPAT: 4 / 4 PASS (unchanged).
 - RBZ smoke: 7 / 8 PASS + 1 pre-existing FakeUI ERROR
-  (`install smoke — extracted entry-point boots
+  (`install smoke �?extracted entry-point boots
   through FakeUI; menu registered;
-  on_analyze_selection no-op fallback` —
-  `NoMethodError: undefined method 'file_loaded?' for
+  on_analyze_selection no-op fallback` �?  `NoMethodError: undefined method 'file_loaded?' for
   main:Object` from a pre-existing FakeUI stub
   limitation, unrelated to this packet).
 
 Full synthetic Ruby suite (this packet's run, the
-NORMAL runner — not the prior packet's custom
+NORMAL runner �?not the prior packet's custom
 RBZ-excluding synthetic runner):
 
 ```
@@ -1404,16 +1728,15 @@ after):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
   `html_render (V1.9A FINAL P1-C)` × 1 +
   `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)` × 1
-  — CSS / `app.js` textual source-level guards on
+  �?CSS / `app.js` textual source-level guards on
   already-source-reviewed PASS items. CSS is
   UNCHANGED in this packet.
-- 1 FAIL on `v19a_presenter (FINAL P1-B)` —
-  `开放链` chip-list guard (pre-existing presenter
+- 1 FAIL on `v19a_presenter (FINAL P1-B)` �?  `开放链` chip-list guard (pre-existing presenter
   test guard, not addressed by R7's
   `嵌套层级` restoration).
 - 3 ERROR on `capability.HtmlDialog` /
   V14 production call chain /
-  V17-L1 host_state_changed — pre-existing
+  V17-L1 host_state_changed �?pre-existing
   test-environment / FakeUI limitations.
 
 Node DOM (`tests/test_html_render_dom.js`):
@@ -1426,7 +1749,7 @@ line endings are consistent on all modified files.
 
 Corrections / additions by this packet:
 
-- **FINAL-R2-01 — Post-read exception-safe abort
+- **FINAL-R2-01 �?Post-read exception-safe abort
   with strict shape ordering**:
   `extension/su_ai_plugin/core/planar_normalization_executor.rb`
   post-validation phase now enforces strict shape
@@ -1446,7 +1769,7 @@ Corrections / additions by this packet:
   operation ownership, tolerances, and proposer
   logic are FROZEN unchanged per dispatch.
 
-- **FINAL-R5-01 — Orchestrated E2E physical-B
+- **FINAL-R5-01 �?Orchestrated E2E physical-B
   identity + Z fan-out proof** (test-only):
   `tests/test_v19a_final_p0_live_coordinates.rb`
   `V19A-P0 (R5)` test EXTENDED immediately after
@@ -1501,7 +1824,7 @@ Next expected action:
 4. Only then may AIPM close V1.9A.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch: FINAL-R2-01 touches the
+NARROW) �?per dispatch: FINAL-R2-01 touches the
 post-validation host-read escape atomicity seam;
 FINAL-R5-01 touches the orchestrated E2E physical-B
 identity seam. Each is small and narrow; none
@@ -1517,9 +1840,9 @@ CODEX_NARROW_RECHECK = NOT YET.
 OWNER_SU2020 = NOT YET.
 V1.9B: NOT STARTED.
 
-## V1.9A P0 NARROW RECHECK FIX — R1–R7 (PREVIOUS UPDATE)
+## V1.9A P0 NARROW RECHECK FIX �?R1–R7 (PREVIOUS UPDATE)
 
-## V1.9A P0 NARROW RECHECK FIX — R1–R7 (PREVIOUS UPDATE)
+## V1.9A P0 NARROW RECHECK FIX �?R1–R7 (PREVIOUS UPDATE)
 
 Updated: 2026-09-08 (V1.9A P0 NARROW RECHECK FIX
 dispatch EXECUTION on assigned `dev/v1.9` per dispatch
@@ -1530,7 +1853,7 @@ dispatch EXECUTION on assigned `dev/v1.9` per dispatch
 Per dispatch + guidance, this packet implements the
 COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
 
-  - **R1** — Executor true preflight before
+  - **R1** �?Executor true preflight before
     mutation. The BLOCK-P0-04 strict preflight
     matrix (13 steps) merged into HEAD at commit
     `ec6ab57` BEFORE this packet began is
@@ -1540,7 +1863,7 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     `begin_operation` + ZERO
     `transform_vertices_by_vectors` calls on any
     preflight failure.
-  - **R2** — Executor postvalidation host-read
+  - **R2** �?Executor postvalidation host-read
     exception-safe abort. The post-read loop is now
     wrapped in `begin/rescue StandardError`; a raised
     read becomes a tagged sentinel
@@ -1550,7 +1873,7 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     escapes with the outer operation open. Non-finite
     post-read values are now also caught by an
     explicit `finite?` check.
-  - **R3** — Endpoint live-read fallback contract
+  - **R3** �?Endpoint live-read fallback contract
     correction. When the caller provides a
     per-endpoint Vertex handle but the adapter is
     nil OR the adapter genuinely lacks
@@ -1559,7 +1882,7 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     Array positions are now fail-closed (previously
     the code accepted `pos.length >= 3` which let
     4-element arrays through silently).
-  - **R4** — Presenter actual V1.8 result shape.
+  - **R4** �?Presenter actual V1.8 result shape.
     `_structure_loop_flags` reads `sr['loops']` FIRST
     (V1.8 production); legacy `sr['closed_loops']`
     remains as defensive fallback. READY structure
@@ -1569,7 +1892,7 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     defensive fallbacks). `_structure_label_for`
     labels the new V1.8 keys with matching Simplified
     Chinese labels.
-  - **R5** — TRUE orchestrated Owner-equivalent E2E
+  - **R5** �?TRUE orchestrated Owner-equivalent E2E
     regression. A new test exercises the full
     orchestrator chain on the Owner fixture
     (`CadPrepWorkflowOrchestrator.start` ->
@@ -1584,7 +1907,7 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     RETAINED for backward compatibility with the
     amendment §10.7 description but is no longer the
     canonical R5 contract.
-  - **R6** — Fresh normal/full-suite + rebuilt RBZ
+  - **R6** �?Fresh normal/full-suite + rebuilt RBZ
     evidence. The
     `dist/SU-AI-Plugin.rbz` is rebuilt from the
     corrected source via
@@ -1592,14 +1915,14 @@ COMPLETE narrow V1.9A P0 R1–R7 recheck fix:
     suite runs via `tests/run_all.rb` (NOT the
     prior packet's custom RBZ-excluding synthetic
     runner). 1215 tests, 1206 pass, 5 fail, 4
-    error — the 5 fail + 4 error are the SAME
+    error �?the 5 fail + 4 error are the SAME
     pre-existing failures from HEAD (CSS source-
     level guards, app.js textual guards, FakeUI
     limitations, V14 / V17 production call chain
     pre-existing failures). NONE introduced by this
     packet (verified by full-suite comparison before
     vs after).
-  - **R7** — Restore `deep_nesting` / `嵌套层级`
+  - **R7** �?Restore `deep_nesting` / `嵌套层级`
     current-attention chip semantics. `嵌套层级`
     is restored to `PROBLEM_METRIC_LABELS` so a
     current `deep_nesting` secondary issue surfaces
@@ -1623,7 +1946,7 @@ change. No V1.9B PreparedCadDataset / persistence
 (R1 consistency check confirmed no mechanically
 missing proposer field).
 
-V1.9A P0 NARROW RECHECK FIX — 2026-09-08.
+V1.9A P0 NARROW RECHECK FIX �?2026-09-08.
 
 - Starting HEAD (before Pi touched the working tree):
   `e03eb66d94953aef533b87eb693f57e68f46f505`
@@ -1651,7 +1974,7 @@ V1.9A P0 NARROW RECHECK FIX — 2026-09-08.
 - Packaged file SHAs (vs the previous V1.9A P0
   SHARED-VERTEX CORRECTION packet):
   - `su_ai_plugin/cad_prep_workflow_presenter.rb`
-    SHA-256: recomputed (**CHANGED** — R4
+    SHA-256: recomputed (**CHANGED** �?R4
     `_structure_loop_flags` prefers `sr['loops']`;
     R4 READY structure card surfaces
     `closed_loop_count` / `region_count` /
@@ -1659,11 +1982,11 @@ V1.9A P0 NARROW RECHECK FIX — 2026-09-08.
     labels the new V1.8 keys; R7
     `PROBLEM_METRIC_LABELS` includes `嵌套层级`).
   - `su_ai_plugin/core/endpoint_record.rb` SHA-256:
-    recomputed (**CHANGED** — R3 cached fallback
+    recomputed (**CHANGED** �?R3 cached fallback
     when adapter lacks `vertex_position`; R3 exactly-
     3 position shape constraint).
   - `su_ai_plugin/core/planar_normalization_executor.rb`
-    SHA-256: recomputed (**CHANGED** — R2 post-read
+    SHA-256: recomputed (**CHANGED** �?R2 post-read
     `begin/rescue StandardError` guard; R2 explicit
     finite check on post-position values).
   - `su_ai_plugin/core/planar_normalization_proposer.rb`
@@ -1832,17 +2155,16 @@ Validation:
 - V1.4 fingerprint focused: 22 / 22 PASS (unchanged).
 - LEGACY-COMPAT: 4 / 4 PASS (unchanged).
 - RBZ smoke: 7 / 8 PASS + 1 pre-existing ERROR
-  (`install smoke — extracted entry-point boots
+  (`install smoke �?extracted entry-point boots
   through FakeUI; menu registered;
-  on_analyze_selection no-op fallback` —
-  `NoMethodError: undefined method 'file_loaded?' for
+  on_analyze_selection no-op fallback` �?  `NoMethodError: undefined method 'file_loaded?' for
   main:Object` from a pre-existing FakeUI stub
   limitation, unrelated to this packet; the RBZ
   itself is valid + bootable on a real SketchUp
   host).
 
 Full synthetic Ruby suite (this packet's run, the
-NORMAL runner — not the prior packet's custom
+NORMAL runner �?not the prior packet's custom
 RBZ-excluding synthetic runner):
 
 ```
@@ -1856,10 +2178,10 @@ after):
 - 5 FAIL on `html_render (V1.9A FINAL P1-A)` × 3 +
   `html_render (V1.9A FINAL P1-C)` × 1 +
   `html_render (V1.9A HIDDEN-SEMANTICS FOLLOW-UP)`
-  × 1 — CSS / `app.js` textual source-level guards
+  × 1 �?CSS / `app.js` textual source-level guards
   on already-source-reviewed PASS items. CSS itself
   is UNCHANGED in this packet.
-- 1 FAIL on `v19a_presenter (FINAL P1-B)` — the
+- 1 FAIL on `v19a_presenter (FINAL P1-B)` �?the
   `开放链` chip-list guard asserts an
   open-chains-derived chip SHOULD surface as
   current-attention, but the prior packet's
@@ -1901,7 +2223,7 @@ Corrections / additions by this packet:
   `§10.4a PREFLIGHT-*` test set (6 tests, all PASS).
   No production code change is required for R1.
 
-- **R2 — Post-read exception-safe abort**:
+- **R2 �?Post-read exception-safe abort**:
   `extension/su_ai_plugin/core/planar_normalization_executor.rb`
   post-read loop is now wrapped in
   `begin/rescue StandardError`; a raised read
@@ -1919,7 +2241,7 @@ Corrections / additions by this packet:
   through existing failed-workspace path) + zero
   committed logical / physical / applied success.
 
-- **R3 — Endpoint live-read fallback contract
+- **R3 �?Endpoint live-read fallback contract
   correction**:
   `extension/su_ai_plugin/core/endpoint_record.rb`
   `_live_coordinate_for` helper now:
@@ -1935,7 +2257,7 @@ Corrections / additions by this packet:
     arrays through silently and ignored the surplus
     slot(s)).
 
-- **R4 — Presenter actual V1.8 result shape**:
+- **R4 �?Presenter actual V1.8 result shape**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
   - `_structure_loop_flags(sr)` now reads
     `sr['loops']` FIRST (V1.8 production primary);
@@ -1950,14 +2272,13 @@ Corrections / additions by this packet:
   - `_structure_label_for(k)` labels the new V1.8
     keys (and their legacy aliases) with the
     matching Simplified Chinese labels:
-    `closed_loop_count` / `closed_loops` →
-    `闭合轮廓`, `region_count` / `regions` → `区域`,
-    `hole_count` / `holes` → `洞`.
+    `closed_loop_count` / `closed_loops` �?    `闭合轮廓`, `region_count` / `regions` �?`区域`,
+    `hole_count` / `holes` �?`洞`.
   - V1.8 reconstruction algorithm is UNCHANGED;
     only the product-facing copy + read shape
     changed.
 
-- **R5 — TRUE orchestrated Owner-equivalent
+- **R5 �?TRUE orchestrated Owner-equivalent
   E2E regression**:
   New test `V19A-P0 (R5): orchestrated Owner-
   equivalent E2E` exercises the FULL orchestrator
@@ -1988,7 +2309,7 @@ Corrections / additions by this packet:
     RETAINED for backward compatibility but is no
     longer the canonical R5 contract.
 
-- **R6 — Fresh normal/full-suite + rebuilt RBZ
+- **R6 �?Fresh normal/full-suite + rebuilt RBZ
   evidence**: `dist/SU-AI-Plugin.rbz` is rebuilt
   from the corrected source via
   `scripts/build_rbz.rb` (size **1,191,455 bytes**,
@@ -1997,12 +2318,12 @@ Corrections / additions by this packet:
   Normal/full Ruby suite runs via
   `tests/run_all.rb` (NOT the prior packet's custom
   RBZ-excluding synthetic runner). 1215 tests,
-  1206 pass, 5 fail, 4 error — the 5 fail + 4
+  1206 pass, 5 fail, 4 error �?the 5 fail + 4
   error are the SAME pre-existing failures from
   HEAD; none introduced by this packet. `git diff
   --check` is clean.
 
-- **R7 — Restore `deep_nesting` / `嵌套层级`
+- **R7 �?Restore `deep_nesting` / `嵌套层级`
   current-attention chip semantics**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
   `PROBLEM_METRIC_LABELS` now includes `嵌套层级`
@@ -2083,7 +2404,7 @@ Next expected action:
 4. Only then may AIPM close V1.9A.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch §11: R2 touches the post-read
+NARROW) �?per dispatch §11: R2 touches the post-read
 atomicity seam (post-validation host-read escape);
 R3 touches the V1.7 live-coordinate authority
 fallback matrix seam; R4 touches the V1.8 result-
@@ -2102,11 +2423,11 @@ CODEX_NARROW_RECHECK = NOT YET.
 OWNER_SU2020 = NOT YET.
 V1.9B: NOT STARTED.
 
-## V1.9A P0 SHARED-VERTEX CORRECTION — Live endpoint Vertex authority + Identity-based physical fan-out (PREVIOUS UPDATE)
+## V1.9A P0 SHARED-VERTEX CORRECTION �?Live endpoint Vertex authority + Identity-based physical fan-out (PREVIOUS UPDATE)
 
-# SU-AI-Plugin — CURRENT STATE
+# SU-AI-Plugin �?CURRENT STATE
 
-## V1.9A P0 SHARED-VERTEX CORRECTION — Live endpoint Vertex authority + Identity-based physical fan-out (PREVIOUS UPDATE)
+## V1.9A P0 SHARED-VERTEX CORRECTION �?Live endpoint Vertex authority + Identity-based physical fan-out (PREVIOUS UPDATE)
 
 Updated: 2026-09-08 (V1.9A P0 SHARED-VERTEX
 CORRECTION dispatch EXECUTION on assigned
@@ -2181,7 +2502,7 @@ P2-A, P2-B, test-debt, frozen V1.8 Blueprint, no
 orchestrator / loader / html change, no V1.9B)
 remains PASS unchanged.
 
-V1.9A P0 SHARED-VERTEX CORRECTION — 2026-09-08.
+V1.9A P0 SHARED-VERTEX CORRECTION �?2026-09-08.
 
 - Starting HEAD for this packet:
   `b097ca11f3eef5e12abcf9aceb7544a460e0358d`
@@ -2232,7 +2553,7 @@ V1.9A FINAL BLOCK FIX packet):
     recomputed by the current working tree (to be
     reported in the RBZ candidate section once
     rebuilt).
-    (**CHANGED** — §6.1 + §6.2: per-endpoint
+    (**CHANGED** �?§6.1 + §6.2: per-endpoint
     Vertex handle from `host_vertex_map`; strict
     fail-closed on nil / malformed / non-finite;
     `LiveVertexPositionUnreadable` raised from
@@ -2240,7 +2561,7 @@ V1.9A FINAL BLOCK FIX packet):
     handle exists but the read is unreadable).
   - `su_ai_plugin/core/planar_normalization_proposer.rb`
     SHA-256: recomputed (CRLF normalized).
-    (**CHANGED** — §3 + §3.3 + §3.5: each logical
+    (**CHANGED** �?§3 + §3.3 + §3.5: each logical
     candidate retains all eligible physical
     endpoint Vertex occurrences; identity dedupe
     by `object_id`; one logical move fans out
@@ -2250,7 +2571,7 @@ V1.9A FINAL BLOCK FIX packet):
     `physical_count`, `physical_occurrences`).
   - `su_ai_plugin/core/planar_normalization_executor.rb`
     SHA-256: recomputed.
-    (**CHANGED** — §4.1 + §4.2 + §4.4 + §5:
+    (**CHANGED** �?§4.1 + §4.2 + §4.4 + §5:
     preflight validates handle presence,
     identity-uniqueness, vector shape + Z-only +
     finite, target_z finite; mutation opens one
@@ -2267,7 +2588,7 @@ V1.9A FINAL BLOCK FIX packet):
     alias).
   - `su_ai_plugin/cad_prep_workflow_presenter.rb`
     SHA-256: recomputed.
-    (**CHANGED** — §7.1 structure warning copy
+    (**CHANGED** �?§7.1 structure warning copy
     prefers authoritative V1.8 keys
     (`open_chain_count` / `closed_loop_count` /
     `region_count` / `hole_count` /
@@ -2306,7 +2627,7 @@ Tests added / extended by this packet:
     `FAILCLOSED-NIL` correction).
   - `tests/test_v19a_cad_prep_workflow_presenter.rb`:
     presenter focused regression tests (derivable
-    from the mojibake recovery — the §7.1 / §7.2
+    from the mojibake recovery �?the §7.1 / §7.2
     contract surface).
   - `extension/su_ai_plugin/core/endpoint_record.rb`:
     no production test count change; the §10.2
@@ -2369,8 +2690,8 @@ Validation:
         physical handle.
   - Full synthetic suite (excluding the two
     pre-existing `dist/SU-AI-Plugin.rbz`-dependent
-    tests — `test_rbz_smoke` + a small subset of
-    `test_v15_production_call_chain` — which fail
+    tests �?`test_rbz_smoke` + a small subset of
+    `test_v15_production_call_chain` �?which fail
     because the dist RBZ is a pre-existing corrupted
     artifact from before this dispatch, not related
     to the P0 work): **1166 tests, 1157 pass, 6
@@ -2404,7 +2725,7 @@ Working-tree diff (final):
 
 Forbidden / not changed (per amendment §9):
   - `working_mode_runner.rb` (not pre-authorized
-    for algorithmic changes — the shared-vertex
+    for algorithmic changes �?the shared-vertex
     amendment reaches it only through the
     cooperative handles produced by the corrected
     adapter seams).
@@ -2436,7 +2757,7 @@ Forbidden / not changed (per amendment §9):
 
 Corrections / additions by this packet:
 
-- **§3 Proposer — logical dedupe + physical
+- **§3 Proposer �?logical dedupe + physical
   fan-out (amendment §3 + §3.3 + §3.5)**
   `extension/su_ai_plugin/core/planar_normalization_proposer.rb`:
   Each logical candidate now retains
@@ -2455,7 +2776,7 @@ Corrections / additions by this packet:
   `logical_moves`, `physical_count`,
   `physical_occurrences` (amendment §5.1).
 
-- **§4 Executor — one outer operation, multiple
+- **§4 Executor �?one outer operation, multiple
   owner-safe primitive calls (amendment §4.1 +
   §4.2 + §4.4)** `extension/su_ai_plugin/core/planar_normalization_executor.rb`:
   Preflight (BEFORE opening any operation)
@@ -2511,8 +2832,7 @@ Corrections / additions by this packet:
   `vertex_position`).
 
 - **§7.1 Structure warning reads actual V1.8 shape**
-  `cad_prep_workflow_presenter.rb` —
-  `_structure_label_for` now prefers the frozen
+  `cad_prep_workflow_presenter.rb` �?  `_structure_label_for` now prefers the frozen
   V1.8 keys (`open_chain_count` /
   `invalid_loop_count` / `closed_loops` /
   `regions` / `holes`) with legacy `open_chains`
@@ -2522,7 +2842,7 @@ Corrections / additions by this packet:
   non-planar warning.
 
 - **§7.2 FAILED summary CTA = nil**:
-  `cad_prep_workflow_presenter.rb` — `FAILED`
+  `cad_prep_workflow_presenter.rb` �?`FAILED`
   `issue_summary` now publishes `cta = nil` +
   `cta_callback = nil`. The existing recovery
   banner owns explicit recovery actions
@@ -2549,7 +2869,7 @@ V1.x Codex xHigh review remains mandatory later
 regardless.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch §11: P0 touches the
+NARROW) �?per dispatch §11: P0 touches the
 V1.6 -> V1.7 current-geometry authority seam +
 the V1.6 physical-fan-out identity dedupe
 boundary (the highest-cost single seam in V1.x).
@@ -2564,7 +2884,7 @@ AIPM_REVIEW = PENDING.
 OWNER_SU2020 = NOT YET.
 V1.9B: NOT STARTED.
 
-## V1.9A FINAL BLOCK FIX — Current Geometry + Current Issue Semantics (PREVIOUS UPDATE)
+## V1.9A FINAL BLOCK FIX �?Current Geometry + Current Issue Semantics (PREVIOUS UPDATE)
 
 Updated: 2026-09-07 (V1.9A FINAL BLOCK FIX dispatch
 EXECUTION on assigned `dev/v1.9` per dispatch
@@ -2596,7 +2916,7 @@ COMPLETE narrow final V1.9A block-fix:
     `movable_count` / `applied_count` (legacy
     `movable` / `moved` aliases remain as defensive
     fallback); READY_TO_NORMALIZE without exact count
-    uses generic truthful copy, NEVER "未发现".
+    uses generic truthful copy, NEVER "未发�?.
   - **P2-B**: Structure warning copy is specific when
     evidence exists (open_chains > 0 / non-planar
     invalid loop / generic fallback).
@@ -2615,7 +2935,7 @@ change. No Loader / A3 toolbar contract change. No
 V1.9B PreparedCadDataset / persistence (V1.9B NOT
 STARTED). No MCP / LLM / Agent.
 
-V1.9A FINAL BLOCK FIX — 2026-09-07.
+V1.9A FINAL BLOCK FIX �?2026-09-07.
 
 - Starting HEAD for this packet:
   `09bd5d33033123ac3bab6b669b2676ac83dbd1eb`
@@ -2634,7 +2954,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
   HIDDEN-SEMANTICS FOLLOW-UP packet):
   - `su_ai_plugin/core/endpoint_record.rb` SHA-256:
     `b87d3ee13223df5e061e724172729e28881c347165577b55f99aa01da54c330e`
-    (**CHANGED** — P0 live-coordinate authority seam;
+    (**CHANGED** �?P0 live-coordinate authority seam;
     `DerivedTopologySnapshotBuilder.build` now reads
     `adapter.vertex_position(handle)` for each
     endpoint when the live handle is resolvable;
@@ -2645,7 +2965,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
   - `su_ai_plugin/cad_prep_workflow_presenter.rb`
     SHA-256:
     `c6f4982f71da09363f5df0cd1a91f39c8c61e40cc0888071380c75de6b7ae2f7`
-    (**CHANGED** — P2-A movable_count / applied_count
+    (**CHANGED** �?P2-A movable_count / applied_count
     authoritative; P2-B structure warning copy
     specificity; P1-B issue-chip semantic filter
     (PROBLEM_METRIC_LABELS whitelist); P1-C
@@ -2654,7 +2974,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     count uses generic truthful copy).
   - `su_ai_plugin/html/app.js` SHA-256:
     `adae3dd6b680244a807376ed7b92a70bd1548bd6f9ff0cba69cc432f2f006a46`
-    (**CHANGED** — P1-A: `_buildIssueRows` /
+    (**CHANGED** �?P1-A: `_buildIssueRows` /
     `_buildIssuesBadgeCount` no longer append
     `payload.groups` to current issue list /
     badge count; P1-C: `renderIssueSummary` CTA
@@ -2663,7 +2983,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     when `cta_callback` is null).
   - `su_ai_plugin/html/style.css` SHA-256:
     `fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c`
-    (UNCHANGED — no production CSS change in this
+    (UNCHANGED �?no production CSS change in this
     packet; the previous HIDDEN-SEMANTICS FOLLOW-UP
     scoped rules remain the production fix).
   - HTML / Ruby / orchestrator / dialog_runner /
@@ -2709,7 +3029,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
   all 97 ASSERT lines PASS, final line `PASS`.
   - 6 new V1.9A FINAL BLOCK FIX assertions added:
     - current issue rows come from cadPrepWorkflow
-      cards only (NOT from payload.groups) — count
+      cards only (NOT from payload.groups) �?count
       must equal the number of
       REVIEW_REQUIRED / FAILED / BLOCKED cards.
     - current issue rows are non-locatable (cards do
@@ -2719,7 +3039,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     - issue_summary CTA button is NOT hard-wired to
       rebuild_workspace.
     - legacy source-registry per-type counts remain
-      reachable in 详情 / 原始检查记录 surface.
+      reachable in 详情 / 原始检查记�?surface.
     - IDLE / empty-idle summary hides the CTA
       button when cta_callback is null.
   - Pre-existing 91 assertions remain intact
@@ -2728,13 +3048,13 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     four-tab + five-card tests).
 - Test files added / extended (this packet):
   - **NEW**: `tests/test_v19a_final_p0_live_coordinates.rb`
-    — 11 P0 focused tests covering live vs cached
+    �?11 P0 focused tests covering live vs cached
     coordinate authority, fail-closed malformed /
     non-finite / nil / Infinity / no-adapter
     paths, the owner-fixture 0.2 mm residue
     regression, error-class / source-level guards.
   - **EXTENDED**: `tests/test_v19a_cad_prep_workflow_presenter.rb`
-    — 18 new V1.9A FINAL BLOCK FIX focused tests:
+    �?18 new V1.9A FINAL BLOCK FIX focused tests:
     P2-A movable_count authoritative + legacy
     fallback + READY_TO_NORMALIZE without count
     generic copy + applied_count authoritative +
@@ -2747,7 +3067,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     READY-with-APPLIED / FAILED / STALE / IDLE /
     clean (5 tests); presenter source-level guards
     (2 tests).
-  - **EXTENDED**: `tests/test_html_render.rb` — 2 new
+  - **EXTENDED**: `tests/test_html_render.rb` �?2 new
     CSS comment regression guard tests + 5 new
     app.js frontend behavior tests:
     `hr_strip_css_comments` helper strips
@@ -2759,8 +3079,7 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
     `cta_callback` (additive schema) explicitly;
     CTA falls back to invisible when cta_callback
     is null.
-  - **EXTENDED**: `tests/test_html_render_dom.js` —
-    6 new DOM assertions (see above).
+  - **EXTENDED**: `tests/test_html_render_dom.js` �?    6 new DOM assertions (see above).
 - Test environment status (this packet):
   - **Ruby runtime BROKEN on this host**: the
     `C:\Ruby27-x64\bin\ruby.exe` runtime reports
@@ -2810,10 +3129,10 @@ V1.9A FINAL BLOCK FIX — 2026-09-07.
 
 Corrections / additions by this packet:
 
-- **P0 — V1.6 -> V1.7 reads stale pre-Z coordinates
+- **P0 �?V1.6 -> V1.7 reads stale pre-Z coordinates
   (CLOSE)**:
   `extension/su_ai_plugin/core/endpoint_record.rb`
-  — the `DerivedTopologySnapshotBuilder.build`
+  �?the `DerivedTopologySnapshotBuilder.build`
   method now reads LIVE host vertex coordinates
   via `adapter.vertex_position(handle)` for each
   endpoint when the workspace's `handle_for` seam
@@ -2842,7 +3161,7 @@ Corrections / additions by this packet:
   `invalid_loop_count = 0`, `region_count = 1`,
   loop unresolved_flags = `[]`.
 
-- **P1-A — Current Issues tab no longer shows
+- **P1-A �?Current Issues tab no longer shows
   historical source-registry rows (CLOSE)**:
   `extension/su_ai_plugin/html/app.js`:
   - `_buildIssueRows(payload, cadPrep)` no
@@ -2865,7 +3184,7 @@ Corrections / additions by this packet:
     locate contract is preserved on that
     surface.
 
-- **P1-B — Top issue-summary chip counting
+- **P1-B �?Top issue-summary chip counting
   semantics (CLOSE)**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`:
   - New `PROBLEM_METRIC_LABELS` whitelist
@@ -2884,9 +3203,9 @@ Corrections / additions by this packet:
     `已合并重复对`) MUST NOT inflate the primary
     issue chip list.
 
-- **P1-C — `重新检测` MUST use `refresh_cad_prep`,
+- **P1-C �?`重新检测` MUST use `refresh_cad_prep`,
   not `rebuild_workspace` (CLOSE)**:
-  - `cad_prep_workflow_presenter.rb` — new
+  - `cad_prep_workflow_presenter.rb` �?new
     additive `cta_callback` field on
     `issue_summary`. Set to `'refresh_cad_prep'`
     for `NEEDS_ATTENTION` /
@@ -2897,7 +3216,7 @@ Corrections / additions by this packet:
     `STALE`. The orchestrator's
     `refresh` semantics are FROZEN
     unchanged.
-  - `html/app.js` — the
+  - `html/app.js` �?the
     `renderIssueSummary` CTA wiring now
     reads `summary.cta_callback` explicitly.
     When `cta_callback` is null, the summary
@@ -2908,10 +3227,10 @@ Corrections / additions by this packet:
     is RETIRED from this path.
   - `rebuild_workspace` remains available for
     explicit recovery flows (STALE / FAILED
-    recovery banner — `recovery.primary_callback`
+    recovery banner �?`recovery.primary_callback`
     unchanged).
 
-- **P2-A — Planar card count / copy mapping (CLOSE)**:
+- **P2-A �?Planar card count / copy mapping (CLOSE)**:
   `cad_prep_workflow_presenter.rb`:
   - `movable_count` is the AUTHORITATIVE
     READY_TO_NORMALIZE proposal field
@@ -2924,30 +3243,30 @@ Corrections / additions by this packet:
     fallback).
   - `_planar_safe_summary` no longer
     contradicts READY_TO_NORMALIZE with
-    "未发现需要 Z 校正的点". When the state
+    "未发现需�?Z 校正的点". When the state
     is READY_TO_NORMALIZE but no exact count
     is available, the summary uses the
     generic truthful copy "发现可安全校正的
-    Z 偏差". The contradictory "未发现"
+    Z 偏差". The contradictory "未发�?
     copy is reserved for the NO_CANDIDATE
     branch (the legitimate place).
 
-- **P2-B — Structure warning copy specificity
+- **P2-B �?Structure warning copy specificity
   (CLOSE)**:
   `cad_prep_workflow_presenter.rb`:
   - New `_structure_warning_summary` maps
     specific evidence to specific copy:
       - `open_chains > 0` ->
-        "存在未闭合轮廓"
+        "存在未闭合轮�?
       - `invalid_loop_count > 0` AND
         `unresolved_flags` includes
         `non_planar_loop` ->
-        "存在非平面闭合轮廓，暂不能形成区域"
+        "存在非平面闭合轮廓，暂不能形成区�?
       - `invalid_loop_count > 0` (no
         `non_planar_loop`) ->
         "存在无效轮廓或需确认结构"
       - fallback (no specific evidence) ->
-        "结构已重建，但存在需要人工查看的项"
+        "结构已重建，但存在需要人工查看的�?
   - Metric chips for structure warnings only
     surface problem metrics (`open_chains` /
     `invalid_loop_count`); `closed_loops` /
@@ -2958,7 +3277,7 @@ Corrections / additions by this packet:
     UNCHANGED; only the product-facing copy
     is improved.
 
-- **Test debt — Hidden CSS regression guard
+- **Test debt �?Hidden CSS regression guard
   false-pass (CLOSE)**:
   `tests/test_html_render.rb`:
   - New `hr_strip_css_comments` helper strips
@@ -3002,7 +3321,7 @@ Final V1.x Codex xHigh review remains mandatory
 later regardless.
 
 CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
-NARROW) — per dispatch §11: P0 touches the
+NARROW) �?per dispatch §11: P0 touches the
 V1.6 -> V1.7 current-geometry authority seam
 feeding canonical topology. This is a high-risk
 data/state boundary even though the implementation
@@ -3062,7 +3381,7 @@ element in `index.html` / `app.js`):
 | `toast` | `.toast` | (none) | not affected |
 
 `.toast` only declares `position` / `padding` /
-`background` / etc., NOT `display:` — the browser
+`background` / etc., NOT `display:` �?the browser
 default `[hidden] { display: none }` works correctly
 for it.
 
@@ -3106,8 +3425,7 @@ Status (this packet):
 - **AIPM_REVIEW = PENDING**.
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP —
-2026-09-07.
+V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP �?2026-09-07.
 
 - Starting HEAD for this packet:
   `1d1f9c821c7050268743a7acd6fe502cd3baddeb` (the
@@ -3127,7 +3445,7 @@ V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP —
 - Packaged
   `extension/su_ai_plugin/html/style.css` SHA-256:
   **`fa38cc2677887a1d71fc382426c37cc5e1353be15f799e86ff2d7889661fc98c`**
-  (CHANGED — contains both scoped
+  (CHANGED �?contains both scoped
   `.recovery-banner[hidden] { display: none; }` and
   `.tab-badge[hidden] { display: none; }` rules).
 - HTML / JS / Ruby production SHAs UNCHANGED
@@ -3171,7 +3489,7 @@ V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP —
     `tests/test_html_render.rb`).
 - V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP focused
   tests (NEW this packet):
-  - `tests/test_html_render.rb` — **9 / 9 PASS**:
+  - `tests/test_html_render.rb` �?**9 / 9 PASS**:
     - style.css has the
       `.recovery-banner[hidden] { display: none }`
       rule (presence guard).
@@ -3191,14 +3509,14 @@ V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP —
       > global).
     - COMPLETE audit of all current `[hidden]`
       elements (panel×4 / recovery-banner /
-      tab-badge / toast) — each is either covered
+      tab-badge / toast) �?each is either covered
       by a scoped override rule OR explicitly marked
       unaffected because its CSS class does NOT set
       `display:`.
     - `recovery-banner` / `tab-issues-badge` static
       `hidden` attributes present in HTML by
       default.
-  - `tests/test_html_render_dom.js` — **8 new
+  - `tests/test_html_render_dom.js` �?**8 new
     click-through assertions** (all PASS):
     - recovery-banner default carries hidden
       attribute.
@@ -3248,7 +3566,7 @@ V1.9A OWNER UI HIDDEN-SEMANTICS FOLLOW-UP —
 - `git diff --check`: clean (0 warnings on
   production / test code; the trailing whitespace
   in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
-  and outside Pi's scope — `Prompt/` is read-only).
+  and outside Pi's scope �?`Prompt/` is read-only).
 
 Frozen V1.8 Blueprint preserved unchanged on the
 assigned `dev/v1.9`. Pi did NOT rewrite any frozen
@@ -3267,7 +3585,7 @@ MCP / LLM / Agent.
 Corrections / additions by this packet:
 
 - **CSS scoped rules (the fix)**:
-  `extension/su_ai_plugin/html/style.css` — added 2
+  `extension/su_ai_plugin/html/style.css` �?added 2
   scoped rules immediately after the existing
   `.recovery-banner { display: flex }` and
   `.tab-badge { display: inline-flex }` rules:
@@ -3289,7 +3607,7 @@ Corrections / additions by this packet:
 
 - **Focused CSS source-level guards (NEW this
   packet)**:
-  `tests/test_html_render.rb` — 9 new tests that
+  `tests/test_html_render.rb` �?9 new tests that
   pin the fix at the CSS source level so future
   edits cannot silently regress the hidden contract:
   - The 2 scoped rules MUST be present.
@@ -3313,7 +3631,7 @@ Corrections / additions by this packet:
 
 - **DOM click-through regression (NEW this
   packet)**:
-  `tests/test_html_render_dom.js` — 8 new
+  `tests/test_html_render_dom.js` �?8 new
   click-through assertions that simulate the Owner
   Gate A2 BLOCK follow-up scenario end-to-end.
   Each assertion verifies that:
@@ -3420,7 +3738,7 @@ Status (this packet):
 - **AIPM_REVIEW = PENDING**.
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A OWNER UI TAB SWITCH BLOCK — 2026-09-07.
+V1.9A OWNER UI TAB SWITCH BLOCK �?2026-09-07.
 
 - Starting HEAD for this packet:
   `e3be03dc343657b1d315dbcc7727eeb23a4ad1db` (the
@@ -3440,7 +3758,7 @@ V1.9A OWNER UI TAB SWITCH BLOCK — 2026-09-07.
 - Packaged `extension/su_ai_plugin/html/style.css`
   SHA-256:
   **`ceac7aeec04f5c3aeed88cd768e0ec4794e7656c01644af3419d89386a61c752`**
-  (CHANGED — contains the scoped
+  (CHANGED �?contains the scoped
   `.panel[hidden] { display: none; }` rule).
 - HTML / JS / Ruby production SHAs UNCHANGED (verified
   via packaged-RBZ extraction):
@@ -3481,7 +3799,7 @@ V1.9A OWNER UI TAB SWITCH BLOCK — 2026-09-07.
     focused tests in `tests/test_html_render.rb`).
 - V1.9A OWNER UI TAB SWITCH BLOCK focused tests
   (NEW this packet):
-  - `tests/test_html_render.rb` — **7 / 7 PASS**:
+  - `tests/test_html_render.rb` �?**7 / 7 PASS**:
     - style.css has the `.panel[hidden] { display:
       none }` rule (presence guard).
     - `.panel[hidden]` rule appears AFTER the
@@ -3500,7 +3818,7 @@ V1.9A OWNER UI TAB SWITCH BLOCK — 2026-09-07.
       preference: scoped > global).
     - tab map covers all 4 panels
       (process / issues / layers / details).
-  - `tests/test_html_render_dom.js` — **4 new
+  - `tests/test_html_render_dom.js` �?**4 new
     click-through assertions** (all PASS):
     - Clicking 问题 shows panel-issues + hides the
       other 3 + aria-selected flips.
@@ -3540,7 +3858,7 @@ V1.9A OWNER UI TAB SWITCH BLOCK — 2026-09-07.
 - `git diff --check`: clean (0 warnings on
   production / test code; the trailing whitespace
   in `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
-  and outside Pi's scope — `Prompt/` is read-only).
+  and outside Pi's scope �?`Prompt/` is read-only).
 
 Frozen V1.8 Blueprint preserved unchanged on the
 assigned `dev/v1.9`. Pi did NOT rewrite any frozen
@@ -3558,7 +3876,7 @@ MCP / LLM / Agent.
 Corrections / additions by this packet:
 
 - **CSS scoped rule (the fix)**:
-  `extension/su_ai_plugin/html/style.css` — added
+  `extension/su_ai_plugin/html/style.css` �?added
   one scoped rule immediately after the existing
   `.panel { display: flex; flex-direction: column; }`
   rule:
@@ -3581,7 +3899,7 @@ Corrections / additions by this packet:
 
 - **Focused CSS source-level guards (NEW this
   packet)**:
-  `tests/test_html_render.rb` — 7 new tests that
+  `tests/test_html_render.rb` �?7 new tests that
   pin the fix at the CSS source level:
   - The scoped rule MUST be present (regression
     guard against accidental deletion).
@@ -3602,7 +3920,7 @@ Corrections / additions by this packet:
     intact.
 
 - **DOM click-through regression (NEW this packet)**:
-  `tests/test_html_render_dom.js` — 4 new
+  `tests/test_html_render_dom.js` �?4 new
   click-through assertions that simulate the Owner
   Gate A2 BLOCK scenario end-to-end:
   - Click 问题 -> panel-issues visible; the other 3
@@ -3698,8 +4016,7 @@ Status (this packet):
   A2/V1.9B confirmation SHAs).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY —
-2026-09-07.
+V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY �?2026-09-07.
 
 - Starting HEAD for this packet:
   `1de098b5d3ab8872294ace3fdb504511512faf13` (the
@@ -3719,7 +4036,7 @@ V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY —
 - Packaged `extension/su_ai_plugin/loader.rb`
   SHA-256:
   **`3b85dfefe5145113d8ca0a4ee123c1d406e21da0d54986c524123c9ccb2c0ed5`**
-  (NEW — V1.9A3 shared command + toolbar + no-
+  (NEW �?V1.9A3 shared command + toolbar + no-
   selection UX refactor).
 - Packaged icons (NEW this packet):
   - `extension/su_ai_plugin/icons/cad_prep_24.png`
@@ -3765,7 +4082,7 @@ V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY —
     (the new V1.9A3 focused tests + 1 PNG
     dimension test).
 - V1.9A-A3 focused tests (NEW this packet):
-  - `tests/test_loader.rb` — V1.9A3 section:
+  - `tests/test_loader.rb` �?V1.9A3 section:
     **17 / 17 PASS** (16 V1.9A3 contract tests +
     1 PNG dimension test): A3-01/02 toolbar named
     'SU AI' with exactly one button; A3-05 menu
@@ -3802,7 +4119,7 @@ V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY —
 - V1.9A dialog_runner (full): **48 / 48 PASS**
   (the dialog_runner wiring is untouched; only
   the `on_analyze_selection` semantics are shared
-  with the new toolbar entry — no callback
+  with the new toolbar entry �?no callback
   surface change).
 - V1.9A bridge: **10 / 10 PASS** (unchanged).
 - V1.9A DOM (`tests/test_html_render.rb`):
@@ -3831,7 +4148,7 @@ V1.9A-A3 NATIVE TOOLBAR & PRODUCT ENTRY —
 - `git diff --check`: clean (0 warnings on
   production / test code; the trailing whitespace
   in `Prompt/CURRENT_PI_DISPATCH.md` is pre-
-  existing and outside Pi's scope — `Prompt/` is
+  existing and outside Pi's scope �?`Prompt/` is
   read-only).
 
 Frozen V1.8 Blueprint preserved unchanged on the
@@ -3849,7 +4166,7 @@ Corrections / additions by this packet:
 
 - **Shared UI::Command + native toolbar
   (dispatch §2)**: `extension/su_ai_plugin/
-  loader.rb` — Loader now constructs exactly ONE
+  loader.rb` �?Loader now constructs exactly ONE
   `@cad_prep_command` and attaches the SAME
   command object to BOTH the existing
   `SU-AI-Plugin` submenu AND the new `SU AI`
@@ -3857,7 +4174,7 @@ Corrections / additions by this packet:
   text, and icon paths are configured per
   Blueprint §2: `menu_text` ('CAD Prep'),
   `tooltip` ('SU AI · CAD Prep'), `status_bar_text`
-  ('检查并准备当前选择的 CAD 几何'), `small_icon`
+  ('检查并准备当前选择�?CAD 几何'), `small_icon`
   (`<__dir__>/icons/cad_prep_24.png`), `large_icon`
   (`<__dir__>/icons/cad_prep_32.png`). Per
   Blueprint §4: "Do not create one command for
@@ -3865,7 +4182,7 @@ Corrections / additions by this packet:
   packet does not create a second command.
 
 - **Native `SU AI` toolbar (dispatch §3)**:
-  `extension/su_ai_plugin/loader.rb` — Loader now
+  `extension/su_ai_plugin/loader.rb` �?Loader now
   creates `UI::Toolbar.new('SU AI')` (the
   `TOOLBAR_NAME` constant), retained in `@toolbar`,
   and adds the SAME `@cad_prep_command` to it. The
@@ -3875,8 +4192,7 @@ Corrections / additions by this packet:
 
 - **Toolbar visibility policy (dispatch §4 +
   Blueprint §6)**:
-  `extension/su_ai_plugin/loader.rb` —
-  `apply_toolbar_visibility_policy(toolbar)`
+  `extension/su_ai_plugin/loader.rb` �?  `apply_toolbar_visibility_policy(toolbar)`
   consults `toolbar.get_last_state`: if state ==
   `TB_NEVER_SHOWN`, call `toolbar.show`; otherwise
   call `toolbar.restore`. A previously hidden
@@ -3884,13 +4200,12 @@ Corrections / additions by this packet:
   lack `get_last_state` / `show` / `restore`.
 
 - **No-selection UX (dispatch §5 + Blueprint §3)**:
-  `extension/su_ai_plugin/loader.rb` — The shared
+  `extension/su_ai_plugin/loader.rb` �?The shared
   `on_analyze_selection` now consults the
   selection. If `selection.nil? ||
   selection.count.zero?`, it calls
   `show_no_selection_message` which displays the
-  frozen product message `'请先选择需要检查和处理的
-  CAD 几何。'` via `UI.messagebox`. Both menu and
+  frozen product message `'请先选择需要检查和处理�?  CAD 几何�?` via `UI.messagebox`. Both menu and
   toolbar receive this behavior because they
   share the SAME command block. A valid selection
   still reaches `show_dialog_for_selection(
@@ -3901,10 +4216,10 @@ Corrections / additions by this packet:
 - **Bundled local PNG icons (dispatch §6 +
   Blueprint §7)**:
   `extension/su_ai_plugin/icons/cad_prep_24.png` +
-  `cad_prep_32.png` — exactly 24x24 / 32x32, RGBA8,
+  `cad_prep_32.png` �?exactly 24x24 / 32x32, RGBA8,
   blue-violet rounded square + white CAD polyline
   / loop motif, transparent background.
-  `scripts/gen_icons.rb` — deterministic PNG
+  `scripts/gen_icons.rb` �?deterministic PNG
   generator (no external image dependency; pure-
   Ruby Zlib-based PNG encoding). PNG dimensions
   asserted by `tests/test_loader.rb`'s V1.9A3 PNG
@@ -3912,7 +4227,7 @@ Corrections / additions by this packet:
 
 - **Idempotency / retained references
   (dispatch §3 + Blueprint §5)**:
-  `extension/su_ai_plugin/loader.rb` — Loader
+  `extension/su_ai_plugin/loader.rb` �?Loader
   retains `@cad_prep_command` and `@toolbar` for
   the process lifetime. Repeated `register!` calls
   return the SAME command object and produce no
@@ -3929,11 +4244,11 @@ Corrections / additions by this packet:
   scanner framework.
 
 - **FakeUI extensions**:
-  `tests/_fake_ui.rb` — `FakeCommand` extended
+  `tests/_fake_ui.rb` �?`FakeCommand` extended
   with the Blueprint §2 setters (`tooltip=`,
   `status_bar_text=`, `small_icon=`,
   `large_icon=`); `extension=` is INTENTIONALLY
-  missing — `method_missing` raises
+  missing �?`method_missing` raises
   `NoMethodError` if a future test reaches for it.
   `FakeToolbar` class added (mirroring the real
   `UI::Toolbar` API surface). `TB_NEVER_SHOWN`
@@ -3942,7 +4257,7 @@ Corrections / additions by this packet:
   `UI.toolbar` and `UI.messagebox`.
 
 - **Focused tests (dispatch §8 + Blueprint §11)**:
-  `tests/test_loader.rb` — new V1.9A3 section adds
+  `tests/test_loader.rb` �?new V1.9A3 section adds
   17 tests covering A3-01..A3-13 + Blueprint §2 /
   §9 contracts + frozen orchestrator / presenter
   parseability guards. The pre-existing 12 loader
@@ -3951,7 +4266,7 @@ Corrections / additions by this packet:
   Prep'` per the new Blueprint §2 contract; the
   12 tests remain green.
 
-  `tests/test_rbz_smoke.rb` — one assertion
+  `tests/test_rbz_smoke.rb` �?one assertion
   updated from `'Analyze selection'` to `'CAD
   Prep'` to match the Blueprint §2 menu text
   inside the extracted-RBZ smoke path. All other
@@ -3973,8 +4288,7 @@ gate A3 (per Blueprint §12). V1.9B PreparedCadDataset
 / persistence NOT STARTED. Final V1.x Codex xHigh
 review remains mandatory later regardless.
 
-CODEX_RISK_TRIGGER = NO (per Blueprint §10 —
-native toolbar entry-point only; no algorithm /
+CODEX_RISK_TRIGGER = NO (per Blueprint §10 �?native toolbar entry-point only; no algorithm /
 contract / source-ownership / transaction / Undo
 / Face / Observer / V1.6 / V1.7 / V1.8 / A2
 orchestrator / Presenter / DialogRunner callbacks
@@ -4042,8 +4356,7 @@ Status (this packet):
   hashes).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
-2026-09-07.
+V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION �?2026-09-07.
 
 - Starting HEAD for this packet:
   `8e621bb9e33f374a000cce5f977ce4318a6ab070` (the
@@ -4060,29 +4373,29 @@ V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
 - Packaged `cad_prep_workflow_orchestrator.rb`
   SHA-256:
   `4E77C1FE47BC72793BA655BB0952ABAFCC9DB7DC5000D407C8B24DF01DA5238C`
-  (CHANGED — orchestrator no longer rescues
+  (CHANGED �?orchestrator no longer rescues
   StandardError at public entry points).
 - Packaged `cad_prep_workflow_presenter.rb`
   SHA-256:
   `C64C7CD27A4B40A6308E7A6B42750EF402EEFEFD0B54CEF4B683D10E9AD68691`
-  (CHANGED — `_failure_subtitle` returns the frozen
+  (CHANGED �?`_failure_subtitle` returns the frozen
   generic CN message; raw `last_error` is no longer
   sliced into the primary FAILED copy).
 - Packaged `dialog_runner.rb` SHA-256:
   `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
-  (UNCHANGED — the existing `_safe_invoke` boundary
+  (UNCHANGED �?the existing `_safe_invoke` boundary
   is the canonical production error boundary; the
   new orchestrator behavior now propagates to it
   instead of being swallowed before reaching it).
 - Packaged `html/index.html` SHA-256:
   `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
-  (unchanged — no HTML change in this packet).
+  (unchanged �?no HTML change in this packet).
 - Packaged `html/app.js` SHA-256:
   `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
-  (unchanged — no JS change in this packet).
+  (unchanged �?no JS change in this packet).
 - Packaged `html/style.css` SHA-256:
   `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
-  (unchanged — no CSS change in this packet).
+  (unchanged �?no CSS change in this packet).
 - Full Ruby suite: **1116 / 1116 total** /
   **1113 PASS** / 1 fail / 2 error.
   - The 1 fail + 2 error are the SAME pre-existing
@@ -4135,7 +4448,7 @@ V1.9A-A2 ERROR BOUNDARY NARROW CORRECTION —
   tests total**. The 5 ERROR pre-existing
   test-infrastructure limitations (undefined
   `refute_includes` / `refute` helpers in the test
-  runner — NOT failures caused by this packet) match
+  runner �?NOT failures caused by this packet) match
   the prior A2 packet's `14 PASS + 5 ERROR` baseline
   for the same test methods.
 - V1.9A dialog_runner (full, A2 + error-boundary
@@ -4188,8 +4501,7 @@ Corrections / additions by this packet:
   state machine (the `_workspace_ready?(snap)` guard
   inside each orchestrator entry point returns the
   truthful non-ready snapshot for `:failed` /
-  `:building` / `:none` / `:discarded` states —
-  those are NOT exceptions, they are truthful
+  `:building` / `:none` / `:discarded` states �?  those are NOT exceptions, they are truthful
   runner states and remain unchanged).
 
 - **A2-UX-01 (primary FAILED copy MUST stay
@@ -4198,8 +4510,7 @@ Corrections / additions by this packet:
   `snap['last_error']` (the A1 truncation path
   `last[0, 80]` is RETIRED). The FAILED primary
   copy is now a frozen generic Simplified Chinese
-  product message (`检查过程中遇到错误，请重试或
-  查看详情`). Raw `last_error` strings / exception
+  product message (`检查过程中遇到错误，请重试�?  查看详情`). Raw `last_error` strings / exception
   class names / backtraces MUST NOT appear in the
   product-facing headline / subheadline / issue
   summary subtitle / recovery description. The
@@ -4212,7 +4523,7 @@ Corrections / additions by this packet:
 
 - **Resilience regression tests** (12 new tests):
   the A2 packet's `orchestrator (resilience)`
-  test (which pinned the WRONG contract — orchestrator
+  test (which pinned the WRONG contract �?orchestrator
   must not raise, must return truthful snapshot) was
   RETIRED and replaced by 12 new tests that pin the
   CORRECT contract:
@@ -4266,26 +4577,25 @@ Corrections / additions by this packet:
 
 Do NOT change (per dispatch §5):
 
-- Start call order (prepare → duplicate → planar →
-  gap → structure) — UNCHANGED.
-- Refresh semantics — UNCHANGED.
-- post-Z V1.7 invalidation seam — UNCHANGED.
-- post-Z gap + structure recompute — UNCHANGED.
-- post-gap structure recompute — UNCHANGED.
-- gap ordering safety — UNCHANGED.
-- source immutability — UNCHANGED.
-- tolerance authority — UNCHANGED.
-- canonical graph — UNCHANGED.
-- V1.7 segment conflict — UNCHANGED.
-- host transaction ownership — UNCHANGED.
-- Undo / host-state reconciliation — UNCHANGED.
-- callback names / registrations — UNCHANGED.
-- four-tab IA — UNCHANGED.
-- visual design — UNCHANGED.
-- V1.9B — UNCHANGED (NOT STARTED).
-- PreparedCadDataset — UNCHANGED.
-- persistence — UNCHANGED.
-- MCP / LLM / Agent — UNCHANGED (OUT OF SCOPE).
+- Start call order (prepare �?duplicate �?planar �?  gap �?structure) �?UNCHANGED.
+- Refresh semantics �?UNCHANGED.
+- post-Z V1.7 invalidation seam �?UNCHANGED.
+- post-Z gap + structure recompute �?UNCHANGED.
+- post-gap structure recompute �?UNCHANGED.
+- gap ordering safety �?UNCHANGED.
+- source immutability �?UNCHANGED.
+- tolerance authority �?UNCHANGED.
+- canonical graph �?UNCHANGED.
+- V1.7 segment conflict �?UNCHANGED.
+- host transaction ownership �?UNCHANGED.
+- Undo / host-state reconciliation �?UNCHANGED.
+- callback names / registrations �?UNCHANGED.
+- four-tab IA �?UNCHANGED.
+- visual design �?UNCHANGED.
+- V1.9B �?UNCHANGED (NOT STARTED).
+- PreparedCadDataset �?UNCHANGED.
+- persistence �?UNCHANGED.
+- MCP / LLM / Agent �?UNCHANGED (OUT OF SCOPE).
 
 New review artifact produced by this packet:
 
@@ -4304,8 +4614,7 @@ V1.9B PreparedCadDataset / persistence NOT
 STARTED. Final V1.x Codex xHigh review remains
 mandatory later regardless.
 
-CODEX_RISK_TRIGGER = NO (per dispatch §13 —
-orchestrator error-boundary propagation +
+CODEX_RISK_TRIGGER = NO (per dispatch §13 �?orchestrator error-boundary propagation +
 presenter FAILED copy UX + dialog_runner error-
 boundary tests; no canonical graph identity /
 schema / digest / V1.7 segment conflict /
@@ -4369,7 +4678,7 @@ Status (this packet):
   truth rule + gap-ordering gate + RBZ hashes).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A2 — 2026-09-07.
+V1.9A-A2 �?2026-09-07.
 
 - Starting HEAD for this packet:
   `19ed51ac36ab430b40ccbfd994a8ebfe761c6e0c` (the
@@ -4384,29 +4693,29 @@ V1.9A-A2 — 2026-09-07.
   **`197C8552F6C8F51BF423404BCC48CBE697C4C20EAA0FA72F658852713E70F03E`**.
 - Packaged `html/index.html` SHA-256:
   `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
-  (unchanged from V1.9A-A1 baseline — no HTML change in
+  (unchanged from V1.9A-A1 baseline �?no HTML change in
   this packet).
 - Packaged `html/app.js` SHA-256:
   `50BB92C65C61DF7BC645DE73F1F3F78257DCB7AC80E90D395A2A3942AD65769F`
-  (NEW — IDLE CTA = start_cad_prep; NEEDS_ATTENTION /
+  (NEW �?IDLE CTA = start_cad_prep; NEEDS_ATTENTION /
   READY_FOR_VALIDATION CTA = refresh_cad_prep).
 - Packaged `html/style.css` SHA-256:
   `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
-  (unchanged — no CSS change in this packet).
+  (unchanged �?no CSS change in this packet).
 - Packaged `cad_prep_workflow_orchestrator.rb` SHA-256:
   `9ED88C534E83DBB9053CA8A80F362C25A4EFD9DA9FC1165626E1095DBF540F54`
-  (NEW — the bounded deterministic orchestrator).
+  (NEW �?the bounded deterministic orchestrator).
 - Packaged `cad_prep_workflow_presenter.rb` SHA-256:
   `D512435FD9A8B129B8C567981CD1C89C2BD8F4200074AA6BE33886009251C943`
-  (NEW — IDLE copy + gap-ordering safety gate).
+  (NEW �?IDLE copy + gap-ordering safety gate).
 - Packaged `dialog_runner.rb` SHA-256:
   `DC3C4042C94E20F996AEF49E17908072DE337217622DE447245449DFC75D7B94`
-  (NEW — start_cad_prep + refresh_cad_prep callbacks
+  (NEW �?start_cad_prep + refresh_cad_prep callbacks
   + apply_* / rebuild_workspace routed through the
   orchestrator).
 - Packaged `core/working_mode_runner.rb` SHA-256:
   `2962F45A06338D929C38FB885ED129373E67C3F2E6E220FE075AF07DCEF02214`
-  (NEW — production-safe
+  (NEW �?production-safe
   `invalidate_topology_state_after_geometry_mutation`
   seam).
 - Full Ruby suite: **1099 / 1099 total** / **1096 PASS** /
@@ -4449,7 +4758,7 @@ V1.9A-A2 — 2026-09-07.
     orchestrator now owns the full pipeline so the
     "only the V1.5 duplicate batch runs" copy is
     obsolete; the A2 copy is
-    "开始后将创建安全工作副本并自动完成全部检查").
+    "开始后将创建安全工作副本并自动完成全部检�?).
 - V1.9A bridge tests: **10 / 10 PASS** (8 original + 1
   presenter-fault + 1 presenter-restoration, unchanged).
 - V1.9A DOM tests (this packet, updated):
@@ -4485,7 +4794,7 @@ V1.9A-A2 — 2026-09-07.
   - `git diff --check`: clean (0 warnings on all
     V1.9A-A2 changes; the trailing whitespace in
     `Prompt/CURRENT_PI_DISPATCH.md` is pre-existing
-    and outside Pi's scope — `Prompt/` is read-only).
+    and outside Pi's scope �?`Prompt/` is read-only).
 
 Frozen V1.4 / V1.5 / V1.6 / V1.7 / V1.8 Blueprint authority
 preserved unchanged on the assigned `dev/v1.9`. Pi did
@@ -4500,7 +4809,7 @@ Corrections / additions by this packet:
 
 - **New orchestrator module**:
   `extension/su_ai_plugin/cad_prep_workflow_orchestrator.rb`
-  — the bounded deterministic orchestrator. The
+  �?the bounded deterministic orchestrator. The
   orchestrator coordinates the EXISTING
   `WorkingModeRunner` production methods
   (no V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm
@@ -4518,7 +4827,7 @@ Corrections / additions by this packet:
 - **Production-safe topology-state invalidation seam
   (dispatch §4.1)**:
   `extension/su_ai_plugin/core/working_mode_runner.rb`
-  — `invalidate_topology_state_after_geometry_mutation`
+  �?`invalidate_topology_state_after_geometry_mutation`
   is the production entry for clearing stale V1.7
   proposal / audit / canonical graph + the V1.8 cache
   after a derived-geometry mutation. The seam:
@@ -4535,7 +4844,7 @@ Corrections / additions by this packet:
   - does NOT create host geometry.
 
 - **New production callbacks (dispatch §6)**:
-  `extension/su_ai_plugin/dialog_runner.rb` — registers
+  `extension/su_ai_plugin/dialog_runner.rb` �?registers
   `start_cad_prep` (IDLE primary CTA) and
   `refresh_cad_prep` (NEEDS_ATTENTION /
   READY_FOR_VALIDATION primary CTA) as block callbacks
@@ -4549,10 +4858,10 @@ Corrections / additions by this packet:
 - **A2 IDLE copy + gap-ordering safety (dispatch §8 +
   §5.1)**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-  — the IDLE `subheadline` + `issue_summary.subtitle`
+  �?the IDLE `subheadline` + `issue_summary.subtitle`
   + `_build_headlines` IDLE branch now truthfully
   promise automatic full diagnostics
-  ("开始后将创建安全工作副本并自动完成全部检查"). The
+  ("开始后将创建安全工作副本并自动完成全部检�?). The
   gap card's `primary_action.enabled` is now `false`
   when the current `planar_normalization.state` is
   `READY_TO_NORMALIZE` (dispatch §5.1), with a truthful
@@ -4563,12 +4872,12 @@ Corrections / additions by this packet:
   the callback). `planar_normalization` states other
   than `READY_TO_NORMALIZE` (NO_CANDIDATE, APPLIED,
   REVIEW_REQUIRED, FAILED, BLOCKED, NOT_COMPUTED) do
-  NOT block gap repair — REVIEW_REQUIRED is a
+  NOT block gap repair �?REVIEW_REQUIRED is a
   non-actionable warning that V1.7's own conservative
   rules already handle.
 
 - **Frontend CTA mapping (dispatch §8.2)**:
-  `extension/su_ai_plugin/html/app.js` — the primary
+  `extension/su_ai_plugin/html/app.js` �?the primary
   CTA mapping is now: `IDLE -> start_cad_prep`;
   `SCANNING -> start_cad_prep` (disabled);
   `NEEDS_ATTENTION / READY_FOR_VALIDATION ->
@@ -4586,7 +4895,7 @@ Corrections / additions by this packet:
 
 - **Legacy Ruby guard documentation correction
   (dispatch §11)**:
-  `tests/test_v15_legacy_compat_guard.rb` — the
+  `tests/test_v15_legacy_compat_guard.rb` �?the
   `enumerable_sum` comment is corrected:
   Enumerable#sum was introduced in Ruby 2.4, so
   SU2017 (Ruby 2.2.4) lacks it; SU2020 (Ruby 2.5.5)
@@ -4614,7 +4923,7 @@ Corrections / additions by this packet:
     IDLE-truth tests (the orchestrator now owns the
     full pipeline so the A1 "only the V1.5 duplicate
     batch runs" copy is retired; the A2 copy is
-    "开始后将创建安全工作副本并自动完成全部检查").
+    "开始后将创建安全工作副本并自动完成全部检�?).
   - `tests/test_html_render.rb`: updated the
     callback-presence test to include
     `start_cad_prep` + `refresh_cad_prep` (the A2
@@ -4640,7 +4949,7 @@ Corrections / additions by this packet:
     in-tree orchestrator is the one reloaded; the
     extracted RBZ may contain an older copy, and
     `require_relative` inside `dialog_runner.rb`
-    caches by absolute path — without explicitly
+    caches by absolute path �?without explicitly
     reloading the orchestrator here, the stale
     extracted copy would silently take precedence
     in subsequent tests).
@@ -4659,8 +4968,7 @@ workflow). V1.9B PreparedCadDataset / persistence
 NOT STARTED. Final V1.x Codex xHigh review remains
 mandatory later regardless.
 
-CODEX_RISK_TRIGGER = NO (per dispatch §13 —
-orchestrator + invalidation seam + presenter IDLE
+CODEX_RISK_TRIGGER = NO (per dispatch §13 �?orchestrator + invalidation seam + presenter IDLE
 copy + gap-ordering safety + frontend CTA mapping +
 test infrastructure; no canonical graph identity /
 schema / digest / V1.7 segment conflict / tolerance
@@ -4681,8 +4989,7 @@ EXECUTION on assigned `dev/v1.9` per dispatch
 that found the V1.9A presenter compatibility fix correct but
 3 pre-existing production `.sum` calls (V1.4 / V1.6 era)
 remained incompatible with the SU2017 Ruby 2.2 baseline).
-This packet is a mechanical compatibility closure ONLY —
-three production `.sum` sites replaced with `inject(0)` /
+This packet is a mechanical compatibility closure ONLY �?three production `.sum` sites replaced with `inject(0)` /
 `inject(0.0)` plus a global LEGACY-COMPAT guard extension.
 No V1.4 / V1.6 / V1.7 / V1.8 algorithm change, no contract
 change, no schema change. All frozen V1.4–V1.8 Blueprint
@@ -4718,7 +5025,7 @@ Status (this packet):
   replacements AND the global guard extension).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1X-LEGACY-RUBY-DEBT-CLOSURE — 2026-09-07.
+V1X-LEGACY-RUBY-DEBT-CLOSURE �?2026-09-07.
 
 - Starting HEAD for this packet:
   `e38d6dcc8930b37f0d5e439d628bf4f82426aa54` (the
@@ -4746,11 +5053,11 @@ V1X-LEGACY-RUBY-DEBT-CLOSURE — 2026-09-07.
   baseline).
 - Packaged `core/source_fingerprint.rb` SHA-256:
   `949CE3FF1E9A05D9FFEB4D5377ED2B2F265C4B62BC464E5573442FB0C6AD6B24`
-  (NEW — `.sum` → `inject(0.0)` / `inject(0)`).
+  (NEW �?`.sum` �?`inject(0.0)` / `inject(0)`).
 - Packaged `core/planar_normalization_executor.rb`
   SHA-256:
   `7EF4D2DE2C61A305D16278C830438F72EB75B9C363C51AA10162D7F4AA773E9B`
-  (NEW — `.sum` → `inject(0.0)`).
+  (NEW �?`.sum` �?`inject(0.0)`).
 - Full Ruby suite: **1070 / 1070 total** / **1067 PASS**
   / 1 fail / 2 error.
   - The 1 fail + 2 error are the SAME pre-existing
@@ -4801,22 +5108,19 @@ MCP / LLM / Agent.
 
 Corrections / additions by this packet:
 
-- **3 mechanical production `.sum` → `inject(0)` /
+- **3 mechanical production `.sum` �?`inject(0)` /
   `inject(0.0)` replacements** (preserving Float semantics
   for `edge_length_sum` and `_z_summary` mean):
 
   1. `extension/su_ai_plugin/core/source_fingerprint.rb`
-     line 224: `edges.map { ... }.sum` →
-     `edges.inject(0.0) { |acc, e| acc + (...) }`.
+     line 224: `edges.map { ... }.sum` �?     `edges.inject(0.0) { |acc, e| acc + (...) }`.
      V1.4 fingerprint schema (field names, canonical
      ordering, digest semantics) UNCHANGED.
   2. `extension/su_ai_plugin/core/source_fingerprint.rb`
-     line 227: `faces.map { ... }.sum` →
-     `faces.inject(0) { |acc, f| acc + (...) }`.
+     line 227: `faces.map { ... }.sum` �?     `faces.inject(0) { |acc, f| acc + (...) }`.
      V1.4 fingerprint schema UNCHANGED.
   3. `extension/su_ai_plugin/core/planar_normalization_executor.rb`
-     line 343: `(floats.sum.to_f / floats.length.to_f)` →
-     `total = floats.inject(0.0) { |acc, z| acc + z }; total /
+     line 343: `(floats.sum.to_f / floats.length.to_f)` �?     `total = floats.inject(0.0) { |acc, z| acc + z }; total /
      floats.length.to_f`. V1.6 mean semantics UNCHANGED
      (count / min / max / mean unchanged); V1.6
      normalization policy, host mutation behavior,
@@ -4836,7 +5140,7 @@ Corrections / additions by this packet:
 
   The prior V19A-A1 SCOPED guard (which scanned only the
   new V1.9A presenter file) has been REMOVED as redundant
-  — the global guard covers it with the same precision.
+  �?the global guard covers it with the same precision.
 
   Teeth verified in this session: temporarily reintroduced
   `.sum` to `core/source_fingerprint.rb` line 224 and
@@ -4876,7 +5180,7 @@ orchestrator NOT STARTED. V1.9B PreparedCadDataset /
 persistence NOT STARTED.
 
 CODEX_GATE: NOT REQUIRED (per AGENTS.md §13 / §10; no
-risk trigger — 3 mechanical `.sum` → `inject(0)` replacements
+risk trigger �?3 mechanical `.sum` �?`inject(0)` replacements
 in V1.4 fingerprint + V1.6 planar normalization; no algorithm
 change; no contract change; no source / provenance change; no
 tolerance / canonical-topology change; no frontend change).
@@ -4922,8 +5226,7 @@ Status (this packet):
   compatibility corrections only).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX —
-2026-09-04.
+V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX �?2026-09-04.
 
 - Starting HEAD for this packet:
   `3d5c72a15b9b728edaa75aec3e8643d7508e7bfd` (the
@@ -4937,20 +5240,20 @@ V1.9A-A1 LEGACY RUBY COMPATIBILITY NARROW FIX —
   **`8F1DA75527A5D5387945FC3594A922C830F122526A4ECEADCC2743E9C1368CDE`**.
 - Packaged `html/index.html` SHA-256:
   `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
-  (unchanged from V1.9A-A1 baseline — no HTML change in
+  (unchanged from V1.9A-A1 baseline �?no HTML change in
   this packet).
 - Packaged `html/app.js` SHA-256:
   `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`
-  (unchanged from V1.9A-A1 baseline — no JS change in
+  (unchanged from V1.9A-A1 baseline �?no JS change in
   this packet).
 - Packaged `html/style.css` SHA-256:
   `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
-  (unchanged from V1.9A-A1 baseline — no CSS change in
+  (unchanged from V1.9A-A1 baseline �?no CSS change in
   this packet).
 - Packaged `cad_prep_workflow_presenter.rb` SHA-256:
   `74B2C9D5FE782F4DB5ED95CCC90CBD59740E7B01C49F9828FF7622FC7B7927DE`
-  (NEW — Ruby 2.2 compat: `.positive?` → `> 0`;
-  `.sum` → `inject(0) { ... }`).
+  (NEW �?Ruby 2.2 compat: `.positive?` �?`> 0`;
+  `.sum` �?`inject(0) { ... }`).
 - Full Ruby suite: **1071 / 1071 total** / **1068 PASS**
   / 1 fail / 2 error.
   - The 1 fail + 2 error are the SAME pre-existing
@@ -5010,7 +5313,7 @@ Corrections / additions by this packet:
 - **Ruby 2.2 compatibility correction in the V1.9A
   presenter**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-  — replaced every post-Ruby-2.2 helper with a Ruby 2.2-
+  �?replaced every post-Ruby-2.2 helper with a Ruby 2.2-
   safe equivalent. The replacements are mechanical /
   semantics-preserving and DO NOT change the
   cadPrepWorkflow payload, counts, ordering, labels,
@@ -5030,7 +5333,7 @@ Corrections / additions by this packet:
     n.positive?                          -> n > 0
 
   The headline string format
-  `"发现 N 类 · M 项问题"` is preserved verbatim (M is now
+  `"发现 N �?· M 项问�?` is preserved verbatim (M is now
   computed via `inject(0) { ... }` instead of `.sum`).
 
 - **Repo-local V1.9-introduced compatibility scan
@@ -5062,7 +5365,7 @@ Corrections / additions by this packet:
 
 - **Focused V1.9A legacy compatibility regression
   guard**:
-  `tests/test_v15_legacy_compat_guard.rb` — extended the
+  `tests/test_v15_legacy_compat_guard.rb` �?extended the
   existing LEGACY-COMPAT framework with a NEW test that
   scopes the regression to the new V1.9A presenter file
   only. The guard scans `cad_prep_workflow_presenter.rb`
@@ -5095,7 +5398,7 @@ orchestrator NOT STARTED. V1.9B PreparedCadDataset /
 persistence NOT STARTED.
 
 CODEX_GATE: NOT REQUIRED (per AGENTS.md §13 / §10; no
-risk trigger — only the presenter module + one test
+risk trigger �?only the presenter module + one test
 file were touched; no architecture change, no algorithm
 change, no source/provenance change, no
 tolerance/canonical-topology change).
@@ -5128,7 +5431,7 @@ Status (this continuation):
   FIX REQUIRED corrections only).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A1 FIX REQUIRED CONTINUATION — 2026-09-04.
+V1.9A-A1 FIX REQUIRED CONTINUATION �?2026-09-04.
 
 - Starting HEAD for this continuation:
   `a8563e3` (V1.9A-A1 packet's stable commit on `dev/v1.9`).
@@ -5141,19 +5444,19 @@ V1.9A-A1 FIX REQUIRED CONTINUATION — 2026-09-04.
   **`DAAF988D75DD2A40E8F2831822E43CD8E1A061DDD9E634A73FF65CD350A9095E`**.
 - Packaged `html/index.html` SHA-256:
   `4D488AEF5DA7E43CC8245CC6D40263E9345422C1A228392A3238373A15D0336A`
-  (unchanged from V1.9A-A1 original — no HTML change in
+  (unchanged from V1.9A-A1 original �?no HTML change in
   this continuation).
 - Packaged `html/app.js` SHA-256:
   `A3A2D2EFDF672571F16ADD23FC36D2EEFED7EFDF9BFBEB9C82FE79952FF9340F`
-  (unchanged from V1.9A-A1 original — no JS change in
+  (unchanged from V1.9A-A1 original �?no JS change in
   this continuation).
 - Packaged `html/style.css` SHA-256:
   `4B7572DAFD8B20B14AA66042F9DCB03E4C17F4DEA260276B4A0292D0CB4F6B36`
-  (unchanged from V1.9A-A1 original — no CSS change in
+  (unchanged from V1.9A-A1 original �?no CSS change in
   this continuation).
 - Packaged `cad_prep_workflow_presenter.rb` SHA-256:
   `EC46C603C3A737DDCC121AD90C7733418E0B59FE0D755923FCF3754495220949`
-  (NEW — contains BLOCK 1 + BLOCK 2 fixes).
+  (NEW �?contains BLOCK 1 + BLOCK 2 fixes).
 - Full Ruby suite: **1070 / 1070 total** / **1067 PASS** /
   1 fail / 2 error.
   - The 1 fail + 2 error are the SAME pre-existing
@@ -5204,42 +5507,42 @@ Corrections / additions by this continuation:
 
 - **BLOCK 1 (truthful IDLE copy)**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-  — `_build_issue_summary` IDLE branch + `_build_headlines`
+  �?`_build_issue_summary` IDLE branch + `_build_headlines`
   IDLE branch both updated. Old copy
-  `"开始后将创建安全工作副本并完成全部检查"` (which falsely
+  `"开始后将创建安全工作副本并完成全部检�?` (which falsely
   promised full automatic diagnostics belonging to A2)
   replaced with truthful A1 copy
-  `"开始后将创建安全工作副本并自动清理高置信度重复线"` (only
+  `"开始后将创建安全工作副本并自动清理高置信度重复�?` (only
   the V1.5 duplicate-repair batch actually runs on
   prepare). IDLE `issue_summary.subtitle` synced. New
   source-level guard test
   `v19a_presenter (BLOCK 1): IDLE copy never claims full
   diagnosis are automatically completed` asserts the
-  presenter source never contains `"完成全部检查"` /
-  `"完成所有检查"` (forward-protection against future drift).
+  presenter source never contains `"完成全部检�?` /
+  `"完成所有检�?` (forward-protection against future drift).
 
 - **BLOCK 2 (overall state derives from rendered cards)**:
   `extension/su_ai_plugin/cad_prep_workflow_presenter.rb`
-  — `present` now builds `cards` BEFORE `overall` and passes
+  �?`present` now builds `cards` BEFORE `overall` and passes
   them into `_compute_overall_state`. The new helper
   `_overall_state_for_ready_workspace(cards)` implements
   the four-rule decision:
-    1. any ACTIONABLE / BLOCKED / FAILED → NEEDS_ATTENTION;
-    2. any REVIEW_REQUIRED → NEEDS_ATTENTION;
+    1. any ACTIONABLE / BLOCKED / FAILED �?NEEDS_ATTENTION;
+    2. any REVIEW_REQUIRED �?NEEDS_ATTENTION;
     3. any stage-bound (duplicate_cleanup,
        planar_normalization, gap_endpoint,
-       structure_region) UNCOMPUTED → NEEDS_ATTENTION
+       structure_region) UNCOMPUTED �?NEEDS_ATTENTION
        with the truthful headline `"仍有未检查项"` /
-       subtitle `"请逐项检查未完成的诊断"`;
+       subtitle `"请逐项检查未完成的诊�?`;
     4. all stage-bound cards CLEAN / APPLIED and no
-       REVIEW_REQUIRED → READY_FOR_VALIDATION.
+       REVIEW_REQUIRED �?READY_FOR_VALIDATION.
   Headlines under NEEDS_ATTENTION now distinguish
   actionable / uncomputed / blocked / review-only cases.
   Six regression tests pinned (see
   `tests/test_v19a_cad_prep_workflow_presenter.rb`).
 
 - **NON-BLOCKING (presenter-fault UX cleanup)**:
-  `extension/su_ai_plugin/ui_bridge.rb` — the presenter-
+  `extension/su_ai_plugin/ui_bridge.rb` �?the presenter-
   fault rescue block no longer leaks the raw exception
   `class` / `message` into the product-facing
   subheadline / issue_summary subtitle / recovery desc.
@@ -5247,14 +5550,13 @@ Corrections / additions by this continuation:
   Ruby Console via a best-effort `warn(...)` call. The
   user-facing copy is generic / actionable
   (`"请重新生成工作副本或放弃当前副本"` /
-  `"处理失败"` / `"CAD 准备界面暂不可用…技术细节可在
-  SketchUp Ruby 控制台查看。"`). Regression-locked in
+  `"处理失败"` / `"CAD 准备界面暂不可用…技术细节可�?  SketchUp Ruby 控制台查看�?`). Regression-locked in
   `v19a_bridge (non-blocking): presenter-fault UX stays
-  generic — no technical class/message in product copy`.
+  generic �?no technical class/message in product copy`.
 
 - **Stale-load test-infra fix (root cause of the
   presentation-layer test pollution)**:
-  `tests/test_rbz_smoke.rb` — added
+  `tests/test_rbz_smoke.rb` �?added
   `cad_prep_workflow_presenter.rb` to the
   `V14_RBZ_SMOKE_IN_TREE_FILES` reload list (placed
   BEFORE `ui_bridge.rb` so the in-tree presenter is the
@@ -5263,7 +5565,7 @@ Corrections / additions by this continuation:
   present RBZ's older copy of the presenter (pre-BLOCK
   1 / BLOCK 2) would silently take precedence in
   subsequent tests via Ruby's `require_relative`
-  absolute-path cache — even after the RBZ smoke test
+  absolute-path cache �?even after the RBZ smoke test
   finished. This was the root cause of the earlier
   session's apparent "stale-load" symptom (where the
   on-disk source was the NEW logic but the tests
@@ -5287,7 +5589,7 @@ NOT STARTED. V1.9B PreparedCadDataset / persistence
 NOT STARTED.
 
 CODEX_GATE: NOT REQUIRED (per AGENTS.md §13; no risk
-trigger — only the presenter module, the UIBridge
+trigger �?only the presenter module, the UIBridge
 presenter-fault rescue, and three test files were
 touched by the production-data plane; no architecture
 change).
@@ -5329,7 +5631,7 @@ Status (this dispatch):
   REQUIRED continuation re-review).
 - **V2 / MCP OUT OF SCOPE**.
 
-V1.9A-A1 PACKET — 2026-09-04.
+V1.9A-A1 PACKET �?2026-09-04.
 
 - Starting HEAD: `bbe423cce3f4136ddd4d0673fbce02527e36de15`
   (the V18-OWNER-SU2020-UI-WIRING complete state on
@@ -5467,15 +5769,14 @@ Status (this dispatch):
 - **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
 - **V1.8 SR18-01..08 + FR18-01..04 + BOOT BLOCK**: PASS
   (prior dispatches).
-- **V1.8 Owner SU2020 UI WIRING (this packet)**: BLOCK →
-  narrow fix applied; Pi Complete; awaiting Owner re-run of
+- **V1.8 Owner SU2020 UI WIRING (this packet)**: BLOCK �?  narrow fix applied; Pi Complete; awaiting Owner re-run of
   the real-SU2020 click path.
 - **V1.8 Codex gate**: NOT REQUIRED
   (`CODEX_RISK_TRIGGER = NO`).
 - **V1.9 / PreparedCadDataset NOT STARTED.**
 - **V2 / MCP OUT OF SCOPE.**
 
-V1.8 OWNER-SU2020-UI-WIRING PACKET — 2026-09-03.
+V1.8 OWNER-SU2020-UI-WIRING PACKET �?2026-09-03.
 
 - Starting HEAD: `e27359d20566d853170f464bb877bf4d98db28c7`
   (the prior V18-OWNER-SU2020-BOOT-BLOCK complete state on
@@ -5489,16 +5790,16 @@ V1.8 OWNER-SU2020-UI-WIRING PACKET — 2026-09-03.
   **`8fdadd5a9258bd2c2ceaf1cf83edf0427ed6f5d8123270877c3f90bb7387739d`**.
 - Packaged `html/app.js` SHA-256:
   `56878DD018A0DB6A1684CABE91EE84EB1426B295C7B1CF60F6A08F5D98353F2D`
-  (unchanged — no JS change in this dispatch).
+  (unchanged �?no JS change in this dispatch).
 - Packaged `html/index.html` SHA-256:
   `6405DD9EB10A4C4CFCC73CD15AA8B54BC4DAF1D5F631780D7DB6308EAAD6489D`
-  (unchanged — no HTML change in this dispatch).
+  (unchanged �?no HTML change in this dispatch).
 - Packaged `html/style.css` SHA-256:
   `3FAAB5E5C6C9757DDE90D2F984B02F2F357727553232BC7FC70814C7709BB95B`
-  (unchanged — no CSS change in this dispatch).
+  (unchanged �?no CSS change in this dispatch).
 - Full Ruby suite: **1053 / 1053 total** / **1050 PASS** / 1 fail
   / 2 error (the 1 fail + 2 error are pre-existing failures
-  unrelated to this dispatch — confirmed by `git stash` +
+  unrelated to this dispatch �?confirmed by `git stash` +
   re-run against the prior commit). Delta vs prior
   V18-OWNER-SU2020-BOOT-BLOCK 1048: +5 tests (the new
   V1.8 UI WIRING set).
@@ -5526,7 +5827,7 @@ Correction by this dispatch (narrow, regression-locked in
 `tests/test_dialog_runner.rb`):
 
 - **V1.8 UI WIRING (dialog_runner)**:
-  `extension/su_ai_plugin/dialog_runner.rb` — the real-SU2020
+  `extension/su_ai_plugin/dialog_runner.rb` �?the real-SU2020
   Owner Gate produced a no-op on the `检查结构` button
   click. AIPM trace identified the gap: `app.js` (production,
   unchanged) dispatches the action name
@@ -5562,18 +5863,18 @@ New tests added by this dispatch (5 V1.8 UI WIRING):
   `structure_reconstruction` sub-snapshot is populated with
   `computed == true`.
 - `V1.8 UI WIRING-D`: the resulting payload is re-pushed via
-  the existing `_safe_invoke → push_data` path (execute_script
-  count increases by ≥ 1; latest push goes through
+  the existing `_safe_invoke �?push_data` path (execute_script
+  count increases by �?1; latest push goes through
   `window.SUAIP.render(<json>)` and carries the
   `schema_version` marker).
 - `V1.8 UI WIRING-E`: the read-only nature of the V1.8
-  structure check is enforced — the captured
+  structure check is enforced �?the captured
   `source_fingerprint_digest` MUST be unchanged across the
   click (no mutation reaches the captured source).
 
 The already-PASS SR18-01..08 + FR18-01..04 + BOOT BLOCK
 areas were NOT reworked beyond mechanical test compatibility
-— all 1048 prior tests remain green.
+�?all 1048 prior tests remain green.
 
 CODEX_RISK_TRIGGER = NO. Per dispatch §Do-not-change: V1.8
 reconstruction algorithm, app.js action name, V1.7 schema,
@@ -5617,7 +5918,7 @@ Status (this dispatch):
 - **V1.8: ACTIVE** (per AIPM trace).
 - **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
 - **V1.8 SR18-01..08 + FR18-01..04**: PASS (prior dispatches).
-- **V1.8 Owner SU2020 Gate**: BOOT BLOCK → narrow fix
+- **V1.8 Owner SU2020 Gate**: BOOT BLOCK �?narrow fix
   applied; Pi Complete; awaiting Owner re-run of the
   real-SU2020 boot path.
 - **V1.8 Codex gate**: NOT REQUIRED
@@ -5625,7 +5926,7 @@ Status (this dispatch):
 - **V1.9 / PreparedCadDataset NOT STARTED.**
 - **V2 / MCP OUT OF SCOPE.**
 
-V1.8 OWNER-SU2020-BOOT-BLOCK PACKET — 2026-09-03.
+V1.8 OWNER-SU2020-BOOT-BLOCK PACKET �?2026-09-03.
 
 - Starting HEAD: `436b71a19da6ec09c88a5983d59063c44ae673c1`
   (the prior V18-FINAL-FOUR-RESIDUALS complete state on
@@ -5675,7 +5976,7 @@ Correction by this dispatch (narrow, regression-locked in
 `tests/test_v18_structure_reconstruction.rb`):
 
 - **OWNER SU2020 BOOT BLOCK (void-value expression)**:
-  `core/canonical_structure_reconstructor.rb` — the
+  `core/canonical_structure_reconstructor.rb` �?the
   `_validate_adjacency_against_edges` non-array branch
   used `next` as the value of the `else` branch of an
   `if` expression assigned to `supplied`. Modern Ruby
@@ -5715,7 +6016,7 @@ tests):
   after the restructure.
 
 The already-PASS SR18-01..08 + FR18-01..04 areas were NOT
-reworked beyond mechanical test compatibility — all 1029
+reworked beyond mechanical test compatibility �?all 1029
 baseline tests + 16 V18-FR tests + 32 V18-SR tests remain
 PASS unchanged.
 
@@ -5757,8 +6058,7 @@ Status (this dispatch):
   `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
 - **V1.8: ACTIVE** (per dispatch §0).
 - **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
-- **V1.8 AIPM narrow recheck (this packet)**: BLOCK →
-  all FR18-01..FR18-04 fixed; Pi Complete; awaiting AIPM
+- **V1.8 AIPM narrow recheck (this packet)**: BLOCK �?  all FR18-01..FR18-04 fixed; Pi Complete; awaiting AIPM
   final recheck.
 - **V1.8 Codex gate**: NOT REQUIRED
   (`CODEX_RISK_TRIGGER = NO`).
@@ -5767,7 +6067,7 @@ Status (this dispatch):
 - **V1.9 / PreparedCadDataset NOT STARTED.**
 - **V2 / MCP OUT OF SCOPE.**
 
-V1.8 FR18 FINAL-RESIDUALS PACKET — 2026-09-03.
+V1.8 FR18 FINAL-RESIDUALS PACKET �?2026-09-03.
 
 - Starting HEAD: `ab3e0c8a573052598ebba6fa0b483341408a660f`
   (the prior V18-AIPM-SOURCE-REVIEW-CORRECTION complete
@@ -5821,8 +6121,7 @@ Corrections by this dispatch (each regression-locked
 in `tests/test_v18_structure_reconstruction.rb`):
 
 - **FR18-01 (coordinate_epsilon authority)**:
-  `core/canonical_structure_reconstructor.rb` —
-  rewrote `_resolve_coordinate_eps(graph, kw)` with
+  `core/canonical_structure_reconstructor.rb` �?  rewrote `_resolve_coordinate_eps(graph, kw)` with
   the strict authority contract: ANY explicit finite
   positive `coordinate_epsilon:` keyword wins VERBATIM
   (including exactly `1.0e-6`; the previous
@@ -5837,8 +6136,7 @@ in `tests/test_v18_structure_reconstruction.rb`):
   `_empty_result` with `STATE_FAILED`.
 
 - **FR18-02 (true indexed O(V+E) membership)**:
-  `core/canonical_structure_reconstructor.rb` —
-  removed the process-global `comp_set(arr)` helper
+  `core/canonical_structure_reconstructor.rb` �?  removed the process-global `comp_set(arr)` helper
   and its `@_comp_set_cache` (object-id-keyed
   membership cache); removed every `comp.include?`
   Array scan from the production traversal hot path;
@@ -5851,8 +6149,7 @@ in `tests/test_v18_structure_reconstruction.rb`):
   (`adj_set[k].add(b)`) and publishes sorted Arrays.
 
 - **FR18-03 (true deep freeze)**:
-  `core/canonical_structure_reconstructor.rb` —
-  rewrote `deep_freeze(obj)` to recursively freeze
+  `core/canonical_structure_reconstructor.rb` �?  rewrote `deep_freeze(obj)` to recursively freeze
   Hash KEYS as well as values, recursively freeze
   Array members, and **explicitly freeze String scalar
   values** (Ruby Strings are mutable by default).
@@ -5862,8 +6159,7 @@ in `tests/test_v18_structure_reconstruction.rb`):
   remain unchanged.
 
 - **FR18-04 (complete adjacency validation)**:
-  `core/canonical_structure_reconstructor.rb` —
-  rewrote `_validate_adjacency_against_edges(adj_h,
+  `core/canonical_structure_reconstructor.rb` �?  rewrote `_validate_adjacency_against_edges(adj_h,
   node_set, edge_h)` to iterate over EVERY canonical
   node id (not only supplied keys), normalize missing
   supplied-key to empty list, reject non-Array
@@ -5940,7 +6236,7 @@ Status (this dispatch):
   `Prompt/AIPM_V1_7_OWNER_ACCEPTED_CLOSURE_2026-09-02.md`).
 - **V1.8: ACTIVE** (per dispatch §0).
 - **Frozen V1.8 Blueprint**: ACTIVE (unchanged).
-- **V1.8 AIPM source review**: BLOCK → all SR18-01..08
+- **V1.8 AIPM source review**: BLOCK �?all SR18-01..08
   fixed; Pi Complete; awaiting AIPM narrow recheck.
 - **V1.8 Codex gate**: NOT REQUIRED
   (`CODEX_RISK_TRIGGER = NO`).
@@ -5949,7 +6245,7 @@ Status (this dispatch):
 - **V1.9 / PreparedCadDataset NOT STARTED.**
 - **V2 / MCP OUT OF SCOPE.**
 
-V1.8 SR18 CORRECTION PACKET — 2026-09-02.
+V1.8 SR18 CORRECTION PACKET �?2026-09-02.
 
 - Starting HEAD: `4ca73ccb5684434fd102c0e6a059d60c186b627f`
   (the prior V1.8-BASE-STRUCTURE-RECONSTRUCTION complete
@@ -5999,7 +6295,7 @@ Corrections by this dispatch (each regression-locked in
 `tests/test_v18_working_mode_integration.rb`):
 
 - **SR18-01 (Ruby 2.2 source guard)**:
-  `core/canonical_structure_reconstructor.rb` — replaced
+  `core/canonical_structure_reconstructor.rb` �?replaced
   `regions.sum` and `hole_ids.sum` with explicit
   Ruby 2.2-compatible accumulation loops. Source-level
   static guard test (V18-SR01) asserts NO production
@@ -6007,7 +6303,7 @@ Corrections by this dispatch (each regression-locked in
   hole_count + region_area remain correct.
 
 - **SR18-02 (coordinate_epsilon authority)**:
-  `core/canonical_structure_reconstructor.rb` — added
+  `core/canonical_structure_reconstructor.rb` �?added
   `_safe_eps`, `_resolve_coordinate_eps(graph, kw)`,
   and a `coordinate_epsilon:` keyword argument on
   `reconstruct(...)`. One resolved epsilon is
@@ -6015,14 +6311,13 @@ Corrections by this dispatch (each regression-locked in
   self-intersection, containment, hole validation,
   and region validity. No silent 1e-6 fallback when
   a valid non-default captured tolerance is present.
-  `core/working_mode_runner.rb` — captures
+  `core/working_mode_runner.rb` �?captures
   `tol.coordinate_epsilon` and passes it in. Per-loop
   `coordinate_epsilon` is published for downstream
   consumers.
 
 - **SR18-03 (loop conflict detection)**:
-  `core/canonical_structure_reconstructor.rb` —
-  `_validate_loop_self_intersection` now routes every
+  `core/canonical_structure_reconstructor.rb` �?  `_validate_loop_self_intersection` now routes every
   non-adjacent pair through the shared V1.7
   `SegmentConflict.conflict?` pure predicate and
   surfaces 4 stable per-loop reasons:
@@ -6032,7 +6327,7 @@ Corrections by this dispatch (each regression-locked in
   SKIPPED. SegmentConflict source untouched.
 
 - **SR18-04 (O(V+E) traversal)**:
-  `core/canonical_structure_reconstructor.rb` — added
+  `core/canonical_structure_reconstructor.rb` �?added
   `_build_edge_indexes(edges_by_id)` that builds
   `incident` + `pair_to_edges` + `edge_endpoints` +
   parallel-edge detection ONCE. `_classify_component`,
@@ -6047,7 +6342,7 @@ Corrections by this dispatch (each regression-locked in
   in well under 5s.
 
 - **SR18-05 (cache invalidation)**:
-  `core/working_mode_runner.rb` — added
+  `core/working_mode_runner.rb` �?added
   `_invalidate_v18_cache` seam. Called from
   `_invalidate_to_failed_with_reason`,
   `apply_gap_repair` (`:applied` AND `:failed`
@@ -6055,11 +6350,11 @@ Corrections by this dispatch (each regression-locked in
   AND `:failed`), `run_duplicate_repair_batch`
   (success AND `rescue`). Previously the `:applied`
   branch of `apply_gap_repair` was the only
-  mutation path that did NOT clear the cache — now
+  mutation path that did NOT clear the cache �?now
   fixed.
 
 - **SR18-06 (truthful state)**:
-  `core/canonical_structure_reconstructor.rb` — the
+  `core/canonical_structure_reconstructor.rb` �?the
   result state computation now matches the dispatch's
   contract: invalid graph => FAILED; any
   unresolved/upstream warning =>
@@ -6068,7 +6363,7 @@ Corrections by this dispatch (each regression-locked in
   READY); invalid adjacency => FAILED.
 
 - **SR18-07 (deep immutability)**:
-  `core/canonical_structure_reconstructor.rb` — added
+  `core/canonical_structure_reconstructor.rb` �?added
   `deep_freeze(obj)` that recursively freezes nested
   Hashes and Arrays in place. Applied to BOTH the
   normal result publication and the `_empty_result`
@@ -6076,7 +6371,7 @@ Corrections by this dispatch (each regression-locked in
   `FrozenError` and the digest remains stable.
 
 - **SR18-08 (adjacency validation)**:
-  `core/canonical_structure_reconstructor.rb` — added
+  `core/canonical_structure_reconstructor.rb` �?added
   `REASON_ADJENCY_MISMATCH = 'invalid_graph:adjacency_mismatch'`
   and `_validate_adjacency_against_edges(adj_h,
   node_set, edge_h)`. Validates the supplied
@@ -6161,7 +6456,7 @@ Status (this dispatch):
 - **V1.9 / PreparedCadDataset NOT STARTED.**
 - **V2 / MCP OUT OF SCOPE.**
 
-V1.8 BASE PACKET — 2026-09-02.
+V1.8 BASE PACKET �?2026-09-02.
 
 - Starting HEAD: `ac0f26727574e4ea3830fec9fe4764a56e743358`.
 - Implementation SHA: produced by this dispatch (see
@@ -6226,9 +6521,9 @@ Corrections / implementations by this dispatch
   `轮廓与区域` block; `检查结构` primary CTA surfaced
   after a terminal V1.7 topology_repair state when
   the V1.8 result is NOT_COMPUTED; metric rows
-  (开放链 / 闭合轮廓 / 区域 / 洞 / 异常); state
-  labels (未检查 / 结构可用 / 存在需检查项 /
-  检查失败); technical details preserved under
+  (开放链 / 闭合轮廓 / 区域 / �?/ 异常); state
+  labels (未检�?/ 结构可用 / 存在需检查项 /
+  检查失�?; technical details preserved under
   `技术详情` (state, computed, canonical_graph_digest,
   result digest, full metrics, reason codes). No
   "生成建筑" / "生成道路" / "场地边界" wording. No
@@ -6299,7 +6594,7 @@ the already-accepted Codex xHigh BLOCK findings:
 
 - **INT-001 residual (output-order / digest
   determinism):**
-  `canonical_topology_builder.rb` — component iteration
+  `canonical_topology_builder.rb` �?component iteration
   key now derives from ALL sorted endpoint_keys of every
   member (`comp.map { |i| epss[i].endpoint_key.to_s
   }.sort.join('|')`) instead of `comp.first`. The
@@ -6309,19 +6604,19 @@ the already-accepted Codex xHigh BLOCK findings:
   `non_transitive_clusters` by `cluster_id`,
   `canonical_node_clusters` rebuilt in `cluster_id`-
   sorted insertion order. `canonical_geometry_graph.rb`
-  — `_compute_digest` now sorts `non_transitive_clusters`
+  �?`_compute_digest` now sorts `non_transitive_clusters`
   by `cluster_id` and sorts the endpoint_keys within
   each serialization line before joining.
   Safe-clique collapse / non-transitive separation /
   coordinate_epsilon semantics UNCHANGED.
 - **INT-002 residual (shared-endpoint collinear-overlap
-  safety):** `segment_conflict.rb` — the shared pure
+  safety):** `segment_conflict.rb` �?the shared pure
   predicate's decision order is now strictly: validate +
-  bbox reject → COLLINEAR classification + overlap
+  bbox reject �?COLLINEAR classification + overlap
   FIRST (genuine interior overlap = CONFLICT even when
   endpoint(s) shared; collinear endpoint-only touch =
-  SAFE; disjoint collinear = SAFE) → non-collinear
-  shared-endpoint-only meeting SAFE → proper crossing /
+  SAFE; disjoint collinear = SAFE) �?non-collinear
+  shared-endpoint-only meeting SAFE �?proper crossing /
   bridge-endpoint-on-unrelated / unrelated-endpoint-on-
   bridge checks remain. Stable reason codes emitted:
   `'collinear_overlap'`, `'proper_interior_crossing'`,
@@ -6330,7 +6625,7 @@ the already-accepted Codex xHigh BLOCK findings:
   (SAFE marker). One shared pure predicate is used by
   the runner + the proposer.
 
-V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX PACKET — 2026-09-02.
+V1.7 CODEX-BLOCK-FINAL-RESIDUAL-FIX PACKET �?2026-09-02.
 
 - Starting HEAD: `40277b0` (the prior
   V17-CODEX-XHIGH-BLOCK-FIX doc-stamp; substantive INT
@@ -6383,8 +6678,7 @@ in `tests/test_v17_int_block_fix.rb`):
   ._compute_digest` sorts `non_transitive_clusters` by
   `cluster_id` and sorts endpoint_keys within each line
   before joining. Two non-transitive components,
-  forward / reverse / shuffled endpoint enumeration →
-  identical cluster_id sets, identical
+  forward / reverse / shuffled endpoint enumeration �?  identical cluster_id sets, identical
   canonical_node_id sets, identical graph digest.
 - **INT-002 (CONSERVATIVE SEGMENT OVERLAP /
   T-JUNCTION SAFETY + SHARED-ENDPOINT COLLINEAR
@@ -6396,11 +6690,11 @@ in `tests/test_v17_int_block_fix.rb`):
   runner's `_crossing_checker_proc` and the proposer's
   X3 pairwise check both delegate to this single shared
   pure predicate. The decision order is: validate +
-  bbox reject → collinear classification + overlap
+  bbox reject �?collinear classification + overlap
   first (genuine interior overlap = CONFLICT even when
   endpoint(s) shared; collinear endpoint-only touch =
-  SAFE; disjoint collinear = SAFE) → non-collinear
-  shared-endpoint-only meeting SAFE → proper crossing /
+  SAFE; disjoint collinear = SAFE) �?non-collinear
+  shared-endpoint-only meeting SAFE �?proper crossing /
   bridge-endpoint-on-unrelated /
   unrelated-endpoint-on-bridge checks remain. Disjoint
   collinear segments remain SAFE (the predicate
@@ -6418,7 +6712,7 @@ mandatory Codex xHigh NARROW recheck of these two
 findings only. On Codex PASS: final Owner SU2020
 real-host verification gate Scenarios A–G.
 
-CODEX_RECHECK: PENDING — DO NOT INVOKE.
+CODEX_RECHECK: PENDING �?DO NOT INVOKE.
 OWNER_GATE: NOT YET RUN.
 
 ## V1.7 CODEX-XHIGH-BLOCK-FIX (HISTORICAL)
@@ -6451,7 +6745,7 @@ This dispatch corrected ALL FIVE accepted Codex xHigh
 integration BLOCK findings:
 
 - INT-001 (deterministic non-transitive identity):
-  `canonical_topology_builder.rb` — dropped the
+  `canonical_topology_builder.rb` �?dropped the
   `comp_idx` discovery-ordinal prefix from
   `cluster_id`; cluster id now derives ONLY from
   a stable digest of sorted endpoint_keys; per-
@@ -6468,8 +6762,7 @@ integration BLOCK findings:
   partial collinear interior overlap, T-junction
   intent. Disjoint collinear segments remain SAFE.
 - INT-003 (preserve plural source provenance end-to-
-  end): `endpoint_record.rb` —
-  `EndpointRecord` + `DerivedEdgeRecord` now carry
+  end): `endpoint_record.rb` �?  `EndpointRecord` + `DerivedEdgeRecord` now carry
   `source_occurrence_ids` (PLURAL, frozen, sorted,
   uniq). The singular `source_occurrence_id`
   accessor is derived from the plural field.
@@ -6479,8 +6772,7 @@ integration BLOCK findings:
   sorted/uniq union across both incident sides via
   the shared `_plurals_union` helper.
 - INT-004 (validate host state BEFORE every V1.7
-  interaction): `working_mode_runner.rb` —
-  `compute_gap_repair` validates BEFORE topology
+  interaction): `working_mode_runner.rb` �?  `compute_gap_repair` validates BEFORE topology
   snapshot / proposal recomputation;
   `apply_gap_repair` validates BEFORE proposal
   recomputation AND BEFORE the `ready.empty?` early
@@ -6488,15 +6780,14 @@ integration BLOCK findings:
   fires immediately before the executor apply.
   No new Observer architecture.
 - INT-005 (Ruby 2.2 / SU2017 compatibility):
-  `working_mode_runner.rb` —
-  `_attach_topology_repair_to_snapshot` uses
+  `working_mode_runner.rb` �?  `_attach_topology_repair_to_snapshot` uses
   `delete_if { |_k, v| v.nil? }` + freeze in place
   of `{ ... }.compact.freeze` (Hash#compact is Ruby
   2.4+; SketchUp 2017 embeds Ruby 2.2.4). No other
   V1.7 production use of `Hash#compact` was
   introduced by this packet.
 
-V1.7 CODEX-XHIGH-BLOCK-FIX PACKET — 2026-09-02.
+V1.7 CODEX-XHIGH-BLOCK-FIX PACKET �?2026-09-02.
 
 - Starting HEAD: `e1e6275` (the prior
   V17-AIPM-FINAL-PRE-CODEX-FIX implementation
@@ -6625,7 +6916,7 @@ mandatory Codex xHigh NARROW recheck of these five
 findings only. On Codex PASS: final Owner SU2020
 real-host verification gate Scenarios A–G.
 
-CODEX_RECHECK: PENDING — DO NOT INVOKE.
+CODEX_RECHECK: PENDING �?DO NOT INVOKE.
 OWNER_GATE: NOT YET RUN.
 
 ## V1.7 AIPM-FINAL-PRE-CODEX-FIX (HISTORICAL)
@@ -6653,15 +6944,15 @@ Status (this dispatch):
 
 This dispatch corrected the TWO FINAL bounded pre-Codex
 findings (F-01 + F-02 from `Review/CURRENT_AIPM_REVIEW.md`)
-— captured tolerance authority (RR-04 pre-batch baseline
+�?captured tolerance authority (RR-04 pre-batch baseline
 honors the captured tolerance; no silent fallback to
 defaults) and independent proposal-vs-record-vs-host
 post-validation (record endpoints/length AND host endpoint
 positions are each compared against the READY proposal, not
-against the record itself) — and added 5 new F-01/F-02
+against the record itself) �?and added 5 new F-01/F-02
 regression tests.
 
-V1.7 FINAL-PRE-CODEX-FIX PACKET — 2026-09-02.
+V1.7 FINAL-PRE-CODEX-FIX PACKET �?2026-09-02.
 
 - Starting HEAD: `43a3ac0` (the prior V17 DIRECT-SOURCE-
   REREVIEW-FIX doc-stamp).
@@ -6744,13 +7035,13 @@ Status (this dispatch):
 
 This dispatch corrected the FIVE bounded direct-source-
 REREVIEW findings (RR-01 through RR-05 from
-`Review/CURRENT_AIPM_REVIEW.md`) — host-operation truthful
+`Review/CURRENT_AIPM_REVIEW.md`) �?host-operation truthful
 close, host-endpoint fail-closed validation, host-mutation
 suite restoration, exact canonical pre/post validation, and
-order-independent node collapse corrections — and added 18
+order-independent node collapse corrections �?and added 18
 new RR regression tests.
 
-V1.7 DIRECT-SOURCE-REREVIEW-FIX PACKET — 2026-09-01.
+V1.7 DIRECT-SOURCE-REREVIEW-FIX PACKET �?2026-09-01.
 
 - Starting HEAD: `2f45a20` (the prior V17 DIRECT-SOURCE-
   REVIEW-FIX doc-stamp).
@@ -6849,12 +7140,11 @@ Technical Blueprint
 
 This dispatch corrected the SEVEN bounded direct-source-review
 findings (SR-01 through SR-07 from
-`Review/CURRENT_AIPM_REVIEW_V17_DIRECT_SOURCE_REVIEW.md`) —
-host ownership, failure, cleanup, post-validation, identity
-and provenance corrections — and added 22 new SR regression
+`Review/CURRENT_AIPM_REVIEW_V17_DIRECT_SOURCE_REVIEW.md`) �?host ownership, failure, cleanup, post-validation, identity
+and provenance corrections �?and added 22 new SR regression
 tests.
 
-V1.7 DIRECT-SOURCE-REVIEW-FIX PACKET — 2026-09-01.
+V1.7 DIRECT-SOURCE-REVIEW-FIX PACKET �?2026-09-01.
 
 - Starting HEAD: `2cdebb2` (the prior V17 evidence-integration-
   final doc-stamp).
@@ -6967,7 +7257,7 @@ AND unlocked the four production defects that the prior
 test seam could not have caught (only the real
 `WorkingModeRunner.compute_gap_repair` path exposed them).
 
-V1.7 EVIDENCE-INTEGRATION-FINAL PACKET — 2026-09-01.
+V1.7 EVIDENCE-INTEGRATION-FINAL PACKET �?2026-09-01.
 
 - Starting HEAD: `aa33ac6` (the prior V17 correction complete-
   state doc-stamp).
@@ -7041,7 +7331,7 @@ V1.4–V1.6 review evidence, then (on AIPM PASS) the mandatory
 Codex xHigh integration review, then the final Owner SU2020
 real-host verification gate Scenarios A–G.
 
-CODEX_GATE: STILL PENDING — DO NOT INVOKE.
+CODEX_GATE: STILL PENDING �?DO NOT INVOKE.
 OWNER GATE: NOT YET RUN.
 
 ### Push outcome (post-dispatch)
@@ -7088,7 +7378,7 @@ endpoint canonical_node_id resolution; R3 workspace enum ->
 canonical enum translation + geometry_summary-based reads; R4
 test matrix reported honestly).
 
-V1.7 CORRECTED PACKET — 2026-09-01.
+V1.7 CORRECTED PACKET �?2026-09-01.
 
 - Starting HEAD: `792e99f6d6a140b4a250f316dc1e9d7beb8f6e4b` (the
   V17-GAP-TOPOLOGY implementation complete-state doc-stamp).
@@ -7127,7 +7417,7 @@ V1.4–V1.6 review evidence, then (on AIPM PASS) the mandatory
 Codex xHigh integration review, then the final Owner SU2020
 real-host verification gate Scenarios A–G.
 
-CODEX_GATE: STILL PENDING — DO NOT INVOKE.
+CODEX_GATE: STILL PENDING �?DO NOT INVOKE.
 OWNER GATE: NOT YET RUN.
 
 ## V1.7 GAP-TOPOLOGY IMPLEMENTATION (HISTORICAL)
@@ -7165,11 +7455,11 @@ Starting V1.7 baseline:
 Full V1.7 implementation summary will be appended to this
 dispatch block when the dispatch completes.
 
-V1.7 IMPLEMENTATION COMPLETE — 2026-09-01.
+V1.7 IMPLEMENTATION COMPLETE �?2026-09-01.
 
 - Starting HEAD: `0bac757`.
 - Final HEAD on `dev/v1.7`: `4e05023` (8 stable local commits:
-  docs anchor → 5 implementation → tests → dispatch + report).
+  docs anchor �?5 implementation �?tests �?dispatch + report).
 - V1.7 RBZ candidate: size 890,087 bytes; entries 67; SHA-256
   `b0064262f4cc9b52d02db75a86aeda9d75b03f7bba14eed55d2ce0a6c999f3f5`.
 - Full Ruby suite: **886 / 886 PASS** / 0 fail / 0 error
@@ -7222,8 +7512,8 @@ Status:
 - **Owner SketchUp 2020 V1.5 verification: PASS** (Final
   Product Owner confirmation recorded by AIPM)
 - **BLOCK-005 technical direction (unchanged, frozen):**
-  `validate-on-next-interaction → detect host mismatch → fail
-  closed / invalidate → host-authoritative discard +
+  `validate-on-next-interaction �?detect host mismatch �?fail
+  closed / invalidate �?host-authoritative discard +
   prepare/rebuild`. No global ModelObserver / EntitiesObserver
   architecture added in V1.5. `persistent_id` is not the
   correctness Source of Truth. Old Ruby Entity handles must
@@ -7295,7 +7585,7 @@ V1.6 CLOSE-AUTODISCARD RBZ candidate (this dispatch):
 
 Packaged `html/app.js` SHA-256:
 **`7CF8A33BF5AE4FE74FDB0E0DA85BAFAB8A2CF4D02B5B72A6B86F6D43A55C30A0`**
-(unchanged from prior V16-UI-CN-SIMPLIFICATION-FIX — the
+(unchanged from prior V16-UI-CN-SIMPLIFICATION-FIX �?the
 close-time auto-discard is a Ruby-side change in
 `dialog_runner.rb`, not a JS change)
 Packaged `html/index.html` SHA-256:
@@ -7324,8 +7614,8 @@ Status:
 - **Owner SketchUp 2020 V1.5 verification: PASS** (Final
   Product Owner confirmation recorded by AIPM)
 - **BLOCK-005 technical direction (unchanged, frozen):**
-  `validate-on-next-interaction → detect host mismatch → fail
-  closed / invalidate → host-authoritative discard +
+  `validate-on-next-interaction �?detect host mismatch �?fail
+  closed / invalidate �?host-authoritative discard +
   prepare/rebuild`. No global ModelObserver / EntitiesObserver
   architecture added in V1.5. `persistent_id` is not the
   correctness Source of Truth. Old Ruby Entity handles must
@@ -7572,8 +7862,7 @@ This dispatch changed:
       (status, rule_id, rule_version, target_z,
       max_movement, applied_count, failed_count, reason)).
     - Added `renderDuplicateRepairUserRow()` (condensed
-      Simplified Chinese "重复线清理：已处理 X，跳过 Y，
-      失败 Z" row in the default Working Mode list).
+      Simplified Chinese "重复线清理：已处�?X，跳�?Y�?      失败 Z" row in the default Working Mode list).
     - Rewrote `renderPlanarNormalization()` to render the
       condensed Chinese card (`平面校正` / `目标 Z` /
       `待移动顶点` / `异常点` / `已移动` / `最大校正量` /
@@ -7583,18 +7872,17 @@ This dispatch changed:
       user-facing rows + ONE primary CTA + collapsed
       `更多操作`.
   - `extension/su_ai_plugin/html/index.html`:
-    - `<title>` `CAD Analyzer Result` → `CAD 检查结果`.
-    - `<h1>` `CAD Analyzer Result` → `CAD 检查结果`.
-    - Default `#selection-info` text `No selection` →
-      `未选择对象`.
-    - `<html lang="en">` → `<html lang="zh-CN">`.
+    - `<title>` `CAD Analyzer Result` �?`CAD 检查结果`.
+    - `<h1>` `CAD Analyzer Result` �?`CAD 检查结果`.
+    - Default `#selection-info` text `No selection` �?      `未选择对象`.
+    - `<html lang="en">` �?`<html lang="zh-CN">`.
     - Restructured section order: Working Mode is now BEFORE
       Layers / Issues by Layer / Face Inventory (the
       secondary sections are below the primary Working Mode
       + Technical Details blocks).
     - Added the collapsed `<details id="technical-details-
       section">` block with `<summary id="technical-details-
-      summary">技术详情</summary>`.
+      summary">技术详�?/summary>`.
     - Translated the static `<summary>` headers to
       Simplified Chinese (`处理工作区`, `按图层查看问题`,
       `图层信息`, `面信息`).
@@ -7607,8 +7895,7 @@ This dispatch changed:
       block, and the `技术详情` block (monospace, neutral
       palette).
   - `extension/su_ai_plugin/dialog_runner.rb`:
-    - `dialog_title: 'CAD Analyzer Result'` →
-      `'CAD 检查结果'`.
+    - `dialog_title: 'CAD Analyzer Result'` �?      `'CAD 检查结�?`.
 
 Production files NOT modified by this dispatch:
 - `planar_normalization_analyzer.rb`,
@@ -7651,7 +7938,7 @@ Test evidence (this dispatch):
   dispatch; no regressions; the CN guard assertions are
   additive).
 - V16 substring: **26 / 26 PASS** (P1-P9, G1-G6, H1-H6,
-  T1-T3, I1-I3) — the V1.6 backend behavior is unchanged.
+  T1-T3, I1-I3) �?the V1.6 backend behavior is unchanged.
 - V15 substring: **149 / 149 PASS** (BLOCK-005 closed,
   duplicate-repair semantics unchanged).
 - RBZ smoke substring: **9 / 9 PASS**.
@@ -7686,8 +7973,8 @@ per Owner real-host finding.)
 Owner real-host finding (per dispatch §0):
 
 > After the previous workspace is discarded, Working Mode
-> shows “处理工作区 — 工作副本已放弃” but the UI exposes only
-> “更多操作 -> 重新生成” and does NOT expose “准备处理”. This
+> shows “处理工作区 �?工作副本已放弃�?but the UI exposes only
+> “更多操�?-> 重新生成�?and does NOT expose “准备处理�? This
 > is incorrect. After Discard, the user may select a NEW
 > CAD/source selection and must be able to create a fresh
 > SourceSnapshot + Derived Workspace from the CURRENT
@@ -7769,7 +8056,7 @@ Test evidence (this dispatch):
   Ruby regression suite covers the existing V1.6 backend
   contract, which is unchanged).
 - V16 substring: **26 / 26 PASS** (P1-P9, G1-G6, H1-H6,
-  T1-T3, I1-I3) — V1.6 backend behavior is unchanged.
+  T1-T3, I1-I3) �?V1.6 backend behavior is unchanged.
 - V15 substring: **149 / 149 PASS** (BLOCK-005 closed).
 - Node DOM (`tests/test_html_render_dom.js`):
  **307 / 307 PASS** (294 existing + 13 new V16-FIX).
@@ -7780,7 +8067,7 @@ CODEX_TRIGGER: **NO** (per dispatch §8). No new architecture
 was added; no V1.6 normalization algorithm was changed; no
 Source-of-Truth / Undo / transaction / provenance / observer
 was touched. The destructive `apply_planar_normalization`
-callback name is preserved verbatim — only the action-state
+callback name is preserved verbatim �?only the action-state
 matrix in the simplified renderer was corrected (no backend
 semantics, no Source-of-Truth, no Undo/reconciliation, no
 transaction, no provenance).
@@ -7834,7 +8121,7 @@ Close-time behavior matrix (per dispatch §1-§4):
 | `none`           | no-op (no current workspace)                                                     |
 | `discarded`      | no-op (already discarded)                                                        |
 | `building`       | `WorkingModeRunner.discard` (cleanup transient)                                  |
-| `ready`          | `WorkingModeRunner.discard` (the primary case — clear derived + V1.5 dup + V1.6 PN) |
+| `ready`          | `WorkingModeRunner.discard` (the primary case �?clear derived + V1.5 dup + V1.6 PN) |
 | `failed`         | `WorkingModeRunner.discard` (cleanup partial state)                             |
 
 All five cases must NOT raise. Source CAD is NEVER touched
@@ -7925,8 +8212,7 @@ edge_endpoints / transform_vertices_by_vectors / vertex_position
 + 25 V1.6 regression tests. V1.6 OWNER REAL-HOST VERIFICATION
 NOT YET RUN. V1.6 NOT CLOSED.)
 
-Implementation map (Blueprint requirement → production symbol →
-test evidence):
+Implementation map (Blueprint requirement �?production symbol �?test evidence):
 
 | Blueprint | Symbol / file | Test |
 |-----------|---------------|------|
@@ -7962,13 +8248,13 @@ Working tree (THIS UPDATE):
   (planar_normalization_analyzer.rb,
   planar_normalization_proposer.rb,
   planar_normalization_executor.rb).
-- Added test file: 1 (test_v16_planar_normalization.rb — 25 tests).
+- Added test file: 1 (test_v16_planar_normalization.rb �?25 tests).
 - Tracked AIPM authority: 2 (V1.5 closure record + V1.6
   Stage Technical Blueprint).
 - RBZ rebuilt: yes (size 733504, entries 62, SHA-256
   `c1e4b641b1ac8f509c7bfede52770bbd6d8a2f771f3003f4f5e572341dc72b68`).
 - Local checkpoints on `dev/v1.6`: 5
-  (V1.6 doc-stamp + 3 implementation + final RBZ state — see
+  (V1.6 doc-stamp + 3 implementation + final RBZ state �?see
   `git log --oneline -10` for the exact SHAs).
 - Push: NOT PUSHED per dispatch §14 (bounded retry against
   `origin/dev/v1.6` may be attempted from a reachable
@@ -7990,7 +8276,7 @@ per dispatch §15 STOP condition.
 
 ## Historical V1.5 closure process (clearly historical)
 
-The `Updated:` blocks below record the historical V1.5 closure process (V15-LEGACY-COMPAT packets, Round-5 corrective packets, BLOCK-005 documentation sync, etc.). They remain for durable audit evidence only. They are NOT active V1.5 work — V1.5 is CLOSED above.
+The `Updated:` blocks below record the historical V1.5 closure process (V15-LEGACY-COMPAT packets, Round-5 corrective packets, BLOCK-005 documentation sync, etc.). They remain for durable audit evidence only. They are NOT active V1.5 work �?V1.5 is CLOSED above.
 
 ---
 
@@ -8124,7 +8410,7 @@ Concrete changes:
   Ruby 2.5+ is removed. Syntax/behavior unchanged.
 - `tests/test_v15_legacy_compat_guard.rb` is corrected:
   integer_literal_underscore rule removed from
-  KNOWN_MODERN_SYNTAX (per FINDING A — Ruby 2.2 supports
+  KNOWN_MODERN_SYNTAX (per FINDING A �?Ruby 2.2 supports
   this officially); per-file guard pinning the false
   integer-underscore change on `core/source_snapshot.rb`
   removed; the four actually-real guard classes kept
@@ -8253,9 +8539,9 @@ directly reviewed the real GitHub implementation commit
 `874149dc7488ff8c844e16fb6e0e6013df9abfa6` and found
 `FIX REQUIRED -- narrow implementation correction`).
 
-Current stage: **V1.5 — CLOSED (THIS UPDATE)**. This CLOSURE-ONLY sync dispatch (`V15-CLOSURE-SYNC-2026-08-31`) records the Final Product Owner / AIPM V1.5 closure decision. No production / runtime / test / RBZ / V1.6 implementation changes were made by this dispatch. See the `V1.5 CLOSURE (THIS UPDATE)` block at the top of this file for the authoritative closure facts and accepted V1.5 RBZ identity.
-Current status: **V1.5 CLOSED. BLOCK-005 CLOSED. V1.6 NOT STARTED.** Accepted V1.5 RBZ identity verified at `dist\SU-AI-Plugin.rbz` (size 642,037 bytes; entries 59; SHA-256 `61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`). Owner SketchUp 2020 V1.5 verification: PASS (per `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`). BLOCK-005 technical direction remains frozen: `validate-on-next-interaction → detect host mismatch → fail closed / invalidate → host-authoritative discard + prepare/rebuild` (no global Observer architecture). One local closure checkpoint commit created on the assigned `dev/v1.5`; pushed to `origin/dev/v1.5` if the current V3.4 submission policy permits (and if remote is not blocked / diverged). Pi STOPPED awaiting AIPM V1.6 dispatch.
-Next stage: **V1.6 — NOT STARTED (awaits new ACTIVE `CURRENT_PI_DISPATCH` referencing the frozen V1.6 Stage Technical Blueprint `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`)**
+Current stage: **V1.5 �?CLOSED (THIS UPDATE)**. This CLOSURE-ONLY sync dispatch (`V15-CLOSURE-SYNC-2026-08-31`) records the Final Product Owner / AIPM V1.5 closure decision. No production / runtime / test / RBZ / V1.6 implementation changes were made by this dispatch. See the `V1.5 CLOSURE (THIS UPDATE)` block at the top of this file for the authoritative closure facts and accepted V1.5 RBZ identity.
+Current status: **V1.5 CLOSED. BLOCK-005 CLOSED. V1.6 NOT STARTED.** Accepted V1.5 RBZ identity verified at `dist\SU-AI-Plugin.rbz` (size 642,037 bytes; entries 59; SHA-256 `61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`). Owner SketchUp 2020 V1.5 verification: PASS (per `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`). BLOCK-005 technical direction remains frozen: `validate-on-next-interaction �?detect host mismatch �?fail closed / invalidate �?host-authoritative discard + prepare/rebuild` (no global Observer architecture). One local closure checkpoint commit created on the assigned `dev/v1.5`; pushed to `origin/dev/v1.5` if the current V3.4 submission policy permits (and if remote is not blocked / diverged). Pi STOPPED awaiting AIPM V1.6 dispatch.
+Next stage: **V1.6 �?NOT STARTED (awaits new ACTIVE `CURRENT_PI_DISPATCH` referencing the frozen V1.6 Stage Technical Blueprint `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V1_6_PLANAR_NORMALIZATION_2026-08-31.md`)**
 
 Canonical durable context:
 - `AGENTS.md`
@@ -8306,7 +8592,7 @@ Current project rule:
   `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
   design.
 - V1.5 Round-5 AIPM Source Review NARROW CONTINUATION
-  CRASH-RECOVERY RESUME — FIX-SR-04 is complete (history,
+  CRASH-RECOVERY RESUME �?FIX-SR-04 is complete (history,
   implementation commit `3043219`, documentation commits
   `aabfa7e` + `1761adb`):
   removed the `present = to_remove.select { !nil? }`
@@ -8413,7 +8699,7 @@ Current project rule:
     delta is the removed false-claim comment block);
     entries 59 (unchanged); SHA-256
     `61784D79AB90BC96E448AC8F8693CCC77F007510654ED7FB70AAEAFFAE9A3292`
-    (same as the prior f61c352 SHA — the artifact is
+    (same as the prior f61c352 SHA �?the artifact is
     byte-identical to the pre-hardening state because
     the corrective packet reverted the production
     change back to its starting point).
@@ -8456,13 +8742,13 @@ Current project rule:
 - V1.7 Endpoint / Gap Repair + Canonical Topology.
 - V1.8 Polyline / Closed Loop / Region Reconstruction.
 - V1.9 Prepared CAD Workflow + V2 Handoff.
-- V2 / MCP — out of scope per `PROJECT_MASTER_PLAN_V1X.md`.
+- V2 / MCP �?out of scope per `PROJECT_MASTER_PLAN_V1X.md`.
 
 The pre-V1.6 prerequisites that were listed in earlier revisions of
 this file (BLOCK-005 dedicated technical research pending; SU2020
 BLOCK-005 Real-Host Feasibility Probe pending; V1.5 BLOCK set not
 formally closed; Owner verification republish required) are now
-RETIRED — V1.5 is CLOSED, BLOCK-005 is CLOSED, the BLOCK-005
+RETIRED �?V1.5 is CLOSED, BLOCK-005 is CLOSED, the BLOCK-005
 technical research was completed on the AIPM side and its direction
 frozen, and the Owner SU2020 verification was reported PASS per the
 Final Product Owner confirmation recorded by AIPM in
@@ -8744,7 +9030,7 @@ Final `git rev-parse HEAD`:
 `aabfa7e97a1dbb55a39e14afe072939159bea8d1`
 
 Push status:
-**PUSH BLOCKED — REMOTE UNREACHABLE.** `git push origin
+**PUSH BLOCKED �?REMOTE UNREACHABLE.** `git push origin
 dev/v1.5` was attempted multiple times; every attempt
 failed identically with `Failed to connect to
 github.com:443 after 21s: Could not connect to server`.
@@ -8820,21 +9106,21 @@ V15-LEGACY-COMPAT-CORRECTION evidence (THIS UPDATE):
 - LEGACY-COMPAT targeted regressions (corrected; 4/4 PASS):
   - `LEGACY-COMPAT: vendored Ruby parses every production
     .rb file (current-source syntax/load smoke)`
-    (1/1 PASS — `RubyVM::InstructionSequence.compile`
-    on every production .rb; only proves Ruby ≤ 2.7.8
+    (1/1 PASS �?`RubyVM::InstructionSequence.compile`
+    on every production .rb; only proves Ruby �?2.7.8
     parseability per the dispatch FINDING B correction)
   - `LEGACY-COMPAT: Ripper.sexp parses every production
     .rb file (current-source AST smoke)`
-    (1/1 PASS — same caveat)
+    (1/1 PASS �?same caveat)
   - `LEGACY-COMPAT: no known modern-syntax constructs in
-    production source` (1/1 PASS — 4 confirmed-version
+    production source` (1/1 PASS �?4 confirmed-version
     construct classes scanned: `endless_range`,
     `beginless_range`, `numbered_block_params`,
     `safe_navigation`; the integer_literal_underscore
     class is REMOVED per FINDING A)
   - `LEGACY-COMPAT: no endless-range [n..] in production
     source (CONFIRMED-FIX-COMPAT-RANGE)`
-    (1/1 PASS — the CONFIRMED prior fix; per-tree guard
+    (1/1 PASS �?the CONFIRMED prior fix; per-tree guard
     retained per the corrective dispatch directive
     "Do not weaken the confirmed endless-range guard.")
   - Total LEGACY-COMPAT: **4/4 PASS**
@@ -8848,11 +9134,10 @@ V15-LEGACY-COMPAT-CORRECTION evidence (THIS UPDATE):
   LEGACY-COMPAT integer-underscore per-file guard
   test; no other regressions across the existing 817)
 - RBZ smoke (post-rebuild): **9/9 PASS**
-  (includes `RBZ: install smoke — extract to temp dir,
+  (includes `RBZ: install smoke �?extract to temp dir,
   verify entry-point + assets + all .rb files parse`
   which runs `RubyVM::InstructionSequence.compile` on
-  every packaged .rb; and `RBZ: install smoke —
-  extracted entry-point boots through FakeUI` which
+  every packaged .rb; and `RBZ: install smoke �?  extracted entry-point boots through FakeUI` which
   exercises the production `boot!` require_relative
   chain + Loader.register!)
 - `git diff --check`: clean
@@ -8918,17 +9203,17 @@ behavior, or substitute for Owner verification.
 
 ---
 
-## 4. BLOCK / REVIEW STATUS (CLOSED — historical)
+## 4. BLOCK / REVIEW STATUS (CLOSED �?historical)
 
 > **V1.5 closure status (THIS UPDATE):** V1.5 is CLOSED. BLOCK-005 is
 > CLOSED. Owner SketchUp 2020 V1.5 verification: PASS. The active
-> V1.5 BLOCK set below is RETIRED — all V15-STAGE-BLOCK-001..005 are
+> V1.5 BLOCK set below is RETIRED �?all V15-STAGE-BLOCK-001..005 are
 > formally closed as part of the V1.5 closure decision recorded in
 > `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`. This section is preserved
 > for durable audit evidence of the V1.5 closure process; it is
 > NOT an active review state.
 
-Historical V1.5 BLOCK set (all CLOSED — historical record only):
+Historical V1.5 BLOCK set (all CLOSED �?historical record only):
 
 - `V15-STAGE-BLOCK-001`
 - `V15-STAGE-BLOCK-002` (with sub-cases A and B)
@@ -8985,12 +9270,10 @@ evidence proving all of the following, THIS UPDATE):
   from the current SketchUp host;
 - source CAD remains immutable.
 
-BLOCK-005 status — final closure (THIS UPDATE):
+BLOCK-005 status �?final closure (THIS UPDATE):
 
 - **CLOSED** (per `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`).
-- Technical direction: FROZEN (`validate-on-next-interaction →
-  detect host mismatch → fail closed / invalidate →
-  host-authoritative discard + prepare/rebuild`).
+- Technical direction: FROZEN (`validate-on-next-interaction �?  detect host mismatch �?fail closed / invalidate �?  host-authoritative discard + prepare/rebuild`).
 - SketchUp Model remains the geometry Source of Truth.
 - No global ModelObserver / EntitiesObserver architecture was
   added in V1.5.
@@ -9043,7 +9326,7 @@ SHA `C10D550352D0733850A6A45C441B56F25E490426B870459F16149B5CDB515C35`
 to the corrective SHA
 `90C49AF2E95452C5DAB22D1ABCE5858B1ABC53F5753B7588ED30728F56ACECEB`).
 
-### FIX-A — strict tolerance parsing + exact-zero layer-key correction
+### FIX-A �?strict tolerance parsing + exact-zero layer-key correction
 Applies to BLOCK-002A and BLOCK-004.
 
 #### 2.2/2.3 Frozen parsing contract + no production fallback
@@ -9134,7 +9417,7 @@ Result:
 - The shared `direct_match?` at tolerance `0.0` remains
   final authority.
 
-### FIX-B — exact deterministic provenance union
+### FIX-B �?exact deterministic provenance union
 Applies to BLOCK-003.
 
 `extension/su_ai_plugin/core/duplicate_repair_expected_post_state.rb`
@@ -9177,7 +9460,7 @@ Fingerprint validation (existing invariant E) remains in force;
 provenance validation and fingerprint validation are
 independent invariants -- one does not substitute for the other.
 
-### FIX-C — strict destructive host-handle liveness hardening
+### FIX-C �?strict destructive host-handle liveness hardening
 Bounded hardening adjacent to BLOCK-001.
 
 `extension/su_ai_plugin/core/duplicate_geometry_semantics.rb`
@@ -9229,7 +9512,7 @@ Bounded hardening adjacent to BLOCK-001.
   but `valid? == false`) is NOT "already gone"; it reaches
   preflight_batch and fails closed via `strict_handle_live?`.
 
-### Round-5 Source Review corrective — added tests, production
+### Round-5 Source Review corrective �?added tests, production
 code changed (RBZ hash updated)
 
 The Round-5 Source Review corrective packet added 32 new
@@ -9364,7 +9647,7 @@ Pi must NOT invent a new Observer / Undo architecture while
 the SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe is
 being run by Owner/AIPM.
 
-### Round-5 NARROW CONTINUATION (THIS UPDATE) — narrow
+### Round-5 NARROW CONTINUATION (THIS UPDATE) �?narrow
 implementation corrections to the same dispatch
 
 After AIPM directly reviewed the real GitHub implementation
@@ -9373,7 +9656,7 @@ was `FIX REQUIRED -- narrow implementation correction`. This
 narrow continuation implements three bounded fixes within the
 same frozen Guidance; the design is unchanged.
 
-#### FIX-SR-01 — single-action executor must fail closed
+#### FIX-SR-01 �?single-action executor must fail closed
 `extension/su_ai_plugin/core/duplicate_repair_executor.rb`
 
 `apply_atomic` (the single-action entry path) was classifying
@@ -9385,7 +9668,7 @@ producing host/logical divergence.
 
 Now: BEFORE `begin_operation`, if any removal member is not
 strictly live (`DuplicateGeometrySemantics.strict_handle_live?`
-returns false — nil, missing `valid?`, returns nil/false, or
+returns false �?nil, missing `valid?`, returns nil/false, or
 raises), the function:
 - `begin=0`, `dispose=0`, `commit=0`, `abort=0`;
 - emits a `:failed` action with stable reason
@@ -9399,7 +9682,7 @@ Reuses the existing `strict_handle_live?` contract; no new
 predicate. The normal valid-handle success path remains
 green (covered by V15-SR01-6).
 
-#### FIX-SR-02 — expected post state must prove handle liveness
+#### FIX-SR-02 �?expected post state must prove handle liveness
 `extension/su_ai_plugin\core\duplicate_repair_expected_post_state.rb`
 
 The previous F / H aliasing invariants in `validate!` checked
@@ -9431,7 +9714,7 @@ remain in place; the expected-state J is an additional
 gate. Fingerprint (invariant E) and pair-metric (invariant I)
 remain in force; provenance union (FIX-B) remains in force.
 
-#### FIX-SR-03 — truthful invalid-tolerance audit reason
+#### FIX-SR-03 �?truthful invalid-tolerance audit reason
 `extension/su_ai_plugin/core/duplicate_repair_proposer.rb`
 
 When the proposer's `build_actions` detected a missing /
@@ -9448,7 +9731,7 @@ coordinate failures. The fail-closed behavior is preserved
 (zero applied actions; one skipped audit row with stable
 reason). No UI redesign.
 
-### Round-5 NARROW CONTINUATION — added tests
+### Round-5 NARROW CONTINUATION �?added tests
 `tests/test_v15_round5_block_fix.rb` got 16 new focused
 regressions (V15-SR01-1..6 + V15-SR02-1..7 + V15-SR03-1..3):
 
@@ -9474,7 +9757,7 @@ regressions (V15-SR01-1..6 + V15-SR02-1..7 + V15-SR03-1..3):
   `skipped:non_finite_endpoint_coordinates` and is NOT
   cross-polluted.
 
-### Round-5 NARROW CONTINUATION — CRASH-RECOVERY RESUME — FIX-SR-04 (THIS UPDATE)
+### Round-5 NARROW CONTINUATION �?CRASH-RECOVERY RESUME �?FIX-SR-04 (THIS UPDATE)
 
 After AIPM directly reviewed the prior NARROW CONTINUATION
 implementation commit `889548590ead211162be704af3b22d7299583357`
@@ -9486,7 +9769,7 @@ correction within the SAME frozen
 `Prompt/AIPM_TECHNICAL_GUIDANCE_V1_5_R5_SOURCE_REVIEW_FIX_2026-08-28.md`
 design.
 
-Crash-recovery classification: **CASE A — no FIX-SR-04
+Crash-recovery classification: **CASE A �?no FIX-SR-04
 work existed**. Starting local HEAD =
 `9099f66a0c7d43ba149b83e4a3399361f863d383` ==
 `origin/dev/v1.5`. No tracked modifications. No stash.
@@ -9494,7 +9777,7 @@ Only the 7 untracked AIPM Review evidence `.txt` files
 were present and have been preserved (not added, deleted,
 modified, committed, or cleaned).
 
-#### FIX-SR-04 — single-action apply must not pre-filter nil removals
+#### FIX-SR-04 �?single-action apply must not pre-filter nil removals
 
 `extension/su_ai_plugin/core/duplicate_repair_executor.rb`
 
@@ -9541,12 +9824,12 @@ No new predicate, no new architecture. The historical
 `to_remove.all? { nil? }` early-return is the first thing
 `apply()` checks and is unchanged).
 
-#### FIX-SR-04 — added tests
+#### FIX-SR-04 �?added tests
 
 `tests/test_v15_round5_block_fix.rb` got 2 new focused
 regressions:
 
-- **V15-SR04-1** (mixed nil + live) — one action with
+- **V15-SR04-1** (mixed nil + live) �?one action with
   survivor + 2 removals; `handle_for(removal_A)` is
   valid/live; `handle_for(removal_B)` is nil. Public
   `DuplicateRepairExecutor.apply(...)` returns a failed
@@ -9556,14 +9839,14 @@ regressions:
   `/removal_handle_not_strictly_live/`, valid removal A
   still strictly live, workspace fingerprint unchanged,
   source immutable.
-- **V15-SR04-2** (all nil) — one action with survivor +
+- **V15-SR04-2** (all nil) �?one action with survivor +
   1 removal; both handles cleared from the registry.
   Public `Apply(...)` returns `:skipped` `already_applied`
   semantics with NO `:failed` transition, NO host calls,
   workspace state unchanged, fingerprint unchanged,
   source immutable.
 
-#### FIX-SR-04 — evidence
+#### FIX-SR-04 �?evidence
 
 - FIX-SR-04 focused regressions: 2/2 PASS
 - NARROW CONTINUATION (SR01/02/03/04): 18/18 PASS
@@ -9573,7 +9856,7 @@ regressions:
 - Node DOM: 163/163 PASS
 - `git diff --check`: clean
 
-#### FIX-SR-04 — RBZ (THIS UPDATE)
+#### FIX-SR-04 �?RBZ (THIS UPDATE)
 
 `D:\Projects\SU-AI-Plugin\dist\SU-AI-Plugin.rbz`
 
@@ -9598,7 +9881,7 @@ identified four findings (A-D), all accepted in this
 corrective dispatch
 `V15-LEGACY-COMPAT-CORRECTION-2026-08-31`:
 
-### FINDING A — Integer literal underscore claim RETRACTED
+### FINDING A �?Integer literal underscore claim RETRACTED
 
 The prior report claimed integer literal underscore syntax
 is Ruby 2.5+ and therefore incompatible with SketchUp 2017
@@ -9618,7 +9901,7 @@ is restored to its pre-hardening state (the readable
 `1_000_000` form). No behavior change. No frozen-contract
 change.
 
-### FINDING B — Vendored-parser evidence wording CORRECTED
+### FINDING B �?Vendored-parser evidence wording CORRECTED
 
 The prior report described the Ruby 2.7.8 vendored parse
 as "catching a strict superset of what older SketchUp Ruby
@@ -9627,7 +9910,7 @@ SU2017/SU2018 would catch". A newer parser can ACCEPT
 syntax that an older parser REJECTS (the opposite of the
 prior claim). Both vendored-parse and Ripper.sexp AST
 parse are now documented honestly as current-source
-syntax/load smoke (catches Ruby ≤ 2.7.8 parse
+syntax/load smoke (catches Ruby �?2.7.8 parse
 incompatibilities, which a SU2017/SU2020 host would also
 catch) and NOT as proof of old-Ruby parseability.
 
@@ -9636,7 +9919,7 @@ names re-framed ("current-source syntax/load smoke",
 "current-source AST smoke") with the evidence-bound
 caveat documented inline. No behavior change.
 
-### FINDING C — SketchUp API classification CORRECTED
+### FINDING C �?SketchUp API classification CORRECTED
 
 The prior report stated "Modern-only APIs found: 0"
 while listing capability-gated host calls such as
@@ -9722,7 +10005,7 @@ explicitly says: "Do NOT modify production host
 behavior unless a concrete unsafe unguarded call is
 proven").
 
-### FINDING 2 — SU2017-release APIs RECLASSIFIED TO BASELINE (THIS UPDATE)
+### FINDING 2 �?SU2017-release APIs RECLASSIFIED TO BASELINE (THIS UPDATE)
 
 The V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch
 (`V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX-2026-08-31`)
@@ -9734,12 +10017,11 @@ are, per official SU API version history, baseline-or-
 earlier for an SU2017+ project target (NOT post-
 baseline):
 
-- `Sketchup::Model#find_entity_by_id` — SU2015
-- `Sketchup::Model#active_path` (getter) — SU7.0
-- `Sketchup::Entity#persistent_id` — SU2017+
-- `Sketchup::Model#instance_path_from_pid_path` —
-  SU2017+
-- `UI::HtmlDialog` — SU2017+
+- `Sketchup::Model#find_entity_by_id` �?SU2015
+- `Sketchup::Model#active_path` (getter) �?SU7.0
+- `Sketchup::Entity#persistent_id` �?SU2017+
+- `Sketchup::Model#instance_path_from_pid_path` �?  SU2017+
+- `UI::HtmlDialog` �?SU2017+
 
 Production code does NOT call the `Model#active_path=`
 setter (which IS a later API; would be classified
@@ -9759,14 +10041,14 @@ slightly across SU2017 patch generations and whose
 fallback must be safe in any future host variation),
 NOT because of any post-baseline necessity.
 
-### FINDING 3 — BEGINLESS RANGE VERSION CORRECTED (THIS UPDATE)
+### FINDING 3 �?BEGINLESS RANGE VERSION CORRECTED (THIS UPDATE)
 
 The prior regex guard comment said beginless range
 `[..b]` was introduced in Ruby 2.6. Per official Ruby
 release history:
 
-- endless range `(a..)` / `ary[a..]` — Ruby 2.6.0
-- beginless range `(..a)` / `ary[..b]` — Ruby 2.7.0
+- endless range `(a..)` / `ary[a..]` �?Ruby 2.6.0
+- beginless range `(..a)` / `ary[..b]` �?Ruby 2.7.0
 
 This packet corrects the beginless_range entry in
 `KNOWN_MODERN_SYNTAX` in
@@ -9786,7 +10068,7 @@ introduction version is corrected. The endless-range
 (Ruby 2.7+) rule is unchanged; the safe_navigation
 (Ruby 2.3+) rule is unchanged.
 
-### FINDING D — Obsolete prerequisite gates REMOVED
+### FINDING D �?Obsolete prerequisite gates REMOVED
 
 The prior report's `Review/CURRENT_PI_REPORT.md` §H and §I
 plus `CURRENT_STATE.md` §5A reintroduced stale
@@ -9841,25 +10123,25 @@ weaken the confirmed endless-range guard."
 `tests/test_v15_legacy_compat_guard.rb` (corrected; 4 tests):
 
 1. `LEGACY-COMPAT: vendored Ruby parses every production
-    .rb file (current-source syntax/load smoke)` — uses
+    .rb file (current-source syntax/load smoke)` �?uses
    `RubyVM::InstructionSequence.compile(text, file)` on
    every production `.rb` (same mechanism `tests/test_rbz_smoke.rb`
    uses for the extracted RBZ). Catches Ruby <= 2.7.8
    parse incompatibilities (a subset of the SU2017/SU2020
    support boundary, NOT a strict superset).
 2. `LEGACY-COMPAT: Ripper.sexp parses every production
-    .rb file (current-source AST smoke)` — same caveat
+    .rb file (current-source AST smoke)` �?same caveat
    via Ripper.sexp.
 3. `LEGACY-COMPAT: no known modern-syntax constructs in
-    production source` — targeted regex scan for the
+    production source` �?targeted regex scan for the
    4 construct classes with confirmed version evidence:
      - endless_range (Ruby 2.6+)
      - beginless_range (Ruby 2.7+)  (NOT Ruby 2.6+
        which is the version that introduced endless
        range; beginless range entered in Ruby 2.7
        per official Ruby release history. The guard
-       rule is preserved — beginless range remains
-       incompatible with the Ruby 2.2 baseline — only
+       rule is preserved �?beginless range remains
+       incompatible with the Ruby 2.2 baseline �?only
        the stated introduction version is corrected.)
      - numbered_block_params (Ruby 2.7+)
      - safe_navigation (Ruby 2.3+)
@@ -9869,7 +10151,7 @@ weaken the confirmed endless-range guard."
    only what it actually checks: "no known modern-syntax
    constructs".
 4. `LEGACY-COMPAT: no endless-range [n..] in production
-    source (CONFIRMED-FIX-COMPAT-RANGE)` — pins the
+    source (CONFIRMED-FIX-COMPAT-RANGE)` �?pins the
    CONFIRMED prior fix on every production file.
 
 The per-file guard for the (false) integer-underscore
@@ -9904,7 +10186,7 @@ as the geometry Source of Truth.
   the production diff is the exact inverse of the prior
   hardening patch).
 - Test files modified: **1**
-  (`tests/test_v15_legacy_compat_guard.rb` — rule
+  (`tests/test_v15_legacy_compat_guard.rb` �?rule
   removal + wording correction).
 - No broad compatibility architecture change.
 - No new host-call / API redesign.
@@ -9948,8 +10230,7 @@ If a material design gap remains:
 
 ### Canonical next gate (THIS UPDATE)
 
-**SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** —
-Owner/AIPM-owned.
+**SketchUp 2020 BLOCK-005 Real-Host Feasibility Probe** �?Owner/AIPM-owned.
 
 Pi is NOT assigned this probe.
 
@@ -10190,9 +10471,7 @@ Review and the SU2020 BLOCK-005 Real-Host Feasibility Probe
 BLOCK-005 is **CLOSED**. Owner SketchUp 2020 V1.5 verification:
 **PASS** (Final Product Owner confirmation per
 `Prompt/AIPM_V1_5_CLOSURE_2026-08-31.md`). BLOCK-005 technical
-direction remains frozen on `validate-on-next-interaction →
-detect host mismatch → fail closed / invalidate →
-host-authoritative discard + prepare/rebuild` (no global
+direction remains frozen on `validate-on-next-interaction �?detect host mismatch �?fail closed / invalidate �?host-authoritative discard + prepare/rebuild` (no global
 Observer architecture; SketchUp Model remains the geometry
 Source of Truth; `persistent_id` is not the correctness Source
 of Truth; old Ruby Entity handles are never trusted after
@@ -10216,7 +10495,7 @@ by the only vendored Ruby available (2.7.8).
 ---
 
 **Historical V1.5 closure-process one-line summaries (clearly
-historical, retained for audit only — V1.5 is CLOSED above):**
+historical, retained for audit only �?V1.5 is CLOSED above):**
 
 **V1.5 V15-LEGACY-COMPAT-FINAL-EVIDENCE-FIX dispatch EXECUTION
 COMPLETE (2026-08-31): bounded final-evidence
@@ -10309,3 +10588,4 @@ Codex: NOT REQUIRED for the current
 compatibility/probe path. V1.6: NOT STARTED. Pi STOPPED
 awaiting AIPM direct source review of this corrective
 packet.**
+
