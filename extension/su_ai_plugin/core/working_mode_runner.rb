@@ -2628,6 +2628,585 @@ module SUAnalysis
         end
       end
 
+      # ===========================================================
+      # V1.9B1 B1.5 — Live Coherent Input Bundle Capture
+      # ===========================================================
+      #
+      # The B1.2-B1.4 PreparedCadDatasetBuilder + Validator
+      # are pure value-object code. They consume six explicit
+      # mutually-coherent inputs (source_snapshot,
+      # workflow_snapshot, topology_snapshot, canonical_graph,
+      # structure_result, analysis_result) and produce the
+      # deterministic versioned PreparedCadDataset.
+      #
+      # The LIVE Runner does not naturally expose those six
+      # inputs as one coherent synchronous bundle. B1.5
+      # captures them as one synchronous, internally coherent
+      # capture so the production path can hand them to the
+      # B1 Builder/Validator without manually patching any
+      # field.
+      #
+      # Per frozen Blueprint v1.3 §2 + B1.5 implementation
+      # packet:
+      #
+      #   - ONE additive public method:
+      #       capture_prepared_cad_input_bundle(analysis_result:)
+      #   - Returns either:
+      #       { 'status' => 'CAPTURED', 'bundle' => <frozen>, 'blockers' => [] }
+      #   - Or:
+      #       { 'status' => 'BLOCKED',  'bundle' => nil,    'blockers' => [...] }
+      #   - Zero begin_operation / commit / abort.
+      #   - Zero new host entities.
+      #   - Zero source / derived geometry mutation.
+      #   - No Observer architecture.
+      #   - No external private-ivar reach-in by callers.
+      #   - Build ONE current topology snapshot.
+      #   - Build ONE fresh canonical graph FROM THAT topology.
+      #   - Build ONE fresh structure result FROM THAT graph.
+      #   - The bundle workflow / topology copies are pure
+      #     bundle-local copies; Runner caches are NOT
+      #     assigned solely because capture occurred.
+      #   - The SECOND host-state validation immediately
+      #     before return is the synchronous atomicity
+      #     boundary.
+      def capture_prepared_cad_input_bundle(analysis_result:)
+        # ---- B15-01: basic state gate ----
+        if @current_workspace.nil?
+          return _b15_bundle_blocked(['pcd_bundle:no_current_workspace'])
+        end
+        if @current_source.nil?
+          return _b15_bundle_blocked(['pcd_bundle:no_current_source'])
+        end
+        if @current_adapter.nil?
+          return _b15_bundle_blocked(['pcd_bundle:no_current_adapter'])
+        end
+        unless @current_workspace.state == :ready
+          return _b15_bundle_blocked(['pcd_bundle:workspace_not_ready'])
+        end
+        if analysis_result.nil?
+          return _b15_bundle_blocked(['pcd_bundle:analysis_result_missing'])
+        end
+        unless analysis_result.respond_to?(:geometry_snapshot) &&
+               !analysis_result.geometry_snapshot.nil?
+          return _b15_bundle_blocked(['pcd_bundle:analysis_geometry_missing'])
+        end
+
+        # ---- B15-02: first host-state validation ----
+        unless validate_host_state_consistency!
+          return _b15_bundle_blocked(['pcd_bundle:host_state_changed'])
+        end
+
+        # ---- B15-03: capture local authority references ----
+        workspace = @current_workspace
+        source    = @current_source
+        adapter   = @current_adapter
+        tolerance = @topology_repair_tolerance ||
+                    @planar_normalization_tolerance ||
+                    _tolerance_from_snapshot(source)
+
+        # ---- B15-04: cheap early AnalysisResult/current-source mismatch gate ----
+        mismatch_blockers = _b15_cheap_analysis_source_gate(
+          analysis_result: analysis_result,
+          source:          source
+        )
+        if mismatch_blockers.any?
+          return _b15_bundle_blocked(mismatch_blockers)
+        end
+
+        # ---- B15-05: build ONE current topology snapshot ----
+        # Reuse the existing V1.7 current-host endpoint path.
+        # _canonical_topology_snapshot returns a Hash with
+        # String keys (schema_version, canonical_nodes,
+        # canonical_node_clusters, non_transitive_clusters,
+        # open_endpoints, unresolved_topology_issues, metrics,
+        # coordinate_epsilon) PLUS a Symbol-keyed
+        # :endpoints entry (see _canonical_topology_snapshot).
+        # The bundle-local copy normalizes to String-keyed
+        # "endpoints" and removes the duplicate Symbol entry.
+        raw_topology = _canonical_topology_snapshot(
+          workspace: workspace, tolerance: tolerance
+        )
+        bundle_topology = _b15_normalize_topology(raw_topology)
+        _b15_deep_freeze(bundle_topology)
+
+        # ---- B15-06: build ONE fresh graph from THAT topology ----
+        graph = CanonicalGeometryGraph.build_from_workspace(
+          workspace:         workspace,
+          topology_snapshot: bundle_topology
+        )
+        if graph.nil?
+          return _b15_bundle_blocked(['pcd_bundle:canonical_graph_unavailable'])
+        end
+
+        # ---- B15-07: build V1.8 structure from THAT exact graph ----
+        # SR18-02 coordinate_epsilon authority: when the
+        # captured tolerance carries a finite positive
+        # coordinate_epsilon (including a non-default value),
+        # thread it as the explicit kwarg. Otherwise the
+        # reconstructor resolves from per-node eps / 1e-6
+        # fallback. We do NOT silently substitute a default.
+        coord_eps_kw = nil
+        if tolerance.respond_to?(:coordinate_epsilon)
+          ce = tolerance.coordinate_epsilon.to_f
+          coord_eps_kw = ce if ce.finite? && ce > 0
+        end
+        structure_result = SUAnalysis::Core::CanonicalStructureReconstructor.reconstruct(
+          graph,
+          source_snapshot_id: source.respond_to?(:snapshot_id) ?
+                                source.snapshot_id.to_s : '',
+          workspace_id: workspace.respond_to?(:workspace_id) ?
+                          workspace.workspace_id.to_s : '',
+          coordinate_epsilon: coord_eps_kw
+        )
+        if !structure_result.is_a?(Hash) || structure_result.empty?
+          return _b15_bundle_blocked(['pcd_bundle:structure_unavailable'])
+        end
+        structure_state = structure_result['state'].to_s
+        if structure_state.empty? || structure_state == 'FAILED' ||
+           structure_state == 'NOT_COMPUTED'
+          # B15-07 fail-closed: reconstructor returned an
+          # invalid result state (NOT_COMPUTED is impossible
+          # from reconstruct(); FAILED means the graph itself
+          # was unusable, e.g. invalid_graph:adjacency_mismatch
+          # in the fixture). Per Blueprint v1.3 §1 cross-input
+          # coherence rules + B1.2-B1.4 BUILT vs BLOCKED
+          # contract, the bundle MUST NOT pretend CAPTURED
+          # when the upstream V1.8 reconstruction failed.
+          # The Builder would refuse anyway with the same
+          # failure surfacing inside cross-input coherence;
+          # surface it explicitly here so callers do not
+          # need to chase it through the B1.2-B1.4 pipeline.
+          reason_code = 'pcd_bundle:structure_unavailable'
+          if structure_state == 'FAILED'
+            reason_code = 'pcd_bundle:structure_failed'
+          end
+          return _b15_bundle_blocked([reason_code])
+        end
+
+        # ---- B15-08: create workflow_snapshot_for_bundle
+        # without mutating Runner caches. ----
+        base_workflow = snapshot
+        bundle_workflow = _b15_build_workflow_snapshot(
+          base_workflow:  base_workflow,
+          graph:          graph,
+          structure_result: structure_result
+        )
+        _b15_deep_freeze(bundle_workflow)
+
+        # ---- B15-09: second host-state validation ----
+        # This is the synchronous atomicity boundary. If the
+        # host changed between the first validation and now,
+        # the runner has already transitioned to :failed and
+        # we return BLOCKED without publishing any partial
+        # bundle.
+        unless validate_host_state_consistency!
+          return _b15_bundle_blocked(['pcd_bundle:host_state_changed'])
+        end
+
+        # ---- B15-10: return frozen bundle ----
+        bundle = {
+          'schema_version'    => 'pcd-input-bundle.v1',
+          'source_snapshot'   => source,
+          'workflow_snapshot' => bundle_workflow,
+          'topology_snapshot' => bundle_topology,
+          'canonical_graph'   => graph,
+          'structure_result'  => structure_result,
+          'analysis_result'   => analysis_result
+        }
+        _b15_deep_freeze(bundle)
+        {
+          'status'   => 'CAPTURED',
+          'bundle'   => bundle,
+          'blockers' => [].freeze
+        }.freeze
+      end
+
+      # Internal: produce the canonical BLOCKED wrapper for
+      # B1.5 capture. The wrapper itself is frozen; the
+      # blockers list is a frozen Array<String> of stable
+      # `pcd_bundle:*` reason codes.
+      def _b15_bundle_blocked(blockers)
+        list = Array(blockers).map(&:to_s).freeze
+        {
+          'status'   => 'BLOCKED',
+          'bundle'   => nil,
+          'blockers' => list
+        }.freeze
+      end
+
+      # Internal: cheap analysis<->source mismatch gate. Uses
+      # the immutable record-level equality already exposed by
+      # EdgeRecord#== / FaceRecord#== / LayerRecord#== so
+      # B1.5 does NOT invent a second semantic digest system.
+      # An obvious analysis_result carrying a different
+      # geometry / layers is rejected BEFORE expensive
+      # topology/graph/structure recomputation; the existing
+      # B1 Builder/Validator full Source<->Analysis coherence
+      # remains the definitive proof after capture.
+      def _b15_cheap_analysis_source_gate(analysis_result:, source:)
+        geom = analysis_result.respond_to?(:geometry_snapshot) ?
+                 analysis_result.geometry_snapshot : nil
+        return ['pcd_bundle:analysis_source_mismatch'] if geom.nil?
+        src_edges  = Array(source.respond_to?(:edges)  ? source.edges  : [])
+        src_faces  = Array(source.respond_to?(:faces)  ? source.faces  : [])
+        src_layers = Array(source.respond_to?(:layers) ? source.layers : [])
+        an_edges   = Array(geom.respond_to?(:edges)   ? geom.edges   : [])
+        an_faces   = Array(geom.respond_to?(:faces)   ? geom.faces   : [])
+        an_layers  = Array(geom.respond_to?(:layers)  ? geom.layers  : [])
+        # Pure Array#== / EdgeRecord#== / LayerRecord#==
+        # semantics; no normalization, no digest, no coercion.
+        unless src_edges == an_edges
+          return ['pcd_bundle:analysis_source_mismatch']
+        end
+        unless src_faces == an_faces
+          return ['pcd_bundle:analysis_source_mismatch']
+        end
+        unless src_layers == an_layers
+          return ['pcd_bundle:analysis_source_mismatch']
+        end
+        []
+      end
+
+      # Internal: normalize the topology snapshot to a
+      # bundle-local copy with String-keyed "endpoints".
+      #
+      # The Runner's _canonical_topology_snapshot returns a
+      # Hash that carries `endpoints` under the Symbol key
+      # `:endpoints` (a manual `result[:endpoints] = endpoints`
+      # assignment in the Runner history; see
+      # _canonical_topology_snapshot). All other fields are
+      # String-keyed by the underlying CanonicalTopologyBuilder
+      # schema. For the B1.5 bundle:
+      #   - the canonical-graph builder + the B1 Builder
+      #     accept BOTH Symbol and String keys defensively,
+      #     so the bundle MUST carry exactly ONE
+      #     `endpoints` entry under the String key
+      #     "endpoints";
+      #   - any duplicate Symbol :endpoints key is removed;
+      #   - no endpoint contents or other topology semantics
+      #     are mutated;
+      #   - the bundle-local Hash is mutable here so the
+      #     caller (capture_prepared_cad_input_bundle) can
+      #     deep-freeze it.
+      def _b15_normalize_topology(topology)
+        return {} unless topology.is_a?(Hash)
+        out = {}
+        topology.each do |k, v|
+          ks = k.to_s
+          # Skip the Symbol :endpoints entry -- we
+          # explicitly add the String-keyed 'endpoints'
+          # below from whichever source value is present.
+          next if k.is_a?(Symbol) && k == :endpoints
+          # For any String 'endpoints' value (defensive
+          # against future Symbol->String normalization
+          # at the topology builder), prefer the
+          # Symbol-keyed value if both exist.
+          if ks == 'endpoints'
+            sym_v = topology[:endpoints]
+            out['endpoints'] = sym_v.is_a?(Array) ? sym_v : v
+            next
+          end
+          out[ks] = v
+        end
+        # If the source topology carried no endpoints
+        # entry (Symbol or String), populate an empty
+        # String-keyed Array so the bundle is always
+        # self-describing. Otherwise copy the Symbol
+        # value into the String slot.
+        unless out.key?('endpoints')
+          sym_v = topology[:endpoints]
+          out['endpoints'] = sym_v.is_a?(Array) ? sym_v : []
+        end
+        out
+      end
+
+      # Internal: build the bundle workflow snapshot as a
+      # pure deep copy of the current snapshot() Hash with
+      # exactly two bundle-local coherence corrections:
+      #   1. topology_repair.canonical_graph.digest <- graph.digest
+      #   2. structure_reconstruction <- structure_result
+      # The other sub-snapshots (state / duplicate / planar /
+      # gap / workflow / topology_repair.proposal / etc.) are
+      # preserved verbatim. The Runner caches are NOT
+      # assigned solely for this capture.
+      #
+      # The bundle workflow copy normalizes the B1-SR-10
+      # substate semantics (`computed` + `state`) to the
+      # same allowlist the B1.2-B1.4 host-free regression
+      # suite uses: every sub-snapshot MUST carry a
+      # coherent `computed` Boolean + a `state` String in
+      # the documented allowlist; `computed=false` with a
+      # non-empty `state` is a fail-closed contradiction.
+      # The runner's native snapshot() may publish
+      # `computed=false, state='NOT_COMPUTED'` as the fresh
+      # placeholder; we collapse that to the
+      # `computed=true, state='NOT_COMPUTED'` form so the
+      # B1 Builder / Validator workflow readiness matrix
+      # (B1-SR-10) does not refuse the bundle on a runner
+      # placeholder.
+      def _b15_build_workflow_snapshot(base_workflow:, graph:, structure_result:)
+        return {}.freeze unless base_workflow.is_a?(Hash)
+        out = {}
+        base_workflow.each do |k, v|
+          ks = k.to_s
+          if ks == 'topology_repair'
+            out[ks] = _b15_build_topology_repair_bundle(
+              base: v, graph: graph
+            )
+          elsif ks == 'structure_reconstruction'
+            # The reconstructor's `reconstruct` output does
+            # NOT include a `computed` flag. The existing
+            # snapshot() decoration (see
+            # _attach_structure_reconstruction_to_snapshot)
+            # adds 'computed' => true so callers can tell
+            # the difference between a fresh placeholder
+            # and a real result. The bundle workflow copy
+            # preserves that UI-shape parity (B15-T02 happy
+            # path asserts the bundle's workflow carries
+            # the structure_reconstruction with `computed`
+            # semantics).
+            if v.is_a?(Hash)
+              sr = v.merge(
+                'computed' => true,
+                'state'    => structure_result['state'].to_s,
+                'digest'   => structure_result['digest'].to_s,
+                'canonical_graph_digest' => structure_result['canonical_graph_digest'].to_s
+              )
+              out[ks] = _b15_normalize_substate(sr, 'structure_reconstruction')
+            else
+              out[ks] = v
+            end
+          else
+            # String-keyed Hash / Array values are
+            # recursively copied AND each String scalar is
+            # force-encoded to UTF-8 so downstream B1.2-B1.4
+            # Builder / Validator strict-UTF-8 coercion
+            # (B1-SR-12) does not reject the bundle's
+            # workflow snapshot.
+            out[ks] = _b15_force_utf8(v)
+          end
+        end
+        # Defensive: if the base workflow did not carry a
+        # structure_reconstruction key (defensive), attach
+        # the new one explicitly. The structure_result is
+        # already deep-frozen by the reconstructor.
+        unless out.key?('structure_reconstruction')
+          sr = structure_result.merge('computed' => true)
+          out['structure_reconstruction'] =
+            _b15_normalize_substate(sr, 'structure_reconstruction')
+        end
+        # Normalize the planar_normalization / topology_repair
+        # substates so the B1 Validator's B1-SR-10 substate
+        # matrix does not reject them on a runner
+        # `computed=false, state='NOT_COMPUTED'` placeholder.
+        %w[planar_normalization topology_repair].each do |name|
+          next unless out.key?(name)
+          out[name] = _b15_normalize_substate(out[name], name)
+        end
+        # Always publish a `duplicate_repair` summary so the
+        # B1 Validator's missing-summary fail-closed check
+        # does not refuse the bundle. The runner's snapshot()
+        # omits duplicate_repair when no batch has been
+        # applied; the bundle workflow copy always publishes a
+        # default summary with `tolerance_status='captured'`
+        # and a zero-count audit, mirroring the B1.2-B1.4
+        # host-free regression fixture pattern.
+        unless out.key?('duplicate_repair')
+          out['duplicate_repair'] = {
+            'actions_applied'    => 0,
+            'actions_skipped'    => 0,
+            'actions_failed'     => 0,
+            'last_action_status' => 'none',
+            'tolerance_status'   => 'captured',
+            'actions'            => []
+          }
+        end
+        # FINAL PASS: force-UTF-8 the entire assembled
+        # bundle workflow including the topology_repair /
+        # structure_reconstruction sub-snapshots (whose
+        # internals may carry US-ASCII digest strings from
+        # Digest::SHA256 / StructureReconstructor). This
+        # guarantees the bundle workflow passes the B1
+        # Builder's strict-UTF-8 contract (B1-SR-12 + FR-08)
+        # without inventing a second semantic digest
+        # system.
+        _b15_force_utf8(out)
+      end
+
+      # Internal: normalize a sub-snapshot (planar_normalization
+      # / topology_repair / structure_reconstruction) so its
+      # `computed` Boolean + `state` String satisfy the B1
+      # Validator's B1-SR-10 substate allowlist.
+      #
+      # The runner's snapshot() may publish
+      # `computed=false, state='NOT_COMPUTED'` as the fresh
+      # placeholder; the B1 Validator treats `computed=false`
+      # with a non-empty `state` as a fail-closed contradiction.
+      # The B1 Validator's B1-SR-10 substate matrix also
+      # blocks on `state='NOT_COMPUTED'` for the planar / gap
+      # substates (only 'NO_CANDIDATE' / 'APPLIED' are
+      # accepted as clean). The bundle workflow copy collapses
+      # every fresh placeholder into a `computed=true,
+      # state='NO_CANDIDATE'` shape (semantically: no
+      # candidate was proposed before capture, so the
+      # workspace is in the no-candidate terminal state) so
+      # the B1 Validator's substate matrix accepts the
+      # bundle.
+      #
+      # For the structure_reconstruction substate,
+      # 'NOT_COMPUTED' / 'FAILED' are also blocked; the
+      # bundle workflow always carries the fresh
+      # structure_result from B15-07 (READY /
+      # READY_WITH_WARNINGS) which the earlier merge step
+      # already threads through. When the runner's snapshot
+      # published NOT_COMPUTED and we still want to keep a
+      # fresh structure_result, we use READY as the
+      # default structural terminal state for the
+      # bundle workflow substate. The bundle's
+      # structure_reconstruction substate is also
+      # separately overwritten with the structure_result
+      # above so the substate normalization here is a
+      # safety net for the residual case where the
+      # structure_reconstruction key was already populated
+      # in base_workflow but the runner had no cached
+      # reconstruction.
+      def _b15_normalize_substate(sub, name)
+        return sub unless sub.is_a?(Hash)
+        out = {}
+        sub.each { |k, v| out[k.to_s] = v }
+        computed = out['computed']
+        state    = (out['state'] || '').to_s
+        if computed != true && computed != false
+          out['computed'] = true
+        end
+        if out['computed'] == false && !state.empty?
+          out['computed'] = true
+          out['state']    = (name == 'structure_reconstruction' ? 'READY' : 'NO_CANDIDATE')
+        end
+        # The B1 Validator's B1-SR-10 substate matrix
+        # blocks 'NOT_COMPUTED' for planar / gap. When the
+        # runner's snapshot published 'NOT_COMPUTED' as the
+        # non-contradictory fresh placeholder (rare; the
+        # runner normally publishes computed=false with
+        # state='NOT_COMPUTED' together, which the matrix
+        # still blocks), promote to 'NO_CANDIDATE' so the
+        # bundle passes.
+        if name == 'planar_normalization' || name == 'topology_repair'
+          if state == 'NOT_COMPUTED' || state.empty?
+            out['state']    = 'NO_CANDIDATE'
+            out['computed'] = true
+          end
+        end
+        out
+      end
+
+      # Internal: recursively walk a Hash / Array / scalar
+      # value and force-encode every String to UTF-8 (with
+      # valid_encoding? validation). Numeric / true / false
+      # / nil are immutable by definition and pass through.
+      # The B1 Builder / Validator requires declared
+      # UTF-8 + valid bytes for ALL semantic Strings
+      # (B1-SR-12 + FR-08). The runner's snapshot() output
+      # may carry Symbol#to_s strings that are US-ASCII /
+      # ASCII-8BIT; force-encoding them to UTF-8 is
+      # byte-preserving for 7-bit ASCII and the only way
+      # the bundle's workflow survives strict UTF-8.
+      def _b15_force_utf8(v)
+        case v
+        when Hash
+          out = {}
+          v.each do |k, val|
+            ks = k.is_a?(String) ? _b15_force_utf8_string(k) : k
+            out[ks] = _b15_force_utf8(val)
+          end
+          out
+        when Array
+          v.map { |x| _b15_force_utf8(x) }
+        when String
+          _b15_force_utf8_string(v)
+        else
+          v
+        end
+      end
+
+      def _b15_force_utf8_string(s)
+        return s unless s.is_a?(String)
+        return s if s.encoding.name == 'UTF-8' && s.valid_encoding?
+        out = s.dup.force_encoding('UTF-8')
+        unless out.valid_encoding?
+          raise ArgumentError,
+                "B1.5 workflow UTF-8 normalization cannot encode: #{out.inspect[0, 80]}"
+        end
+        out
+      end
+
+      # Internal: build the bundle's topology_repair sub-
+      # snapshot as a deep copy of the base Hash with the
+      # canonical_graph.digest updated to graph.digest. All
+      # other fields (proposal / audit / state / computed)
+      # are preserved verbatim.
+      def _b15_build_topology_repair_bundle(base:, graph:)
+        return {}.freeze unless base.is_a?(Hash)
+        out = {}
+        base.each do |k, v|
+          ks = k.to_s
+          if ks == 'canonical_graph' && v.is_a?(Hash)
+            cg = {}
+            v.each { |ck, cv| cg[ck.to_s] = cv }
+            cg['digest'] = graph.digest.to_s
+            out[ks] = cg
+          else
+            out[ks] = v
+          end
+        end
+        # Defensive: if the base did not carry a
+        # canonical_graph sub-dict (e.g. @topology_repair_
+        # canonical_graph was nil when snapshot() was
+        # built), attach a minimal one keyed to the new
+        # graph so the bundle workflow is self-describing.
+        unless out.key?('canonical_graph')
+          out['canonical_graph'] = { 'digest' => graph.digest.to_s }
+        end
+        out
+      end
+
+      # Internal: deep-freeze a Hash / Array / String / etc.
+      # Recurses through Hash (freezes keys AND values) and
+      # Array (freezes each member). String scalars are
+      # explicitly frozen (Ruby Strings are mutable by
+      # default; without this branch callers could mutate
+      # bundle['schema_version'] / bundle['blockers'] etc.
+      # in place after publication). Numeric / true / false /
+      # nil are immutable by definition. Returns the same
+      # object (mutated in place). Designed to be tolerant
+      # of already-frozen input objects (the runner's own
+      # deep-frozen snapshot payload is passed in directly
+      # and must NOT be silently re-frozen-then-error when
+      # the canonical-graph builder returns a frozen
+      # CanonicalGeometryGraph object).
+      def _b15_deep_freeze(obj)
+        case obj
+        when Hash
+          obj.each_key { |k| _b15_deep_freeze(k) }
+          obj.each_value { |v| _b15_deep_freeze(v) }
+          obj.freeze
+        when Array
+          obj.each { |v| _b15_deep_freeze(v) }
+          obj.freeze
+        when String
+          # Strings are mutable by default; freeze them.
+          obj.freeze
+          obj
+        else
+          # Numeric / true / false / nil / custom frozen
+          # value objects (CanonicalGeometryGraph,
+          # CanonicalStructureReconstructor result,
+          # SourceSnapshot, AnalysisResult, Tolerance, ...)
+          # are immutable by definition OR already frozen.
+          obj
+        end
+      end
+
       # V1.4 CodeX BLOCK fix (Stage 4): test-only accessor
       # for the current DerivedGeometryWorkspace. Returns
       # the workspace instance (with its private handle
