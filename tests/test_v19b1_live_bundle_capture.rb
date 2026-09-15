@@ -65,6 +65,8 @@ require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset'
 require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset_builder'
 require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset_validator'
 
+require_relative '../extension/su_ai_plugin/core/duplicate_repair_proposer'
+require_relative '../extension/su_ai_plugin/core/duplicate_repair_executor'
 require_relative '../extension/su_ai_plugin/core/working_mode_runner'
 
 include SUAnalysis::Core
@@ -225,7 +227,7 @@ test 'B15-T01: capture_prepared_cad_input_bundle is a public Runner method' do
          'B15-T01: WorkingModeRunner MUST expose capture_prepared_cad_input_bundle publicly'
   # No test-only accessor named `current_bundle_for_test` /
   # `instance_variable_get(:@b15_capture_state)` is exposed.
-  refute B15_RUNNER.respond_to?(:current_bundle_for_test),
+  assert !B15_RUNNER.respond_to?(:current_bundle_for_test),
          'B15-T01: no `current_bundle_for_test` accessor allowed'
   # Defensive: there is no private external ivar accessor
   # for the bundle. (Production callers must use the
@@ -318,12 +320,17 @@ test 'B15-T03: topology schema, unique endpoint keys, exact endpoint set == grap
   # schema.
   assert_equal 'cano-node.v1', topo['schema_version'],
                'B15-T03: topology schema_version MUST be cano-node.v1'
-  # unique endpoint keys.
-  topo_endpoint_keys = topo['endpoints'].map { |ep|
+  # unique endpoint keys (R1-T04: B15-R1-04 vacuous
+  # uniqueness assertion fix -- use raw keys first, NOT a
+  # pre-deduped list, so duplicate detection is real).
+  raw_endpoint_keys = topo['endpoints'].map { |ep|
     ep.respond_to?(:endpoint_key) ? ep.endpoint_key.to_s : ep['endpoint_key'].to_s
-  }.uniq.sort
-  assert_equal topo_endpoint_keys, topo_endpoint_keys.uniq.sort,
-               'B15-T03: topology endpoint keys MUST be unique'
+  }
+  assert raw_endpoint_keys.all? { |k| !k.to_s.empty? },
+         'B15-T03: every topology endpoint key MUST be non-empty'
+  assert_equal raw_endpoint_keys.length, raw_endpoint_keys.uniq.length,
+               'B15-T03: topology endpoint keys MUST be unique (raw, not pre-deduped)'
+  topo_endpoint_keys = raw_endpoint_keys.uniq.sort
   # topology epsilon == captured execution coordinate_epsilon.
   tv = src.execution_config.tolerance_values
   expected_eps = (tv[:coordinate_epsilon] || tv['coordinate_epsilon']).to_f
@@ -429,7 +436,7 @@ end
 # B15-T07 — Validator consumes Builder candidate.
 # =============================================================
 
-test 'B15-T07: PreparedCadDatasetValidator consume the Builder candidate => READY (not NOT_READY from cross-input mismatch)' do
+test 'B15-T07 (R1-T02): truthful clean workflow reaches READY (run real duplicate/planar/gap before capture)' do
   edges = [
     [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
     [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
@@ -437,15 +444,47 @@ test 'B15-T07: PreparedCadDatasetValidator consume the Builder candidate => READ
     [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
   ]
   _adapter, _ws, _src, ar = b15_prepare(edges)
+  # R1-T02: run the REAL deterministic workflow stages
+  # BEFORE capture so the B1 Validator sees a truthful
+  # workflow readiness state. Do NOT obtain READY by
+  # rewriting workflow state inside B1.5.
+  reg = ar.respond_to?(:registry) ? ar.registry : nil
+  if reg
+    B15_RUNNER.run_duplicate_repair_batch(registry: reg)
+  end
+  planar_snap = B15_RUNNER.compute_planar_normalization
+  # On a clean rectangle the planar stage should
+  # truthfully reach NO_CANDIDATE; we still allow
+  # READY_TO_NORMALIZE without applying (we do not
+  # mutate geometry here for the truthful READY test).
+  assert %w[NO_CANDIDATE READY_TO_NORMALIZE].include?(
+           planar_snap['planar_normalization']['state'].to_s
+         ),
+         "B15-T07: planar MUST reach NO_CANDIDATE or READY_TO_NORMALIZE; " \
+         "got #{planar_snap['planar_normalization']['state'].inspect}"
+  # If READY_TO_NORMALIZE, apply it so the Validator
+  # sees the APPLIED terminal state.
+  if planar_snap['planar_normalization']['state'].to_s == 'READY_TO_NORMALIZE'
+    B15_RUNNER.apply_planar_normalization
+  end
+  # Gap repair on a closed rectangle should also reach
+  # NO_CANDIDATE (no open endpoints).
+  gap_snap = B15_RUNNER.compute_gap_repair
+  assert %w[NO_CANDIDATE].include?(
+           gap_snap['topology_repair']['state'].to_s
+         ),
+         "B15-T07: gap MUST reach NO_CANDIDATE on closed rectangle; " \
+         "got #{gap_snap['topology_repair']['state'].inspect}"
+  # Capture AFTER the real workflow has run.
   bundle = B15_RUNNER.capture_prepared_cad_input_bundle(
     analysis_result: ar
   )['bundle']
   build_out = b15_build_from_bundle(bundle)
   assert_equal 'BUILT', build_out['status'], 'B15-T07: Builder MUST BUILT first'
   outcome = b15_finalize_from_builder(build_out, bundle)
-  refute_equal 'NOT_READY', outcome['status'],
-               "B15-T07: Validator MUST NOT report NOT_READY on a clean integration fixture; " \
-               "got #{outcome['status']} blockers=#{outcome['blockers'].inspect}"
+  assert !%w[NOT_READY].include?(outcome['status']),
+         "B15-T07: Validator MUST NOT report NOT_READY on a truthfully clean integration fixture; " \
+         "got #{outcome['status']} blockers=#{outcome['blockers'].inspect}"
   assert %w[READY READY_WITH_WARNINGS].include?(outcome['status']),
          "B15-T07: Validator status MUST be READY or READY_WITH_WARNINGS; " \
          "got #{outcome['status']}"
@@ -774,6 +813,26 @@ test 'B15-T14: Owner-equivalent 0.2mm Z + 1mm Gap fixture => capture + Builder +
   unless snap['state'] == 'ready'
     raise "B15-T14: prepare expected ready; got #{snap['state']}"
   end
+  # R1-T02 (B15-R1-01): run the REAL duplicate repair
+  # first so the bundle workflow carries a truthful
+  # duplicate_repair summary. The B1 Validator requires
+  # this; do not obtain READY by rewriting workflow state
+  # inside B1.5.
+  reg_pre = IssueRegistry.new([])
+  pf_pre = PreflightReport.new(
+    edge_count: src.edges.length, vertex_count: src.edges.length * 2,
+    layer_distribution: {}, bounding_box: nil, z_range: [0.0, 0.0],
+    non_zero_z_vertex_count: 0, non_zero_z_edge_count: 0,
+    significant_z_extrema_count: 0, large_coordinate_extrema_count: 0,
+    warnings: [], sketchup_version: 'test', selection_type: 'Edges',
+    group_count: 0, component_count: 0, deepest_nesting: 0,
+    nested_containers: [], face_count: 0, faces_with_holes_count: 0
+  )
+  ar_pre = AnalysisResult.new(
+    preflight: pf_pre, registry: reg_pre, geometry_snapshot: b15_geometry_for(src),
+    selection_entities: [], active_edit_facts: {}
+  )
+  B15_RUNNER.run_duplicate_repair_batch(registry: ar_pre.registry)
   # Apply planar.
   planar_snap = B15_RUNNER.compute_planar_normalization
   assert_equal 'READY_TO_NORMALIZE',
@@ -807,9 +866,9 @@ test 'B15-T14: Owner-equivalent 0.2mm Z + 1mm Gap fixture => capture + Builder +
                'B15-T14: region_count MUST be 1'
   # No closed loop carries non_planar_loop.
   Array(struct['loops']).each do |loop|
-    refute_includes Array(loop['unresolved_issues'] || []),
-                    'non_planar_loop',
-                    'B15-T14: closed loops MUST NOT carry non_planar_loop'
+    loop_issues = Array(loop['unresolved_issues'] || [])
+    assert !loop_issues.include?('non_planar_loop'),
+           "B15-T14: closed loops MUST NOT carry non_planar_loop; got #{loop_issues.inspect}"
   end
   # Builder from the bundle.
   build_out = b15_build_from_bundle(bundle)
@@ -920,4 +979,324 @@ test 'B15-T16: bundle + members are frozen (deep freeze)' do
   bundle['topology_snapshot'].each do |k, v|
     assert v.frozen?, "B15-T16: topology_snapshot[#{k.inspect}] MUST be frozen" if v.is_a?(String)
   end
+end
+
+# =============================================================
+# R1-T01 — uncomputed workflow stays uncomputed (B15-R1-01).
+# =============================================================
+#
+# Prepare a clean rectangle. Do NOT run:
+#   - duplicate repair
+#   - planar compute
+#   - gap compute
+#
+# Capture MUST:
+#   - return CAPTURED
+#   - preserve missing duplicate_repair
+#   - preserve planar_normalization NOT_COMPUTED / computed=false
+#   - preserve topology_repair NOT_COMPUTED / computed=false
+#   - carry the fresh B1.5 structure_reconstruction as computed=true
+# Builder may still BUILT if its coherence contract permits.
+# Validator MUST return NOT_READY for the truthful unexecuted
+# workflow readiness state. This is expected behavior, not a
+# failure of B1.5.
+
+test 'R1-T01: uncomputed workflow stays uncomputed => CAPTURED, missing duplicate, NOT_COMPUTED planar/gap, fresh structure, Validator NOT_READY' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  # Do NOT run duplicate / planar / gap. Capture must still
+  # succeed (CAPTURED) but expose the truthful uncomputed
+  # workflow substates.
+  out = B15_RUNNER.capture_prepared_cad_input_bundle(analysis_result: ar)
+  assert_equal 'CAPTURED', out['status'],
+               "R1-T01: capture MUST return CAPTURED on a valid ready workspace; " \
+               "got #{out['status']} blockers=#{out['blockers'].inspect}"
+  refute_nil out['bundle'], 'R1-T01: bundle MUST be non-nil on CAPTURED'
+  bundle = out['bundle']
+  wf = bundle['workflow_snapshot']
+  # Missing duplicate_repair is the truthful answer.
+  assert !wf.key?('duplicate_repair'),
+         'R1-T01: workflow MUST NOT synthesize duplicate_repair when ' \
+         "the Runner never ran duplicate repair; got #{wf['duplicate_repair'].inspect}"
+  # planar_normalization MUST be preserved as
+  # computed=false / state='NOT_COMPUTED' (the Runner
+  # snapshot's truthful fresh placeholder).
+  planar = wf['planar_normalization']
+  refute_nil planar, 'R1-T01: workflow MUST carry planar_normalization substate'
+  assert_equal false, planar['computed'],
+                 'R1-T01: planar.computed MUST remain false when not run'
+  assert_equal 'NOT_COMPUTED', planar['state'].to_s,
+               'R1-T01: planar.state MUST remain NOT_COMPUTED when not run'
+  # topology_repair MUST be preserved as
+  # computed=false / state='NOT_COMPUTED'.
+  gap = wf['topology_repair']
+  refute_nil gap, 'R1-T01: workflow MUST carry topology_repair substate'
+  assert_equal false, gap['computed'],
+                 'R1-T01: gap.computed MUST remain false when not run'
+  assert_equal 'NOT_COMPUTED', gap['state'].to_s,
+               'R1-T01: gap.state MUST remain NOT_COMPUTED when not run'
+  # structure_reconstruction MUST be the fresh B1.5
+  # structure_result (computed=true, state='READY' on a
+  # clean rectangle).
+  struct_sub = wf['structure_reconstruction']
+  refute_nil struct_sub, 'R1-T01: workflow MUST carry structure_reconstruction substate'
+  assert_equal true, struct_sub['computed'],
+               'R1-T01: structure_reconstruction.computed MUST be true ' \
+               '(B1.5 actually performed a fresh reconstruct in this call)'
+  assert_equal 'READY', struct_sub['state'].to_s,
+               'R1-T01: structure_reconstruction.state MUST be READY on a clean rectangle'
+  # Validator MUST return NOT_READY because duplicate /
+  # planar / gap are truthfully uncomputed.
+  build_out = b15_build_from_bundle(bundle)
+  # Builder may still BUILT if its coherence contract
+  # permits (the B1.2-B1.4 BUILT vs BLOCKED contract does
+  # NOT touch workflow readiness -- it touches cross-input
+  # coherence, which is satisfied by the bundle).
+  if build_out['status'] == 'BUILT'
+    outcome = b15_finalize_from_builder(build_out, bundle)
+    assert_equal 'NOT_READY', outcome['status'],
+                 'R1-T01: Validator MUST return NOT_READY for truthful uncomputed workflow; ' \
+                 "got #{outcome['status']} blockers=#{outcome['blockers'].inspect}"
+    blockers = Array(outcome['blockers'])
+    # Truthful blockers MUST include the missing duplicate
+    # summary AND the NOT_COMPUTED planar/gap blockers.
+    assert blockers.any? { |b| b.include?('duplicate_state') && b.include?('missing_summary') },
+           "R1-T01: Validator MUST block on missing duplicate_state summary; " \
+           "got #{blockers.inspect}"
+    assert blockers.any? { |b| b.include?('planar_state') },
+           "R1-T01: Validator MUST block on uncomputed planar_state; " \
+           "got #{blockers.inspect}"
+    assert blockers.any? { |b| b.include?('gap_state') },
+           "R1-T01: Validator MUST block on uncomputed gap_state; " \
+           "got #{blockers.inspect}"
+  end
+end
+
+# =============================================================
+# R1-T03 — exact fresh structure_result in workflow (B15-R1-02).
+# =============================================================
+#
+# After capture:
+#   wf_structure = bundle['workflow_snapshot']['structure_reconstruction']
+#   fresh = bundle['structure_result']
+# Require every fresh structure field/value to match exactly.
+# Only additive workflow metadata allowed: `computed => true`.
+# Specifically assert actual fresh:
+#   metrics, unresolved_issues, chains, loops, regions,
+#   source_snapshot_id, workspace_id, canonical_graph_digest,
+#   digest, state as present in the current structure-result schema.
+
+test 'R1-T03: workflow structure_reconstruction is the exact fresh structure_result (+ computed=true)' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  out = B15_RUNNER.capture_prepared_cad_input_bundle(analysis_result: ar)
+  assert_equal 'CAPTURED', out['status'],
+               "R1-T03: capture MUST succeed; got #{out['status']}"
+  bundle = out['bundle']
+  wf_structure = bundle['workflow_snapshot']['structure_reconstruction']
+  fresh = bundle['structure_result']
+  refute_nil wf_structure, 'R1-T03: workflow MUST carry structure_reconstruction'
+  refute_nil fresh, 'R1-T03: bundle MUST carry structure_result'
+  # R1-T03 invariant: every fresh structure field survives
+  # into the workflow. Only the additive `computed => true`
+  # field is added.
+  %w[state digest canonical_graph_digest
+     source_snapshot_id workspace_id metrics
+     unresolved_issues chains loops regions].each do |k|
+    assert_equal fresh[k], wf_structure[k],
+                 "R1-T03: workflow structure_reconstruction[#{k.inspect}] MUST " \
+                 "equal fresh structure_result[#{k.inspect}]; " \
+                 "got workflow=#{wf_structure[k].inspect}, " \
+                 "fresh=#{fresh[k].inspect}"
+  end
+  # Additive `computed` is the ONLY workflow-only field.
+  assert_equal true, wf_structure['computed'],
+               'R1-T03: workflow structure_reconstruction MUST carry computed=true'
+  assert !fresh.key?('computed'),
+         'R1-T03: fresh structure_result MUST NOT carry `computed` (it is added by the workflow copy)'
+end
+
+# =============================================================
+# R1-T05 — topology missing/malformed endpoints fail closed
+# (B15-R1-03).
+# =============================================================
+#
+# Exercise the narrow B1.5 topology-normalization / capture
+# seam and prove:
+#   - missing endpoints => BLOCKED/no bundle
+#   - non-Array endpoints => BLOCKED/no bundle
+# Prefer a public capture-path regression. We test the
+# helper directly (it is internal but the B15-R1 correction
+# mandates a regression proof) and also prove the public
+# capture path BLOCKS when the runner's topology is
+# corrupted.
+
+test 'R1-T05: topology missing endpoints => BLOCKED + topology_endpoints_missing' do
+  topology = {
+    'schema_version' => 'cano-node.v1',
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+    # NO 'endpoints' / :endpoints key
+  }
+  result, blocker = B15_RUNNER.send(
+    :_b15_normalize_topology, topology
+  )
+  assert_nil result,
+             'R1-T05: missing endpoints MUST return [nil, blocker_code]'
+  assert_equal 'pcd_bundle:topology_endpoints_missing', blocker,
+               'R1-T05: missing endpoints MUST yield topology_endpoints_missing reason'
+end
+
+test 'R1-T05: topology non-Array endpoints => BLOCKED + topology_endpoints_missing' do
+  topology = {
+    'schema_version' => 'cano-node.v1',
+    'endpoints' => 'this-is-not-an-array',
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  }
+  result, blocker = B15_RUNNER.send(
+    :_b15_normalize_topology, topology
+  )
+  assert_nil result,
+             'R1-T05: non-Array endpoints MUST return [nil, blocker_code]'
+  assert_equal 'pcd_bundle:topology_endpoints_missing', blocker,
+               'R1-T05: non-Array endpoints MUST yield topology_endpoints_missing reason'
+end
+
+test 'R1-T05: topology Symbol-keyed endpoints are accepted as a single source' do
+  topology = {
+    'schema_version' => 'cano-node.v1',
+    :endpoints => ['ep-a', 'ep-b'],
+    'endpoints' => 'this-should-be-overridden-by-symbol',
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  }
+  result, blocker = B15_RUNNER.send(
+    :_b15_normalize_topology, topology
+  )
+  refute_nil result,
+             'R1-T05: Symbol-keyed endpoints with Array value MUST be accepted'
+  assert_nil blocker,
+             'R1-T05: Symbol-keyed endpoints with Array value MUST NOT yield a blocker'
+  assert_equal ['ep-a', 'ep-b'], result['endpoints'],
+               'R1-T05: bundle-local endpoints MUST come from the Symbol-keyed Array'
+end
+
+test 'R1-T05: topology wrong schema_version => BLOCKED + topology_unavailable' do
+  topology = {
+    'schema_version' => 'wrong-schema',
+    :endpoints => ['ep-a'],
+    'canonical_nodes' => []
+  }
+  result, blocker = B15_RUNNER.send(
+    :_b15_normalize_topology, topology
+  )
+  assert_nil result,
+             'R1-T05: wrong schema_version MUST return [nil, blocker_code]'
+  assert_equal 'pcd_bundle:topology_unavailable', blocker,
+               'R1-T05: wrong schema_version MUST yield topology_unavailable reason'
+end
+
+# =============================================================
+# R1-T06 — no cache mutation, pre-populated variant.
+# =============================================================
+#
+# Add a second variant of B15-T08:
+#   - populate the normal Runner graph/structure caches
+#     through existing public calls
+#   - record public snapshot before
+#   - call B1.5
+#   - record public snapshot after
+#   - prove B1.5 did not overwrite those cached values
+#     with its fresh local graph/structure.
+# No external private-ivar access.
+
+test 'R1-T06: pre-populated Runner caches are NOT overwritten by B1.5 capture' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  # Populate the Runner graph / structure caches via the
+  # existing public compute paths. We do NOT touch any
+  # private ivar.
+  B15_RUNNER.compute_structure_reconstruction
+  gap_snap = B15_RUNNER.compute_gap_repair
+  # The cached topology_repair_canonical_graph is published
+  # through the snapshot's topology_repair.canonical_graph.
+  pre_snap = B15_RUNNER.snapshot
+  pre_struct_sub = pre_snap['structure_reconstruction']
+  pre_topo = pre_snap['topology_repair'] || {}
+  pre_cg = pre_topo['canonical_graph']
+  pre_struct_digest = pre_struct_sub.is_a?(Hash) ?
+                        pre_struct_sub['digest'] : nil
+  pre_struct_state  = pre_struct_sub.is_a?(Hash) ?
+                        pre_struct_sub['state'] : nil
+  pre_cg_digest     = pre_cg.is_a?(Hash) ?
+                        pre_cg['digest'] : nil
+  # Capture. The bundle's canonical_graph / structure_result
+  # are bundle-local fresh values; the Runner's OWN caches
+  # MUST NOT be overwritten.
+  out = B15_RUNNER.capture_prepared_cad_input_bundle(analysis_result: ar)
+  assert_equal 'CAPTURED', out['status'],
+               "R1-T06: capture MUST succeed; got #{out['status']} blockers=#{out['blockers'].inspect}"
+  post_snap = B15_RUNNER.snapshot
+  post_struct_sub = post_snap['structure_reconstruction']
+  post_topo = post_snap['topology_repair'] || {}
+  post_cg = post_topo['canonical_graph']
+  post_struct_digest = post_struct_sub.is_a?(Hash) ?
+                         post_struct_sub['digest'] : nil
+  post_struct_state  = post_struct_sub.is_a?(Hash) ?
+                         post_struct_sub['state'] : nil
+  post_cg_digest     = post_cg.is_a?(Hash) ?
+                         post_cg['digest'] : nil
+  # The Runner's own cached structure_reconstruction state
+  # MUST be unchanged across capture.
+  assert_equal pre_struct_digest, post_struct_digest,
+               'R1-T06: Runner @structure_reconstruction_result digest MUST be unchanged by capture'
+  assert_equal pre_struct_state, post_struct_state,
+               'R1-T06: Runner @structure_reconstruction_result state MUST be unchanged by capture'
+  # The Runner's own topology_repair.canonical_graph digest
+  # MUST be unchanged across capture.
+  assert_equal pre_cg_digest, post_cg_digest,
+               'R1-T06: Runner @topology_repair_canonical_graph digest MUST be unchanged by capture'
+  # Cross-bundle check: the BUNDLE's fresh canonical_graph
+  # may have a DIFFERENT digest from the Runner cache (the
+  # bundle is recomputed from the same workspace with
+  # current tolerance; the cache is the previous gap-repair
+  # snapshot's value). We just assert the bundle itself is
+  # internally coherent.
+  bundle = out['bundle']
+  refute_nil bundle['canonical_graph']
+  refute_nil bundle['structure_result']
+  assert_equal bundle['canonical_graph'].digest.to_s,
+               bundle['structure_result']['canonical_graph_digest'].to_s,
+               'R1-T06: bundle MUST bind structure canonical_graph_digest to its own graph.digest'
 end

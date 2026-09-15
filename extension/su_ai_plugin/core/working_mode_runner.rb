@@ -2723,10 +2723,17 @@ module SUAnalysis
         # :endpoints entry (see _canonical_topology_snapshot).
         # The bundle-local copy normalizes to String-keyed
         # "endpoints" and removes the duplicate Symbol entry.
+        # B15-R1-03: when the topology is missing, malformed,
+        # or the endpoints entry is not a real Array, fail
+        # the capture closed; do NOT silently invent an
+        # empty endpoints Array.
         raw_topology = _canonical_topology_snapshot(
           workspace: workspace, tolerance: tolerance
         )
-        bundle_topology = _b15_normalize_topology(raw_topology)
+        bundle_topology, topo_blocker = _b15_normalize_topology(raw_topology)
+        if bundle_topology.nil?
+          return _b15_bundle_blocked([topo_blocker || 'pcd_bundle:topology_unavailable'])
+        end
         _b15_deep_freeze(bundle_topology)
 
         # ---- B15-06: build ONE fresh graph from THAT topology ----
@@ -2870,157 +2877,162 @@ module SUAnalysis
       # Internal: normalize the topology snapshot to a
       # bundle-local copy with String-keyed "endpoints".
       #
-      # The Runner's _canonical_topology_snapshot returns a
-      # Hash that carries `endpoints` under the Symbol key
-      # `:endpoints` (a manual `result[:endpoints] = endpoints`
-      # assignment in the Runner history; see
-      # _canonical_topology_snapshot). All other fields are
-      # String-keyed by the underlying CanonicalTopologyBuilder
-      # schema. For the B1.5 bundle:
-      #   - the canonical-graph builder + the B1 Builder
-      #     accept BOTH Symbol and String keys defensively,
-      #     so the bundle MUST carry exactly ONE
-      #     `endpoints` entry under the String key
-      #     "endpoints";
-      #   - any duplicate Symbol :endpoints key is removed;
-      #   - no endpoint contents or other topology semantics
-      #     are mutated;
-      #   - the bundle-local Hash is mutable here so the
-      #     caller (capture_prepared_cad_input_bundle) can
-      #     deep-freeze it.
+      # B15-R1-03 (fail-closed on missing/malformed
+      # topology):
+      #   - the topology MUST be a Hash with
+      #     schema_version == "cano-node.v1";
+      #   - an endpoints entry MUST exist (Symbol or
+      #     String key);
+      #   - the endpoints entry MUST be an Array.
+      # When any of these is missing or malformed the
+      # function returns [nil, blocker_code] so the
+      # caller can fail the B1.5 capture with a stable
+      # pcd_bundle:* reason. The runner never silently
+      # invents an empty endpoints Array as a recovery
+      # path.
+      #
+      # On success: returns [bundle_local_hash, nil]. The
+      # bundle-local Hash carries the String-keyed
+      # "endpoints" entry derived from whichever source
+      # key was present (Symbol :endpoints or String
+      # "endpoints"). Other fields are String-keyed by
+      # the underlying CanonicalTopologyBuilder schema.
       def _b15_normalize_topology(topology)
-        return {} unless topology.is_a?(Hash)
+        unless topology.is_a?(Hash)
+          return [nil, 'pcd_bundle:topology_unavailable']
+        end
+        unless topology['schema_version'].to_s == 'cano-node.v1'
+          return [nil, 'pcd_bundle:topology_unavailable']
+        end
+        # endpoints under Symbol or String key.
+        endpoints = topology[:endpoints]
+        endpoints = topology['endpoints'] if endpoints.nil?
+        if endpoints.nil?
+          return [nil, 'pcd_bundle:topology_endpoints_missing']
+        end
+        unless endpoints.is_a?(Array)
+          return [nil, 'pcd_bundle:topology_endpoints_missing']
+        end
+        # Build a bundle-local copy. Drop the Symbol
+        # :endpoints entry; emit the String "endpoints"
+        # entry exactly once with the validated Array.
         out = {}
         topology.each do |k, v|
           ks = k.to_s
-          # Skip the Symbol :endpoints entry -- we
-          # explicitly add the String-keyed 'endpoints'
-          # below from whichever source value is present.
           next if k.is_a?(Symbol) && k == :endpoints
-          # For any String 'endpoints' value (defensive
-          # against future Symbol->String normalization
-          # at the topology builder), prefer the
-          # Symbol-keyed value if both exist.
           if ks == 'endpoints'
-            sym_v = topology[:endpoints]
-            out['endpoints'] = sym_v.is_a?(Array) ? sym_v : v
+            # Skip the source-side "endpoints" entry;
+            # the validated Array is re-emitted below
+            # from whichever source key was present.
             next
           end
           out[ks] = v
         end
-        # If the source topology carried no endpoints
-        # entry (Symbol or String), populate an empty
-        # String-keyed Array so the bundle is always
-        # self-describing. Otherwise copy the Symbol
-        # value into the String slot.
-        unless out.key?('endpoints')
-          sym_v = topology[:endpoints]
-          out['endpoints'] = sym_v.is_a?(Array) ? sym_v : []
-        end
-        out
+        out['endpoints'] = endpoints
+        [out, nil]
       end
 
       # Internal: build the bundle workflow snapshot as a
       # pure deep copy of the current snapshot() Hash with
-      # exactly two bundle-local coherence corrections:
+      # EXACTLY two bundle-local coherence corrections:
       #   1. topology_repair.canonical_graph.digest <- graph.digest
-      #   2. structure_reconstruction <- structure_result
-      # The other sub-snapshots (state / duplicate / planar /
-      # gap / workflow / topology_repair.proposal / etc.) are
-      # preserved verbatim. The Runner caches are NOT
-      # assigned solely for this capture.
+      #   2. structure_reconstruction <- fresh structure_result
       #
-      # The bundle workflow copy normalizes the B1-SR-10
-      # substate semantics (`computed` + `state`) to the
-      # same allowlist the B1.2-B1.4 host-free regression
-      # suite uses: every sub-snapshot MUST carry a
-      # coherent `computed` Boolean + a `state` String in
-      # the documented allowlist; `computed=false` with a
-      # non-empty `state` is a fail-closed contradiction.
-      # The runner's native snapshot() may publish
-      # `computed=false, state='NOT_COMPUTED'` as the fresh
-      # placeholder; we collapse that to the
-      # `computed=true, state='NOT_COMPUTED'` form so the
-      # B1 Builder / Validator workflow readiness matrix
-      # (B1-SR-10) does not refuse the bundle on a runner
-      # placeholder.
+      # B15-R1-01 (workflow truthfulness):
+      #   The bundle workflow copy PRESERVES the actual
+      #   Runner snapshot semantics for every substate
+      #   (state, duplicate_repair, planar_normalization,
+      #   topology_repair). B1.5 MUST NOT:
+      #     - convert NOT_COMPUTED -> NO_CANDIDATE
+      #     - convert computed=false -> computed=true
+      #     - synthesize a default duplicate_repair summary
+      #       when the Runner snapshot omitted it
+      #   Capture success (CAPTURED) and final dataset
+      #   readiness (READY / READY_WITH_WARNINGS /
+      #   NOT_READY) are SEPARATE concerns. The Validator
+      #   may legitimately return NOT_READY when the
+      #   workflow substates truthfully report that the
+      #   duplicate / planar / gap checks were never
+      #   actually run.
+      #
+      # B15-R1-02 (exact fresh structure_result):
+      #   The ONLY substate that B1.5 is allowed to make
+      #   computed=true by itself is structure_reconstruction,
+      #   because B1.5 actually performs a fresh
+      #   `CanonicalStructureReconstructor.reconstruct(...)`
+      #   in this same call. The bundle workflow copy's
+      #   structure_reconstruction substate MUST be a deep
+      #   copy of the fresh structure_result Hash, with
+      #   ONLY the additive `computed => true` field
+      #   appended. No stale fields from the old Runner
+      #   cache / placeholder may survive.
       def _b15_build_workflow_snapshot(base_workflow:, graph:, structure_result:)
         return {}.freeze unless base_workflow.is_a?(Hash)
         out = {}
         base_workflow.each do |k, v|
           ks = k.to_s
           if ks == 'topology_repair'
+            # B15-R1-01: preserve the actual Runner
+            # snapshot semantics (state / computed /
+            # proposal / audit). Only update the
+            # canonical_graph.digest so the bundle workflow
+            # references the B1.5 fresh graph digest.
             out[ks] = _b15_build_topology_repair_bundle(
               base: v, graph: graph
             )
           elsif ks == 'structure_reconstruction'
-            # The reconstructor's `reconstruct` output does
-            # NOT include a `computed` flag. The existing
-            # snapshot() decoration (see
-            # _attach_structure_reconstruction_to_snapshot)
-            # adds 'computed' => true so callers can tell
-            # the difference between a fresh placeholder
-            # and a real result. The bundle workflow copy
-            # preserves that UI-shape parity (B15-T02 happy
-            # path asserts the bundle's workflow carries
-            # the structure_reconstruction with `computed`
-            # semantics).
-            if v.is_a?(Hash)
-              sr = v.merge(
-                'computed' => true,
-                'state'    => structure_result['state'].to_s,
-                'digest'   => structure_result['digest'].to_s,
-                'canonical_graph_digest' => structure_result['canonical_graph_digest'].to_s
-              )
-              out[ks] = _b15_normalize_substate(sr, 'structure_reconstruction')
-            else
-              out[ks] = v
-            end
+            # B15-R1-02: ignore the Runner's stale
+            # structure_reconstruction value. The bundle
+            # workflow copy's structure_reconstruction
+            # substate is the EXACT fresh structure_result
+            # (deep-copied into a mutable Hash so we can
+            # add the `computed => true` additive field
+            # without mutating the reconstructor's
+            # deep-frozen output). Every fresh field
+            # (state, digest, canonical_graph_digest,
+            # source_snapshot_id, workspace_id, metrics,
+            # chains, loops, regions, unresolved_issues)
+            # MUST survive into the bundle workflow.
+            fresh_sr = _b15_deep_copy(structure_result)
+            fresh_sr['computed'] = true
+            out[ks] = fresh_sr
           else
             # String-keyed Hash / Array values are
             # recursively copied AND each String scalar is
             # force-encoded to UTF-8 so downstream B1.2-B1.4
             # Builder / Validator strict-UTF-8 coercion
             # (B1-SR-12) does not reject the bundle's
-            # workflow snapshot.
+            # workflow snapshot. B15-R1-01: every other
+            # substate (state / duplicate_repair /
+            # planar_normalization / topology_repair
+            # already handled above) is preserved verbatim
+            # from the Runner snapshot. Do NOT synthesize
+            # missing entries.
             out[ks] = _b15_force_utf8(v)
           end
         end
         # Defensive: if the base workflow did not carry a
-        # structure_reconstruction key (defensive), attach
-        # the new one explicitly. The structure_result is
-        # already deep-frozen by the reconstructor.
+        # structure_reconstruction key (e.g. a test-only
+        # snapshot variant), attach the fresh
+        # structure_reconstruction from B15-07. B15-R1-02
+        # still applies: the value is a deep copy of the
+        # fresh structure_result with `computed => true`.
         unless out.key?('structure_reconstruction')
-          sr = structure_result.merge('computed' => true)
-          out['structure_reconstruction'] =
-            _b15_normalize_substate(sr, 'structure_reconstruction')
+          fresh_sr = _b15_deep_copy(structure_result)
+          fresh_sr['computed'] = true
+          out['structure_reconstruction'] = fresh_sr
         end
-        # Normalize the planar_normalization / topology_repair
-        # substates so the B1 Validator's B1-SR-10 substate
-        # matrix does not reject them on a runner
-        # `computed=false, state='NOT_COMPUTED'` placeholder.
-        %w[planar_normalization topology_repair].each do |name|
-          next unless out.key?(name)
-          out[name] = _b15_normalize_substate(out[name], name)
-        end
-        # Always publish a `duplicate_repair` summary so the
-        # B1 Validator's missing-summary fail-closed check
-        # does not refuse the bundle. The runner's snapshot()
-        # omits duplicate_repair when no batch has been
-        # applied; the bundle workflow copy always publishes a
-        # default summary with `tolerance_status='captured'`
-        # and a zero-count audit, mirroring the B1.2-B1.4
-        # host-free regression fixture pattern.
-        unless out.key?('duplicate_repair')
-          out['duplicate_repair'] = {
-            'actions_applied'    => 0,
-            'actions_skipped'    => 0,
-            'actions_failed'     => 0,
-            'last_action_status' => 'none',
-            'tolerance_status'   => 'captured',
-            'actions'            => []
-          }
-        end
+        # B15-R1-01: do NOT promote planar_normalization /
+        # topology_repair `computed=false / NOT_COMPUTED`
+        # placeholders. Do NOT synthesize a default
+        # duplicate_repair summary. The bundle workflow
+        # preserves the actual Runner snapshot semantics
+        # so the B1 Validator's B1-SR-10 substate matrix
+        # and the duplicate-summary fail-closed check
+        # truthfully report NOT_READY for an uncomputed
+        # workflow (this is the expected R1-T01 behavior,
+        # not a failure of B1.5).
+        #
         # FINAL PASS: force-UTF-8 the entire assembled
         # bundle workflow including the topology_repair /
         # structure_reconstruction sub-snapshots (whose
@@ -3033,72 +3045,53 @@ module SUAnalysis
         _b15_force_utf8(out)
       end
 
-      # Internal: normalize a sub-snapshot (planar_normalization
-      # / topology_repair / structure_reconstruction) so its
-      # `computed` Boolean + `state` String satisfy the B1
-      # Validator's B1-SR-10 substate allowlist.
+      # Internal: deep-copy a Hash (with String / Symbol keys)
+      # and its nested Array / Hash members, while sharing
+      # immutable scalar values (String, Numeric, true, false,
+      # nil, deep-frozen value objects). Used by
+      # _b15_build_workflow_snapshot to produce a mutable
+      # bundle-local copy of the reconstructor's deep-frozen
+      # structure_result so we can append the additive
+      # `computed => true` field without mutating the
+      # reconstructor's output.
       #
-      # The runner's snapshot() may publish
-      # `computed=false, state='NOT_COMPUTED'` as the fresh
-      # placeholder; the B1 Validator treats `computed=false`
-      # with a non-empty `state` as a fail-closed contradiction.
-      # The B1 Validator's B1-SR-10 substate matrix also
-      # blocks on `state='NOT_COMPUTED'` for the planar / gap
-      # substates (only 'NO_CANDIDATE' / 'APPLIED' are
-      # accepted as clean). The bundle workflow copy collapses
-      # every fresh placeholder into a `computed=true,
-      # state='NO_CANDIDATE'` shape (semantically: no
-      # candidate was proposed before capture, so the
-      # workspace is in the no-candidate terminal state) so
-      # the B1 Validator's substate matrix accepts the
-      # bundle.
-      #
-      # For the structure_reconstruction substate,
-      # 'NOT_COMPUTED' / 'FAILED' are also blocked; the
-      # bundle workflow always carries the fresh
-      # structure_result from B15-07 (READY /
-      # READY_WITH_WARNINGS) which the earlier merge step
-      # already threads through. When the runner's snapshot
-      # published NOT_COMPUTED and we still want to keep a
-      # fresh structure_result, we use READY as the
-      # default structural terminal state for the
-      # bundle workflow substate. The bundle's
-      # structure_reconstruction substate is also
-      # separately overwritten with the structure_result
-      # above so the substate normalization here is a
-      # safety net for the residual case where the
-      # structure_reconstruction key was already populated
-      # in base_workflow but the runner had no cached
-      # reconstruction.
-      def _b15_normalize_substate(sub, name)
-        return sub unless sub.is_a?(Hash)
-        out = {}
-        sub.each { |k, v| out[k.to_s] = v }
-        computed = out['computed']
-        state    = (out['state'] || '').to_s
-        if computed != true && computed != false
-          out['computed'] = true
-        end
-        if out['computed'] == false && !state.empty?
-          out['computed'] = true
-          out['state']    = (name == 'structure_reconstruction' ? 'READY' : 'NO_CANDIDATE')
-        end
-        # The B1 Validator's B1-SR-10 substate matrix
-        # blocks 'NOT_COMPUTED' for planar / gap. When the
-        # runner's snapshot published 'NOT_COMPUTED' as the
-        # non-contradictory fresh placeholder (rare; the
-        # runner normally publishes computed=false with
-        # state='NOT_COMPUTED' together, which the matrix
-        # still blocks), promote to 'NO_CANDIDATE' so the
-        # bundle passes.
-        if name == 'planar_normalization' || name == 'topology_repair'
-          if state == 'NOT_COMPUTED' || state.empty?
-            out['state']    = 'NO_CANDIDATE'
-            out['computed'] = true
+      # Strings are force-encoded to UTF-8 (B1-SR-12 + FR-08)
+      # so callers do not have to handle encoding drift
+      # downstream.
+      def _b15_deep_copy(obj)
+        case obj
+        when Hash
+          out = {}
+          obj.each do |k, v|
+            ks = k.is_a?(String) ? _b15_force_utf8_string(k) : k
+            out[ks] = _b15_deep_copy(v)
           end
+          out
+        when Array
+          obj.map { |x| _b15_deep_copy(x) }
+        when String
+          _b15_force_utf8_string(obj)
+        else
+          # Numeric / true / false / nil / deep-frozen
+          # value objects (CanonicalGeometryGraph,
+          # SourceSnapshot, AnalysisResult, Tolerance) are
+          # immutable by definition OR already frozen.
+          obj
         end
-        out
       end
+
+      # B15-R1-01 NOTE: the previous B1.5
+      # `_b15_normalize_substate` helper that promoted
+      # `NOT_COMPUTED / computed=false` placeholders to
+      # `NO_CANDIDATE / computed=true` and synthesized a
+      # default `duplicate_repair` summary was REMOVED in
+      # the B15-R1 correction. B1.5 capture must never
+      # fabricate readiness. The B1 Validator's B1-SR-10
+      # fail-closed substate matrix + missing-summary
+      # check are the authoritative source of readiness
+      # verdict for the captured workflow; if the user
+      # never ran duplicate / planar / gap, the Validator
+      # MUST return NOT_READY.
 
       # Internal: recursively walk a Hash / Array / scalar
       # value and force-encode every String to UTF-8 (with
