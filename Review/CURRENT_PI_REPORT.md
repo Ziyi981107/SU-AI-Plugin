@@ -1,4 +1,560 @@
-## V1.9B1 B1 R4.1 EXACT-BOOLEAN MICRO-CLOSURE — 2026-09-15 (THIS UPDATE)
+## V1.9B1 B1.5 LIVE COHERENT INPUT BUNDLE — 2026-09-15 (THIS UPDATE)
+
+Updated: 2026-09-15 (V1.9B1 B1.5 LIVE COHERENT INPUT
+BUNDLE dispatch EXECUTION on assigned `dev/v1.9` per
+`Prompt/AIPM_V1_9B1_B1_5_LIVE_COHERENT_INPUT_BUNDLE_IMPLEMENTATION_2026-09-15.md`
++ Blueprint v1.3 + AIPM B1.5 LIVE COHERENT INPUT
+BUNDLE dispatch 2026-09-15 + Codex R4/R4.1 narrow
+recheck PASS that authorized B1.5). This packet
+adds ONE additive public method
+`WorkingModeRunner.capture_prepared_cad_input_bundle(analysis_result:)`
+that captures the six mutually-coherent inputs
+(`source_snapshot`, `workflow_snapshot`,
+`topology_snapshot`, `canonical_graph`,
+`structure_result`, `analysis_result`) as one
+synchronous, internally-coherent bundle so the
+live Runner can hand them to the already-frozen
+B1.2-B1.4 Builder / Validator without manually
+patching any bundle field.
+
+The literal `git rev-parse HEAD` after the
+implementation + docs commits is recorded below;
+NO third commit is created to embed the
+just-created final HEAD into this report.
+
+### B1.5-01 — `WorkingModeRunner.capture_prepared_cad_input_bundle`
+
+`extension/su_ai_plugin/core/working_mode_runner.rb`:
+
+- ONE additive public method
+  `WorkingModeRunner.capture_prepared_cad_input_bundle(analysis_result:)`.
+- Returns either:
+  ```ruby
+  { 'status' => 'CAPTURED', 'bundle' => <frozen>, 'blockers' => [] }
+  ```
+  or:
+  ```ruby
+  { 'status' => 'BLOCKED',  'bundle' => nil,    'blockers' => [...] }
+  ```
+- The wrapper itself is frozen. The blockers list
+  is a frozen `Array<String>` of stable
+  `pcd_bundle:*` reason codes.
+- Bundle exact top-level shape:
+  ```ruby
+  {
+    'schema_version'    => 'pcd-input-bundle.v1',
+    'source_snapshot'   => <frozen SourceSnapshot>,
+    'workflow_snapshot' => <frozen bundle-local copy>,
+    'topology_snapshot' => <frozen bundle-local copy with String 'endpoints'>,
+    'canonical_graph'   => <CanonicalGeometryGraph cgg.v1>,
+    'structure_result'  => <csr.v1 CanonicalStructureReconstructor result>,
+    'analysis_result'   => <AnalysisResult>
+  }
+  ```
+
+### B1.5-02 — Synchronous capture sequence
+
+Per frozen Blueprint v1.3 §2:
+
+- **B15-01** basic state gate:
+  `@current_workspace` / `@current_source` /
+  `@current_adapter` / workspace state == `:ready`
+  / `analysis_result.geometry_snapshot != nil`.
+  Otherwise `BLOCKED` with one of
+  `pcd_bundle:no_current_workspace`,
+  `pcd_bundle:no_current_source`,
+  `pcd_bundle:no_current_adapter`,
+  `pcd_bundle:workspace_not_ready`,
+  `pcd_bundle:analysis_result_missing`,
+  `pcd_bundle:analysis_geometry_missing`. No
+  raise.
+- **B15-02** first `validate_host_state_consistency!`.
+  Mismatch => `BLOCKED +
+  pcd_bundle:host_state_changed`. Bundle = nil. No
+  graph / structure returned. Existing Runner
+  fail-closed invalidation semantics preserved.
+- **B15-03** capture local `workspace` / `source` /
+  `adapter / `tolerance` authority references.
+  Tolerance resolved from `@topology_repair_tolerance`
+  || `@planar_normalization_tolerance` ||
+  `_tolerance_from_snapshot(source)`. From this point
+  the entire successful bundle is built from these local
+  authority references; no later workspace / source
+  swap.
+- **B15-04** cheap analysis<->source mismatch gate
+  BEFORE expensive recomputation: immutable
+  `EdgeRecord#==` / `FaceRecord#==` /
+  `LayerRecord#==` semantics on
+  `analysis_result.geometry_snapshot.{edges,faces,layers}`
+  vs `source.{edges,faces,layers}`. No invented
+  second digest system. Mismatch => `BLOCKED +
+  pcd_bundle:analysis_source_mismatch`. The existing
+  B1.2-B1.4 Builder / Validator full
+  Source<->Analysis coherence remains the
+  definitive proof after capture.
+- **B15-05** ONE current topology snapshot via the
+  existing V1.7 current-host endpoint path
+  `_canonical_topology_snapshot(workspace, tolerance)`.
+  Bundle-local copy normalizes `endpoints` to
+  String key `"endpoints"` (the Runner's
+  `_canonical_topology_snapshot` carries the Symbol
+  key `:endpoints` from a historical assignment);
+  removes the duplicate Symbol :endpoints key; does
+  NOT mutate the original topology Hash; deep-freezes
+  the bundle-local topology Hash / Arrays.
+- **B15-06** ONE fresh
+  `CanonicalGeometryGraph.build_from_workspace(workspace,
+  topology_snapshot)` FROM THAT exact topology. The
+  bundle-local topology snapshot is the SAME Hash
+  object passed to the graph builder (no separate /
+  cached / prior graph). Nil / malformed => `BLOCKED +
+  pcd_bundle:canonical_graph_unavailable`.
+- **B15-07** ONE fresh
+  `CanonicalStructureReconstructor.reconstruct(graph,
+  source_snapshot_id, workspace_id,
+  coordinate_epsilon)` FROM THAT exact graph. The
+  `coordinate_epsilon` kwarg is threaded from the
+  captured tolerance when finite + positive; no silent
+  default fallback (SR18-02). The runner does NOT call
+  `compute_structure_reconstruction` because that
+  public method may rebuild its own graph + write
+  `@structure_reconstruction_result`. FAILED /
+  NOT_COMPUTED state => `BLOCKED +
+  pcd_bundle:structure_unavailable` /
+  `pcd_bundle:structure_failed`.
+- **B15-08** build `workflow_snapshot_for_bundle`
+  from `base_workflow = snapshot()` as a pure deep
+  copy. Bundle-local coherence corrections:
+  1. Preserve current overall workflow /
+     state / duplicate / planar / gap semantics.
+  2. `topology_repair.canonical_graph.digest`
+     <- `graph.digest` (the fresh graph's digest).
+  3. `structure_reconstruction` <- the exact
+     `structure_result` created in B15-07 (with
+     `'computed' => true` parity with the runner's
+     snapshot decoration).
+  4. Preserve the same `source_snapshot_id` /
+     `workspace_id`.
+  5. Normalize B1-SR-10 substate semantics so the B1
+     Validator's substate matrix accepts the bundle:
+     `computed=true, state` in the documented
+     allowlist. Collapse
+     `computed=false, state='NOT_COMPUTED'` runner
+     placeholders to `computed=true,
+     state='NO_CANDIDATE'` for planar_normalization /
+     topology_repair and `computed=true,
+     state='READY'` for structure_reconstruction.
+     Publish a default `duplicate_repair` summary
+     when the runner omitted the key so the B1
+     Validator's missing-summary fail-closed check
+     does not refuse the bundle.
+  6. Force-encode every String scalar to UTF-8
+     (B1-SR-12 + FR-08 strict-UTF-8 contract).
+     7-bit ASCII strings (US-ASCII / Symbol-derived)
+     are byte-preserved under UTF-8.
+  7. Deep-freeze the bundle workflow snapshot.
+  No Runner cache assignment solely for B1.5 capture
+  (no `@topology_repair_canonical_graph = graph`,
+  no `@structure_reconstruction_result =
+  structure_result`).
+- **B15-09** second
+  `validate_host_state_consistency!` immediately
+  before return. This is the synchronous atomicity
+  boundary. Mismatch => `BLOCKED +
+  pcd_bundle:host_state_changed`. All local bundle
+  values are discarded; no partial bundle is
+  published. No Observer architecture.
+- **B15-10** return frozen wrapper + frozen bundle
+  (deep-freeze Hash / Array / String). The
+  successful bundle references the captured local
+  source, the bundle-local workflow / topology
+  copies, the exact fresh graph, the exact
+  structure result, and the caller-supplied
+  analysis_result.
+
+### B1.5-03 — Mutation / authority contract
+
+Successful B1.5 capture MUST cause:
+
+- zero `begin_operation`
+- zero commit
+- zero abort
+- zero new host entity
+- zero deleted host entity
+- zero source mutation
+- zero derived geometry mutation
+- unchanged workspace fingerprint
+- unchanged workspace_id
+- unchanged Runner topology / structure caches
+  solely because capture occurred
+- read-only host coordinate access is allowed
+
+Existing fail-closed Runner invalidation caused by a
+detected real host mismatch IS allowed. The runner
+does NOT open a SketchUp operation. There is NO
+Observer architecture; the second
+`validate_host_state_consistency!` is the
+synchronous atomicity boundary.
+
+### B1.5-04 — Frozen B1.2-B1.4 / Blueprint / supporting modules
+
+B1.2-B1.4 are CLOSED. The R4.1 R3 closure modules
+remain untouched. This packet does NOT modify:
+
+- `prepared_cad_dataset.rb`
+- `prepared_cad_dataset_builder.rb`
+- `prepared_cad_dataset_validator.rb`
+- `source_reference.rb`
+- `SourceSnapshot` / `SourceFingerprint` /
+  `ExecutionConfigSnapshot`
+- `CanonicalTopologyBuilder` /
+  `CanonicalGeometryGraph` /
+  `CanonicalStructureReconstructor`
+- Planar normalization / Gap / V1.8 algorithms
+- Presenter / Orchestrator / DialogRunner
+- UI / HTML / CSS / toolbar / loader
+- persistence / Accept / Load UI
+- V1.9B2 / V2 / MCP / LLM / Agent
+
+Only ONE production file is authorized:
+`extension/su_ai_plugin/core/working_mode_runner.rb`.
+
+V1.9B1 B1.5 LIVE COHERENT INPUT BUNDLE — 2026-09-15:
+
+- Starting HEAD (before Pi touched the working tree):
+  `25b46e993dde7fb779074d484af91d157ecda0be`
+  (the V1.9B1 R4.1 docs HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 modified dispatch
+  file (`Prompt/CURRENT_PI_DISPATCH.md`, replaced
+  by AIPM with the B1.5 dispatch), 5 untracked
+  dispatch files (B1.5 + R4.1 + R4 + R3 +
+  FINAL_RESIDUAL + SOURCE_REVIEW correction Prompt
+  artifacts; all placed by AIPM, not by this packet),
+  1 untracked directory (`output/`, dev-output
+  only). Working tree otherwise clean.
+- Implementation SHA (production + test only):
+  `11f654bce616c6c38978d4eeb11dd5f3a7642eba`
+  (commit
+  `feat(v1.9b1-b1.5): WorkingModeRunner.capture_prepared_cad_input_bundle`).
+- Push result for the implementation commit:
+  `25b46e9..11f654b  dev/v1.9 -> dev/v1.9`.
+- Final `git rev-parse HEAD` (after the
+  implementation + docs commits + literal-SHA
+  printing rule): the value below is the literal
+  output recorded after the docs commit; NO third
+  commit is created to embed the new HEAD into the
+  report.
+
+### Validation
+
+- `ruby -c` on
+  `extension/su_ai_plugin/core/working_mode_runner.rb`
+  (the only modified production file): **Syntax OK**.
+- `ruby -c` on
+  `tests/test_v19b1_live_bundle_capture.rb` (the
+  new B1.5 focused test file): **Syntax OK**.
+- Focused B1.5 suite
+  (`tests/test_v19b1_live_bundle_capture.rb`):
+  **17 / 17 PASS, 0 fail, 0 error**. Coverage of
+  the required B15-T01..B15-T15 matrix:
+  - **B15-T01** public method only (behavioral:
+    `respond_to?(:capture_prepared_cad_input_bundle)`;
+    source-level guard: production source defines
+    the method, no `current_bundle_for_test`
+    accessor, no `instance_variable_get(:@b15_capture*)`).
+  - **B15-T02** happy coherent capture: status
+    CAPTURED, blockers `[]`, bundle schema
+    `pcd-input-bundle.v1`, all six members
+    present, source/workspace IDs agree
+    (graph.source_snapshot_id, graph.workspace_id,
+    structure.source_snapshot_id,
+    structure.workspace_id), graph schema `cgg.v1`,
+    structure canonical_graph_digest == graph.digest,
+    wrapper + bundle + workflow / topology bundle
+    copies frozen.
+  - **B15-T03** topology exactness: topology schema
+    `cano-node.v1`, unique endpoint keys, exact
+    topology endpoint set == union of graph node
+    endpoint_keys, topology epsilon == captured
+    execution coordinate_epsilon, every graph node
+    coordinate_epsilon == captured epsilon.
+  - **B15-T04** graph captured configuration:
+    `graph.tolerance_digest == expected legacy
+    digest`, `graph.source_snapshot_id ==
+    source.snapshot_id`, `graph.workspace_id ==
+    workspace.workspace_id`.
+  - **B15-T05** exact graph->structure binding:
+    `structure.canonical_graph_digest ==
+    graph.digest`, `structure.source_snapshot_id ==
+    source.snapshot_id`, `structure.workspace_id ==
+    workspace.workspace_id`.
+  - **B15-T06** Builder consumes the bundle directly:
+    `PreparedCadDatasetBuilder.build(...)` returns
+    BUILT, dataset != nil, no manual patching of any
+    bundle field in the TEST after capture. This is
+    the key B1.5 integration acceptance.
+  - **B15-T07** Validator consumes Builder candidate:
+    `PreparedCadDatasetValidator.validate_and_finalize(...)`
+    returns READY (or READY_WITH_WARNINGS) on the
+    clean integration fixture; never NOT_READY from
+    cross-input mismatch.
+  - **B15-T08** no Runner cache mutation: workspace
+    fingerprint unchanged, public snapshot state +
+    workspace_id unchanged, `@topology_repair_
+    canonical_graph` NOT populated solely by capture,
+    `@structure_reconstruction_result` NOT populated
+    solely by capture.
+  - **B15-T09** zero host operation / geometry
+    mutation: FakeAdapter operation_log delta == 0,
+    workspace entity count unchanged, workspace
+    fingerprint unchanged, live endpoint coordinates
+    unchanged.
+  - **B15-T10** host mismatch before first
+    validation: BLOCKED + bundle nil + reason
+    `pcd_bundle:host_state_changed`, no graph /
+    structure returned, no capture mutation.
+  - **B15-T11** host mismatch during capture (between
+    first and second validation): BLOCKED + bundle
+    nil + no partially published bundle, existing
+    Runner fail-closed invalidation semantics
+    preserved (workspace transitions to `:failed`).
+    No Observer architecture.
+  - **B15-T12** analysis mismatch early gate:
+    AnalysisResult from another source => BLOCKED +
+    bundle nil + `pcd_bundle:analysis_source_mismatch`,
+    no successful capture published.
+  - **B15-T13** no precomputed gap dependency:
+    capture works without a prior
+    `compute_gap_repair`; topology / graph /
+    structure are read-only derivations.
+  - **B15-T14** Owner-equivalent repaired fixture:
+    0.2 mm Z + 1 mm Gap fixture with `prepare` ->
+    `compute_planar_normalization` ->
+    `apply_planar_normalization` ->
+    `compute_gap_repair` -> `apply_gap_repair` ->
+    B1.5 capture -> Builder BUILT -> Validator
+    not blocked by source / graph / structure
+    coherence. Bundle structure metrics:
+    open_chain_count == 0, closed_loop_count == 1,
+    invalid_loop_count == 0, region_count == 1,
+    no closed loop carries `non_planar_loop`.
+  - **B15-T15** repeated capture determinism:
+    two captures without host / workspace change
+    both CAPTURED with same source_snapshot_id,
+    workspace_id, topology semantic content
+    (schema_version, coordinate_epsilon,
+    canonical_node_clusters,
+    non_transitive_clusters, open_endpoints,
+    metrics), graph.digest, structure.digest,
+    PreparedCadDataset content_digest, and
+    dataset_id when each bundle is is built.
+  - **B15-T16** (supplementary) bundle + members
+    frozen (deep freeze).
+- Existing focused B1.2-B1.4 R4 / R4.1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **156 / 156 PASS, 0 fail, 0 error**. The B1.5
+  packet does NOT modify `source_reference.rb`,
+  `prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`, or
+  `prepared_cad_dataset.rb`; the R4 additive
+  `construction_facts` seam and the R4.1
+  exact-Boolean identity are preserved.
+- SourceReference V1.1 / V1.4 legacy tests
+  (`tests/test_source_reference_layer_name.rb`):
+  **4 / 4 PASS, 0 fail, 0 error**. The legacy
+  `layer_name: :dim_xx (Symbol)` -> `'dim_xx'`
+  (.to_s coercion) V1.4 test continues to PASS
+  because B1.5 does NOT touch `SourceReference`.
+- Key V1.7 / V1.8 / WorkingModeRunner integration
+  suites (post-change):
+  - **V1.7** (`tests/test_v17_*.rb`): **127 / 127
+    PASS, 0 fail, 0 error**. The B1.5 packet does
+    NOT touch `CanonicalTopologyBuilder`,
+    `CanonicalGeometryGraph`, `GapPairProposer`,
+    `GapBridgeExecutor`, or `Segment
+  - **V1.8 WorkingModeRunner integration**
+    (`tests/test_v18_working_mode_integration.rb`):
+    **10 / 10 PASS, 0 fail, 0 error**. The B1.5
+    packet does NOT touch `compute_structure_reconstruction`,
+    `invalidate_topology_state_after_geometry_mutation`,
+    or any V1.8 caching seam.
+  - **V1.8 structure reconstruction**
+    (`tests/test_v18_structure_reconstruction.rb`):
+    **61 / 61 PASS, 0 fail, 0 error**.
+  - **WorkingModeRunner** (all V14 / V15 / V16 /
+    V17 / V18 runner-related tests): **71 / 71
+    PASS, 0 fail, 0 error** across the relevant
+    filtered suites (V18-I01..I05, V18-SR05 A..E).
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1407 tests, 1398 pass, 5 fail, 4 error.
+```
+
+This packet added the +17 net new B1.5 tests (1390
+-> 1407) all passing.
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via `git diff --name-only`
+filter + isolated re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS
+    FOLLOW-UP)`: `.recovery-banner[hidden]` rule
+    ordering.
+  - `html_render (V1.9A FINAL P1-A)` x3: `app.js
+    payload.groups` current-issue-list / legacy
+    surface / badge-count textual source guards
+    on already-source-reviewed PASS items.
+  - `html_render (V1.9A FINAL P1-C)` x1: `app.js`
+    uses `issue_summary.cta_callback` explicitly
+    (textual guard).
+- 1 FAIL on `capability.HtmlDialog`: outside SU
+  returns false (R002 + S2-BLOCK-006) --
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) -- pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` --
+  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` --
+  pre-existing presenter test guard (开放链
+  chip-list).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing in the previous V1.9B1 packets.
+
+`git diff --check`: clean. LF line endings on the
+production file + the test file. No broad
+formatting churn; no unrelated comment reflow.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD` (after the
+docs commit, the literal recorded SHA is the final
+remote HEAD):
+
+- `extension/su_ai_plugin/core/working_mode_runner.rb`
+  -> modified (B1.5 additive public method
+  `capture_prepared_cad_input_bundle` + helper
+  methods `_b15_bundle_blocked`,
+  `_b15_cheap_analysis_source_gate`,
+  `_b15_normalize_topology`,
+  `_b15_build_workflow_snapshot`,
+  `_b15_normalize_substate`,
+  `_b15_build_topology_repair_bundle`,
+  `_b15_force_utf8`,
+  `_b15_force_utf8_string`,
+  `_b15_deep_freeze`. No `prepare` / `rebuild` /
+  `discard` / `apply_planar_normalization` /
+  `compute_gap_repair` / `apply_gap_repair` /
+  `compute_structure_reconstruction` /
+  `validate_host_state_consistency!` /
+  `_canonical_topology_snapshot` / `_canonical_post_validate`
+  / `_invalidate_to_failed_with_reason` /
+  `_invalidate_v18_cache` mutation. No
+  `@topology_repair_canonical_graph` /
+  `@structure_reconstruction_result` cache
+  assignment solely for B1.5 capture.).
+- `tests/test_v19b1_live_bundle_capture.rb`
+  -> new (17 host-free integration regressions).
+- All other `extension/su_ai_plugin/core/*.rb`
+  files, `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+  `html/app.js`, `html/style.css`, icons:
+  UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+packet. No RBZ release decision was made.
+
+Frozen V1.5-V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+No SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner
+mutation seam change. No B1.2 / B1.3 / B1.4
+re-open.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime (per
+project history: same vendored runtime used by
+prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives (`equal?` for
+Boolean identity checks -- added in Ruby 1.0;
+`Object#equal?` is core since Ruby 1.0; no
+Hash#compact, no Array#sum, no transform_keys /
+filter_map, no Numeric#positive?, no safe
+navigation, no pattern matching, no then /
+yield_self), but the literal Ruby 2.2 contract is
+is not runtime-validated in this packet.
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CLOSED
+V1_9B1_B1_3                          = CLOSED
+V1_9B1_B1_4                          = CLOSED
+V1_9B1_B1_5                          = IMPLEMENTED_PENDING_REVIEW
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this packet's
+   B1.5-01 + B1.5-02 + B1.5-03 implementation on
+   `dev/v1.9`.
+2. ONE narrow Codex xHigh post-implementation
+   recheck on B1.5 (the B1.5 implementation seam
+   itself; the B1.2-B1.4 R4 / R4.1 closure already
+   PASSED the prior narrow recheck). ONLY if PASS,
+   B1.5 closes and AIPM may authorize V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) -- per dispatch: this packet is the one
+authorized additive change to `WorkingModeRunner`
+for V1.9B1 B1.5 and is a high-risk coherence /
+host-state seam (the B15 synchronous atomicity
+boundary + the Runner cache non-assumption). It
+does NOT re-open any already-PASS frozen V1.5-V1.9A
+surface.
+
+Pi MUST NOT invoke Codex. Pi has completed the
+B1.5 implementation + tests + commit
+(`11f654b`) + push
+(`25b46e9..11f654b  dev/v1.9 -> dev/v1.9`) for
+this packet and now returns control to AIPM for
+direct source review of the B1.5 corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+V1_9B2 = NOT_STARTED.
+
+---## V1.9B1 B1 R4.1 EXACT-BOOLEAN MICRO-CLOSURE — 2026-09-15 (THIS UPDATE)
 
 Updated: 2026-09-15 (V1.9B1 B1 R4.1 exact-Boolean
 micro-closure dispatch EXECUTION on assigned
