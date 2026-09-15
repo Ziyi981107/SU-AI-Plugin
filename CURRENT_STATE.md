@@ -1,3 +1,305 @@
+## V1.9B1 B1 R4.1 EXACT-BOOLEAN MICRO-CLOSURE — 2026-09-15 (THIS UPDATE)
+
+Updated: 2026-09-15 (V1.9B1 B1 R4.1
+exact-Boolean micro-closure dispatch
+EXECUTION on assigned `dev/v1.9` per
+`Prompt/AIPM_V1_9B1_R4_1_EXACT_BOOLEAN_MICRO_CLOSURE_2026-09-15.md`).
+This packet is a single two-line seam fix on
+`SourceReference#initialize` flagged by AIPM
+direct source review of the R4 raw-shape
+provenance closure (commit `f0f3248`): the
+`pid_path_complete` exact-Boolean check must
+use Boolean singleton identity (`equal?`), NOT
+overridable `==`, so a non-Boolean object whose
+`==` pretends to equal `true` cannot masquerade
+as an exact Boolean.
+
+- **R4.1-01** — Replace overridable `== true /
+  == false` checks for the raw `pid_path_complete`
+  constructor input with literal Boolean singleton
+  identity (`equal?`). Both `cf_pid_path_complete_exact_boolean`
+  classification AND the `@pid_path_complete`
+  accessor fallback use `equal?(true) / equal?(false)`
+  / `equal?(true) ? true : false`. Ruby-2.2-compatible
+  (`Object#equal?` is core since Ruby 1.0).
+  No other `SourceReference` behavior changed. The
+  R4 additive `construction_facts` seam, the
+  fail-closed behavior for malformed inputs, and
+  `to_h` / `==` / `eql?` / `hash` / `stable?`
+  semantics for VALID existing production inputs
+  are preserved.
+- **R4.1-02** — Public-Builder regression with
+  `R41BooleanSpoof` (a non-Boolean class whose
+  `==(other)` returns `other.equal?(true)`):
+  - R4.1-1 unit-level evidence:
+    `SourceReference.new(... pid_path_complete:
+    R41BooleanSpoof.new, ...)` records
+    `construction_facts['pid_path_complete_exact_boolean']
+    == false`; accessor falls back to `false`.
+  - R4.1-2 public Builder path:
+    `PreparedCadDatasetBuilder.build` returns
+    `BLOCKED` with
+    `ambiguous_incomplete_occurrence:pid_path_complete_not_boolean`;
+    no exception.
+  - R4.1-3 VALID production input regression guard:
+    literal `true` and literal `false` continue to
+    produce
+    `construction_facts['pid_path_complete_exact_boolean']
+    == true`; accessor behavior preserved.
+- **R4.1-03** — All 153 prior focused B1 tests
+  continue to PASS; +3 new R4.1 tests = **156 / 156
+  PASS, 0 fail, 0 error**.
+- **R4.1-04** — Frozen R4 PASS surfaces
+  (chain / loop / region ambiguity, region-id
+  invariance, Validator adjacency, duplicate
+  semantic IDs, pcrp / truncation context, exact
+  8 MiB semantics, UTF-8 Validator scan, semantic
+  repair ID, chain / loop canonicalization,
+  `PreparedCadDataset` value object,
+  `PreparedCadDatasetValidator`) are NOT modified
+  by this packet. `prepared_cad_dataset_builder.rb`
+  is NOT modified. `prepared_cad_dataset_validator.rb`
+  is NOT modified. `prepared_cad_dataset.rb` is
+  NOT modified. `SUCapability` is NOT modified.
+  `WorkingModeRunner` is NOT modified.
+
+Allowed scope (frozen modules untouched):
+
+- `extension/su_ai_plugin/core/source_reference.rb`
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+V1.9B1 B1 R4.1 EXACT-BOOLEAN MICRO-CLOSURE — 2026-09-15:
+
+- Starting HEAD (before Pi touched the working
+  tree): `65687505ddd2755a579440c0397e8e505cc7a7ff`
+  (the V1.9B1 R4 docs HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 modified dispatch
+  file (`Prompt/CURRENT_PI_DISPATCH.md`, replaced
+  by AIPM with the R4.1 dispatch), 4 untracked
+  dispatch files (R4.1 + R4 + R3 + FINAL_RESIDUAL
+  + SOURCE_REVIEW correction Prompt artifacts),
+  1 untracked directory (`output/`, dev-output
+  only). Working tree otherwise clean.
+- Implementation SHA (production + test only):
+  `6cb1aa8d9da6577f5c6f07f9f75050f0dfa4d885`
+  (commit
+  `fix(v1.9b1-b1-r4.1): SourceReference pid_path_complete exact-Boolean identity (equal?, not ==)`).
+- Push result for the implementation commit:
+  `6568750..6cb1aa8  dev/v1.9 -> dev/v1.9`.
+- Final `git rev-parse HEAD` (after the
+  implementation + docs commits + literal-SHA
+  printing rule): the value below is the literal
+  output recorded after the docs commit; NO third
+  commit is created to embed the new HEAD into
+  the report.
+
+Validation:
+
+- `ruby -c` on the modified production file
+  (`source_reference.rb`): **Syntax OK**.
+  `prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`, and
+  `prepared_cad_dataset.rb` are UNCHANGED.
+- `ruby -c` on the focused test file
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **Syntax OK**.
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **156 / 156 PASS, 0 fail, 0 error** (was 153/153
+  in the previous R4 packet; this packet added
+  +3 net new R4.1 tests, all passing).
+  Coverage of the new R4.1-02 regressions:
+  - **R4.1-1** `R41BooleanSpoof`
+    `pid_path_complete` records
+    `construction_facts['pid_path_complete_exact_boolean']
+    == false`; accessor falls back to `false`.
+  - **R4.1-2** public
+    `PreparedCadDatasetBuilder.build` with spoofed
+    `pid_path_complete` returns `BLOCKED` with
+    `ambiguous_incomplete_occurrence:pid_path_complete_not_boolean`
+    family; no exception.
+  - **R4.1-3** literal `true` and literal `false`
+    continue to record
+    `pid_path_complete_exact_boolean == true` and
+    accessor-preserved values.
+  - All pre-existing B1.2 / R2 / R3 / R4 tests still
+    PASS (65/65 + 18/18 + 32/32 + 22/22 + 16/16 +
+    3/3 = 156/156 total).
+- SourceReference V1.1 / V1.4 legacy tests
+  (`tests/test_source_reference_layer_name.rb`):
+  **4 / 4 PASS, 0 fail, 0 error**. The legacy
+  `layer_name: :dim_xx (Symbol)` -> `'dim_xx'`
+  (.to_s coercion) V1.4 test continues to PASS
+  because R4-01 preserved the `.to_s` coercion for
+  non-String non-nil `layer_name`; this R4.1
+  packet does NOT touch `layer_name`.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1390 tests, 1381 pass, 5 fail, 4 error.
+```
+
+This packet added the +3 net new B1 tests
+(153 → 156) all passing.
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via `git diff --name-only`
+filter + isolated re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS
+    FOLLOW-UP)`: `.recovery-banner[hidden]` rule
+    ordering.
+  - `html_render (V1.9A FINAL P1-A)` × 3:
+    `app.js payload.groups` current-issue-list /
+    legacy surface / badge-count textual source
+    guards on already-source-reviewed PASS items.
+  - `html_render (V1.9A FINAL P1-C)` × 1:
+    `app.js` uses `issue_summary.cta_callback`
+    explicitly (textual guard).
+- 1 FAIL on `capability.HtmlDialog`: outside SU
+  returns false (R002 + S2-BLOCK-006) —
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) — pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` —
+  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` —
+  pre-existing presenter test guard (`开放链`
+  chip-list).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing in the previous V1.9B1 packets.
+
+`git diff --check`: clean. LF line endings on the
+production file + the test file.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD` (after the
+docs commit, the literal recorded SHA is the
+final remote HEAD):
+
+- `extension/su_ai_plugin/core/source_reference.rb`
+  → modified (R4.1-01: `pid_path_complete`
+    exact-Boolean check now uses `equal?`
+    singleton identity, NOT overridable `==`. The
+    R4 additive `construction_facts` seam, the
+    fail-closed behavior for malformed inputs,
+    the `to_h` / `==` / `eql?` / `hash` /
+    `stable?` semantics for VALID existing
+    production inputs are all preserved. No
+    Builder / Validator / PreparedCadDataset
+    change.).
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+  → modified (R4.1-02: +3 net new R4.1
+    regressions including the `R41BooleanSpoof`
+    test helper class).
+- All other `extension/su_ai_plugin/core/*.rb`
+  files, `su_ai_plugin.rb`,
+  `su_ai_plugin/main.rb`, `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+  `html/app.js`, `html/style.css`, icons:
+  UNCHANGED.
+- `prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`,
+  `prepared_cad_dataset.rb`, `SUCapability`,
+  `WorkingModeRunner`: UNCHANGED (verified via
+  `git diff --name-only HEAD~1..HEAD` filter +
+  narrow grep verification).
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+packet. The previous V1.9B1 packet's RBZ is
+gitignored and is NOT a tracked production
+delta. No RBZ release decision was made.
+
+Frozen V1.5–V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did
+NOT rewrite any frozen design authority. No
+V1.4 / V1.5 / V1.6 / V1.7 / V1.8 algorithm
+change. No source / provenance authority
+change. No workspace ownership change. No host
+mutation / Face / Observer. No site semantics.
+No Loader / A2 orchestrator / A3 toolbar /
+V1.9A3 contract change. No V1.9B2 / V2 / MCP /
+LLM / Agent. No persistence / Accept / Load
+UI. No RBZ release. No SUCapability change. No
+Validator change. No PreparedCadDataset change.
+No WorkingModeRunner change. No B1.5.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; `pid_path_complete.equal?(true)` /
+`pid_path_complete.equal?(false)` — `Object#equal?`
+is core since Ruby 1.0; no Hash#compact, no
+Array#sum, no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no
+pattern matching, no then / yield_self), but the
+literal Ruby 2.2 contract is not runtime-validated
+in this packet.
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CORRECTED_PENDING_AIPM_REVIEW_R4_1
+V1_9B1_B1_3                          = CORRECTED_PENDING_AIPM_REVIEW_R4_1
+V1_9B1_B1_4                          = CORRECTED_PENDING_AIPM_REVIEW_R4_1
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this
+   packet's R4.1-01 + R4.1-02 implementation on
+   `dev/v1.9`.
+2. ONE narrow Codex xHigh recheck on the R4.1
+   exact-Boolean identity seam. ONLY if PASS,
+   B1.2–B1.4 close and AIPM may authorize B1.5.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch: this packet is a single
+two-line Boolean-identity seam fix on
+`SourceReference#initialize` plus three regression
+tests. It does NOT re-open any already-PASS frozen
+V1.5–V1.9A surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the R4.1 micro-closure implementation + tests +
+commit (`6cb1aa8`) + push
+(`6568750..6cb1aa8  dev/v1.9 -> dev/v1.9`) for
+this packet and now returns control to AIPM for
+direct source review of the R4.1 corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
 ## V1.9B1 B1 R4 SOURCE-REFERENCE RAW-SHAPE PROVENANCE CLOSURE — 2026-09-15 (THIS UPDATE)
 
 Updated: 2026-09-15 (V1.9B1 B1 R4 SourceReference
