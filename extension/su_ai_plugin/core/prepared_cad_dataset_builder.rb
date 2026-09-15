@@ -2375,11 +2375,39 @@ module SUAnalysis
         [source_digest, blockers]
       end
 
-      # R3-01: validate every SourceReference participating
-      # in Source↔Analysis coherence and return the proper
-      # descriptor.
+      # R3-01 + R4-02: validate every SourceReference
+      # participating in Source↔Analysis coherence and return
+      # the proper descriptor.
       #
       # Returns [blockers, descriptor].
+      #
+      # R4-02 ADDITIVE: branch selection is itself validated
+      # via the SourceReference construction_facts seam. The
+      # Builder MUST consult those facts BEFORE trusting any
+      # normalized accessor value. This is the only seam
+      # required to fail closed on malformed raw constructor
+      # inputs that are otherwise irreversibly normalized
+      # (entity_id: "123" -> 123, pid_path_complete: "false"
+      # -> false, persistent_id_path: [1, nil, 2] -> [1, 2],
+      # instance_path: "A" -> "A", etc.).
+      #
+      # Branch selection rules (per
+      # Prompt/AIPM_V1_9B1_R4_SOURCE_REFERENCE_RAW_SHAPE_PROVENANCE_CLOSURE_2026-09-15.md):
+      #
+      #   Before choosing COMPLETE vs INCOMPLETE:
+      #     - pid_path_complete constructor input MUST be exact
+      #       Boolean (true OR false); a String "false" / "true"
+      #       or nil is rejected and the ref BLOCKS with
+      #       :pid_path_complete_not_boolean.
+      #     - persistent_id_path constructor input MUST be an
+      #       Array.
+      #     - Every persistent_id_path member MUST be exact
+      #       Integer; no nil / non-Integer member may be
+      #       silently removed or coerced (the new
+      #       SourceReference fallback keeps the .compact legacy
+      #       semantics for VALID Integer arrays but the
+      #       construction_facts record the original shape so
+      #       B1 can BLOCK).
       #
       # Complete stable PID branch (pid_path_complete == true
       # AND persistent_id_path non-empty):
@@ -2392,20 +2420,14 @@ module SUAnalysis
       #     containing coherence descriptor (not on this
       #     source ref).
       #
-      # Incomplete branch (pid_path_complete == false OR
-      # persistent_id_path empty):
+      # Incomplete branch (pid_path_complete == false):
       #   - full descriptor per v1.3 §1.6:
       #     kind + structural_depth + persistent_id_path +
       #     instance_path + entity_id + persistent_id
       #     (when present) + layer_name.
-      #   - nested structural_depth > 0: instance_path MUST be
-      #     non-empty, each element a non-empty valid UTF-8
-      #     String. Missing/empty/non-UTF8 =>
-      #     ambiguous_incomplete_occurrence BLOCKED.
-      #   - root structural_depth == 0: empty instance_path
-      #     allowed; entity_id MUST be Integer. Missing =>
-      #     BLOCKED.
-      #   - bad structural_depth (not Integer / < 0) => BLOCKED.
+      #   - All required fields validated as exact shapes (see
+      #     construction_facts below). Any malformed field =>
+      #     ambiguous_incomplete_occurrence:* BLOCKED, no raise.
       #
       # nil or non-SourceReference => unresolved descriptor,
       # no blockers (nil source is a legitimate test fixture).
@@ -2422,35 +2444,155 @@ module SUAnalysis
         if source_ref.nil? || !source_ref.is_a?(SourceReference)
           return [[], unresolved]
         end
+
+        # R4-02: read the immutable construction-input facts
+        # captured BEFORE any normalization. If the seam is
+        # missing for any reason (e.g. an old fixture that
+        # somehow pre-dates R4), treat as a fail-closed neutral
+        # set so the rest of the validation still runs.
+        cf = source_ref.construction_facts
+        cf = {} unless cf.is_a?(Hash)
+        cf_entity_id_exact_integer =
+          cf['entity_id_exact_integer'] == true
+        cf_persistent_id_integer_or_nil =
+          cf['persistent_id_integer_or_nil'] == true
+        cf_pid_path_is_array =
+          cf['persistent_id_path_is_array'] == true
+        cf_pid_path_all_integer =
+          cf['persistent_id_path_all_integer'] == true
+        cf_pid_path_had_invalid_member =
+          cf['persistent_id_path_had_invalid_member'] == true
+        cf_instance_path_is_array =
+          cf['instance_path_is_array'] == true
+        cf_instance_path_all_string =
+          cf['instance_path_all_string'] == true
+        cf_structural_depth_exact_integer =
+          cf['structural_depth_exact_integer'] == true
+        cf_pid_path_complete_exact_boolean =
+          cf['pid_path_complete_exact_boolean'] == true
+        cf_layer_name_is_string =
+          cf['layer_name_is_string'] == true
+
+        # Step 1: pid_path_complete MUST be an exact Boolean.
+        # Without an exact Boolean we cannot trust branch
+        # selection itself (a String "false" must NOT silently
+        # become complete=false after truthiness coercion).
+        unless cf_pid_path_complete_exact_boolean
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':pid_path_complete_not_boolean'],
+                  unresolved]
+        end
+
+        # Step 2: persistent_id_path MUST be an Array of
+        # exact Integer with no silently-removed / coerced
+        # members. This is required BEFORE branch selection
+        # because both branches need a trustworthy path.
+        unless cf_pid_path_is_array &&
+               cf_pid_path_all_integer &&
+               !cf_pid_path_had_invalid_member
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':persistent_id_path_not_integer_array'],
+                  unresolved]
+        end
+
         pp = Array(source_ref.persistent_id_path).map(&:to_i)
-        sd = source_ref.respond_to?(:structural_depth) ?
-                source_ref.structural_depth : 0
-        ip = source_ref.respond_to?(:instance_path) ?
-                Array(source_ref.instance_path) : []
-        eid = source_ref.respond_to?(:entity_id) ?
-                source_ref.entity_id : nil
-        pid = source_ref.respond_to?(:persistent_id) ?
-                source_ref.persistent_id : nil
-        layer = source_ref.respond_to?(:layer_name) ?
-                  source_ref.layer_name.to_s : ''
-        # Complete stable PID branch: minimal descriptor;
-        # transient fields are NOT part of coherence identity
-        # for this branch.
-        if source_ref.pid_path_complete && !pp.empty?
+
+        # Step 3: Complete stable PID branch.
+        if source_ref.pid_path_complete
+          if pp.empty?
+            return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                       ':complete_pid_path_empty'],
+                    unresolved]
+          end
+          # Minimal descriptor; transient fields are NOT part
+          # of coherence identity for this branch.
           return [[], {
             'kind'                => 'stable_pid',
             'persistent_id_path'  => pp
           }]
         end
-        # Incomplete branch: validate exact v1.3 §1.6 shape.
+
+        # Step 4: Incomplete branch (pid_path_complete == false).
+        # All v1.3 §1.6 shape requirements are re-validated as
+        # exact shapes via construction_facts AND via the
+        # final accessor values (defense in depth).
+        unless cf_structural_depth_exact_integer
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':structural_depth_not_integer'],
+                  unresolved]
+        end
+        sd = source_ref.structural_depth
         unless sd.is_a?(Integer) && sd >= 0
           return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
-                     ':bad_structural_depth'], unresolved]
+                     ':bad_structural_depth'],
+                  unresolved]
         end
+
+        unless cf_instance_path_is_array
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':instance_path_not_array'],
+                  unresolved]
+        end
+        unless cf_instance_path_all_string
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':instance_path_element_invalid'],
+                  unresolved]
+        end
+        ip = Array(source_ref.instance_path)
+
+        unless cf_layer_name_is_string
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':layer_name_invalid'],
+                  unresolved]
+        end
+        layer = source_ref.layer_name
+        unless layer.is_a?(String) &&
+               layer.respond_to?(:encoding) &&
+               layer.encoding.name == 'UTF-8' &&
+               layer.valid_encoding?
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':layer_name_invalid'],
+                  unresolved]
+        end
+
+        unless cf_entity_id_exact_integer
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':entity_id_not_integer'],
+                  unresolved]
+        end
+        eid = source_ref.entity_id
+        unless eid.is_a?(Integer)
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':rooted_incomplete_entity_id_required'],
+                  unresolved]
+        end
+
+        # R4: persistent_id must be Integer or nil as a
+        # construction-input fact. The SourceReference
+        # accessor may have already normalized a wrong-class
+        # value to nil as a fail-closed fallback; therefore
+        # the construction_facts check MUST run first
+        # (before any accessor-value-based decision) so B1
+        # BLOCKS even though the accessor returns nil.
+        unless cf_persistent_id_integer_or_nil
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':persistent_id_not_integer'],
+                  unresolved]
+        end
+        pid = source_ref.persistent_id
+        if !pid.nil? && !pid.is_a?(Integer)
+          return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
+                     ':persistent_id_not_integer'],
+                  unresolved]
+        end
+
+        # Nested-depth > 0: instance_path must be non-empty
+        # AND every item non-empty valid UTF-8 String.
         if sd > 0
           if ip.empty?
             return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
-                       ':nested_instance_path_empty'], unresolved]
+                       ':nested_instance_path_empty'],
+                    unresolved]
           end
           ip.each do |el|
             unless el.is_a?(String) && !el.empty? &&
@@ -2462,15 +2604,8 @@ module SUAnalysis
                       unresolved]
             end
           end
-        else
-          # Root-level incomplete: empty instance_path OK;
-          # entity_id MUST be Integer.
-          unless eid.is_a?(Integer)
-            return [[REASON_INCOMPLETE_OCCURRENCE_AMBIGUOUS +
-                       ':rooted_incomplete_entity_id_required'],
-                    unresolved]
-          end
         end
+
         [[], {
           'kind'                => 'transient_entity',
           'structural_depth'    => sd,

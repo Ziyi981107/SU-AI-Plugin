@@ -4330,3 +4330,522 @@ test 'R3-03-7: duplicate region_id in semantic_structure => NOT_READY / duplicat
   }, "expected duplicate_semantic_id:region blocker, got: #{v['blockers'].inspect}"
 end
 
+# =============================================================
+# R4 — SourceReference raw-shape provenance closure regressions.
+#
+# Per
+# Prompt/AIPM_V1_9B1_R4_SOURCE_REFERENCE_RAW_SHAPE_PROVENANCE_CLOSURE_2026-09-15.md:
+#   The R4 packet adds an immutable `construction_facts` seam
+#   to SourceReference and an additional fail-closed pre-pass
+#   inside `_validate_coherence_source_reference` so the B1
+#   Builder can BLOCK on malformed raw constructor inputs
+#   that would otherwise be silently normalized
+#   (entity_id: "123" -> 123,
+#    pid_path_complete: "false" -> false,
+#    persistent_id_path: [1, nil, 2] -> [1, 2],
+#    instance_path: "A" -> "A", etc.).
+#
+# Every R4-03 regression MUST go through the PUBLIC Builder
+# path and MUST return BLOCKED / ambiguous_incomplete_occurrence
+# family; no assertion may use `['BUILT','BLOCKED'].include?`
+# and no private-helper-only substitution is permitted.
+# =============================================================
+
+test 'R4-03-1: nested incomplete entity_id: nil => BLOCKED, no raise' do
+  sref = SourceReference.new(
+    entity_id: nil, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [9991],
+    instance_path: ['ContainerR4-1'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = nil
+  begin
+    out = PreparedCadDatasetBuilder.build(
+      source_snapshot: new_snap, workflow_snapshot: ws,
+      topology_snapshot: topo, canonical_graph: graph,
+      structure_result: struct, analysis_result: new_ar
+    )
+  rescue StandardError => e
+    flunk "Builder must NOT raise on nested incomplete entity_id=nil, got: #{e.class}: #{e.message}"
+  end
+  assert_equal 'BLOCKED', out['status'],
+               "nested incomplete entity_id=nil must BLOCK, got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence')
+  }, "expected ambiguous_incomplete_occurrence blocker, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-2: nested incomplete entity_id: "123" => BLOCKED despite legacy Integer coercion' do
+  sref = SourceReference.new(
+    entity_id: '123', persistent_id: nil, kind: 'nested',
+    persistent_id_path: [9992],
+    instance_path: ['ContainerR4-2'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "nested incomplete entity_id='123' must BLOCK (String is not exact Integer), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('entity_id_not_integer')
+  }, "expected ambiguous_incomplete_occurrence:entity_id_not_integer, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-3: incomplete instance_path: "ContainerA" non-Array => BLOCKED, no Array coercion rescue' do
+  sref = SourceReference.new(
+    entity_id: 9993, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [9993],
+    instance_path: 'ContainerA',
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = nil
+  begin
+    out = PreparedCadDatasetBuilder.build(
+      source_snapshot: new_snap, workflow_snapshot: ws,
+      topology_snapshot: topo, canonical_graph: graph,
+      structure_result: struct, analysis_result: new_ar
+    )
+  rescue StandardError => e
+    flunk "Builder must NOT raise on instance_path: String, got: #{e.class}: #{e.message}"
+  end
+  assert_equal 'BLOCKED', out['status'],
+               "instance_path: String must BLOCK (no Array() coercion rescue), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('instance_path_not_array')
+  }, "expected ambiguous_incomplete_occurrence:instance_path_not_array, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-4: incomplete layer_name: nil => BLOCKED, no exception' do
+  sref = SourceReference.new(
+    entity_id: 9994, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [9994],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: nil
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = nil
+  begin
+    out = PreparedCadDatasetBuilder.build(
+      source_snapshot: new_snap, workflow_snapshot: ws,
+      topology_snapshot: topo, canonical_graph: graph,
+      structure_result: struct, analysis_result: new_ar
+    )
+  rescue StandardError => e
+    flunk "Builder must NOT raise on layer_name: nil, got: #{e.class}: #{e.message}"
+  end
+  assert_equal 'BLOCKED', out['status'],
+               "incomplete layer_name: nil must BLOCK, got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('layer_name_invalid')
+  }, "expected ambiguous_incomplete_occurrence:layer_name_invalid, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-5: incomplete layer_name valid String bytes but non-UTF-8 declared => BLOCKED' do
+  bad = "\xC3\x28".dup.force_encoding('UTF-8')  # invalid UTF-8 byte sequence
+  sref = SourceReference.new(
+    entity_id: 9995, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [9995],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: bad
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "non-UTF-8 layer_name must BLOCK, got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('layer_name_invalid')
+  }, "expected ambiguous_incomplete_occurrence:layer_name_invalid, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-6: incomplete structural_depth: "1" => BLOCKED despite .to_i == 1' do
+  sref = SourceReference.new(
+    entity_id: 9996, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [9996],
+    instance_path: [],
+    structural_depth: '1',
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "structural_depth: '1' must BLOCK (String is not exact Integer), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('structural_depth_not_integer')
+  }, "expected ambiguous_incomplete_occurrence:structural_depth_not_integer, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-7: incomplete persistent_id_path: [100, nil, 200] => BLOCKED despite nil-compaction' do
+  sref = SourceReference.new(
+    entity_id: 9997, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [100, nil, 200],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "persistent_id_path with hidden nil member must BLOCK, got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('persistent_id_path_not_integer_array')
+  }, "expected ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-8: incomplete persistent_id_path containing coercible non-Integer (e.g. ["100"]) => BLOCKED despite Integer coercion' do
+  sref = SourceReference.new(
+    entity_id: 9998, persistent_id: nil, kind: 'edge',
+    persistent_id_path: ['100'],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "persistent_id_path: ['100'] must BLOCK (String is not exact Integer), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('persistent_id_path_not_integer_array')
+  }, "expected ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-9: pid_path_complete: "false" => BLOCKED; must not enter stable branch through truthiness' do
+  sref = SourceReference.new(
+    entity_id: 9999, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [9999],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: 'false',
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "pid_path_complete: 'false' must BLOCK (String is not exact Boolean), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('pid_path_complete_not_boolean')
+  }, "expected ambiguous_incomplete_occurrence:pid_path_complete_not_boolean, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-10: incomplete non-nil persistent_id: "123" => BLOCKED' do
+  sref = SourceReference.new(
+    entity_id: 10001, persistent_id: '123', kind: 'nested',
+    persistent_id_path: [10001],
+    instance_path: ['ContainerR4-10'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "persistent_id: '123' must BLOCK (String is not exact Integer), got status=#{out && out['status'].inspect}, blockers=#{out && out['blockers'].inspect}, out=#{out.inspect[0,200]}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('persistent_id_not_integer')
+  }, "expected ambiguous_incomplete_occurrence:persistent_id_not_integer, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-11: valid nested incomplete exact tuple still BUILT (R4 happy path)' do
+  sref = SourceReference.new(
+    entity_id: 10002, persistent_id: nil, kind: 'nested',
+    persistent_id_path: [10002],
+    instance_path: ['ContainerR4-11'],
+    structural_depth: 1,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "valid nested incomplete exact tuple must BUILT, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-12: valid root incomplete exact tuple still BUILT (R4 happy path)' do
+  sref = SourceReference.new(
+    entity_id: 10003, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "valid root incomplete exact tuple must BUILT, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-13: COMPLETE stable PID with identical complete path but different valid transient fields still BUILT (preserve R3-01-11)' do
+  sref_src = SourceReference.new(
+    entity_id: 10004, persistent_id: 7004, kind: 'edge',
+    persistent_id_path: [101],
+    instance_path: ['ContainerSrcR4-13'],
+    structural_depth: 1,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  sref_an = SourceReference.new(
+    entity_id: 10005, persistent_id: 7005, kind: 'edge',
+    persistent_id_path: [101],
+    instance_path: ['ContainerAnR4-13'],
+    structural_depth: 0,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref_src)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref_an)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BUILT', out['status'],
+               "same complete pid_path with different transient fields must BUILT (stable_pid minimal descriptor), got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-14: complete PID path [101, nil, 102] + pid_path_complete: true => BLOCKED; must not compact into a trusted stable path' do
+  sref = SourceReference.new(
+    entity_id: 10006, persistent_id: 7006, kind: 'edge',
+    persistent_id_path: [101, nil, 102],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = PreparedCadDatasetBuilder.build(
+    source_snapshot: new_snap, workflow_snapshot: ws,
+    topology_snapshot: topo, canonical_graph: graph,
+    structure_result: struct, analysis_result: new_ar
+  )
+  assert_equal 'BLOCKED', out['status'],
+               "complete pid_path [101, nil, 102] must BLOCK (hidden nil member), got: #{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('persistent_id_path_not_integer_array')
+  }, "expected ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array, got: #{out['blockers'].inspect}"
+end
+
+test 'R4-03-15: construction_facts does NOT appear in SourceReference#to_h' do
+  sref = SourceReference.new(
+    entity_id: 10007, persistent_id: 7007, kind: 'edge',
+    persistent_id_path: [10007],
+    instance_path: ['ContainerR4-15'],
+    structural_depth: 1,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  h = sref.to_h
+  assert !h.key?(:construction_facts),
+         "SourceReference#to_h must NOT include :construction_facts, got: #{h.keys.inspect}"
+  assert !h.key?('construction_facts'),
+         "SourceReference#to_h must NOT include 'construction_facts', got: #{h.keys.inspect}"
+  # Spot-check the public fields are still present.
+  assert h.key?(:entity_id)
+  assert h.key?(:persistent_id_path)
+  assert h.key?(:structural_depth)
+  assert h.key?(:pid_path_complete)
+  assert h.key?(:layer_name)
+end
+
+test 'R4-03-16: two valid SourceReferences with identical old fields retain existing == behavior' do
+  attrs = {
+    entity_id: 10008, persistent_id: 7008, kind: 'edge',
+    persistent_id_path: [10008],
+    instance_path: ['ContainerR4-16'],
+    structural_depth: 1,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  }
+  a = SourceReference.new(attrs)
+  b = SourceReference.new(attrs)
+  assert a == b,
+         "two valid SourceReferences with identical old fields must compare ==, got: #{a.inspect} vs #{b.inspect}"
+  assert a.eql?(b)
+  assert_equal a.hash, b.hash
+end
+
