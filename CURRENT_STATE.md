@@ -1,21 +1,542 @@
-## V1.9B1 B1.5 LIVE COHERENT INPUT BUNDLE — 2026-09-15 (THIS UPDATE)
+## V1.9B1 B1.5 DIRECT SOURCE REVIEW R1 CORRECTION — 2026-09-15 (THIS UPDATE)
 
-Updated: 2026-09-15 (V1.9B1 B1.5 LIVE COHERENT INPUT
-BUNDLE dispatch EXECUTION on assigned `dev/v1.9` per
-`Prompt/AIPM_V1_9B1_B1_5_LIVE_COHERENT_INPUT_BUNDLE_IMPLEMENTATION_2026-09-15.md`
-+ Blueprint v1.3 + AIPM B1.5 LIVE COHERENT INPUT
-BUNDLE dispatch 2026-09-15 + Codex R4/R4.1 narrow
-recheck PASS that authorized B1.5). This packet
-adds ONE additive public method
-`WorkingModeRunner.capture_prepared_cad_input_bundle(analysis_result:)`
-that captures the six mutually-coherent inputs
-(`source_snapshot`, `workflow_snapshot`,
-`topology_snapshot`, `canonical_graph`,
-`structure_result`, `analysis_result`) as one
-synchronous, internally-coherent bundle so the
-live Runner can hand them to the already-frozen
-B1.2-B1.4 Builder / Validator without manually
-patching any bundle field.
+Updated: 2026-09-15 (V1.9B1 B1.5 DIRECT SOURCE REVIEW
+R1 CORRECTION execution on assigned `dev/v1.9` per
+`Prompt/AIPM_V1_9B1_B1_5_DIRECT_SOURCE_REVIEW_R1_CORRECTION_2026-09-15.md`
++ Blueprint v1.3 + R1 correction packet authoritative
+over the previous B1.5 LIVE COHERENT INPUT BUNDLE
+packet where they conflict). The B1.5 R1 correction
+resolves 4 BLOCKs the previous B1.5 packet was holding:
+
+- **B15-R1-01** workflow truthfulness (no
+  NOT_COMPUTED -> NO_CANDIDATE / computed=false ->
+  computed=true promotion; no synthetic default
+  duplicate_repair).
+- **B15-R1-02** exact fresh structure_result in
+  workflow (workflow structure_reconstruction is a
+  deep copy of the fresh structure_result with ONLY
+  the additive `computed` => true field; no stale
+  placeholder fields survive).
+- **B15-R1-03** topology normalization fail-closed
+  (missing / non-Array endpoints => BLOCKED +
+  `pcd_bundle:topology_endpoints_missing`; wrong /
+  missing schema_version =>
+  `pcd_bundle:topology_unavailable`).
+- **B15-R1-04** vacuous uniqueness assertion fixed
+  (B15-T03 now uses raw endpoint keys first, not
+  pre-deduped).
+
+The R1 main correction principle is:
+
+> B1.5 captures truth. It must never fabricate readiness.
+
+The B1.5 R1 implementation preserves real
+duplicate / planar / gap workflow semantics. B1.5
+may return CAPTURED; Builder may return BUILT; the
+Validator may legitimately return NOT_READY when
+duplicate / planar / gap were never actually run.
+B1.5 never converts NOT_COMPUTED to NO_CANDIDATE
+or computed=false to computed=true for planar /
+gap; B1.5 never synthesizes a default
+duplicate_repair summary when the Runner snapshot
+omitted it. The ONLY stage B1.5 is allowed to make
+computed=true by itself is structure_reconstruction,
+because B1.5 actually performs a fresh
+`CanonicalStructureReconstructor.reconstruct(...)`
+in the same call.
+
+### B1.5-R1-01 — `_b15_normalize_topology` fail-closed
+
+`extension/su_ai_plugin/core/working_mode_runner.rb`
+- `_b15_normalize_topology`:
+
+  - On a topology Hash with
+    `schema_version == 'cano-node.v1'` and a
+    Symbol- or String-keyed `endpoints` Array: returns
+    `[bundle_local_hash, nil]`. The bundle-local
+    Hash carries the String-keyed 'endpoints' entry
+    derived from whichever source key was present;
+    the duplicate Symbol entry is dropped.
+  - On a missing topology, wrong schema_version,
+    missing endpoints, or non-Array endpoints:
+    returns `[nil, blocker_code]` so the caller can
+    fail the B1.5 capture with the stable
+    `pcd_bundle:topology_unavailable` or
+    `pcd_bundle:topology_endpoints_missing` reason.
+  - No silent recovery path: the Runner never
+    invents an empty endpoints Array.
+
+`capture_prepared_cad_input_bundle` consults the
+return value. On `[nil, blocker]`, the wrapper
+returns `BLOCKED` with that exact reason code;
+the bundle is nil; no partial topology /
+graph / structure is published.
+
+### B1.5-R1-02 — Exact fresh `structure_result` in workflow
+
+`_b15_build_workflow_snapshot`:
+
+  - The bundle workflow's `structure_reconstruction`
+    substate is a `_b15_deep_copy` of the FRESH
+    `structure_result` Hash from B15-07. Every fresh
+    field (`state`, `digest`, `canonical_graph_digest`,
+    `source_snapshot_id`, `workspace_id`, `metrics`,
+    `unresolved_issues`, `chains`, `loops`,
+    `regions`, `reasons`, `schema_version`) survives
+    into the bundle workflow.
+  - The ONLY workflow-only addition is the
+    additive `computed => true` field.
+  - No stale fields from the Runner cache /
+    placeholder may survive. The runner's stale
+    `structure_reconstruction` snapshot value is
+    ignored; the fresh B1.5 result is the source
+    of truth.
+
+### B1.5-R1-03 — Workflow truthfulness (no fabrication)
+
+`_b15_build_workflow_snapshot`:
+
+  - The bundle workflow copy PRESERVES the actual
+    Runner snapshot semantics for every substate
+    (`state`, `duplicate_repair`,
+    `planar_normalization`, `topology_repair`).
+  - For `planar_normalization` and `topology_repair`:
+    `computed=false, state='NOT_COMPUTED'` stays
+    exactly as the Runner snapshot exposes it. No
+    promotion to `NO_CANDIDATE`. The B1 Validator's
+    B1-SR-10 substate matrix is the authoritative
+    source of readiness verdict.
+  - For `duplicate_repair`: when the Runner snapshot
+    omitted `duplicate_repair` (no batch has been
+    run), the bundle workflow omits it too. B1.5
+    does NOT synthesize a default summary.
+  - The previous `_b15_normalize_substate` helper
+    that promoted `NOT_COMPUTED / computed=false`
+    placeholders and synthesized a default
+    `duplicate_repair` summary was REMOVED in the
+    R1 correction. A note in the production file
+    documents that the B1 Validator's
+    missing-summary check is the authoritative
+    source of verdict for the captured workflow.
+
+The `topology_repair.canonical_graph.digest` field
+is the ONLY permitted bundle-local edit on the
+preserved Runner substate. The bundle workflow
+references the B1.5 fresh graph digest there
+without rewriting the rest of the topology_repair
+substate.
+
+### B1.5-R1-04 — Vacuous uniqueness assertion fix (test)
+
+`tests/test_v19b1_live_bundle_capture.rb`
+- B15-T03 uniqueness check now uses RAW endpoint
+  keys first (not pre-deduped):
+
+```ruby
+raw_endpoint_keys = topo['endpoints'].map { |ep|
+  ep.respond_to?(:endpoint_key) ? ep.endpoint_key.to_s : ep['endpoint_key'].to_s
+}
+assert raw_endpoint_keys.all? { |k| !k.to_s.empty? }
+assert_equal raw_endpoint_keys.length, raw_endpoint_keys.uniq.length
+```
+
+Pre-deduped-list uniqueness assertions are vacuous
+by construction and could not detect duplicate
+endpoint keys. The new assertion can.
+
+### B1.5-R1-05 — Required test corrections R1-T01..R1-T06
+
+`tests/test_v19b1_live_bundle_capture.rb`:
+
+  - **R1-T01** uncomputed workflow stays uncomputed:
+    prepare a clean rectangle WITHOUT running
+    duplicate / planar / gap; capture must return
+    CAPTURED with missing `duplicate_repair`,
+    `planar_normalization` preserved as
+    `computed=false, state='NOT_COMPUTED'`,
+    `topology_repair` preserved as
+    `computed=false, state='NOT_COMPUTED'`, and
+    `structure_reconstruction` carrying the FRESH
+    B1.5 result as `computed=true, state='READY'`.
+    Builder may still BUILT (B1 coherence contract
+    permits). Validator MUST return NOT_READY with
+    truthful blockers (missing duplicate summary,
+    NOT_COMPUTED planar, NOT_COMPUTED gap). This
+    is the expected behavior, not a failure.
+  - **R1-T02** truthful clean workflow reaches READY:
+    B15-T07 updated to run the REAL deterministic
+    duplicate (`run_duplicate_repair_batch`) /
+    planar (`compute_planar_normalization` +
+    `apply_planar_normalization` if needed) / gap
+    (`compute_gap_repair`) workflow stages before
+    capture. The clean rectangle's planar stage
+    reaches NO_CANDIDATE; the gap stage reaches
+    NO_CANDIDATE. READY (or READY_WITH_WARNINGS) is
+    achieved TRUTHFULLY, not by rewriting workflow
+    state inside B1.5.
+  - **R1-T03** exact fresh structure_result in
+    workflow: every fresh field
+    (`state`, `digest`, `canonical_graph_digest`,
+    `source_snapshot_id`, `workspace_id`,
+    `metrics`, `unresolved_issues`, `chains`,
+    `loops`, `regions`) must equal the fresh
+    `structure_result`. The `computed => true` is
+    the ONLY additive workflow-only field. The
+    fresh `structure_result` itself MUST NOT carry
+    `computed` (it is added by the workflow copy).
+  - **R1-T04** real uniqueness assertion
+    (B15-R1-04 fix; same test as the test
+    correction item above).
+  - **R1-T05** topology missing / malformed
+    endpoints fail closed: four R1-T05 subtests
+    prove the public
+    `_b15_normalize_topology` seam returns
+    `[nil, blocker_code]` for missing endpoints,
+    non-Array endpoints, and wrong schema_version;
+    and accepts Symbol-keyed endpoints with an
+    Array value (the historical Runner
+    history-leak).
+  - **R1-T06** no cache mutation, pre-populated
+    variant: pre-populate the Runner's
+    `@topology_repair_canonical_graph` and
+    `@structure_reconstruction_result` via the
+    existing public compute paths; record public
+    snapshot before; call B1.5; record public
+    snapshot after; prove B1.5 did NOT overwrite
+    those cached values with its fresh local
+    graph / structure (digest / state both
+    unchanged on the Runner side). No external
+    private-ivar access.
+
+### Validation
+
+- `ruby -c` on
+  `extension/su_ai_plugin/core/working_mode_runner.rb`:
+  **Syntax OK**.
+- `ruby -c` on
+  `tests/test_v19b1_live_bundle_capture.rb`:
+  **Syntax OK**.
+- Focused B1.5 suite
+  (`tests/test_v19b1_live_bundle_capture.rb`):
+  **24 / 24 PASS, 0 fail, 0 error**. The R1 packet
+  expanded the focused suite from 17 (pre-R1) to 24
+  tests by adding R1-T01, R1-T03, four R1-T05
+  subtests, and R1-T06 (7 new tests, all passing).
+  B15-T07 was rewritten as the R1-T02 truthful
+  clean-workflow test. Coverage of the required
+  B15-T01..B15-T15 + R1-T01..R1-T06 matrix:
+  - B15-T01 public method only (behavioral
+    + source-level guard).
+  - B15-T02 happy coherent capture (CAPTURED,
+    6 members, schema `pcd-input-bundle.v1`,
+    graph digest binding, frozen wrapper /
+    bundle / copies).
+  - B15-T03 topology exactness (R1-T04 raw-keys
+    uniqueness fix).
+  - B15-T04 graph captured configuration.
+  - B15-T05 exact graph -> structure binding.
+  - B15-T06 Builder consumes the bundle directly
+    (BUILT, dataset != nil, no manual patching).
+  - **B15-T07 (R1-T02)** truthful clean workflow
+    reaches READY (real duplicate / planar /
+    gap stages run before capture; B1.5 does
+    NOT rewrite workflow state).
+  - B15-T08 no Runner cache mutation (empty-cache
+    variant).
+  - B15-T09 zero host operation / geometry
+    mutation.
+  - B15-T10 host mismatch before first validation.
+  - B15-T11 host mismatch during capture
+    (between first and second validation).
+  - B15-T12 analysis mismatch early gate.
+  - B15-T13 no precomputed gap dependency.
+  - B15-T14 Owner-equivalent 0.2 mm Z + 1 mm Gap
+    fixture (R1-T02 truthful workflow applied
+    to this fixture: duplicate / planar / gap
+    all run before capture).
+  - B15-T15 repeated capture determinism.
+  - B15-T16 bundle + members frozen (deep freeze).
+  - **R1-T01** uncomputed workflow stays
+    uncomputed (CAPTURED, missing duplicate,
+    NOT_COMPUTED planar / gap, fresh structure,
+    Validator NOT_READY -- expected behavior).
+  - **R1-T03** exact fresh structure_result in
+    workflow (every fresh field, additive
+    `computed`).
+  - **R1-T05** (4 subtests) topology missing /
+    non-Array / Symbol-keyed / wrong-schema
+    fail-closed.
+  - **R1-T06** no Runner cache mutation with
+    pre-populated caches.
+- Existing focused B1.2-B1.4 R4 / R4.1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **156 / 156 PASS, 0 fail, 0 error**. The B1.5
+  R1 packet does NOT modify
+  `source_reference.rb`,
+  `prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`, or
+  `prepared_cad_dataset.rb`; the R4 additive
+  `construction_facts` seam and the R4.1
+  exact-Boolean identity are preserved.
+- V1.7 / V1.8 / WorkingModeRunner integration
+  suites: same pre-existing baseline (1 known
+  pre-existing V18-SR05 failure on the
+  `run_duplicate_repair_batch` cache-clear seam
+  due to a pre-existing test-environment
+  constant load order; not introduced by R1).
+  B1.5 R1 does not modify the V1.7 or V1.8
+  algorithm contracts, the V1.7 / V1.8
+  WorkingModeRunner integration seams, the
+  CanonicalStructureReconstructor, the
+  CanonicalGeometryGraph, the
+  CanonicalTopologyBuilder, the GapPairProposer,
+  or the GapBridgeExecutor.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1414 tests, 1405 pass, 5 fail, 4 error.
+```
+
+Pre-existing baseline debt (NOT introduced by
+this R1 packet; verified by `git stash` +
+isolated re-run comparison):
+
+  - pre-R1 (B1.5 implementation on `659500a`):
+    1407 tests, 1398 pass, 5 fail, 4 error
+  - post-R1 (B1.5 R1 on `4a9ad91`):
+    1414 tests, 1405 pass, 5 fail, 4 error
+    (delta: +7 tests from R1-T01 / R1-T03 / 4x
+    R1-T05 / R1-T06, all passing; 0 new fail;
+    0 new error)
+
+Pre-existing 5 fail / 4 error debt breakdown (from
+pre-R1 `CURRENT_STATE.md`, preserved verbatim for
+honest tracking):
+
+  - 5 FAIL on `html_render` (V1.9A
+    HIDDEN-SEMANTICS FOLLOW-UP / FINAL P1-A /
+    FINAL P1-C).
+  - 1 FAIL on `capability.HtmlDialog` (R002 +
+    S2-BLOCK-006) -- test-environment / FakeUI
+    limitation.
+  - 1 ERROR on `V14 production call chain` --
+    pre-existing FakeUI limitation.
+  - 1 ERROR on `V17-L1 host_state_changed` --
+    pre-existing FakeUI limitation.
+  - 1 ERROR on `v19a_presenter (FINAL P1-B)` --
+    pre-existing presenter test guard.
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing.
+
+`git diff --check`: clean. LF line endings on
+the production file + the test file. No broad
+formatting churn; no unrelated comment reflow.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD` for the
+implementation commit (after the docs commit,
+the literal recorded SHA below is the final
+remote HEAD):
+
+- `extension/su_ai_plugin/core/working_mode_runner.rb`
+  -> modified (B1.5 R1 corrections):
+  - `_b15_normalize_topology` rewritten to
+    fail-closed on missing / malformed
+    topology / endpoints. Returns `[bundle_hash,
+    blocker_code]`; the caller BLOCKS on
+    `[nil, blocker_code]`.
+  - `_b15_build_workflow_snapshot` rewritten:
+    - The structure_reconstruction substate is
+      a `_b15_deep_copy` of the fresh
+      `structure_result` with ONLY the additive
+      `computed => true` field. No stale
+      placeholder / Runner cache fields
+      survive.
+    - The duplicate_repair / planar_normalization
+      / topology_repair substates are preserved
+      verbatim from the Runner snapshot. No
+      `NOT_COMPUTED -> NO_CANDIDATE` promotion.
+      No default duplicate_repair synthesis.
+    - The previous
+      `_b15_normalize_substate` helper that
+      performed the promotion / synthesis was
+      REMOVED. A short note documents why
+      readiness fabrication is forbidden in R1.
+  - `_b15_deep_copy` added (internal helper for
+    immutable deep-copy of the reconstructor's
+    deep-frozen `structure_result` into a
+    mutable Hash; appends the additive
+    `computed => true` field; force-encodes
+    String members to UTF-8).
+  - `capture_prepared_cad_input_bundle`
+    consumes the new
+    `_b15_normalize_topology` return value
+    and BLOCKS on `[nil, blocker_code]`.
+  - No `prepare` / `rebuild` / `discard` /
+    `run_duplicate_repair_batch` /
+    `compute_planar_normalization` /
+    `apply_planar_normalization` /
+    `compute_gap_repair` / `apply_gap_repair` /
+    `compute_structure_reconstruction` /
+    `validate_host_state_consistency!` /
+    `_canonical_topology_snapshot` /
+    `_canonical_post_validate` /
+    `_invalidate_to_failed_with_reason` /
+    `_invalidate_v18_cache` mutation. No
+    `@topology_repair_canonical_graph` /
+    `@structure_reconstruction_result` cache
+    assignment solely for B1.5 capture.
+- `tests/test_v19b1_live_bundle_capture.rb`
+  -> modified:
+  - Added explicit `require_relative` for
+    `duplicate_repair_proposer` +
+    `duplicate_repair_executor` so the
+    `run_duplicate_repair_batch(registry: ...)`
+    call in B15-T07 / B15-T14 / R1-T02 actually
+    works in the test environment.
+  - B15-T03 uniqueness assertion rewritten
+    (B15-R1-04 / R1-T04 vacuous-assertion fix;
+    raw endpoint keys first, length == uniq
+    length, raw .all? { non-empty }).
+  - B15-T07 rewritten (R1-T02 truthful clean
+    workflow reaches READY). Runs the real
+    deterministic duplicate / planar / gap
+    stages before capture. The clean
+    rectangle's planar stage reaches
+    NO_CANDIDATE; the gap stage reaches
+    NO_CANDIDATE. READY is achieved
+    truthfully, not by rewriting workflow
+    state inside B1.5.
+  - B15-T14 updated to also run the real
+    duplicate-repair stage before planar /
+    gap / capture. The previous test
+    obtained READY by relying on the
+    fabricated default duplicate_repair
+    summary (now removed in R1). With R1
+    the fixture must run duplicate-repair
+    too. Owner-equivalent metrics are
+    preserved.
+  - 7 new tests added: R1-T01, R1-T03, four
+    R1-T05 subtests, R1-T06. All 7 pass.
+  - 2 pre-existing `refute` /
+    `refute_includes` test-framework alias
+    usages in B15-T01 / B15-T14 rewritten
+    to use existing `assert !` patterns
+    (the test framework's runner does not
+    expose `refute` / `refute_includes`).
+- All other `extension/su_ai_plugin/core/*.rb`
+  files, `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+  `html/app.js`, `html/style.css`, icons:
+  UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+packet. No RBZ release decision was made.
+
+Frozen V1.5-V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+No SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner
+mutation seam change. No B1.2 / B1.3 / B1.4
+re-open.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime.
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives (no Hash#compact,
+no Array#sum, no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no pattern
+matching, no then / yield_self), but the literal
+Ruby 2.2 contract is not runtime-validated in this
+packet.
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CLOSED
+V1_9B1_B1_3                          = CLOSED
+V1_9B1_B1_4                          = CLOSED
+V1_9B1_B1_5                          = CORRECTED_PENDING_AIPM_REVIEW
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this R1
+   packet's B1.5-R1-01..B1.5-R1-05 implementation
+   on `dev/v1.9`.
+2. ONE narrow Codex xHigh post-implementation
+   recheck on B1.5 R1 (the B1.5 implementation
+   seam itself; the B1.2-B1.4 R4 / R4.1 closure
+   already PASSED the prior narrow recheck). ONLY
+   if PASS, B1.5 R1 closes and AIPM may authorize
+   V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) -- per dispatch: this packet is the one
+authorized additive change to `WorkingModeRunner`
+for V1.9B1 B1.5 R1 and is a high-risk coherence /
+host-state seam. It does NOT re-open any
+already-PASS frozen V1.5-V1.9A surface.
+
+Pi MUST NOT invoke Codex. Pi has completed the
+B1.5 R1 implementation + tests + commit
+(`4a9ad91`) + push
+(`659500a..4a9ad91  dev/v1.9 -> dev/v1.9`) for
+this R1 packet and now returns control to AIPM
+for direct source review of the B1.5 R1
+corrections.
+
+AIPM_REVIEW = PENDING_R1.
+CODEX_NARROW_RECHECK = HOLD.
+V1_9B2 = NOT_STARTED.
+
+The literal `git rev-parse HEAD` after the
+implementation + docs commits is recorded below;
+NO third commit is created to embed the
+just-created final HEAD into this report.
+
+---
+
+## V1.9B1 B1.5 LIVE COHERENT INPUT BUNDLE — 2026-09-15 (PREVIOUS IMPLEMENTATION, SUPERSEDED BY R1)
+
+The following subsections document the B1.5 LIVE
+COHERENT INPUT BUNDLE implementation that was
+PREVIOUSLY pushed at `11f654b` and superseded by
+the R1 correction packet. They are retained here as
+the historical evidence record of the B1.5 additive
+public method `capture_prepared_cad_input_bundle`
+shape, sequence, and frozen-file contract. The
+authoritative R1-correction evidence is the R1
+section above (`## V1.9B1 B1.5 DIRECT SOURCE REVIEW
+R1 CORRECTION`).
 
 The literal `git rev-parse HEAD` after the
 implementation + docs commits is recorded below;
