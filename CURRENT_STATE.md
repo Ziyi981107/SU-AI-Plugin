@@ -1,3 +1,382 @@
+## V1.9B1 B1 R4 SOURCE-REFERENCE RAW-SHAPE PROVENANCE CLOSURE — 2026-09-15 (THIS UPDATE)
+
+Updated: 2026-09-15 (V1.9B1 B1 R4 SourceReference
+raw-shape provenance closure dispatch EXECUTION on
+assigned `dev/v1.9` per
+`Prompt/AIPM_V1_9B1_R4_SOURCE_REFERENCE_RAW_SHAPE_PROVENANCE_CLOSURE_2026-09-15.md`
++ Blueprint v1.3 + Codex R3 post-implementation
+`FIX REQUIRED` recheck). This packet addresses exactly
+the single R3-01 residual item that direct source review
+of `82b723d` proved Builder-only repair is impossible to
+fix because `SourceReference` already destroys evidence
+of the original constructor shape before B1 can see it:
+
+- **R4-01** — Add immutable construction-input facts
+  to `SourceReference`. Single additive
+  `attr_reader :construction_facts` returning a frozen
+  Hash<String, Boolean> captured BEFORE any existing
+  normalization / coercion in `initialize`. Distinct
+  booleans for every fact B1 needs:
+  `entity_id_exact_integer`,
+  `persistent_id_integer_or_nil`,
+  `persistent_id_path_is_array`,
+  `persistent_id_path_all_integer`,
+  `persistent_id_path_had_invalid_member`,
+  `instance_path_is_array`,
+  `instance_path_all_string`,
+  `structural_depth_exact_integer`,
+  `pid_path_complete_exact_boolean`,
+  `layer_name_is_string`,
+  `kind_is_string`.
+  For VALID existing production inputs every fact is
+  true. For malformed inputs the corresponding fact is
+  false so B1 can BLOCK with a precise
+  `ambiguous_incomplete_occurrence:*` family.
+  `to_h` deliberately does NOT include
+  `construction_facts` (it is B1 build-coherence
+  evidence only, not semantic identity).
+- **R4-02** — Builder `_validate_coherence_source_reference`
+  now consults `source_ref.construction_facts` BEFORE
+  trusting any normalized accessor value. Branch
+  selection itself is validated: a String `"false"`
+  can no longer enter the stable branch through truthiness
+  coercion; a `[1, nil, 2]` path can no longer be
+  compacted into a trusted stable path; a
+  `["100"]` path can no longer masquerade as a valid
+  Integer array via `Integer(...)` coercion. The
+  legacy normalized accessors (entity_id Integer,
+  pid_path_complete Boolean, persistent_id Integer or
+  nil, etc.) are preserved for VALID production
+  inputs. Construction is fail-closed on malformed
+  inputs: accessors fall back to a value that cannot
+  masquerade as a valid exact input while
+  `construction_facts` records the original shape. No
+  exception escapes for any constructor input shape.
+- **R4-03** — 16 public Builder-path regressions added
+  to `tests/test_v19b1_prepared_cad_dataset.rb`. All
+  go through the public `PreparedCadDatasetBuilder.build`
+  entry point. No `['BUILT','BLOCKED'].include?`
+  assertion. No private-helper-only substitution. The
+  137 prior focused B1 tests all continue to PASS.
+- **R4-04** — Frozen R3 PASS surfaces (chain
+  ambiguity, loop ambiguity, region ambiguity,
+  region-id invariance, hole_loop_ids ordering,
+  Validator adjacency, duplicate semantic IDs,
+  pcrp / truncation context, exact 8 MiB semantics,
+  UTF-8 Validator scan, semantic repair ID,
+  chain / loop canonicalization, `PreparedCadDataset`
+  value object, `PreparedCadDatasetValidator`) are
+  NOT modified by this packet.
+
+Allowed scope (frozen modules untouched):
+
+- `extension/su_ai_plugin/core/source_reference.rb`
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+
+V1.9B1 B1 R4 SOURCE-REFERENCE RAW-SHAPE PROVENANCE
+CLOSURE — 2026-09-15:
+
+- Starting HEAD (before Pi touched the working tree):
+  `72dd0d05d5f4573168172d3c58e2d9072d2e46a8` (the
+  V1.9B1 R3 contract closure docs HEAD on `dev/v1.9`).
+- Starting working-tree state: 1 modified dispatch
+  file (`Prompt/CURRENT_PI_DISPATCH.md`, replaced by
+  AIPM with the R4 dispatch), 4 untracked dispatch
+  files (R4 + R3 + FINAL_RESIDUAL + SOURCE_REVIEW
+  correction Prompt artifacts), 1 untracked directory
+  (`output/`, dev-output only). Working tree
+  otherwise clean.
+- Implementation SHA: produced by this packet (see
+  final stable commit below).
+- Final `git rev-parse HEAD` (after the implementation
+  + docs commits + literal-SHA printing rule): the
+  value below is the literal output recorded after the
+  docs commit; NO third commit is created to embed the
+  new HEAD into the report.
+
+Implementation SHA (production + test only):
+`f0f3248923326c18c65ede6c60ec376a03b81841`
+(commit
+`fix(v1.9b1-b1-r4): B1 SourceReference raw-shape provenance closure (R4-01 + R4-02 + R4-03)`).
+
+Push result for the implementation commit:
+`72dd0d0..f0f3248  dev/v1.9 -> dev/v1.9`.
+
+Docs/report HEAD (CURRENT_STATE.md + PI report):
+recorded below after the docs commit + push.
+
+Validation:
+
+- `ruby -c` on the modified B1 production files:
+  `prepared_cad_dataset_builder.rb` (R4-02) and
+  `source_reference.rb` (R4-01): **Syntax OK** for
+  both.
+  `prepared_cad_dataset.rb` and
+  `prepared_cad_dataset_validator.rb` are UNCHANGED
+  (no production algorithm change to the Validator;
+  R4-02 changes only the Builder).
+- `ruby -c` on the focused test file
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **Syntax OK**.
+- Focused B1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **153 / 153 PASS, 0 fail, 0 error** (was 137/137
+  in the previous R3 packet; this packet added
+  +16 net new R4 tests, all passing).
+  Coverage of the new R4-03 regressions:
+  - **R4-03-1** nested incomplete `entity_id: nil`
+    => BLOCKED with
+    `ambiguous_incomplete_occurrence`,
+    no raise.
+  - **R4-03-2** nested incomplete `entity_id: "123"`
+    => BLOCKED with
+    `ambiguous_incomplete_occurrence:entity_id_not_integer`
+    (String is not exact Integer, despite legacy
+    `Integer("123")` normalization possibility).
+  - **R4-03-3** incomplete `instance_path:
+    "ContainerA"` (non-Array String) => BLOCKED with
+    `ambiguous_incomplete_occurrence:instance_path_not_array`,
+    no Array() coercion rescue.
+  - **R4-03-4** incomplete `layer_name: nil` =>
+    BLOCKED with
+    `ambiguous_incomplete_occurrence:layer_name_invalid`,
+    no exception at construction.
+  - **R4-03-5** incomplete `layer_name` valid String
+    bytes but invalid UTF-8 declared => BLOCKED with
+    `ambiguous_incomplete_occurrence:layer_name_invalid`.
+  - **R4-03-6** incomplete `structural_depth: "1"` =>
+    BLOCKED with
+    `ambiguous_incomplete_occurrence:structural_depth_not_integer`
+    (String is not exact Integer, despite
+    `.to_i == 1`).
+  - **R4-03-7** incomplete `persistent_id_path:
+    [100, nil, 200]` => BLOCKED with
+    `ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array`
+    (hidden nil member, despite legacy `.compact`
+    nil-removal).
+  - **R4-03-8** incomplete `persistent_id_path:
+    ["100"]` (coercible non-Integer) => BLOCKED with
+    `ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array`
+    (String is not exact Integer, despite
+    `Integer("100")` coercion).
+  - **R4-03-9** `pid_path_complete: "false"` (String)
+    => BLOCKED with
+    `ambiguous_incomplete_occurrence:pid_path_complete_not_boolean`
+    (String is not exact Boolean, must NOT enter
+    the stable_pid branch through truthiness).
+  - **R4-03-10** incomplete non-nil `persistent_id:
+    "123"` => BLOCKED with
+    `ambiguous_incomplete_occurrence:persistent_id_not_integer`
+    (String is not exact Integer).
+  - **R4-03-11** valid nested incomplete exact tuple
+    (entity_id Integer + non-empty valid UTF-8
+    instance_path + structural_depth=1) => BUILT.
+  - **R4-03-12** valid root incomplete exact tuple
+    (entity_id Integer + empty instance_path +
+    structural_depth=0) => BUILT.
+  - **R4-03-13** COMPLETE stable PID with identical
+    complete path but different valid transient
+    fields (entity_id / instance_path /
+    structural_depth / persistent_id) => BUILT
+    (stable_pid branch uses minimal descriptor).
+  - **R4-03-14** complete PID path `[101, nil, 102]`
+    + `pid_path_complete: true` => BLOCKED with
+    `ambiguous_incomplete_occurrence:persistent_id_path_not_integer_array`
+    (must NOT compact into a trusted stable path).
+  - **R4-03-15** `construction_facts` does NOT appear
+    in `SourceReference#to_h` (B1 build-coherence
+    evidence only).
+  - **R4-03-16** two valid SourceReferences with
+    identical old fields retain existing `==` /
+    `eql?` / `hash` behavior.
+  - All pre-existing B1.2 / R2 / R3 tests still PASS
+    (65/65 + 18/18 + 32/32 + 22/22 + 16/16 = 153/153
+    total).
+- SourceReference V1.1 / V1.4 legacy tests
+  (`tests/test_source_reference_layer_name.rb`):
+  **4 / 4 PASS, 0 fail, 0 error**. The legacy
+  `layer_name: :dim_xx (Symbol)` -> `'dim_xx'` (.to_s
+  coercion) V1.4 test continues to PASS because R4-01
+  preserves the `.to_s` coercion for non-String
+  non-nil `layer_name` (only `nil` is treated as
+  "missing" per the R4 spec); construction_facts.
+  layer_name_is_string=false still lets B1 BLOCK on
+  a Symbol `layer_name`.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1387 tests, 1378 pass, 5 fail, 4 error.
+```
+
+This packet added the +16 net new B1 tests
+(137 → 153) all passing.
+
+Pre-existing failures (NONE introduced by this
+packet; confirmed via `git diff --name-only` filter
++ isolated re-run comparison):
+
+- 5 FAIL on `html_render`:
+  - `html_render (V1.9A HIDDEN-SEMANTICS
+    FOLLOW-UP)`: `.recovery-banner[hidden]` rule
+    ordering.
+  - `html_render (V1.9A FINAL P1-A)` × 3:
+    `app.js payload.groups` current-issue-list /
+    legacy surface / badge-count textual source
+    guards on already-source-reviewed PASS items.
+- 1 ERROR on `v19a_presenter (FINAL P1-C)`:
+  `app.js` uses `issue_summary.cta_callback`
+  explicitly (textual guard).
+- 1 FAIL on `capability.HtmlDialog`: outside SU
+  returns false (R002 + S2-BLOCK-006) —
+  test-environment / FakeUI limitation.
+- 1 ERROR on `V14 production call chain`
+  (`NoMethodError: undefined method 'call' for
+  nil:NilClass`) — pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` —
+  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` —
+  pre-existing presenter test guard (`开放链`
+  chip-list).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code
+paths. CSS / `app.js` / Presenter / Runner are NOT
+modified by this packet. These failures were
+pre-existing in the previous V1.9B1 packets.
+
+`git diff --check`: clean. LF line endings on the
+two production files + the test file. No
+broad formatting churn; no unrelated comment
+reflow. The previous R3 Builder commit's
+line-ending churn pattern is NOT repeated.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD` (after the docs
+commit, the literal recorded SHA is the final
+remote HEAD):
+
+- `extension/su_ai_plugin/core/source_reference.rb`
+  → modified (R4-01: new `attr_reader
+  :construction_facts` returning an immutable Hash
+  of construction-input facts captured before
+  normalization; the accessors remain fail-closed
+  for malformed inputs; `to_h`, `==`, `eql?`,
+  `hash`, `stable?` semantics preserved for VALID
+  existing production inputs; construction does NOT
+  raise on any input shape).
+- `extension/su_ai_plugin/core/prepared_cad_dataset_builder.rb`
+  → modified (R4-02: `_validate_coherence_source_reference`
+  pre-validates every SourceReference participating
+  in Source↔Analysis coherence via the new
+  `construction_facts` seam BEFORE trusting any
+  normalized accessor value; branch selection itself
+  is validated so `String "false"` cannot enter the
+  stable_pid branch and `[1, nil, 2]` cannot be
+  compacted into a trusted stable path; every malformed
+  case returns BLOCKED +
+  `ambiguous_incomplete_occurrence:*` with no
+  exception; the frozen minimal-descriptor stable_pid
+  branch and the frozen v1.3 §1.6 incomplete branch
+  shape remain intact).
+- `tests/test_v19b1_prepared_cad_dataset.rb`
+  → modified (R4-03: +16 net new public-Builder-path
+  regressions).
+- All other `extension/su_ai_plugin/core/*.rb`
+  files, `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+  `html/app.js`, `html/style.css`, icons: UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+packet. The previous V1.9B1 packet's RBZ is
+gitignored and is NOT a tracked production
+delta. No RBZ release decision was made.
+
+Frozen V1.5–V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+No SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner
+change. No B1.5.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime
+(per project history: same vendored runtime used
+by prior V1.9A / V1.9B0 / V1.9B1 packets).
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives
+(`[v].pack('G').unpack('H*').first` for Float
+identity bytes; no Hash#compact, no Array#sum,
+no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no
+pattern matching, no then / yield_self), but the
+literal Ruby 2.2 contract is not runtime-validated
+in this packet.
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CORRECTED_PENDING_AIPM_REVIEW_R4
+V1_9B1_B1_3                          = CORRECTED_PENDING_AIPM_REVIEW_R4
+V1_9B1_B1_4                          = CORRECTED_PENDING_AIPM_REVIEW_R4
+V1_9B1_B1_5                          = NOT_AUTHORIZED
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this packet's
+   R4-01 + R4-02 + R4-03 implementation on `dev/v1.9`.
+2. ONE narrow Codex xHigh recheck on R4 malformed
+   SourceReference provenance and regression safety.
+   ONLY if PASS, B1.2–B1.4 close and AIPM may
+   authorize B1.5.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) — per dispatch: this packet addresses the
+single residual B1 R3-01 item via the
+SourceReference construction_facts seam; the
+additive change is narrow within the
+construction-input classification surface. It does
+NOT re-open any already-PASS frozen V1.5–V1.9A
+surface.
+
+Pi MUST NOT invoke Codex itself. Pi has completed
+the R4 closure implementation + tests + commit
+(`f0f3248`) + push
+(`72dd0d0..f0f3248  dev/v1.9 -> dev/v1.9`) for this
+packet and now returns control to AIPM for direct
+source review of the R4 corrections.
+
+AIPM_REVIEW = PENDING.
+CODEX_NARROW_RECHECK = PENDING.
+B1_5 = NOT_AUTHORIZED.
+V1_9B2 = NOT_STARTED.
+
+---
+
 ## V1.9B1 B1.2–B1.4 R3 CONTRACT CLOSURE — 2026-09-14 (THIS UPDATE)
 
 Updated: 2026-09-14 (V1.9B1 B1.2–B1.4 R3 CONTRACT
