@@ -1,3 +1,443 @@
+## V1.9B1 B1.5 FINAL NARROW CORRECTION R2 — 2026-09-15 (THIS UPDATE)
+
+Updated: 2026-09-15 (V1.9B1 B1.5 FINAL NARROW
+CORRECTION R2 execution on assigned `dev/v1.9` per
+`Prompt/AIPM_V1_9B1_B1_5_FINAL_NARROW_CORRECTION_R2_2026-09-15.md`).
+The B1.5 R2 narrow correction closes ONLY the three
+remaining B1.5 R2 blockers flagged by AIPM direct
+source review of the B1.5 R1 packet (commit
+`4a9ad91`):
+
+- **B15-R2-01** topology schema type check fails
+  closed: `schema_version` MUST be a real String
+  instance whose value is literally `"cano-node.v1"`.
+  The previous loose behavior
+  `topology['schema_version'].to_s == 'cano-node.v1'`
+  silently accepted a Symbol, nil, or custom object
+  whose `to_s` returned the expected String. B1.5 now
+  requires `schema.is_a?(String) && schema ==
+  'cano-node.v1'`. No `.to_s` acceptance.
+- **B15-R2-02** dual endpoints keys are ambiguous
+  and MUST fail closed. B1.5 may still accept ONE
+  valid endpoint source under either Symbol
+  `:endpoints` or String `"endpoints"` for
+  compatibility with the historical
+  `_canonical_topology_snapshot` producer. But when
+  BOTH keys are present the capture MUST return
+  `BLOCKED` with
+  `pcd_bundle:topology_endpoints_ambiguous`. No
+  priority selection. No silent reconciliation.
+- **B15-R2-04** bundle-local String copy-before-
+  freeze: `_b15_force_utf8_string` now ALWAYS `dup`s
+  every String entering a bundle-local Hash / Array
+  copy before the later deep-freeze freezes it. The
+  earlier early-return of an already-valid UTF-8
+  String by reference allowed the bundle freeze to
+  freeze a Runner-owned mutable String.
+
+The R2 main correction principle is unchanged from
+R1:
+
+> B1.5 captures truth and must not mutate Runner-owned
+> state while preparing a frozen bundle.
+
+No architecture redesign.
+
+### R2-01 — `_b15_normalize_topology` exact schema type
+
+`extension/su_ai_plugin/core/working_mode_runner.rb`
+- `_b15_normalize_topology`:
+
+  - The previous
+    `topology['schema_version'].to_s == 'cano-node.v1'`
+    loose acceptance is REMOVED.
+  - The schema check now requires
+    `schema = topology['schema_version']` followed by
+    `schema.is_a?(String) && schema == 'cano-node.v1'`.
+  - A non-String spoof (Symbol, custom object with
+    `to_s` returning the expected String, nil,
+    missing key, wrong String) fails closed and
+    returns `[nil, 'pcd_bundle:topology_unavailable']`.
+  - The successful producer output remains the
+    literal String `"cano-node.v1"`. No change to
+    `CanonicalTopologyBuilder`.
+
+`capture_prepared_cad_input_bundle` continues to
+consult the return value. On `[nil, blocker_code]`
+the wrapper returns `BLOCKED` with that exact reason
+code; the bundle is `nil`; no partial topology /
+graph / structure is published.
+
+### R2-02 — Dual endpoints keys fail closed
+
+- The previous endpoint resolution
+  (`topology[:endpoints]` first, falling back to
+  `topology['endpoints']`) is replaced by an
+  explicit dual-key contract:
+  - `has_symbol = topology.key?(:endpoints)`
+  - `has_string = topology.key?('endpoints')`
+  - If both are present: return
+    `[nil, 'pcd_bundle:topology_endpoints_ambiguous']`.
+  - If neither is present: return
+    `[nil, 'pcd_bundle:topology_endpoints_missing']`
+    (unchanged from R1).
+  - Else: pick the single present source and require
+    its value to be an Array (else
+    `pcd_bundle:topology_endpoints_missing`).
+- B1.5 does NOT silently choose between the two
+  keys when both are present.
+- B1.5 does NOT attempt to reconcile Symbol-keyed
+  vs String-keyed endpoint Arrays when both are
+  present. The state is malformed upstream and the
+  capture fails closed.
+
+The on-success bundle-local Hash continues to emit
+a single String-keyed `"endpoints"` entry derived
+from whichever single source key was present.
+
+### R2-03 — Public capture-path malformed topology regressions
+
+`tests/test_v19b1_live_bundle_capture.rb`:
+
+- 5 new public-path tests R2-PUB-01..R2-PUB-05
+  fault-inject the topology returned by
+  `_canonical_topology_snapshot` WITHOUT modifying
+  production design or adding a production test
+  seam. The test temporarily defines a singleton
+  replacement for
+  `WorkingModeRunner._canonical_topology_snapshot`
+  via `define_singleton_method` inside the test,
+  then restores the original method in `ensure`.
+- The tests call the PUBLIC
+  `capture_prepared_cad_input_bundle(analysis_result:)`
+  method (not the private helper) and assert:
+  - status = `BLOCKED`;
+  - bundle = `nil`;
+  - blockers include the exact required
+    `pcd_bundle:topology_*` reason.
+
+Required public-path negative matrix:
+
+- **R2-PUB-01** non-String schema spoof (a custom
+  object whose `to_s` returns `'cano-node.v1'` and
+  whose `is_a?(String)` pretends true) =>
+  `BLOCKED` + `pcd_bundle:topology_unavailable`.
+- **R2-PUB-02** both endpoint keys present with
+  different Arrays => `BLOCKED` +
+  `pcd_bundle:topology_endpoints_ambiguous`.
+- **R2-PUB-03** Symbol Array + malformed String
+  endpoint value => `BLOCKED` +
+  `pcd_bundle:topology_endpoints_ambiguous`.
+- **R2-PUB-04** malformed Symbol endpoint value +
+  valid String Array => `BLOCKED` +
+  `pcd_bundle:topology_endpoints_ambiguous`.
+- **R2-PUB-05** missing or single-source non-Array
+  endpoints => `BLOCKED` +
+  `pcd_bundle:topology_endpoints_missing`.
+
+### R2-04 — Copy every bundle-local String before freezing
+
+`_b15_force_utf8_string`:
+
+- The previous early-return
+  `return s if s.encoding.name == 'UTF-8' && s.valid_encoding?`
+  is REMOVED.
+- Every String entering a bundle-local Hash / Array
+  copy is now `dup`'d unconditionally (Ruby-2.2-
+  compatible; `String#dup` is core since Ruby 1.0)
+  before the encoding-validation branch.
+- The resulting `out`:
+  - has a different `object_id` from the original
+    String `s`;
+  - is mutable until the later `_b15_deep_freeze`
+    freezes it;
+  - preserves bytes and encoding semantics.
+- Invalid UTF-8 still fails closed exactly as before
+  (raises `ArgumentError`).
+
+### R2-05 — Mutation-by-freeze regression (public)
+
+A new public behavioral regression on a real Runner
+workflow state:
+
+1. prepare a clean rectangle fixture;
+2. run the real duplicate-repair batch via the
+   public `run_duplicate_repair_batch(registry: ...)`
+   so the Runner snapshot carries a real mutable
+   UTF-8 String in `duplicate_repair.last_action_status`
+   (literal `"none"` when no actions applied);
+3. capture the pre-capture Runner-owned String
+   reference (and its `object_id`, `frozen?` state,
+   bytes, and encoding);
+4. assert the Runner-owned String is NOT frozen
+   before capture;
+5. call the public
+   `capture_prepared_cad_input_bundle(analysis_result:)`;
+6. assert:
+   - status = `CAPTURED`;
+   - bundle workflow's `duplicate_repair.last_action_status`
+     String is FROZEN;
+   - bundle String's `object_id != original object_id`;
+   - original Runner-owned String remains UNFROZEN
+     after capture (same `object_id` via the
+     `snapshot()` Hash);
+   - bytes and encoding are unchanged;
+   - no host operation occurred;
+   - no cache mutation occurred.
+
+If the executor's `last_action_status` happens to
+already be frozen by its producer, the test falls
+back to any other String entry in the
+`duplicate_repair` Hash. The production seam itself
+is NOT modified to support this test.
+
+### Validation
+
+- `ruby -c` on
+  `extension/su_ai_plugin/core/working_mode_runner.rb`:
+  **Syntax OK**.
+- `ruby -c` on
+  `tests/test_v19b1_live_bundle_capture.rb`:
+  **Syntax OK**.
+- Focused B1.5 suite
+  (`tests/test_v19b1_live_bundle_capture.rb`):
+  **31 / 31 PASS, 0 fail, 0 error**. The R2 packet
+  expanded the focused suite from 24 (post-R1) to 31
+  tests (+5 R2-PUB-01..R2-PUB-05, +1 R2-05, +1 new
+  private-helper dual-key test replacing the previous
+  Symbol+String-override case with an unambiguous
+  dual-key ambiguity case). All previous R1 tests
+  remain PASS.
+- Existing focused B1.2-B1.4 R4 / R4.1 suite
+  (`tests/test_v19b1_prepared_cad_dataset.rb`):
+  **156 / 156 PASS, 0 fail, 0 error**. The B1.5
+  R2 packet does NOT modify
+  `source_reference.rb`,
+  `prepared_cad_dataset_builder.rb`,
+  `prepared_cad_dataset_validator.rb`, or
+  `prepared_cad_dataset.rb`.
+- V1.7 / V1.8 / WorkingModeRunner integration
+  suites (filtered):
+  - V1.7 (`V17-` filter): **127 / 127 PASS**.
+  - V1.8 runner integration (`V18-` filter):
+    **71 / 71 PASS**.
+  - V1.8 structure reconstruction
+    (`structure_reconstruction` filter): **6 / 6
+    PASS** (includes R1-T03 exact-fresh-structure).
+  No new regressions.
+- Full synthetic Ruby suite
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1421 tests, 1412 pass, 5 fail, 4 error.
+```
+
+Delta from prior baseline (`4a9ad91` /
+`4b34948`):
+
+  - pre-R2 (B1.5 R1 on `4a9ad91`):
+    1414 tests, 1405 pass, 5 fail, 4 error
+  - post-R2 (B1.5 R2 on `8adebca`):
+    1421 tests, 1412 pass, 5 fail, 4 error
+    (delta: +7 tests from R2-PUB-01..R2-PUB-05,
+    R2-05, and the dual-key ambiguity R1-T05
+    subtest replacing the previous
+    Symbol+String-override case; all passing;
+    0 new fail; 0 new error)
+
+Pre-existing 5 fail / 4 error debt (NOT introduced
+by this R2 packet; verified by `git diff --name-only`
+filter on the R2 implementation commit + isolated
+re-run comparison; unchanged from the R1 record):
+
+- 5 FAIL on `html_render` (V1.9A
+  HIDDEN-SEMANTICS FOLLOW-UP / FINAL P1-A /
+  FINAL P1-C).
+- 1 FAIL on `capability.HtmlDialog` (R002 +
+  S2-BLOCK-006) -- test-environment / FakeUI
+  limitation.
+- 1 ERROR on `V14 production call chain` --
+  pre-existing FakeUI limitation.
+- 1 ERROR on `V17-L1 host_state_changed` --
+  pre-existing FakeUI limitation.
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` --
+  pre-existing presenter test guard.
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. These failures
+were pre-existing.
+
+`git diff --check`: clean. LF line endings on
+the production file + the test file. No broad
+formatting churn; no unrelated comment reflow.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD~1..HEAD` for the
+implementation commit (`8adebca`):
+
+- `extension/su_ai_plugin/core/working_mode_runner.rb`
+  -> modified (B1.5 R2 narrow corrections):
+  - `_b15_normalize_topology` rewritten:
+    - `topology['schema_version'].to_s == 'cano-node.v1'`
+      replaced by the strict
+      `schema.is_a?(String) && schema == 'cano-node.v1'`
+      check.
+    - Endpoint resolution now explicitly handles
+      the dual-key ambiguity: returns
+      `pcd_bundle:topology_endpoints_ambiguous` when
+      BOTH `:endpoints` AND `'endpoints'` keys are
+      present. Single-source Symbol/String keys are
+      still accepted; missing endpoints or non-Array
+      endpoints still BLOCK with
+      `pcd_bundle:topology_endpoints_missing`.
+  - `_b15_force_utf8_string` rewritten: every
+    String entering a bundle-local copy is now
+    `dup`'d unconditionally before the encoding
+    validation branch. The earlier early-return of
+    the original UTF-8 String by reference is
+    removed. Bundle deep-freeze still freezes ONLY
+    the bundle-local copy; the Runner-owned String
+    retains its previous `frozen?` state.
+  - No `prepare` / `rebuild` / `discard` /
+    `run_duplicate_repair_batch` /
+    `compute_planar_normalization` /
+    `apply_planar_normalization` /
+    `compute_gap_repair` /
+    `compute_structure_reconstruction` /
+    `validate_host_state_consistency!` /
+    `_canonical_topology_snapshot` /
+    `_canonical_post_validate` /
+    `_invalidate_to_failed_with_reason` /
+    `_invalidate_v18_cache` mutation. No
+    `@topology_repair_canonical_graph` /
+    `@structure_reconstruction_result` cache
+    assignment solely for B1.5 capture. No
+    Observer architecture.
+- `tests/test_v19b1_live_bundle_capture.rb`
+  -> modified:
+  - 5 new public-path tests R2-PUB-01..R2-PUB-05
+    added via a test-only
+    `b15_r2_inject_topology(topology_hash) do ...
+    end` helper that uses `define_singleton_method`
+    to temporarily replace the Runner's
+    `_canonical_topology_snapshot` and restores the
+    original in `ensure`. The production code is
+    NOT modified to expose a test seam.
+  - 1 new R2-05 mutation-by-freeze public
+    regression.
+  - 1 new R1-T05 subtest proving dual-key
+    ambiguity (Symbol Array + String Array,
+    different contents) =>
+    `topology_endpoints_ambiguous` (replaces the
+    previous Symbol+String-override case that is
+    now correctly classified as ambiguous under the
+    R2-02 contract).
+  - A test-only `R2SchemaSpoofString` class added
+    in the test file as a non-String whose `to_s`
+    returns `'cano-node.v1'` and whose
+    `is_a?(String)` pretends true. Used by R2-PUB-01
+    to prove the schema type check rejects non-String
+    spoofs.
+  - No production test accessor introduced. No
+    `current_bundle_for_test` /
+    `instance_variable_get(:@b15_capture*)` reach-in.
+- All other `extension/su_ai_plugin/core/*.rb`
+  files, `su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+  `su_ai_plugin/loader.rb`,
+  `su_ai_plugin/cad_prep_workflow_*.rb`,
+  `su_ai_plugin/dialog_runner.rb`,
+  `su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+  `html/app.js`, `html/style.css`, icons:
+  UNCHANGED.
+
+`dist/SU-AI-Plugin.rbz`: NOT rebuilt in this
+packet. No RBZ release decision was made.
+
+Frozen V1.5-V1.9A design authority preserved
+unchanged on the assigned `dev/v1.9`. Pi did NOT
+rewrite any frozen design authority. No V1.4 /
+V1.5 / V1.6 / V1.7 / V1.8 algorithm change. No
+source / provenance authority change. No
+workspace ownership change. No host mutation /
+Face / Observer. No site semantics. No Loader /
+A2 orchestrator / A3 toolbar / V1.9A3 contract
+change. No V1.9B2 / V2 / MCP / LLM / Agent. No
+persistence / Accept / Load UI. No RBZ release.
+No SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner
+mutation seam change. No B1.2 / B1.3 / B1.4
+re-open.
+
+Ruby runtime used for validation:
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+No filesystem-wide Ruby / Node / Git search was
+performed. The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+is the documented repository-local runtime.
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses
+Ruby-2.2-compatible primitives (`equal?` /
+`object_id` / `dup` / `is_a?` / `key?` / `frozen?`
+/ `force_encoding` / `valid_encoding?` / `bytes` --
+all core since Ruby 1.0 / 1.9 / 2.0 as appropriate;
+no Hash#compact, no Array#sum, no transform_keys /
+filter_map, no Numeric#positive?, no safe
+navigation, no pattern matching, no then /
+yield_self), but the literal Ruby 2.2 contract is
+not runtime-validated in this packet.
+
+```text
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CLOSED
+V1_9B1_B1_3                          = CLOSED
+V1_9B1_B1_4                          = CLOSED
+V1_9B1_B1_5                          = CORRECTED_PENDING_AIPM_FINAL_REVIEW_R2
+CODEX_NARROW_RECHECK                 = HOLD
+V1_9B2                               = NOT_STARTED
+V2                                   = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this R2
+   packet's B15-R2-01 / B15-R2-02 / B15-R2-04
+   implementation on `dev/v1.9`.
+2. ONE narrow Codex xHigh post-implementation
+   recheck on B1.5 R2 (the B1.5 implementation
+   seam itself; the B1.2-B1.4 R4 / R4.1 closure
+   already PASSED the prior narrow recheck). ONLY
+   if PASS, B1.5 R2 closes and AIPM may authorize
+   V1.9B2.
+
+CODEX_RISK_TRIGGER = YES (POST-IMPLEMENTATION,
+NARROW) -- per dispatch: this packet is the one
+authorized additive change to `WorkingModeRunner`
+for V1.9B1 B1.5 R2 and is a high-risk coherence /
+host-state seam. It does NOT re-open any
+already-PASS frozen V1.5-V1.9A surface.
+
+Pi MUST NOT invoke Codex. Pi has completed the
+B1.5 R2 implementation + tests + commit
+(`8adebca`) + push
+(`4b34948..8adebca  dev/v1.9 -> dev/v1.9`) for
+this R2 packet and now returns control to AIPM
+for direct source review of the B1.5 R2
+corrections.
+
+AIPM_REVIEW = PENDING_R2.
+CODEX_NARROW_RECHECK = HOLD.
+V1_9B2 = NOT_STARTED.
+
+---
+
 ## V1.9B1 B1.5 DIRECT SOURCE REVIEW R1 CORRECTION — 2026-09-15 (THIS UPDATE)
 
 Updated: 2026-09-15 (V1.9B1 B1.5 DIRECT SOURCE REVIEW
