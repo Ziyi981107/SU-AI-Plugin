@@ -2877,13 +2877,35 @@ module SUAnalysis
       # Internal: normalize the topology snapshot to a
       # bundle-local copy with String-keyed "endpoints".
       #
+      # B15-R2-01 (exact schema type, no .to_s acceptance):
+      #   schema_version MUST be a real String instance whose
+      #   value is literally "cano-node.v1". Any non-String
+      #   spoof (Symbol, custom object whose to_s returns
+      #   the expected String, nil, missing key, wrong
+      #   String) fails closed. B1.5 never accepts
+      #   `topology['schema_version'].to_s == 'cano-node.v1'`
+      #   because that would silently pass Symbol /
+      #   nil-spoof / wrong-type drift.
+      #
+      # B15-R2-02 (dual endpoints keys are ambiguous):
+      #   B1.5 may accept ONE valid endpoint source under
+      #   either Symbol :endpoints or String "endpoints" for
+      #   compatibility with the historical
+      #   _canonical_topology_snapshot producer. But when
+      #   BOTH keys are present the upstream state is
+      #   drifted / malformed and B1.5 MUST NOT silently
+      #   resolve by preference. The capture fails closed
+      #   with a stable pcd_bundle:topology_endpoints_
+      #   ambiguous blocker.
+      #
       # B15-R1-03 (fail-closed on missing/malformed
       # topology):
-      #   - the topology MUST be a Hash with
+      #   - the topology MUST be a Hash with String
       #     schema_version == "cano-node.v1";
-      #   - an endpoints entry MUST exist (Symbol or
-      #     String key);
-      #   - the endpoints entry MUST be an Array.
+      #   - exactly ONE endpoints source may be present
+      #     (Symbol :endpoints OR String "endpoints", not
+      #     both);
+      #   - the chosen endpoints entry MUST be an Array.
       # When any of these is missing or malformed the
       # function returns [nil, blocker_code] so the
       # caller can fail the B1.5 capture with a stable
@@ -2901,15 +2923,25 @@ module SUAnalysis
         unless topology.is_a?(Hash)
           return [nil, 'pcd_bundle:topology_unavailable']
         end
-        unless topology['schema_version'].to_s == 'cano-node.v1'
+        # B15-R2-01: schema_version MUST be a String and
+        # MUST equal "cano-node.v1" exactly. No .to_s
+        # acceptance, no Symbol / custom-object spoofing.
+        schema = topology['schema_version']
+        unless schema.is_a?(String) && schema == 'cano-node.v1'
           return [nil, 'pcd_bundle:topology_unavailable']
         end
-        # endpoints under Symbol or String key.
-        endpoints = topology[:endpoints]
-        endpoints = topology['endpoints'] if endpoints.nil?
-        if endpoints.nil?
+        # B15-R2-02: dual endpoints keys are ambiguous and
+        # MUST fail closed. Exactly one source side
+        # (:endpoints OR "endpoints") may be present.
+        has_symbol = topology.key?(:endpoints)
+        has_string = topology.key?('endpoints')
+        if has_symbol && has_string
+          return [nil, 'pcd_bundle:topology_endpoints_ambiguous']
+        end
+        unless has_symbol || has_string
           return [nil, 'pcd_bundle:topology_endpoints_missing']
         end
+        endpoints = has_symbol ? topology[:endpoints] : topology['endpoints']
         unless endpoints.is_a?(Array)
           return [nil, 'pcd_bundle:topology_endpoints_missing']
         end
@@ -3124,8 +3156,23 @@ module SUAnalysis
 
       def _b15_force_utf8_string(s)
         return s unless s.is_a?(String)
-        return s if s.encoding.name == 'UTF-8' && s.valid_encoding?
-        out = s.dup.force_encoding('UTF-8')
+        # B15-R2-04: every bundle-local String copy MUST
+        # be an independent String object before the
+        # later deep-freeze freezes it. The previous
+        # early-return of the original UTF-8 String
+        # allowed the bundle freeze to freeze a
+        # Runner-owned mutable String. We now always
+        # `dup` so `out.object_id != s.object_id` and
+        # freezing `out` cannot affect `s`.
+        out = s.dup
+        if out.encoding.name == 'UTF-8'
+          unless out.valid_encoding?
+            raise ArgumentError,
+                  "B1.5 workflow UTF-8 normalization cannot encode: #{out.inspect[0, 80]}"
+          end
+          return out
+        end
+        out.force_encoding('UTF-8')
         unless out.valid_encoding?
           raise ArgumentError,
                 "B1.5 workflow UTF-8 normalization cannot encode: #{out.inspect[0, 80]}"

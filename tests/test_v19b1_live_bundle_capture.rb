@@ -1187,7 +1187,6 @@ test 'R1-T05: topology Symbol-keyed endpoints are accepted as a single source' d
   topology = {
     'schema_version' => 'cano-node.v1',
     :endpoints => ['ep-a', 'ep-b'],
-    'endpoints' => 'this-should-be-overridden-by-symbol',
     'canonical_nodes' => [],
     'canonical_node_clusters' => {},
     'non_transitive_clusters' => [],
@@ -1205,6 +1204,28 @@ test 'R1-T05: topology Symbol-keyed endpoints are accepted as a single source' d
              'R1-T05: Symbol-keyed endpoints with Array value MUST NOT yield a blocker'
   assert_equal ['ep-a', 'ep-b'], result['endpoints'],
                'R1-T05: bundle-local endpoints MUST come from the Symbol-keyed Array'
+end
+
+test 'R1-T05: topology dual Symbol+String endpoints (both Array, different contents) => BLOCKED + topology_endpoints_ambiguous' do
+  topology = {
+    'schema_version' => 'cano-node.v1',
+    :endpoints => ['ep-a', 'ep-b'],
+    'endpoints' => ['ep-c', 'ep-d'],
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  }
+  result, blocker = B15_RUNNER.send(
+    :_b15_normalize_topology, topology
+  )
+  assert_nil result,
+             'R2-T05: dual-key endpoints MUST return [nil, blocker_code]'
+  assert_equal 'pcd_bundle:topology_endpoints_ambiguous', blocker,
+               'R2-T05: dual-key endpoints MUST yield topology_endpoints_ambiguous reason'
 end
 
 test 'R1-T05: topology wrong schema_version => BLOCKED + topology_unavailable' do
@@ -1299,4 +1320,374 @@ test 'R1-T06: pre-populated Runner caches are NOT overwritten by B1.5 capture' d
   assert_equal bundle['canonical_graph'].digest.to_s,
                bundle['structure_result']['canonical_graph_digest'].to_s,
                'R1-T06: bundle MUST bind structure canonical_graph_digest to its own graph.digest'
+end
+
+# =============================================================
+# R2-PUB — PUBLIC capture-path malformed topology regressions.
+# =============================================================
+#
+# Per frozen R2 packet R2-03:
+#   The previous R1-T05 private-helper tests are
+#   insufficient. Add PUBLIC capture-path regressions
+#   through capture_prepared_cad_input_bundle(...)
+#   that fault-inject the topology returned by
+#   _canonical_topology_snapshot WITHOUT modifying
+#   production design or adding a production test
+#   seam.
+#
+# Technique:
+#   - temporarily replace the Runner singleton method
+#     _canonical_topology_snapshot in the test (the
+#     Runner is module-level in SUAnalysis::Core);
+#   - call the public capture_prepared_cad_input_bundle
+#     with a valid ready workspace + analysis_result;
+#   - restore the original method in ensure;
+#   - assert status=BLOCKED, bundle=nil, and the
+#     required pcd_bundle:* blocker code.
+#
+# This keeps production code untouched while proving the
+# actual publication boundary behaves fail-closed for each
+# required case.
+
+# A tiny class whose #to_s returns the literal expected
+# schema version. Used in R2-PUB-01 to prove the schema
+# type check rejects any non-String spoof -- even one
+# whose #to_s stringifies to the expected schema.
+class R2SchemaSpoofString
+  def to_s
+    'cano-node.v1'
+  end
+  def is_a?(klass)
+    klass == String || super
+  end
+end
+
+# Fault-inject a custom topology Hash via a singleton
+# replacement of the Runner's _canonical_topology_snapshot
+# method for the duration of one test, then restore in
+# ensure.
+def b15_r2_inject_topology(topology_hash)
+  runner = B15_RUNNER
+  unless runner.respond_to?(:_canonical_topology_snapshot)
+    raise 'R2 helper: Runner is missing _canonical_topology_snapshot'
+  end
+  original = runner.method(:_canonical_topology_snapshot)
+  runner.define_singleton_method(:_canonical_topology_snapshot) do |**kwargs|
+    topology_hash
+  end
+  begin
+    yield
+  ensure
+    runner.define_singleton_method(
+      :_canonical_topology_snapshot, original
+    )
+  end
+end
+
+test 'R2-PUB-01: public capture BLOCKS on non-String schema spoof => topology_unavailable' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  spoof = R2SchemaSpoofString.new
+  b15_r2_inject_topology(
+    'schema_version' => spoof,
+    :endpoints       => ['ep-a', 'ep-b'],
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  ) do
+    out = B15_RUNNER.capture_prepared_cad_input_bundle(
+      analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status'],
+                 'R2-PUB-01: public capture MUST BLOCK on non-String schema spoof; ' \
+                 "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+    assert_nil out['bundle'],
+               'R2-PUB-01: bundle MUST be nil on BLOCKED'
+    assert_includes out['blockers'],
+                    'pcd_bundle:topology_unavailable',
+                    'R2-PUB-01: blocker MUST include topology_unavailable'
+  end
+end
+
+test 'R2-PUB-02: public capture BLOCKS on dual endpoints with different Arrays => topology_endpoints_ambiguous' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  b15_r2_inject_topology(
+    'schema_version' => 'cano-node.v1',
+    :endpoints       => ['ep-a', 'ep-b'],
+    'endpoints'      => ['ep-c', 'ep-d'],
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  ) do
+    out = B15_RUNNER.capture_prepared_cad_input_bundle(
+      analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status'],
+                 'R2-PUB-02: public capture MUST BLOCK on dual endpoint keys; ' \
+                 "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+    assert_nil out['bundle'],
+               'R2-PUB-02: bundle MUST be nil on BLOCKED'
+    assert_includes out['blockers'],
+                    'pcd_bundle:topology_endpoints_ambiguous',
+                    'R2-PUB-02: blocker MUST include topology_endpoints_ambiguous'
+  end
+end
+
+test 'R2-PUB-03: public capture BLOCKS on Symbol Array + malformed String endpoint => topology_endpoints_ambiguous' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  b15_r2_inject_topology(
+    'schema_version' => 'cano-node.v1',
+    :endpoints       => ['ep-a', 'ep-b'],
+    'endpoints'      => 'this-is-not-an-array',
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  ) do
+    out = B15_RUNNER.capture_prepared_cad_input_bundle(
+      analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status'],
+                 'R2-PUB-03: public capture MUST BLOCK on Symbol Array + malformed String endpoint; ' \
+                 "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+    assert_nil out['bundle'],
+               'R2-PUB-03: bundle MUST be nil on BLOCKED'
+    assert_includes out['blockers'],
+                    'pcd_bundle:topology_endpoints_ambiguous',
+                    'R2-PUB-03: blocker MUST include topology_endpoints_ambiguous'
+  end
+end
+
+test 'R2-PUB-04: public capture BLOCKS on malformed Symbol endpoint + valid String Array => topology_endpoints_ambiguous' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  b15_r2_inject_topology(
+    'schema_version' => 'cano-node.v1',
+    :endpoints       => 'this-is-not-an-array',
+    'endpoints'      => ['ep-a', 'ep-b'],
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  ) do
+    out = B15_RUNNER.capture_prepared_cad_input_bundle(
+      analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status'],
+                 'R2-PUB-04: public capture MUST BLOCK on malformed Symbol + valid String Array; ' \
+                 "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+    assert_nil out['bundle'],
+               'R2-PUB-04: bundle MUST be nil on BLOCKED'
+    assert_includes out['blockers'],
+                    'pcd_bundle:topology_endpoints_ambiguous',
+                    'R2-PUB-04: blocker MUST include topology_endpoints_ambiguous'
+  end
+end
+
+test 'R2-PUB-05: public capture BLOCKS on missing single non-Array endpoints => topology_endpoints_missing' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  # single non-Array Symbol endpoints
+  b15_r2_inject_topology(
+    'schema_version' => 'cano-node.v1',
+    :endpoints       => 'this-is-not-an-array',
+    'canonical_nodes' => [],
+    'canonical_node_clusters' => {},
+    'non_transitive_clusters' => [],
+    'open_endpoints' => [],
+    'unresolved_topology_issues' => [],
+    'metrics' => {},
+    'coordinate_epsilon' => 1.0e-6
+  ) do
+    out = B15_RUNNER.capture_prepared_cad_input_bundle(
+      analysis_result: ar
+    )
+    assert_equal 'BLOCKED', out['status'],
+                 'R2-PUB-05: public capture MUST BLOCK on missing/non-Array endpoints; ' \
+                 "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+    assert_nil out['bundle'],
+               'R2-PUB-05: bundle MUST be nil on BLOCKED'
+    assert_includes out['blockers'],
+                    'pcd_bundle:topology_endpoints_missing',
+                    'R2-PUB-05: blocker MUST include topology_endpoints_missing'
+  end
+end
+
+# =============================================================
+# R2-05 — mutation-by-freeze regression (PUBLIC).
+# =============================================================
+#
+# Per frozen R2 packet R2-05:
+#   Capture real Runner workflow state.
+#   Original mutable Runner String is not frozen before
+#   capture.
+#   Call public B1.5 capture.
+#   Bundle copy is frozen.
+#   Bundle copy object_id != original object_id.
+#   Original Runner String remains unfrozen afterward.
+#   Bytes unchanged.
+#
+# We obtain a real Runner workflow state by running the
+# duplicate-repair batch (per B15-T14's successful
+# pattern). The Runner's snapshot()'s
+# duplicate_repair substate is the truthful fresh
+# workflow String we capture. We capture its object_id
+# BEFORE B1.5 capture, run B1.5, then assert:
+#   - capture is CAPTURED;
+#   - the bundle's copy of that String is frozen;
+#   - the bundle's copy has a DIFFERENT object_id from
+#     the Runner-owned String;
+#   - the Runner-owned String remains unfrozen;
+#   - bytes are identical.
+#
+# Implementation:
+#   We rely on the snapshot() Hash shape produced by the
+#   real Runner after running run_duplicate_repair_batch.
+#   The Runner-owned String we use is the duplicate_repair
+#   substate's summary text, which the Runner
+#   run_duplicate_repair_batch populates. We capture that
+#   String reference via the Runner's public snapshot()
+#   output BEFORE B1.5 capture.
+
+test 'R2-05: real Runner-owned String remains unfrozen while bundle copy is frozen + distinct' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  _adapter, _ws, _src, ar = b15_prepare(edges)
+  # Run duplicate-repair so the Runner snapshot carries
+  # a real duplicate_repair substate populated by the
+  # public BatchExecutor. The "none" status String (and
+  # other real summary Strings) inside that substate is
+  # a mutable UTF-8 String owned by the Runner's snapshot
+  # output.
+  reg = ar.respond_to?(:registry) ? ar.registry : nil
+  if reg
+    B15_RUNNER.run_duplicate_repair_batch(registry: reg)
+  end
+  # Take the Runner's public snapshot BEFORE B1.5
+  # capture; locate a real UTF-8 String that the bundle
+  # workflow copy will receive via _b15_force_utf8.
+  pre_snap = B15_RUNNER.snapshot
+  # Use the duplicate_repair substate (a Hash populated
+  # by run_duplicate_repair_batch). The Hash carries
+  # multiple real UTF-8 Strings; pick `last_action_status`
+  # which the production executor populates with the
+  # literal String "none" (or similar) when no actions
+  # were applied. The String is owned by the Runner's
+  # snapshot Hash, not by the bundle.
+  dr_pre = pre_snap['duplicate_repair']
+  assert dr_pre.is_a?(Hash),
+         'R2-05: pre-condition: Runner snapshot MUST carry duplicate_repair substate after running duplicate repair'
+  # Find a real String entry in the duplicate_repair Hash.
+  # last_action_status is the canonical mutable UTF-8
+  # status String the production executor produces.
+  original_str_ref = dr_pre['last_action_status']
+  unless original_str_ref.is_a?(String)
+    # Fallback: pick any String entry.
+    original_str_ref = dr_pre.values.find { |v| v.is_a?(String) }
+  end
+  assert original_str_ref.is_a?(String),
+         'R2-05: pre-condition: duplicate_repair MUST carry a real String field'
+  original_frozen_before = original_str_ref.frozen?
+  original_bytes_before  = original_str_ref.dup.force_encoding('UTF-8').bytes
+  original_obj_id       = original_str_ref.object_id
+  original_encoding     = original_str_ref.encoding
+  assert !original_frozen_before,
+         'R2-05: pre-condition: Runner-owned String MUST NOT be frozen before capture'
+  # Run B1.5 capture. The bundle workflow copy will be a
+  # bundle-local deep copy.
+  out = B15_RUNNER.capture_prepared_cad_input_bundle(
+    analysis_result: ar
+  )
+  assert_equal 'CAPTURED', out['status'],
+               'R2-05: capture MUST succeed on a real Runner workflow; ' \
+               "got status=#{out['status']} blockers=#{out['blockers'].inspect}"
+  bundle = out['bundle']
+  refute_nil bundle, 'R2-05: bundle MUST be non-nil on CAPTURED'
+  # Locate the same logical String inside the bundle
+  # workflow's duplicate_repair substate.
+  bundle_dr = bundle['workflow_snapshot']['duplicate_repair']
+  assert bundle_dr.is_a?(Hash),
+         'R2-05: bundle workflow MUST carry duplicate_repair substate'
+  bundle_str = bundle_dr['last_action_status']
+  unless bundle_str.is_a?(String)
+    bundle_str = bundle_dr.values.find { |v| v.is_a?(String) }
+  end
+  assert bundle_str.is_a?(String),
+         'R2-05: bundle duplicate_repair MUST carry a String field'
+  assert_equal original_bytes_before, bundle_str.dup.force_encoding('UTF-8').bytes,
+               'R2-05: bundle copy MUST preserve bytes'
+  # CRITICAL: bundle String MUST be a distinct object.
+  assert !bundle_str.equal?(original_str_ref),
+         'R2-05: bundle String MUST NOT be the same object as the Runner-owned String'
+  refute_equal original_obj_id, bundle_str.object_id,
+               'R2-05: bundle String object_id MUST differ from original'
+  # CRITICAL: bundle String MUST be frozen.
+  assert bundle_str.frozen?,
+         'R2-05: bundle String MUST be frozen after deep-freeze'
+  # CRITICAL: original Runner-owned String MUST remain
+  # unfrozen after capture and MUST retain its previous
+  # frozen? state.
+  post_snap = B15_RUNNER.snapshot
+  dr_post = post_snap['duplicate_repair']
+  assert dr_post.is_a?(Hash),
+         'R2-05: Runner snapshot MUST still carry duplicate_repair substate after capture'
+  post_str = dr_post['last_action_status']
+  unless post_str.is_a?(String)
+    post_str = dr_post.values.find { |v| v.is_a?(String) }
+  end
+  assert_equal original_obj_id, post_str.object_id,
+               'R2-05: Runner-owned duplicate_repair String MUST remain the same object after capture'
+  assert !post_str.frozen?,
+         'R2-05: Runner-owned String MUST remain unfrozen after capture'
+  # Bytes unchanged.
+  assert_equal original_bytes_before, post_str.dup.force_encoding('UTF-8').bytes,
+               'R2-05: Runner-owned String bytes MUST be unchanged by capture'
+  # Encoding unchanged.
+  assert_equal original_encoding, post_str.encoding,
+               'R2-05: Runner-owned String encoding MUST be unchanged by capture'
 end
