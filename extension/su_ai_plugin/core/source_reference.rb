@@ -109,7 +109,7 @@ module SUAnalysis
         cf_structural_depth_exact_integer =
           structural_depth.is_a?(Integer)
         cf_pid_path_complete_exact_boolean =
-          (pid_path_complete == true) || (pid_path_complete == false)
+          pid_path_complete.equal?(true) || pid_path_complete.equal?(false)
         cf_layer_name_is_string =
           layer_name.is_a?(String)
         cf_kind_is_string =
@@ -211,7 +211,7 @@ module SUAnalysis
         # nil, etc.) falls back to false and construction_facts
         # records exact_boolean=false so B1 BLOCKS with
         # ambiguous_incomplete_occurrence:pid_path_complete_not_boolean.
-        @pid_path_complete   = pid_path_complete == true ? true : false
+        @pid_path_complete   = pid_path_complete.equal?(true) ? true : false
 
         # V1.1 (per plan §12 default + R007): layer_name is captured
         # at snapshot time. The LayerIssueGrouper reads this directly

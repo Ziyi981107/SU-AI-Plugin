@@ -4849,3 +4849,107 @@ test 'R4-03-16: two valid SourceReferences with identical old fields retain exis
   assert_equal a.hash, b.hash
 end
 
+# ---------------------------------------------------------------------------
+# V1.9B1 R4.1 — EXACT-BOOLEAN MICRO-CLOSURE
+# Per `Prompt/AIPM_V1_9B1_R4_1_EXACT_BOOLEAN_MICRO_CLOSURE_2026-09-15.md`:
+#   - The R4 `pid_path_complete` exact-Boolean seam must use Boolean
+#     singleton identity (`equal?`), NOT overridable `==`.
+#   - A non-Boolean object whose `==` pretends to equal `true` must STILL be
+#     classified as `pid_path_complete_exact_boolean == false` and BLOCKED
+#     as `ambiguous_incomplete_occurrence:pid_path_complete_not_boolean`.
+#   - Literal `true` and literal `false` continue to produce
+#     `pid_path_complete_exact_boolean == true`.
+# ---------------------------------------------------------------------------
+
+# Test helper: a non-Boolean object whose `==` is overridden to claim
+# equality with literal `true`. This is exactly the kind of malformed
+# construction input the R4 frozen contract must still reject, even
+# though the legacy `pid_path_complete == true` truthiness expression
+# would have accepted it.
+class R41BooleanSpoof
+  def ==(other)
+    other.equal?(true)
+  end
+end
+
+test 'R4.1-1: SourceReference with R41BooleanSpoof pid_path_complete records construction_facts[pid_path_complete_exact_boolean] == false' do
+  sref = SourceReference.new(
+    entity_id: 99991, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [101],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: R41BooleanSpoof.new,
+    layer_name: 'L0'
+  )
+  cf = sref.construction_facts
+  assert_equal false, cf['pid_path_complete_exact_boolean'],
+               "non-Boolean object whose == pretends to equal true must be classified as not an exact Boolean, got: #{cf.inspect}"
+  # Sanity: the spoof must not leak into the accessor.
+  assert_equal false, sref.pid_path_complete,
+               "pid_path_complete accessor must fall back to false (not the spoof), got: #{sref.pid_path_complete.inspect}"
+end
+
+test 'R4.1-2: public PreparedCadDatasetBuilder.build with R41BooleanSpoof pid_path_complete returns BLOCKED + pid_path_complete_not_boolean, no exception' do
+  sref = SourceReference.new(
+    entity_id: 99992, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [101],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: R41BooleanSpoof.new,
+    layer_name: 'L0'
+  )
+  snap, ws, topo, graph, struct, ar = b1_input_bundle
+  new_snap = b1_r3_swap_source_edge_in_snapshot(snap, 0, sref)
+  new_geom = b1_r3_swap_analysis_edge(ar.geometry_snapshot, 0, sref)
+  new_ar = AnalysisResult.new(
+    preflight: ar.preflight,
+    registry: IssueRegistry.new([]),
+    geometry_snapshot: new_geom,
+    selection_entities: ar.selection_entities,
+    active_edit_facts: ar.active_edit_facts
+  )
+  out = nil
+  begin
+    out = PreparedCadDatasetBuilder.build(
+      source_snapshot: new_snap, workflow_snapshot: ws,
+      topology_snapshot: topo, canonical_graph: graph,
+      structure_result: struct, analysis_result: new_ar
+    )
+  rescue => e
+    flunk "public Builder.build must NOT raise on a spoofed pid_path_complete, got: #{e.class}: #{e.message}"
+  end
+  assert_equal 'BLOCKED', out['status'],
+               "spoofed pid_path_complete must BLOCK, got: status=#{out['status'].inspect} blockers=#{out['blockers'].inspect}"
+  assert out['blockers'].any? { |b|
+    b.include?('ambiguous_incomplete_occurrence') &&
+      b.include?('pid_path_complete_not_boolean')
+  }, "expected ambiguous_incomplete_occurrence:pid_path_complete_not_boolean, got: #{out['blockers'].inspect}"
+end
+
+test 'R4.1-3: literal true and literal false continue to produce pid_path_complete_exact_boolean == true (VALID production inputs)' do
+  sref_true = SourceReference.new(
+    entity_id: 99993, persistent_id: 7993, kind: 'edge',
+    persistent_id_path: [99993],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: true,
+    layer_name: 'L0'
+  )
+  sref_false = SourceReference.new(
+    entity_id: 99994, persistent_id: nil, kind: 'edge',
+    persistent_id_path: [99994],
+    instance_path: [],
+    structural_depth: 0,
+    pid_path_complete: false,
+    layer_name: 'L0'
+  )
+  assert_equal true, sref_true.construction_facts['pid_path_complete_exact_boolean'],
+               "literal true must be classified as an exact Boolean, got: #{sref_true.construction_facts.inspect}"
+  assert_equal true, sref_false.construction_facts['pid_path_complete_exact_boolean'],
+               "literal false must be classified as an exact Boolean, got: #{sref_false.construction_facts.inspect}"
+  assert_equal true, sref_true.pid_path_complete,
+               "literal true accessor must remain true, got: #{sref_true.pid_path_complete.inspect}"
+  assert_equal false, sref_false.pid_path_complete,
+               "literal false accessor must remain false, got: #{sref_false.pid_path_complete.inspect}"
+end
+
