@@ -1,31 +1,25 @@
-# CURRENT PI DISPATCH — V2-0A SOURCE REVIEW R2 TEST-PROOF MICRO-CORRECTION
+# CURRENT PI DISPATCH — V2-0B HOST GEOMETRY PROBE
 
 Date: 2026-09-16
 Project: SU-AI-Plugin
 TARGET_BRANCH: dev/v2
 STATUS: ACTIVE
 
-## Baseline / authority
+## Authority
 
-R1 production implementation:
+V2-0A = CLOSED / PASS.
 
-`e722638c9863ec2f1a8d562a34a3ec92491d2354`
+AIPM closure review:
 
-R1 report/docs submission:
+`Review/CURRENT_AIPM_REVIEW.md`
 
-`24c3e68aba386f96e01c042a8f9aae00a87beeb4`
+Frozen V2-0B technical authority:
 
-AIPM R1 source-review verdict: **NOT PASS — ONE TEST-EVIDENCE RESIDUAL ONLY**.
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
 
-Execute only:
-
-`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R2_TEST_PROOF_CORRECTION_2026-09-16.md`
-
-The frozen V2-0A Blueprint and R1 correction remain authoritative for all unchanged behavior.
+Pi must implement exactly that Blueprint. Do not redesign the host transaction, stale gate, geometry ownership, or Stage boundary.
 
 ## Before work
-
-Fetch and fast-forward to current remote before editing:
 
 ```bash
 git fetch origin
@@ -36,19 +30,19 @@ git pull --ff-only origin dev/v2
 Then verify:
 
 - branch is `dev/v2`;
-- local `dev/v2 == origin/dev/v2`;
-- R1 implementation `e722638c9863ec2f1a8d562a34a3ec92491d2354` is an ancestor of HEAD;
-- this dispatch is ACTIVE;
-- R2 correction file exists.
+- local `dev/v2 == origin/dev/v2` before editing;
+- V2-0A R2 closure commit `b476da98f135deeb0da40e01512f0807ca3a4823` is an ancestor of HEAD;
+- `Review/CURRENT_AIPM_REVIEW.md` says `V2-0A CLOSED`;
+- the V2-0B Blueprint exists;
+- this dispatch is ACTIVE.
 
-If not, STOP and report to AIPM.
+If any check fails, STOP and report to AIPM.
 
 ## Current stage
 
-V1 = CLOSED / frozen.
-V2-0A R1 production corrections = PRESERVE.
-V2-0A R2 test-proof residual = ACTIVE.
-V2-0B = NOT STARTED.
+V1 = CLOSED / frozen input authority.
+V2-0A SemanticFootprint = CLOSED / PASS.
+V2-0B Host Geometry Probe = ACTIVE.
 V2 Residential Stage 1 = NOT STARTED.
 
 ## Mandatory read order
@@ -58,76 +52,160 @@ V2 Residential Stage 1 = NOT STARTED.
 3. `PROJECT_HANDOFF.md`
 4. `PROJECT_MASTER_PLAN_V1X.md`
 5. `CURRENT_STATE.md`
-6. `Prompt/CURRENT_PI_DISPATCH.md`
-7. `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md`
-8. `Prompt/AIPM_V2_0A_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
-9. `Prompt/AIPM_V2_0A_SOURCE_REVIEW_R2_TEST_PROOF_CORRECTION_2026-09-16.md`
+6. `Review/CURRENT_AIPM_REVIEW.md`
+7. `Prompt/CURRENT_PI_DISPATCH.md`
+8. `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md`
+9. `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
 
-## Execute ONLY R2-01
+## Implement V2-0B only
 
-The current `V2-S0A-R1-07` isolated child-process proof is vacuous because it only requires the adapter and checks method/constant presence. It never calls `LayerLocalGraphAdapter.project`, so the `Set.new` adjacency path is not exercised.
+Expected production files:
 
-Fix the test so a fresh child Ruby process:
+- `extension/su_ai_plugin/v2/host_operation_guard.rb`
+- `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`
+- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
 
-- does NOT explicitly `require 'set'`;
-- constructs a minimal usable FINAL PCD with actual V1 schemas;
-- includes at least one mapped edge;
-- calls real `LayerLocalGraphAdapter.project(dataset:, layer_name: 'L0')`;
-- reaches adjacency rebuild / `Set.new`;
-- asserts `PROJECTED`, non-empty graph, and expected adjacency;
-- would fail if production `require 'set'` were removed.
+Expected focused test:
 
-## Allowed files
+- `tests/test_v2_stage0b_host_mass_probe.rb`
 
-Substantive implementation change:
+Expected developer/Owner probe:
 
-- `tests/test_v2_stage0a_semantic_footprint.rb` ONLY.
+- `Probe/v2_stage0b_owner_probe.rb`
 
-Completion docs:
+Follow the Blueprint contracts exactly.
 
-- `CURRENT_STATE.md`
-- `Review/CURRENT_PI_REPORT.md`
+## Non-negotiable contracts
 
-Production files: NONE.
+### 1. Pre-mutation stale/context gate
 
-If production modification appears necessary, STOP with:
+Before ANY SketchUp mutation:
 
-`V2_0A_R2_PRODUCTION_SCOPE_EXPANSION_REQUIRED`
+- session not HOST_STATE_UNCERTAIN;
+- model exists;
+- `model.active_path == nil`;
+- fresh V1 public capture -> Builder -> Validator;
+- Validator READY / READY_WITH_WARNINGS;
+- full current 64-hex `content_digest` equals source footprint digest;
+- re-project same semantic role + layer;
+- exact `footprint_id_full` re-resolves;
+- root context checked again immediately before start_operation.
+
+Any failure above => zero host mutation and zero operation start.
+
+### 2. One normal operation
+
+Use one normal, non-transparent operation.
+
+Inspect literal Boolean results from start / commit / abort.
+
+Do NOT reuse the V1 adapter's operation wrapper because it discards those Boolean results.
+
+### 3. Geometry
+
+- destination = `model.entities` root;
+- empty `add_group` with no arguments;
+- group name assigned after creation;
+- minimal V2 ownership attributes written inside the same operation;
+- face uses exact current footprint XY / z=0 coordinates;
+- nil face fails;
+- verify +Z normal, reverse if needed, verify again;
+- positive explicit probe height;
+- `pushpull` nil return is not success evidence;
+- post-validate real generated geometry before commit.
+
+### 4. Failure
+
+After operation start, any construction/post-validation failure:
+
+- abort exactly once;
+- abort true => confirmed rolled back;
+- abort false/raise => HOST_STATE_UNCERTAIN;
+- uncertain => lock all later V2 host writes until explicit developer recovery reset.
+
+Commit false/raise follows the same confirmed-abort/uncertain rule.
+
+### 5. Ownership
+
+Never mutate:
+
+- Source CAD;
+- V1 Derived Workspace;
+- existing V1 production objects;
+- existing V2-0A data.
+
+The generated mass is a new independent V2-owned root Group.
+
+## Allowed production scope
+
+New files only unless the Blueprint explicitly says otherwise:
+
+- `extension/su_ai_plugin/v2/host_operation_guard.rb`
+- `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`
+- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+
+Do NOT modify existing V1 production files.
+Do NOT modify the three existing V2-0A production files.
+Do NOT modify Loader/UI.
+
+If another production file is required, STOP with:
+
+`V2_0B_SCOPE_EXPANSION_REQUIRED`
 
 ## Required validation
 
-Run:
+Run at minimum:
 
-1. syntax check for the test file;
-2. complete V2-0A focused suite, preserving all prior 43 tests;
-3. explicit non-vacuous child-process projection proof;
-4. V1.7 `V17-` regression;
-5. V1.8 `V18-` regression;
-6. V1.9B1 `B1.2-` regression;
-7. V1.9B1 `B15-` regression;
-8. full runner vs established `5 fail / 4 error` baseline;
-9. `git diff --check`;
-10. confirm no production file changed.
+1. syntax checks for all new Ruby files;
+2. complete V2-0B focused suite;
+3. V2-0A focused 43/43 regression;
+4. V1.7 relevant regression;
+5. V1.8 structure regression;
+6. V1.9 B1 PreparedCadDataset regression;
+7. V1.9 B1.5 live bundle regression;
+8. project full runner vs established 5 fail / 4 error baseline;
+9. Ruby-2.2-era source compatibility guard for new production files;
+10. `git diff --check`;
+11. RBZ rebuild + smoke if required by the repository packaging contract for new production files.
 
-No RBZ rebuild required. No new fail/error acceptable.
+No new fail/error acceptable.
+
+The focused suite MUST include the full failure matrix from the Blueprint, including start/commit/abort false/raise, stale digest, context change, post-validation failure, uncertainty lock, successful root-group geometry, and real V1 freshness integration with fake host.
+
+## Real-host gate is NOT Pi self-approval
+
+Pi may add the Owner probe script but does NOT claim Stage 0B closed from automated tests.
+
+After Pi implementation:
+
+1. update `CURRENT_STATE.md`;
+2. update `Review/CURRENT_PI_REPORT.md`;
+3. commit + push only `dev/v2`;
+4. STOP.
+
+Then:
+
+- AIPM direct source review;
+- Owner real SU2020 success probe;
+- one native Undo removes complete successful probe mass;
+- Owner real SU2020 injected-failure probe leaves zero visible residue on confirmed abort;
+- only AIPM closes Stage 0B.
 
 ## Frozen / forbidden
 
-Do NOT modify production code.
-Do NOT reopen the five R1 production corrections.
-Do NOT modify V1.
-Do NOT start V2-0B / Residential Stage 1.
-Do NOT add host/UI/modeling/MCP/LLM/Agent work.
-Do NOT invoke Codex.
+Do NOT:
 
-## Completion
-
-1. update `CURRENT_STATE.md`;
-2. update `Review/CURRENT_PI_REPORT.md` with R2 evidence;
-3. commit and push only `dev/v2`;
-4. report implementation SHA + final remote HEAD;
-5. STOP.
-
-Next gate: AIPM narrow final source review.
+- implement selection Tool / pickray / highlight;
+- implement HtmlDialog / toolbar / menu;
+- implement ResidentialObject / floors / balconies / parapets;
+- implement update/regenerate;
+- implement site / raised community / roads / landscape;
+- implement materials;
+- implement MCP / LLM / Agent;
+- start Residential Stage 1;
+- modify V1;
+- modify pcd.v1;
+- modify CanonicalStructureReconstructor;
+- invoke Codex yourself.
 
 END
