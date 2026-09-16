@@ -1,48 +1,45 @@
-# CURRENT PI DISPATCH — V2-0A SEMANTIC FOOTPRINT
+# CURRENT PI DISPATCH — V2-0A SOURCE REVIEW R1 CORRECTION
 
 Date: 2026-09-16
 Project: SU-AI-Plugin
 TARGET_BRANCH: dev/v2
 STATUS: ACTIVE
 
-## Baseline
+## Baseline / authority
 
-V2 branch was created from the PB-06-reviewed code baseline:
+V2-0A implementation commit under correction:
 
-`80bdbd62e63c8e8df1ffe3816df2d0cdd84e405f`
+`d947a7899a1b04ddb545b159603cf2b09b392070`
 
-AIPM then added the frozen V2-0A technical blueprint and this ACTIVE dispatch on `dev/v2`.
+AIPM direct source review verdict: **NOT PASS**.
 
-Pi must fetch and fast-forward/switch cleanly to the CURRENT `origin/dev/v2` before work.
+The architecture remains frozen. Execute only the narrow correction in:
 
-Before implementation, verify all of the following:
+`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
 
-- current branch is `dev/v2`;
-- local `dev/v2` == current `origin/dev/v2`;
-- commit `80bdbd62e63c8e8df1ffe3816df2d0cdd84e405f` is an ancestor of HEAD;
-- `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md` exists;
-- this `Prompt/CURRENT_PI_DISPATCH.md` has `STATUS: ACTIVE` and target `dev/v2`.
+Pi must fetch and fast-forward to current `origin/dev/v2` before work.
 
-Do NOT use a self-referential exact-HEAD gate for this dispatch: the dispatch/blueprint documentation itself advances the branch. The current remote `origin/dev/v2` is the task start authority once the above ancestry/file checks pass.
+Do NOT use a self-referential exact-HEAD gate. Verify:
 
-If the branch cannot fast-forward cleanly or the ancestry/authority checks fail, STOP and report to AIPM.
+- branch is `dev/v2`;
+- local `dev/v2 == origin/dev/v2` before editing;
+- implementation commit `d947a7899a1b04ddb545b159603cf2b09b392070` is an ancestor of HEAD;
+- frozen V2-0A Blueprint exists;
+- R1 correction file exists;
+- this dispatch is ACTIVE.
 
-Do not work on `dev/v1.9` or `fix/v2-pb06-reconstructor`.
+If these checks fail, STOP and report to AIPM.
 
 ## Current stage
 
 V1 = CLOSED / frozen input authority.
-PB-01..PB-06 = CLOSED by AIPM + Codex pre-build review.
-V2 branch = OPEN.
-V2-0A = ACTIVE IMPLEMENTATION DISPATCH.
+PB-01..PB-06 = CLOSED.
+V2-0A original implementation = SOURCE REVIEW NOT PASS.
+V2-0A R1 correction = ACTIVE.
 V2-0B = NOT STARTED.
 V2 Residential Stage 1 = NOT STARTED.
 
-Historical statements elsewhere saying `V2 = NOT_STARTED` are stale project snapshots; this ACTIVE dispatch is the current task authority. Do not reinterpret old history as a competing task.
-
-## Mandatory authority order
-
-Read:
+## Mandatory read order
 
 1. `PI_START_HERE.md`
 2. `AGENTS.md`
@@ -51,144 +48,135 @@ Read:
 5. `CURRENT_STATE.md`
 6. `Prompt/CURRENT_PI_DISPATCH.md`
 7. `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md`
+8. `Prompt/AIPM_V2_0A_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
 
-For V2-0A, the V2-0A Blueprint is authoritative over historical V1/V2-not-started planning text where they conflict.
+The R1 correction is authoritative over the original V2-0A implementation where they conflict. The original Blueprint remains authoritative for all unchanged architecture and acceptance rules.
 
-## Mission
+## Execute ONLY these corrections
 
-Implement ONLY the pure-data Stage V2-0A pipeline:
+### R1-01 — real PCD schema + real handoff proof
 
-PreparedCadDataset
-→ exact mapped-layer filter
-→ LayerLocalGraphAdapter
-→ existing CanonicalStructureReconstructor
-→ SemanticFootprintProjector
-→ immutable SemanticFootprint records
+Correct V2-0A to consume the actual published V1 schema:
 
-Prove deterministic, conservative layer-local semantic-footprint extraction.
+- content schema = `pcd.v1`
+- semantic graph schema = `pcd-semantic-graph.v1`
 
-No SketchUp host write is allowed.
+Do not modify V1.
 
-## Expected production files
+Add a real public integration proof:
 
-Create:
+`WorkingModeRunner.capture_prepared_cad_input_bundle`
+→ `PreparedCadDatasetBuilder.build`
+→ `PreparedCadDatasetValidator.validate_and_finalize`
+→ READY / READY_WITH_WARNINGS
+→ `SemanticFootprintProjector.project`
+→ expected footprint.
+
+No schema patching or hand-built fake PCD for this authoritative integration test.
+
+### R1-02 — usable validation/readiness
+
+Do not treat `final?` alone as V2-ready.
+
+V2 input must require:
+
+- final PreparedCadDataset;
+- validation Hash;
+- validation blockers Array empty;
+- persistence_check.status == `PASS`.
+
+Warnings remain allowed.
+
+Finalized NOT_READY / persistence-failed dataset must BLOCK.
+
+### R1-03 — Set dependency
+
+`LayerLocalGraphAdapter` uses `Set`; explicitly `require 'set'` in its production owner file.
+
+Prove load-order independence.
+
+### R1-04 — Ruby 2.2-era compatibility
+
+Remove new V2 use of `String#match?` and any other newly introduced post-Ruby-2.2 helper from the three V2-0A production files.
+
+Do NOT modify pre-existing V1 compatibility debt in this correction.
+
+### R1-05 — EMPTY vs UNKNOWN
+
+Unknown mapped layer → BLOCKED.
+
+Known mapped layer with zero matching edges → projector `EMPTY`, not `unknown_mapped_layer`.
+
+No exception and no invented geometry.
+
+## Allowed production files
+
+Only:
 
 - `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
 - `extension/su_ai_plugin/v2/semantic_footprint.rb`
 - `extension/su_ai_plugin/v2/semantic_footprint_projector.rb`
 
-A minimal V2 loader/helper may be added only if required for pure module loading/tests; report it explicitly.
+No existing V1 production file may change.
 
-Do NOT modify any existing V1 production file.
+If a V1 production file appears necessary:
+STOP and report `V2_0A_R1_SCOPE_EXPANSION_REQUIRED`.
 
-If any existing V1 production file appears necessary to change:
-STOP with `V2_0A_SHARED_KERNEL_CHANGE_REQUIRED` or an equally explicit scope-expansion report.
+## Allowed tests
 
-## Test file
-
-Create focused host-free coverage:
+Primary:
 
 - `tests/test_v2_stage0a_semantic_footprint.rb`
 
-Implement the complete PASS / REJECT matrix frozen in the V2-0A Blueprint, including:
+One minimal additional V2-0A test helper/process file is allowed only if needed for isolated-load proof.
 
-PASS:
-- rectangle
-- concave polygon
-- multiple disconnected footprints
-- cross-layer shared node
-- cross-layer coincident segment
-- fully coincident geometry on distinct layers
-- z below epsilon
-- z exactly epsilon
-- deterministic reorder identity
+Do not weaken or delete the original 35 tests.
 
-REJECT / fail closed:
-- same-layer parallel edges
-- branching
-- bow-tie
-- endpoint-on-segment
-- collinear overlap
-- degenerate/zero area
-- hole-bearing/nested loops
-- z above epsilon
-- empty layer
-- unknown layer
-- invalid/non-positive epsilon
-- malformed node/edge reference
+## Required validation
 
-No input mutation.
+Run at minimum:
 
-## Frozen technical rules
+1. original + R1 V2-0A focused tests;
+2. real V1 public handoff → V2 integration test;
+3. isolated-load Set dependency proof;
+4. V1.7 relevant reconstruction/topology;
+5. V1.8 structure reconstruction;
+6. V1.9 B1 PreparedCadDataset;
+7. V1.9 B1.5 live bundle;
+8. project full runner, comparing against the pre-R1 5 fail / 4 error baseline;
+9. syntax checks;
+10. `git diff --check`;
+11. source compatibility guard for the three new V2 production files.
 
-- Consume only published `PreparedCadDataset` data.
-- Exact mapped `layer_name` matching only.
-- Filter EDGES first.
-- Rebuild layer-local adjacency from filtered EDGE inventory.
-- Preserve edge multiplicity.
-- Reuse existing `CanonicalStructureReconstructor`; do not copy polygon algorithms.
-- `coordinate_epsilon` from PCD execution tolerance is the only Stage-0A geometry tolerance authority.
-- Source vertex acceptance is inclusive: `abs(z) <= epsilon`.
-- Accepted coordinates are copied/projected locally to exact `z=0.0`.
-- Publish footprints from valid reconstructed REGIONS, never directly from raw loops.
-- Hole-bearing regions are not Stage-0A footprints.
-- `v2fp-*` is dataset-relative footprint identity, not future generated-object identity.
-- PCD is immutable and unchanged.
-- Ruby 2.2 / SketchUp 2017 compatibility remains mandatory.
+No new fail/error is acceptable.
 
-## Strictly forbidden
+## Frozen / forbidden
 
-Do NOT implement or modify:
+Do NOT:
 
-- SketchUp Group/Face/extrusion
-- host operation guard
-- Tool / pickray / highlighting
-- HtmlDialog / toolbar / loader wiring into product UI
-- Layer Mapping UI/storage
-- ResidentialObject
-- balcony association
-- floor/height modeling
-- materials
-- Site/raised community
-- roads/landscape/context buildings
-- MCP/LLM/Agent
-- pcd.v1
-- V1.9B2 persistence
-- shared `CanonicalStructureReconstructor` behavior
+- redesign SemanticFootprint identity;
+- modify V1 / `pcd.v1`;
+- modify shared `CanonicalStructureReconstructor`;
+- implement SketchUp Group/Face/extrusion;
+- implement V2HostOperationGuard;
+- implement Tool/pickray/highlight;
+- implement HtmlDialog/toolbar/menu;
+- implement ResidentialObject / balcony association / floor modeling;
+- implement Site / raised community / roads / landscape;
+- implement MCP/LLM/Agent;
+- start V2-0B;
+- invoke Codex.
 
-Pi must not invoke Codex.
+## Completion
 
-## Required regression run
+After the full R1 correction is complete:
 
-At minimum:
+1. update `CURRENT_STATE.md` with V2-0A R1 status;
+2. prepend/replace `Review/CURRENT_PI_REPORT.md` with exact R1 evidence;
+3. commit and push only `dev/v2`;
+4. report implementation SHA + final remote HEAD;
+5. STOP.
 
-1. `tests/test_v2_stage0a_semantic_footprint.rb`
-2. `tests/test_v18_structure_reconstruction.rb`
-3. `tests/test_v19b1_prepared_cad_dataset.rb`
-4. `tests/test_v19b1_live_bundle_capture.rb`
-5. relevant V1.7 reconstruction/topology regressions
-6. project full test runner
-
-Separate verified pre-existing unrelated failures from any new regression.
-Do not weaken/delete/skip existing tests.
-
-## Completion / submission
-
-Complete the whole V2-0A task before formal submission.
-
-Then:
-
-1. update `CURRENT_STATE.md` with a concise V2-0A implementation record;
-2. replace/update `Review/CURRENT_PI_REPORT.md` with implementation evidence;
-3. commit the complete implementation + tests + required task-state/report artifacts using stable commits per repository workflow;
-4. push only `dev/v2`;
-5. print/report final remote HEAD;
-6. STOP and return control to AIPM.
-
-Do not start V2-0B.
-Do not self-approve Stage 0A.
-Do not request Codex review.
-
-AIPM source review is the next gate.
+AIPM direct source review is the next gate.
 
 END
