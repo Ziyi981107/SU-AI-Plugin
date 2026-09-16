@@ -1408,9 +1408,12 @@ module SUAnalysis
         # region.
         ambiguous = false
         inside_map = {}  # outer_loop_id -> sorted Array<inner_loop_id>
-        # Use the smallest coordinate_eps of any loop as
-        # the boundary epsilon.
-        eps = 1.0e-6
+        # PB-06A fix: use the resolved eps above (the
+        # previously-hard-coded 1.0e-6 re-assignment has been
+        # removed). A non-default coordinate_epsilon from the
+        # caller now genuinely controls bbox containment
+        # tolerance, point-on-boundary classification,
+        # strict-inside, and loop-boundary crossing/touch.
         # bbox prune first.
         loops.each do |outer|
           inside_map[outer['loop_id']] = []
@@ -1644,7 +1647,7 @@ module SUAnalysis
           # Only even-depth loops are region candidates.
           next if depth.odd?
           hole_ids = _immediate_children(outer['loop_id'], parents)
-          unless _holes_valid?(loops, hole_ids)
+          unless _holes_valid?(loops, hole_ids, eps)
             # Boundary intersection or other ambiguous
             # relation: skip emitting.
             unresolved_issues << REASON_LOOP_BOUNDARY_INTERSECTION
@@ -1722,7 +1725,19 @@ module SUAnalysis
         children.sort
       end
 
-      def _holes_valid?(loops, hole_ids)
+      def _holes_valid?(loops, hole_ids, eps)
+        # PB-06B fix: thread the SAME resolved region/
+        # reconstruction epsilon explicitly into hole
+        # validation. Previously the helper referenced `eps`
+        # without ever binding it (Ruby would raise
+        # NameError on the `_loop_boundaries_cross?` call),
+        # so the entire pairwise hole-boundary cross-check
+        # was effectively dead code. The caller
+        # (`_build_regions`) now resolves eps ONCE from
+        # `coord_eps` and threads the same value through
+        # `_holes_valid?` -> `_loop_boundaries_cross?`.
+        # No new tolerance is introduced here; no silent
+        # hard-coded 1.0e-6 fallback either.
         # All holes are valid_for_region; pairwise boundaries
         # between holes do not cross.
         hole_ids.each do |hid|

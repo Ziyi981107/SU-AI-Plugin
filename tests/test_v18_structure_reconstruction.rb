@@ -3009,3 +3009,251 @@ test 'V18-BOOT: _validate_adjacency_against_edges still produces correct results
          "V18-BOOT: must still emit non_array_value for cn-2 after restructure; " \
          "got #{result['reasons'].inspect}"
 end
+
+
+# ================================================================= = #
+# V18-PB06A — non-default coordinate_epsilon is honored for
+# containment classification.
+#
+# Per PB-06A: the previous _classify_loop_containment silently
+# overrode the resolved coordinate_epsilon with the legacy
+# 1.0e-6 default immediately before the bbox prune +
+# point-in-polygon + boundary-cross checks, which made a
+# non-default caller-supplied epsilon ineffective for
+# containment. A supplied finite positive
+# coordinate_epsilon MUST remain authoritative throughout
+# containment classification.
+#
+# Geometry:
+#   outer = 10x10 rectangle at origin (area 100).
+#   inner = rectangle whose boundary lies approximately
+#           5.0e-4 from the outer boundary on every side
+#           (so the closest inner vertex is 5e-4 inside
+#           the outer edge).
+#
+# With eps = 1.0e-3:
+#   5.0e-4 < 1.0e-3
+#   so the inner vertex is WITHIN eps of the outer edge =>
+#   the point-on-boundary check classifies it as ON the
+#   boundary => _point_in_polygon_status returns :ambiguous
+#   => _all_vertices_strictly_inside? returns :ambiguous
+#   => _classify_loop_containment marks ambiguous=true and
+#   returns nil
+#   => reconstruct surfaces ambiguous_containment through the
+#   existing fail-closed result/reason semantics.
+#
+# Hard proof the bug is fixed: the previous (buggy) code
+# would have used the hard-coded 1.0e-6 default and
+# therefore emitted a clean region with one hole (the inner
+# loop, even though the boundary distance 5e-4 is far
+# beyond 1e-6). The fixed code must NOT silently accept the
+# inner as a clean hole.
+# ================================================================= = #
+
+test 'V18-PB06A: non-default coordinate_epsilon (1.0e-3) is honored in containment classification' do
+  # Outer rectangle: corners (0,0), (10,0), (10,10), (0,10).
+  # Inner rectangle offset by 5.0e-4 inward on every side:
+  #   (5e-4, 5e-4), (10-5e-4, 5e-4), (10-5e-4, 10-5e-4),
+  #   (5e-4, 10-5e-4).
+  # The closest inner vertex is 5e-4 from the outer edge.
+  offset = 5.0e-4
+  eps    = 1.0e-3
+  outer = [
+    [0.0,       0.0      ],
+    [10.0,      0.0      ],
+    [10.0,      10.0     ],
+    [0.0,       10.0     ]
+  ]
+  inner = [
+    [offset,    offset   ],
+    [10 - offset, offset ],
+    [10 - offset, 10 - offset],
+    [offset,    10 - offset]
+  ]
+  graph = v18_build_graph([outer, inner], coord_eps: 1.0e-6)
+  # Pre-condition: under the OLD (buggy) code the hard-coded
+  # 1.0e-6 override would have classified the inner as a
+  # clean hole -- the boundary distance 5e-4 is far beyond
+  # 1e-6. Under the NEW (fixed) code with eps = 1e-3 the
+  # inner is WITHIN eps of the outer boundary, so the
+  # containment classification must surface as
+  # ambiguous_containment.
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w',
+    coordinate_epsilon: eps
+  )
+  refute_nil result,
+             'V18-PB06A: reconstruct MUST NOT raise for an ambiguous ' \
+             'containment pair'
+  # Fail closed: ambiguous_containment MUST appear in the
+  # public unresolved_issues surface (this is the existing
+  # fail-closed result/reason semantics for ambiguous
+  # containment classification).
+  ambiguous_in_unresolved = Array(result['unresolved_issues']).any? { |r|
+    r.to_s == CanonicalStructureReconstructor::REASON_AMBIGUOUS_CONTAINMENT
+  }
+  assert ambiguous_in_unresolved,
+         "V18-PB06A: non-default eps=1e-3 with boundary distance 5e-4 MUST " \
+         "surface ambiguous_containment in unresolved_issues; " \
+         "got #{result['unresolved_issues'].inspect}"
+  # Critical assertion: the buggy behavior was a silent 1e-6
+  # override that would have ACCEPTED the inner loop as a
+  # clean hole. The fixed code MUST NOT have accepted the
+  # inner as a clean hole. With ambiguous containment, the
+  # reconstructor must emit 0 hole-bearing regions.
+  regions_with_holes = Array(result['regions']).select { |r|
+    Array(r['hole_loop_ids']).length > 0
+  }
+  assert_equal 0, regions_with_holes.length,
+               "V18-PB06A: under non-default eps=1e-3 the inner loop MUST NOT " \
+               "be silently accepted as a clean hole; " \
+               "got #{result['metrics'].inspect}, regions=#{result['regions'].inspect}"
+  # The two underlying closed-loop topologies themselves are
+  # still valid for region membership (planarity, no self-
+  # intersection); the containment is the only thing that
+  # becomes ambiguous.
+  assert_equal 2, result['metrics']['closed_loop_count'],
+               "V18-PB06A: 2 closed loops on their own remain valid; " \
+               "got #{result['metrics'].inspect}"
+  result['loops'].each do |lp|
+    assert_equal true, lp['valid_for_region'],
+                 "V18-PB06A: each loop remains valid_for_region individually; " \
+                 "got #{lp.inspect}"
+  end
+end
+
+test 'V18-PB06A: same geometry under default eps (1e-6) is accepted as clean containment' do
+  # Sanity negative case: the same outer + inner geometry
+  # processed under the DEFAULT coordinate_epsilon=1e-6 (no
+  # explicit kw) must still be classified as a clean hole
+  # (boundary distance 5e-4 is far beyond 1e-6, so the
+  # inner is genuinely strictly inside the outer). This
+  # proves the fix did not over-tighten the default path.
+  offset = 5.0e-4
+  outer = [
+    [0.0,       0.0      ],
+    [10.0,      0.0      ],
+    [10.0,      10.0     ],
+    [0.0,       10.0     ]
+  ]
+  inner = [
+    [offset,    offset   ],
+    [10 - offset, offset ],
+    [10 - offset, 10 - offset],
+    [offset,    10 - offset]
+  ]
+  graph = v18_build_graph([outer, inner], coord_eps: 1.0e-6)
+  result = CanonicalStructureReconstructor.reconstruct(
+    graph, source_snapshot_id: 's', workspace_id: 'w'
+  )
+  assert_equal 1, result['metrics']['region_count'],
+               "V18-PB06A: default 1e-6 path MUST still accept the inner as " \
+               "a clean hole; got #{result['metrics'].inspect}"
+  assert_equal 1, result['metrics']['hole_count'],
+               "V18-PB06A: default 1e-6 path MUST still report 1 hole; " \
+               "got #{result['metrics'].inspect}"
+  region = result['regions'].first
+  refute_nil region
+  assert_equal 1, Array(region['hole_loop_ids']).length,
+               "V18-PB06A: default 1e-6 path region MUST have exactly 1 hole"
+end
+
+
+# ================================================================= = #
+# V18-PB06B — multi-hole reconstruction through the REAL
+# production entry point.
+#
+# Per PB-06B: the previous _holes_valid? referenced an
+# undefined `eps` inside its pairwise _loop_boundaries_cross?
+# call, which made the entire hole-boundary cross-check
+# effectively dead code. The fix threads the SAME resolved
+# region epsilon explicitly through _holes_valid? ->
+# _loop_boundaries_cross?. This test exercises the REAL
+# production CanonicalStructureReconstructor.reconstruct with
+# one outer + two separate, valid, non-touching inner
+# rectangles and asserts:
+#   - reconstruction does NOT raise;
+#   - region_count == 1;
+#   - hole_count == 2;
+#   - the produced region has exactly two hole_loop_ids;
+#   - region area = outer - hole1 - hole2 within tolerance.
+# ================================================================= = #
+
+test 'V18-PB06B: two non-touching inner rectangles -> 1 region, 2 holes, correct area' do
+  # Outer 10x10 at origin (area 100).
+  # Hole A: 3x3 at (2,2)-(5,5)  (area 9).
+  # Hole B: 3x3 at (6,6)-(9,9)  (area 9).
+  # Both holes are well-separated by a 1.0 unit gap (>> eps),
+  # so the pairwise hole-boundary check must pass.
+  outer = [
+    [0.0,  0.0],
+    [10.0, 0.0],
+    [10.0, 10.0],
+    [0.0,  10.0]
+  ]
+  hole_a = [
+    [2.0, 2.0],
+    [5.0, 2.0],
+    [5.0, 5.0],
+    [2.0, 5.0]
+  ]
+  hole_b = [
+    [6.0, 6.0],
+    [9.0, 6.0],
+    [9.0, 9.0],
+    [6.0, 9.0]
+  ]
+  # Exercise the REAL production entry point (not just the
+  # private helper) end-to-end.
+  graph = v18_build_graph([outer, hole_a, hole_b], coord_eps: 1.0e-6)
+  raised = nil
+  result = nil
+  begin
+    result = CanonicalStructureReconstructor.reconstruct(
+      graph, source_snapshot_id: 's', workspace_id: 'w'
+    )
+  rescue StandardError => e
+    raised = e
+  end
+  assert_nil raised,
+             "V18-PB06B: reconstruct MUST NOT raise for outer + two well-" \
+             "separated inner rectangles; got #{raised.inspect}"
+  refute_nil result, 'V18-PB06B: result MUST be a Hash'
+  assert_equal 1, result['metrics']['region_count'],
+               "V18-PB06B: exactly 1 outer region; got #{result['metrics'].inspect}"
+  assert_equal 2, result['metrics']['hole_count'],
+               "V18-PB06B: exactly 2 holes; got #{result['metrics'].inspect}"
+  assert_equal 3, result['metrics']['closed_loop_count'],
+               "V18-PB06B: 3 closed loops on their own; got #{result['metrics'].inspect}"
+  assert_equal 0, result['metrics']['invalid_loop_count'],
+               "V18-PB06B: 0 invalid loops; got #{result['metrics'].inspect}"
+  regions = Array(result['regions'])
+  assert_equal 1, regions.length,
+               "V18-PB06B: exactly 1 region emitted; got #{regions.length}"
+  region = regions.first
+  refute_nil region
+  assert_equal 2, Array(region['hole_loop_ids']).length,
+               "V18-PB06B: produced region MUST have exactly 2 hole_loop_ids; " \
+               "got #{region['hole_loop_ids'].inspect}"
+  # Region area = outer_area - sum(hole_areas) = 100 - 9 - 9 = 82.
+  # Use a tolerance that comfortably covers shoelace rounding
+  # but is tight enough to catch a real regression (e.g.
+  # dead hole-boundary check that would still produce a
+  # correct value here because the holes never cross).
+  expected_area = 100.0 - 9.0 - 9.0
+  assert_in_delta expected_area, region['area_xy'], 1.0e-3,
+                  "V18-PB06B: region area MUST equal outer - hole_a - hole_b " \
+                  "(= #{expected_area}); got #{region['area_xy']}"
+  # Hole loops themselves remain individually valid.
+  hole_ids = Array(region['hole_loop_ids'])
+  holes = result['loops'].select { |l| hole_ids.include?(l['loop_id']) }
+  assert_equal 2, holes.length,
+               "V18-PB06B: produced region MUST reference two hole loops; " \
+               "got #{holes.length}"
+  holes.each do |hl|
+    assert_in_delta 9.0, hl['area_xy'], 1.0e-3,
+                    "V18-PB06B: each hole MUST have area ~9; " \
+                    "got #{hl['area_xy']} for #{hl['loop_id']}"
+  end
+end
+
