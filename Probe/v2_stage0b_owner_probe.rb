@@ -148,11 +148,19 @@ module SUAnalysis
       end
 
       # Probe-only decorator: forward every method to the
-      # real adapter EXCEPT build_mass, which calls the
-      # real adapter up to (but not including) the actual
-      # pushpull, then raises to simulate a construction
-      # failure. Production code does NOT gain a
-      # failure_stage switch.
+      # real adapter EXCEPT build_mass, which delegates to
+      # the real adapter FIRST (creating real V2 geometry
+      # inside the open operation) and then raises a
+      # Probe-only exception BEFORE Stage0B can commit.
+      # The production exception boundary converts the
+      # raise to exactly one abort attempt; confirmed
+      # rollback removes the already-created V2 group
+      # with zero visible residue.
+      #
+      # Production code does NOT gain a `failure_stage`
+      # switch. This decorator is only used by
+      # `run_injected_failure_probe` and never by the
+      # production success path.
       class PushpullRaisingAdapterDecorator
         def initialize(real_adapter)
           @real = real_adapter
@@ -164,11 +172,7 @@ module SUAnalysis
 
         def method_missing(name, *args, **kw, &block)
           if name == :build_mass
-            # The decorator raises inside the geometry
-            # construction phase, AFTER add_group but
-            # BEFORE pushpull. This forces the probe to
-            # exercise the abort path.
-            _inject_failure_build_mass(*args, **kw)
+            _delegate_then_raise(*args, **kw)
           else
             @real.send(name, *args, **kw, &block)
           end
@@ -176,18 +180,28 @@ module SUAnalysis
 
         private
 
-        def _inject_failure_build_mass(footprint:, probe_height:)
-          # Ask the real adapter to do everything up to
-          # adding the face. Then mutate the face's
-          # pushpull to raise. This still requires running
-          # add_group + add_face (which the production
-          # code calls), but blocks pushpull.
-          #
-          # For simplicity we simulate the failure by
-          # raising before any construction begins: this
-          # is a strictly-failed construction path that
-          # still exercises the abort-only branch.
-          raise 'V2-0B probe injected construction failure'
+        # Delegate to the real adapter FIRST so real V2
+        # geometry (group + face + extruded volume +
+        # ownership attributes) is created inside the
+        # open operation. Then raise a Probe-only
+        # exception so Stage0B's exception boundary
+        # invokes exactly one abort attempt.
+        #
+        # The real adapter call returns its own Hash
+        # result which we explicitly discard; the raise
+        # escapes through Stage0B's rescue, becomes a
+        # construction failure, and triggers one abort.
+        # Confirmed rollback removes the V2 group with
+        # zero visible residue.
+        def _delegate_then_raise(footprint:, probe_height:)
+          @real.build_mass(footprint: footprint,
+                           probe_height: probe_height)
+          # Defensive: if the real adapter somehow
+          # succeeded without raising, the Stage0B flow
+          # would commit. Force an explicit failure AFTER
+          # real geometry exists so the test still
+          # exercises the abort path.
+          raise 'V2-0B probe injected post-construction failure'
         end
       end
     end

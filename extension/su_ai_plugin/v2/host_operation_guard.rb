@@ -85,9 +85,9 @@ module SUAnalysis
         result = begin
           model.start_operation(label, true, false, false)
         rescue StandardError
-          nil
+          :raised
         end
-        if result == true
+        if _literal_true?(result)
           @open = true
           STATUS_STARTED
         else
@@ -100,6 +100,7 @@ module SUAnalysis
       # commit true -> SUCCESS;
       # commit false or raise -> attempt abort exactly once;
       #   abort true  -> COMMIT_FAILED_ROLLED_BACK;
+      #     (confirmed rollback; session stays READY)
       #   abort false or raise -> HOST_STATE_UNCERTAIN + lock.
       def commit(model)
         return STATUS_HOST_STATE_UNCERTAIN unless @open
@@ -109,17 +110,19 @@ module SUAnalysis
         rescue StandardError
           :raised
         end
-        if result == true
+        if _literal_true?(result)
           @open = false
           STATUS_SUCCESS
         else
           # Commit false or raise. Attempt abort exactly once.
           abort_result = _safe_abort(model)
           @open = false
-          if abort_result == true
-            lock!
+          if _literal_true?(abort_result)
+            # Confirmed rollback: host state is known safe.
+            # Do NOT lock the session (Blueprint §6.3 + R1-04).
             STATUS_COMMIT_FAILED_ROLLED_BACK
           else
+            # Unconfirmed rollback: lock further writes.
             lock!
             STATUS_HOST_STATE_UNCERTAIN
           end
@@ -127,7 +130,7 @@ module SUAnalysis
       end
 
       # Abort the currently open operation. Per Blueprint §6.2:
-      # abort true -> FAILED_ROLLED_BACK;
+      # abort true -> FAILED_ROLLED_BACK (session stays READY);
       # abort false or raise -> HOST_STATE_UNCERTAIN + lock.
       def abort(model)
         return STATUS_HOST_STATE_UNCERTAIN unless @open
@@ -138,7 +141,8 @@ module SUAnalysis
           :raised
         end
         @open = false
-        if result == true
+        if _literal_true?(result)
+          # Confirmed rollback: session stays READY.
           STATUS_FAILED_ROLLED_BACK
         else
           lock!
@@ -154,6 +158,16 @@ module SUAnalysis
         model.abort_operation
       rescue StandardError
         :raised
+      end
+
+      # Literal Boolean identity. Use `equal?(true)` so that
+      # any non-true return (false, nil, a non-true String,
+      # the :raised sentinel, etc.) is treated as "not
+      # confirmed true". This guards against the V1 wrapper
+      # pitfall of discarding the real Boolean and returning
+      # nil (Blueprint §2 + §6).
+      def _literal_true?(v)
+        v.equal?(true)
       end
     end
   end

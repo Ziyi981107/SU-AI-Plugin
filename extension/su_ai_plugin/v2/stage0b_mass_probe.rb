@@ -104,9 +104,14 @@ module SUAnalysis
       #                      derives one from the capture bundle
       #                      when available.
       def run(footprint:, analysis_result:, probe_height:, workflow_snapshot: nil)
-        # ---- Input validation (Blueprint §4) ----
+        # ---- Input validation (Blueprint §4 + R1-03 hidden-epsilon ban) ----
         return _blocked('invalid_footprint') unless _valid_footprint?(footprint)
         return _blocked('invalid_probe_height') unless _valid_probe_height?(probe_height)
+        # R1-03: footprint['coordinate_epsilon'] is the only
+        # post-validation geometry tolerance. Missing/invalid
+        # epsilon must fail BEFORE start_operation.
+        eps_check = _validate_coordinate_epsilon(footprint['coordinate_epsilon'])
+        return _blocked(eps_check) if eps_check
 
         # ---- Pre-mutation gate (Blueprint §5) ----
         return _blocked('host_session_uncertain') if @guard.uncertain?
@@ -122,7 +127,18 @@ module SUAnalysis
         # 4-9. Frozen V1 public capture/build/validate +
         #      digest compare + re-project + footprint re-resolve.
         freshness = _freshness_check(footprint, analysis_result, workflow_snapshot)
-        return freshness unless freshness.is_a?(Hash) && freshness['status'] == 'FRESH'
+        unless freshness.is_a?(Hash) && freshness['status'] == 'FRESH'
+          return freshness
+        end
+        # R1-05: the freshness check must yield the matched
+        # CURRENT SemanticFootprint; geometry construction
+        # consumes that re-resolved record rather than the
+        # caller's original footprint.
+        current_footprint = freshness['current_footprint']
+        unless current_footprint.is_a?(Hash)
+          return { 'status' => STATUS_STALE_PREPARED_DATASET,
+                   'error'  => 'current_footprint_missing' }
+        end
 
         # 10. Re-check root context immediately before operation
         #     start (Blueprint §5 step 10).
@@ -137,20 +153,31 @@ module SUAnalysis
         end
 
         # ---- Geometry construction ----
-        build = @adapter.build_mass(
-          footprint:    footprint,
-          probe_height:  probe_height.to_f
-        )
+        # R1-02: wrap construction in an outer rescue so any
+        # unexpected adapter/SketchUp exception after confirmed
+        # start is converted to a construction failure and
+        # goes through exactly one abort attempt. Never let
+        # an open operation be left to the caller.
+        build = begin
+          @adapter.build_mass(
+            footprint:   current_footprint,
+            probe_height: probe_height.to_f
+          )
+        rescue StandardError => e
+          { status: V2SketchupMassAdapter::STATUS_CONSTRUCTION_FAILED,
+            error:  'adapter_exception:' + e.class.name + ':' + e.message }
+        end
 
         if build[:status] == V2SketchupMassAdapter::STATUS_SUCCESS
           # Commit the operation.
           commit_status = @guard.commit(m)
-          return _host_status_to_result(commit_status, build, footprint)
+          return _host_status_to_result(commit_status, build, current_footprint)
         end
 
-        # Construction or post-validation failure. Per
-        # Blueprint §6.2: abort exactly once, never claim
-        # cleanup success unless abort returned literal true.
+        # Construction or post-validation failure (or wrapped
+        # adapter exception). Per Blueprint §6.2: abort exactly
+        # once, never claim cleanup success unless abort
+        # returned literal true.
         abort_status = @guard.abort(m)
         case abort_status
         when HostOperationGuard::STATUS_FAILED_ROLLED_BACK
@@ -203,9 +230,26 @@ module SUAnalysis
       # V1 public capture -> Builder -> Validator; compare
       # full content_digest; re-run projector; require exact
       # footprint_id_full re-resolution.
+      #
+      # R1-01: the REAL B1.5 capture bundle keys
+      # (source_snapshot / workflow_snapshot /
+      # topology_snapshot / canonical_graph /
+      # structure_result / analysis_result) are the only
+      # Builder inputs accepted by the production default.
+      # Validator workflow authority defaults from
+      # bundle['workflow_snapshot'].
+      #
+      # R1-05: the matched CURRENT SemanticFootprint is
+      # returned to the caller (via 'current_footprint')
+      # so geometry construction consumes the re-resolved
+      # current record.
       def _freshness_check(footprint, analysis_result, workflow_snapshot)
         # 4. Capture.
-        capture_out = @capture_seam.call(analysis_result: analysis_result)
+        capture_out = begin
+          @capture_seam.call(analysis_result: analysis_result)
+        rescue StandardError
+          { 'status' => 'BLOCKED', 'bundle' => nil }
+        end
         unless _capture_ok?(capture_out)
           return { 'status' => STATUS_STALE_PREPARED_DATASET,
                    'error'  => 'capture_failed' }
@@ -215,16 +259,27 @@ module SUAnalysis
                  'error'  => 'capture_bundle_nil' } unless bundle.is_a?(Hash)
 
         # 5. Build.
-        build_out = @build_seam.call(bundle)
+        build_out = begin
+          @build_seam.call(bundle)
+        rescue StandardError
+          { 'status' => 'BLOCKED', 'dataset' => nil }
+        end
         unless _build_ok?(build_out)
           return { 'status' => STATUS_STALE_PREPARED_DATASET,
                    'error'  => 'build_failed' }
         end
         candidate = build_out['dataset']
 
-        # 6. Validate.
-        ws = workflow_snapshot || (bundle['workflow'] || {}).dup || {}
-        validate_out = @validate_seam.call(dataset: candidate, workflow_snapshot: ws)
+        # 6. Validate. R1-01: workflow_snapshot authority
+        # MUST default from bundle['workflow_snapshot'].
+        ws = workflow_snapshot ||
+             (bundle['workflow_snapshot'] || {}).dup ||
+             {}
+        validate_out = begin
+          @validate_seam.call(dataset: candidate, workflow_snapshot: ws)
+        rescue StandardError
+          { 'status' => 'NOT_READY', 'dataset' => candidate }
+        end
         unless _validate_ok?(validate_out)
           return { 'status' => STATUS_STALE_PREPARED_DATASET,
                    'error'  => 'validate_failed' }
@@ -242,11 +297,15 @@ module SUAnalysis
         end
 
         # 8. Re-run projector against current PCD.
-        proj = @projector.call(
-          dataset:      dataset,
-          semantic_role: footprint['semantic_role'],
-          layer_name:   footprint['source_layer_name']
-        )
+        proj = begin
+          @projector.call(
+            dataset:      dataset,
+            semantic_role: footprint['semantic_role'],
+            layer_name:   footprint['source_layer_name']
+          )
+        rescue StandardError
+          { 'status' => 'BLOCKED' }
+        end
         unless proj.is_a?(Hash)
           return { 'status' => STATUS_STALE_PREPARED_DATASET,
                    'error'  => 'projector_invalid_return' }
@@ -277,7 +336,9 @@ module SUAnalysis
                    'error'  => 'footprint_not_re_resolved' }
         end
 
-        { 'status' => 'FRESH' }
+        # R1-05: surface the matched current footprint so the
+        # caller can build geometry from it.
+        { 'status' => 'FRESH', 'current_footprint' => matched }
       end
 
       def _capture_ok?(out)
@@ -293,6 +354,24 @@ module SUAnalysis
         status = out['status']
         return false unless status == 'READY' || status == 'READY_WITH_WARNINGS'
         out['dataset'].respond_to?(:final?) && out['dataset'].final?
+      end
+
+      # R1-03: footprint['coordinate_epsilon'] is the ONLY
+      # post-validation geometry tolerance. It MUST be a
+      # Numeric, finite, > 0 before any host mutation.
+      # Missing/invalid values fail closed BEFORE start.
+      # Returns nil on success or a non-empty reason String
+      # on failure.
+      def _validate_coordinate_epsilon(value)
+        unless value.is_a?(Numeric)
+          return 'missing_or_non_numeric_coordinate_epsilon'
+        end
+        unless value.respond_to?(:finite?) ? value.finite? :
+               (value.respond_to?(:infinite?) ? !value.infinite? : true)
+          return 'non_finite_coordinate_epsilon'
+        end
+        return 'non_positive_coordinate_epsilon' if value.to_f <= 0.0
+        nil
       end
 
       def _blocked(reason)
@@ -314,8 +393,13 @@ module SUAnalysis
           { 'status' => STATUS_START_FAILED,
             'error'  => 'start_failed' }
         when HostOperationGuard::STATUS_SUCCESS
-          { 'status' => STATUS_SUCCESS,
-            'footprint_id_full' => footprint ? footprint['footprint_id_full'].to_s : nil }
+          # R1-05: success result carries the generated host
+          # Group handle as the explicitly host-only 'group'
+          # field. Do not serialize/persist the handle into
+          # PCD or model metadata.
+          { 'status'           => STATUS_SUCCESS,
+            'footprint_id_full' => footprint ? footprint['footprint_id_full'].to_s : nil,
+            'group'            => build && build.is_a?(Hash) ? build[:group] : nil }
         when HostOperationGuard::STATUS_FAILED_ROLLED_BACK
           { 'status' => STATUS_FAILED_ROLLED_BACK,
             'error'  => 'construction_or_post_validation_failed' }
@@ -347,15 +431,22 @@ module SUAnalysis
         )
       end
 
+      # R1-01: the default build seam wires the REAL B1.5
+      # bundle keys to the REAL PreparedCadDatasetBuilder
+      # keyword contract:
+      #   source_snapshot / workflow_snapshot /
+      #   topology_snapshot / canonical_graph /
+      #   structure_result / analysis_result
+      # No synthetic projection-shape adaptation may become
+      # the production default seam.
       def _default_build_seam(bundle)
         SUAnalysis::Core::PreparedCadDatasetBuilder.build(
-          source_projection: bundle['source_projection'],
-          execution:         bundle['execution'],
-          semantic_graph:    bundle['semantic_graph'],
-          semantic_structure: bundle['semantic_structure'],
-          current_issues:    bundle['current_issues'],
-          coherence_evidence: bundle['coherence_evidence'],
-          workflow_snapshot: bundle['workflow']
+          source_snapshot:    bundle['source_snapshot'],
+          workflow_snapshot:  bundle['workflow_snapshot'],
+          topology_snapshot:  bundle['topology_snapshot'],
+          canonical_graph:    bundle['canonical_graph'],
+          structure_result:   bundle['structure_result'],
+          analysis_result:    bundle['analysis_result']
         )
       end
 

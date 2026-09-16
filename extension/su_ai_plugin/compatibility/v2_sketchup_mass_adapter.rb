@@ -93,8 +93,13 @@ module SUAnalysis
       #                     coordinate_epsilon)
       #   probe_height   : explicit Numeric, finite, > 0
       #
-      # The caller (Stage 0B) is responsible for confirming the
-      # operation has been started before calling this method.
+      # R1-03: footprint['coordinate_epsilon'] is the ONLY
+      # post-validation geometry tolerance. There is NO
+      # hidden fallback. Stage 0B is expected to have
+      # validated the epsilon before start; this adapter
+      # additionally rejects non-positive / missing values
+      # defensively so the post-validation surface cannot
+      # silently fall back to a default.
       def build_mass(footprint:, probe_height:)
         m = model
         unless m.respond_to?(:entities)
@@ -102,6 +107,19 @@ module SUAnalysis
         end
         unless root_context?
           return failure(STATUS_CONSTRUCTION_FAILED, 'not_root_context')
+        end
+
+        # R1-03: no hidden epsilon. The footprint's
+        # coordinate_epsilon is the only authority.
+        eps_raw = footprint['coordinate_epsilon']
+        unless eps_raw.is_a?(Numeric)
+          return failure(STATUS_CONSTRUCTION_FAILED,
+                         'missing_or_non_numeric_coordinate_epsilon')
+        end
+        eps = eps_raw.to_f
+        unless eps > 0.0 && (eps.respond_to?(:finite?) ? eps.finite? : true)
+          return failure(STATUS_CONSTRUCTION_FAILED,
+                         'non_positive_or_non_finite_coordinate_epsilon')
         end
 
         # 1. Empty add_group with no arguments (Blueprint §8).
@@ -181,7 +199,6 @@ module SUAnalysis
         end
 
         # 8. Post-validate real generated geometry.
-        eps = (footprint['coordinate_epsilon'] || 1.0e-6).to_f
         pv = _post_validate(group, probe_height.to_f, eps)
         return failure(STATUS_POST_VALIDATION_FAILED, pv) unless pv == :ok
 
@@ -254,23 +271,35 @@ module SUAnalysis
       end
 
       # Post-validate real generated geometry. Per Blueprint
-      # §9:
+      # §9 (R1-03):
       #
       #   - group exists and is valid/not deleted;
-      #   - group is top-level under model.entities;
-      #   - group contains faces and edges after extrusion;
-      #   - at least one generated vertex is at/near z=0;
-      #   - at least one generated vertex is at/near
-      #     z=probe_height;
+      #   - group is a ROOT entity under the current model;
+      #   - generated group contains at least one Face AND
+      #     at least one Edge after extrusion;
+      #   - at least one generated vertex is within
+      #     coordinate_epsilon of z=0;
+      #   - at least one generated vertex is within
+      #     coordinate_epsilon of z=probe_height;
       #   - no generated vertex is below -coordinate_epsilon;
       #   - generated max-z satisfies
       #     abs(max_z - probe_height) <= coordinate_epsilon;
-      #   - ownership attributes are readable and exactly
-      #     match the target footprint/digest.
+      #   - all FOUR ownership values round-trip exactly:
+      #     schema_version / kind /
+      #     footprint_id_full / source_content_digest.
       def _post_validate(group, probe_height, eps)
         return 'no_group' unless group
         return 'group_invalid' if group.respond_to?(:valid?) && !group.valid?
         return 'group_deleted' if group.respond_to?(:deleted?) && group.deleted?
+        unless _is_root_group?(group)
+          return 'group_not_root'
+        end
+        face_count = 0
+        edge_count = 0
+        _walk_entity_kinds(group, face_count_ref: ->(n) { face_count = n },
+                               edge_count_ref: ->(n) { edge_count = n })
+        return 'no_face'    if face_count < 1
+        return 'no_edge'    if edge_count < 1
         vertices = _collect_vertices(group)
         return 'no_vertices' if vertices.empty?
         zs = vertices.map { |v| _z_of(v) }
@@ -278,11 +307,17 @@ module SUAnalysis
         max_z = zs.max
         return 'min_z_below_ground' if min_z.to_f < -eps.to_f
         return 'max_z_not_near_height' if (max_z.to_f - probe_height.to_f).abs > eps.to_f
-        # Ownership attribute round-trip check.
+        return 'no_z0_vertex'   unless zs.any? { |z| (z.to_f - 0.0).abs <= eps.to_f }
+        return 'no_zH_vertex'   unless zs.any? { |z| (z.to_f - probe_height.to_f).abs <= eps.to_f }
+        # R1-03: all FOUR ownership values must round-trip.
         schema = _get_attribute(group, ATTR_SCHEMA_VERSION)
         return 'missing_schema_version_attr' unless schema == SCHEMA_VERSION
         kind = _get_attribute(group, ATTR_KIND)
         return 'missing_kind_attr' unless kind == KIND
+        fpid = _get_attribute(group, ATTR_FOOTPRINT_ID_FULL)
+        return 'missing_footprint_id_full_attr' if fpid.nil? || fpid.to_s.empty?
+        scd  = _get_attribute(group, ATTR_SOURCE_CONTENT_DIGEST)
+        return 'missing_source_content_digest_attr' if scd.nil? || scd.to_s.empty?
         :ok
       end
 
@@ -295,8 +330,28 @@ module SUAnalysis
         end
       end
 
-      # Walk the group's entities (recursively for nested groups)
-      # and collect every vertex position encountered.
+      # Real SketchUp top-level groups have parent == nil
+      # (the Model itself). The FakeModel's group has
+      # @entities but no @parent (i.e. parent is nil /
+      # undefined). Components report ComponentInstance and
+      # are NOT a root group.
+      def _is_root_group?(group)
+        return false unless group.respond_to?(:typename)
+        return false unless group.typename.to_s == 'Group'
+        if group.respond_to?(:parent)
+          parent = group.parent
+          return parent.nil?
+        end
+        # Fakes that do not implement parent: treat as root
+        # when no parent accessor exists. This is acceptable
+        # for the focused fake host because the FakeModel
+        # only ever creates the group via model.entities.add_group
+        # and does not nest it.
+        true
+      end
+
+      # Walk the group's entities (recursively for nested
+      # groups) and collect every vertex encountered.
       def _collect_vertices(root)
         out = []
         return out unless root.respond_to?(:entities)
@@ -321,7 +376,48 @@ module SUAnalysis
         end
       end
 
+      # Walk the group's entities and accumulate face and
+      # edge counts (R1-03 Blueprint §9 explicit checks).
+      def _walk_entity_kinds(root, face_count_ref:, edge_count_ref:)
+        return unless root.respond_to?(:entities)
+        _walk_entity_kinds_inner(root.entities,
+                                 face_count_ref, edge_count_ref)
+      end
+
+      def _walk_entity_kinds_inner(entities, face_ref, edge_ref)
+        return unless entities.respond_to?(:each)
+        fc = 0
+        ec = 0
+        entities.each do |e|
+          tn = e.respond_to?(:typename) ? e.typename.to_s : ''
+          if tn == 'Face'
+            fc += 1
+          elsif tn == 'Edge'
+            ec += 1
+          end
+          if e.respond_to?(:entities)
+            sub_fc = 0
+            sub_ec = 0
+            _walk_entity_kinds_inner(e.entities,
+                                     ->(n) { sub_fc = n },
+                                     ->(n) { sub_ec = n })
+            fc += sub_fc
+            ec += sub_ec
+          end
+        end
+        face_ref.call(fc)
+        edge_ref.call(ec)
+      end
+
+      # Resolve a z coordinate from a vertex-like object.
+      # Supports real `Sketchup::Vertex#position`
+      # (which exposes a Geom::Point3d), test Array coords,
+      # and any Point3d-like object exposing .x .y .z.
+      # R1-03: do NOT collapse to 0.0 when the host provides
+      # `position` only.
       def _z_of(v)
+        return v.position.z.to_f if v.respond_to?(:position) &&
+                                    v.position.respond_to?(:z)
         if v.respond_to?(:z)
           v.z.to_f
         elsif v.is_a?(Array) && v.length == 3

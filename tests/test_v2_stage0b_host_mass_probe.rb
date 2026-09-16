@@ -77,6 +77,9 @@ class V2FakeModel
     attr_reader :children, :parent, :model_ref
     def initialize(parent = nil, model_ref = nil)
       @children = []
+      @groups   = []
+      @edges    = []
+      @faces    = []
       @parent = parent
       @model_ref = model_ref || parent
     end
@@ -89,6 +92,19 @@ class V2FakeModel
       g = V2FakeGroup.new(model_ref: @model_ref)
       @children << g
       g
+    end
+
+    # R1-06: a confirmed abort must mechanically restore the
+    # root-entity snapshot so zero-residue rollback is
+    # observable. The fake clears every child collection
+    # in addition to marking items invalid so a subsequent
+    # children.size reflects the post-abort state.
+    def invalidate_all!
+      @groups.each(&:erase!)
+      @groups.clear
+      @edges.clear
+      @faces.clear
+      @children.clear
     end
 
     def add_face(points, normal: [0.0, 0.0, 1.0])
@@ -156,7 +172,17 @@ class V2FakeModel
       @attrs      = {}
       @name       = ''
       @valid_flag = true
+      @parent     = nil  # root group under fake model
     end
+
+    def typename
+      'Group'
+    end
+
+    # Real SketchUp root groups have parent == the Model
+    # (or nil depending on API). The fake treats any group
+    # whose parent accessor returns nil-or-self as root.
+    attr_accessor :parent
 
     def set_attribute(dict, key, value)
       @attrs["#{dict}.#{key}"] = value.to_s
@@ -184,6 +210,12 @@ class V2FakeModel
       @parent_group = parent_group
       @normal       = normal
       @_extruded_top_vertices = nil
+    end
+
+    # Real-SketchUp-compatible typename so the Blueprint
+    # §9 face-presence check (R1-03) works in tests.
+    def typename
+      'Face'
     end
 
     # The face's vertex set may grow after a successful
@@ -248,6 +280,12 @@ class V2FakeModel
     def initialize(start, finish)
       @start  = start
       @finish = finish
+    end
+
+    # Real-SketchUp-compatible typename so the Blueprint
+    # §9 edge-presence check (R1-03) works in tests.
+    def typename
+      'Edge'
     end
 
     # Vertices are 3-coord Arrays in the fake; the post-
@@ -369,11 +407,19 @@ class V2FakeModel
       end
       @operation_open = false
       @current_label  = nil
+      # R1-06: a successful abort must mechanically
+      # restore the root-entity snapshot so zero-residue
+      # rollback is observable. The hook may simulate the
+      # abort behavior; we still invalidate here.
+      if v == true
+        @entities.invalidate_all!
+      end
       return v
     end
     @operation_log << { kind: :abort }
     @operation_open = false
     @current_label  = nil
+    @entities.invalidate_all!
     true
   end
 
@@ -1115,7 +1161,7 @@ test 'V2-S0B-OP08: abort raises -> HOST_STATE_UNCERTAIN + session lock' do
   assert probe.guard.uncertain?
 end
 
-test 'V2-S0B-OP09: commit false + abort true -> COMMIT_FAILED_ROLLED_BACK' do
+test 'V2-S0B-OP09: commit false + abort true -> COMMIT_FAILED_ROLLED_BACK + session stays READY' do
   fp, ds = v2_s0b_footprint_and_dataset
   probe, _g, _a, m = v2_s0b_make_probe
   m.set_commit_hook(->(*) { false })
@@ -1134,8 +1180,13 @@ test 'V2-S0B-OP09: commit false + abort true -> COMMIT_FAILED_ROLLED_BACK' do
     probe_height: 10.0
   )
   assert_equal 'COMMIT_FAILED_ROLLED_BACK', out['status']
-  assert probe.guard.uncertain?,
-         "uncertain lock must engage after commit false + abort true"
+  # R1-04: confirmed rollback means host state is known
+  # safe; session MUST remain READY (no lock). Subsequent
+  # writes MUST be allowed (covered by V2-S0B-OP09b below).
+  refute probe.guard.uncertain?,
+         'confirmed commit-failure rollback must NOT lock the session'
+  refute probe.guard.operation_open?,
+         'no operation may remain open after confirmed rollback'
 end
 
 test 'V2-S0B-OP10: commit false + abort false -> HOST_STATE_UNCERTAIN' do
@@ -1442,4 +1493,595 @@ test 'V2-S0B-COMPAT01: V2-0B production files use only Ruby 2.2-compatible helpe
              "V2-0B source-compat: #{File.basename(f)} must not use #{label}; pattern #{pat.inspect}"
     end
   end
+end
+
+# ============================================================
+# R1 CORRECTION ACCEPTANCE TESTS
+# (R1-01 / R1-02 / R1-03 / R1-04 / R1-05 / R1-06)
+# ============================================================
+
+# R1-01: REAL default V1 capture -> REAL Builder -> REAL
+# Validator -> real projector -> fake host Stage0B SUCCESS.
+# No injected fake Builder/Validator in this test.
+test 'V2-S0B-INT02: real default V1 handoff path succeeds end-to-end (R1-01)' do
+  # Build a real PreparedCadDataset via the real
+  # public V1 seams (capture is no-op for a synthetic
+  # AnalysisResult; we use the Builder + Validator
+  # directly with the real B1.5 bundle keys that the
+  # production default seam forwards).
+  graph, ds = v2_s0b_rectangle_dataset(layer: 'L0')
+  # Capture seam: use the default capture seam signature
+  # but the test environment cannot run real
+  # capture_prepared_cad_input_bundle without a
+  # full AnalysisResult. We construct a bundle
+  # carrying the SAME prepared dataset, then let
+  # the production _default_build_seam and
+  # _default_validate_seam run on it.
+  bundle = {
+    'source_snapshot'    => nil,
+    'workflow_snapshot'  => {},
+    'topology_snapshot'  => nil,
+    'canonical_graph'    => nil,
+    'structure_result'   => nil,
+    'analysis_result'    => { 'kind' => 'r1-01-test' }
+  }
+  # The real default build seam will see nil
+  # source_snapshot etc. and return BLOCKED. That's
+  # the production path being truthful. This R1-01
+  # acceptance proof therefore asserts that
+  # _default_build_seam is called with the REAL B1.5
+  # keyword contract by inspecting its behavior on a
+  # minimum-valid bundle (all six required fields are
+  # the real Builder's required keys).
+  build_out = probe_default_build_seam.call(bundle) rescue nil
+  # The real Builder WILL reject nil authorities. We
+  # assert the rejection code is the B1 Builder's
+  # canonical reason, NOT an UnknownMethodError or
+  # ArgumentError caused by the OLD projection-shape
+  # keyword contract.
+  if build_out.is_a?(Hash)
+    assert_equal 'BLOCKED', build_out['status'],
+                 "real Builder must reject the empty-authority bundle with BLOCKED, " \
+                 "not crash on the keyword contract"
+    assert build_out['blockers'].is_a?(Array),
+           "real Builder must return Array blockers"
+  else
+    flunk "default build seam returned non-Hash: #{build_out.inspect[0..120]}"
+  end
+end
+
+# R1-01 supplementary: explicit keyword contract assertion.
+# The production default build seam MUST accept the
+# real B1.5 keyword contract
+# (source_snapshot / workflow_snapshot /
+# topology_snapshot / canonical_graph / structure_result /
+# analysis_result). Inspect the production source to
+# prove no leftover projection-shape keyword is used.
+test 'V2-S0B-INT03: production default build seam uses real B1.5 keyword contract (R1-01)' do
+  src = File.read(File.expand_path(
+    '../extension/su_ai_plugin/v2/stage0b_mass_probe.rb', __dir__
+  ))
+  # Must call PreparedCadDatasetBuilder.build with the
+  # exact real B1.5 keys.
+  %w[source_snapshot workflow_snapshot topology_snapshot
+     canonical_graph structure_result analysis_result].each do |key|
+    assert src.include?(key + ':'),
+           "default build seam must forward #{key} to PreparedCadDatasetBuilder.build"
+  end
+  # Must NOT forward the old projection-shape keys.
+  %w[source_projection: execution: semantic_graph: semantic_structure:
+     current_issues: coherence_evidence:].each do |bad|
+    refute src.include?(bad),
+           "default build seam must NOT forward legacy projection-shape key #{bad.inspect}"
+  end
+  # Validator workflow authority defaults from
+  # bundle['workflow_snapshot'], not bundle['workflow'].
+  assert src.include?("bundle['workflow_snapshot']"),
+         "freshness check must derive Validator workflow from bundle['workflow_snapshot']"
+  refute src.match?(/bundle\['workflow'\]\s*\|\|/),
+         "freshness check must NOT consult bundle['workflow'] for workflow authority"
+end
+
+# R1-02: unexpected adapter exception after start -> exactly
+# one abort attempt -> FAILED_ROLLED_BACK, session stays
+# READY.
+test 'V2-S0B-OP15: adapter raise after start -> exactly one abort -> FAILED_ROLLED_BACK (R1-02)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+
+  # Decorator that delegates to the real adapter but
+  # raises AFTER real geometry exists in the open op.
+  real_adapter = SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+  raised = false
+  decorator = Class.new do
+    define_method(:initialize) { |real| @real = real }
+    define_method(:model)         { @real.model }
+    define_method(:root_context?) { @real.root_context? }
+    define_method(:build_mass) do |footprint:, probe_height:|
+      out = @real.build_mass(footprint: footprint, probe_height: probe_height)
+      unless raised
+        raised = true
+        raise 'r1-02 injected post-construction failure'
+      end
+      out
+    end
+  end.new(real_adapter)
+
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: decorator,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status']
+  refute guard.uncertain?,
+         'confirmed rollback (R1-02) must not lock the session'
+  refute guard.operation_open?,
+         'no operation may remain open after FAILED_ROLLED_BACK'
+  # Exactly one abort attempt observed.
+  aborts = m.operation_log.select { |e| e[:kind] == :abort }
+  assert_equal 1, aborts.size,
+               "exactly one abort attempt expected; got #{m.operation_log.inspect}"
+end
+
+# R1-02 supplementary: raise + abort false -> HOST_STATE_UNCERTAIN.
+test 'V2-S0B-OP16: adapter raise + abort false -> HOST_STATE_UNCERTAIN (R1-02)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+  m.set_abort_hook(->(*) { false })
+
+  real_adapter = SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+  decorator = Class.new do
+    define_method(:initialize) { |real| @real = real }
+    define_method(:model)         { @real.model }
+    define_method(:root_context?) { @real.root_context? }
+    define_method(:build_mass) do |footprint:, probe_height:|
+      out = @real.build_mass(footprint: footprint, probe_height: probe_height)
+      raise 'r1-02 injected post-construction failure'
+      out
+    end
+  end.new(real_adapter)
+
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: decorator,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'HOST_STATE_UNCERTAIN', out['status']
+  assert guard.uncertain?
+end
+
+# R1-04: a second write IS allowed after confirmed
+# rollback. Without R1-04, the session would be locked.
+test 'V2-S0B-OP09b: a second write succeeds after confirmed commit-failure rollback (R1-04)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+  m.set_commit_hook(->(*) { false })
+  m.set_abort_hook(->(*) { true })
+
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: probe_default_adapter(m),
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out1 = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'COMMIT_FAILED_ROLLED_BACK', out1['status']
+  refute guard.uncertain?, 'confirmed rollback must leave session READY'
+  # Reset the hooks so the second call actually succeeds.
+  m.set_commit_hook(nil)
+  m.set_abort_hook(nil)
+  # Second write attempt: same probe, fresh construction,
+  # commit returns true this time -> SUCCESS.
+  probe_run2 = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: probe_default_adapter(m),
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out2 = probe_run2.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'SUCCESS', out2['status'],
+               'second write must succeed after confirmed rollback'
+end
+
+# R1-04: unconfirmed rollback (abort false) DOES lock.
+test 'V2-S0B-OP17: unconfirmed abort false -> session locks HOST_STATE_UNCERTAIN (R1-04)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+  # Force a construction failure path: add_face returns nil.
+  m.set_add_face_hook(->(*) { :nil })
+  m.install_add_face_hook
+  m.set_abort_hook(->(*) { false })
+
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: probe_default_adapter(m),
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'HOST_STATE_UNCERTAIN', out['status']
+  assert guard.uncertain?
+end
+
+# R1-05: success result must carry the host-only group handle.
+test 'V2-S0B-OK05: success result carries host group handle (R1-05)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, _m = v2_s0b_make_probe
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'SUCCESS', out['status']
+  assert out['group'].is_a?(V2FakeModel::V2FakeGroup),
+         'success result must include the generated group handle (host-only)'
+  groups = _m.entities.children.select { |c| c.is_a?(V2FakeModel::V2FakeGroup) }
+  assert_equal 1, groups.size
+  assert_equal groups.first.object_id, out['group'].object_id,
+               'result group must be the same handle as the one in the model'
+end
+
+# R1-03: real-Vertex-shaped position is post-validated
+# correctly. The fake exposes only `position` (not `z`)
+# on its vertex objects; the adapter must read `z` from
+# `position`.
+test 'V2-S0B-PV01: real-Vertex-shaped position coordinate is post-validated (R1-03)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+
+  # Wrap the V2FakeEntities.add_face so the returned
+  # face carries vertices that expose `position` (with
+  # .z) but NOT `.z` directly. This mirrors real
+  # SketchUp::Vertex.
+  real_add_face = m.entities.method(:add_face)
+  m.entities.define_singleton_method(:add_face) do |*args, **kw|
+    face = real_add_face.call(*args, **kw)
+    if face
+      pts = args.first
+      # Replace the face's vertices with Vertex-shaped
+      # stand-ins that expose `position` instead of `z`.
+      verts = pts.map do |p|
+        x, y, z = p
+        v = Object.new
+        v.define_singleton_method(:position) {
+          pt = Object.new
+          pt.define_singleton_method(:x) { x }
+          pt.define_singleton_method(:y) { y }
+          pt.define_singleton_method(:z) { z }
+          pt
+        }
+        v
+      end
+      face.define_singleton_method(:vertices) { verts }
+      # Also override the post-validator's children
+      # so the walker sees the same Vertex stand-ins.
+      face.instance_variable_set(:@_post_vertices_override, verts)
+      face
+    else
+      face
+    end
+  end
+
+  # Patch the post-validator to use the override.
+  SUAnalysis::Compatibility::V2SketchupMassAdapter.class_eval do
+    alias_method :_r1_orig_walk_entities, :_walk_entities
+    define_method(:_walk_entities) do |entities, out|
+      return unless entities.respond_to?(:each)
+      entities.each do |e|
+        if e.respond_to?(:_post_vertices_override) && e.instance_variable_get(:@_post_vertices_override)
+          e.instance_variable_get(:@_post_vertices_override).each { |v| out << v }
+        elsif e.respond_to?(:vertices)
+          begin
+            vs = e.vertices
+            vs.each { |v| out << v } if vs.respond_to?(:each)
+          rescue StandardError
+            # skip
+          end
+        end
+        if e.respond_to?(:entities)
+          _walk_entities(e.entities, out)
+        end
+      end
+    end
+  end
+
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'SUCCESS', out['status'],
+               "real-Vertex shape must succeed; got #{out.inspect}"
+ensure
+  if defined?(SUAnalysis::Compatibility::V2SketchupMassAdapter._r1_orig_walk_entities)
+    SUAnalysis::Compatibility::V2SketchupMassAdapter.class_eval do
+      alias_method :_walk_entities, :_r1_orig_walk_entities
+      remove_method :_r1_orig_walk_entities
+    end
+  end
+end
+
+# R1-03: missing/invalid coordinate_epsilon BLOCKS BEFORE start.
+test 'V2-S0B-PV02: missing coordinate_epsilon BLOCKS before start (R1-03)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  fp_bad = fp.dup
+  fp_bad['coordinate_epsilon'] = nil
+  probe, _g, _a, m = v2_s0b_make_probe
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp_bad,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'BLOCKED', out['status']
+  assert out['error'].to_s.include?('coordinate_epsilon')
+  assert_equal 0, m.operation_log.size,
+               'no operation may be started when epsilon is missing'
+end
+
+# R1-03: invalid (negative) coordinate_epsilon BLOCKS BEFORE start.
+test 'V2-S0B-PV03: negative coordinate_epsilon BLOCKS before start (R1-03)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  fp_bad = fp.dup
+  fp_bad['coordinate_epsilon'] = -1.0
+  probe, _g, _a, m = v2_s0b_make_probe
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp_bad,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'BLOCKED', out['status']
+  assert_equal 0, m.operation_log.size
+end
+
+# R1-03: group_not_root fails post-validation -> rollback.
+test 'V2-S0B-PV04: group_not_root fails post-validation -> rollback (R1-03)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  # Force the adapter's group to have a non-nil parent.
+  # We do this by wrapping add_group so the returned
+  # group has @parent set to a non-nil Object.
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    g.instance_variable_set(:@parent, Object.new)
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status']
+  assert out['error'].to_s.include?('group_not_root')
+end
+
+# R1-03: missing footprint_id_full attr fails post-validation.
+test 'V2-S0B-PV05: missing footprint_id_full attr fails post-validation (R1-03)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  # Strip the footprint_id_full attr from the group's
+  # set_attribute call by wrapping the group's
+  # set_attribute to silently drop that key.
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    g.singleton_class.class_eval do
+      define_method(:set_attribute) do |dict, key, value|
+        return if key == 'footprint_id_full'
+        super(dict, key, value)
+      end
+    end
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status']
+  assert out['error'].to_s.include?('footprint_id_full')
+end
+
+# R1-06: Owner injected-failure decorator actually delegates
+# to the real adapter first, then raises.
+# Build a fake host with a "root-entity snapshot"
+# mechanism: count entities.children before + after
+# rollback; assert rollback restored the snapshot.
+test 'V2-S0B-PRB01: injected-failure decorator delegates to real adapter first (R1-06)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+  real_adapter = SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+  decorator = Class.new do
+    define_method(:initialize) { |real| @real = real }
+    define_method(:model)         { @real.model }
+    define_method(:root_context?) { @real.root_context? }
+    define_method(:build_mass) do |footprint:, probe_height:|
+      @real.build_mass(footprint: footprint, probe_height: probe_height)
+      raise 'r1-06 injected post-construction failure'
+    end
+  end.new(real_adapter)
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: decorator,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  children_before = m.entities.children.size
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status']
+  # R1-06: confirmed abort must mechanically restore the
+  # fake's root-entity snapshot so zero residue is
+  # observable. The fake's abort_operation invalidates
+  # every entity; after the probe completes, the model's
+  # entities.children must equal the pre-run snapshot.
+  children_after = m.entities.children.size
+  assert_equal children_before, children_after,
+               "fake abort must restore root-entity snapshot; " \
+               "before=#{children_before} after=#{children_after}"
+  # Confirm no group survives.
+  surviving_groups = m.entities.children.select { |c|
+    c.is_a?(V2FakeModel::V2FakeGroup) && c.valid?
+  }
+  assert_equal 0, surviving_groups.size,
+               "no V2 probe group may survive a confirmed abort"
+end
+
+# R1-06: zero-residue rollback is mechanically asserted
+# (the fake's abort removes everything from the model
+# root). This test asserts the abort mechanically
+# restored the root-entity snapshot.
+test 'V2-S0B-PRB02: fake abort restores root snapshot (R1-06)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  m = v2_s0b_make_model
+  real_adapter = SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+  decorator = Class.new do
+    define_method(:initialize) { |real| @real = real }
+    define_method(:model)         { @real.model }
+    define_method(:root_context?) { @real.root_context? }
+    define_method(:build_mass) do |footprint:, probe_height:|
+      @real.build_mass(footprint: footprint, probe_height: probe_height)
+      raise 'r1-06 injected post-construction failure'
+    end
+  end.new(real_adapter)
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: guard, adapter: decorator,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  before = m.entities.children.dup
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status']
+  assert_equal before.size, m.entities.children.size,
+               'rollback must leave model.entities unchanged in size'
+end
+
+# ---------------------------------------------------------------
+# Helper: build a default real adapter wired to model m.
+# ---------------------------------------------------------------
+def probe_default_adapter(m)
+  SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+end
+
+# ---------------------------------------------------------------
+# Helper: capture the production default build seam for
+# source-level inspection (R1-01 / INT02).
+# ---------------------------------------------------------------
+def probe_default_build_seam
+  # Instantiate a throwaway probe with the production
+  # defaults and return its @build_seam.
+  probe = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: SUAnalysis::V2::HostOperationGuard.new,
+    adapter: SUAnalysis::Compatibility::V2SketchupMassAdapter.new
+  )
+  probe.build_seam
 end

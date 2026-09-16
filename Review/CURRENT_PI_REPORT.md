@@ -1,4 +1,321 @@
-## V2-0B HOST GEOMETRY PROBE — 2026-09-16 (THIS UPDATE)
+## V2-0B SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0B SOURCE REVIEW R1 CORRECTION
+implementation on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`).
+The R1 correction closes six narrow source defects
+flagged by AIPM direct source review of the V2-0B
+implementation commit `8c59b19`. Production code is
+constrained to the three existing V2-0B production
+files. The five R1 production surfaces (R1-01 / R1-02
+/ R1-03 / R1-04 / R1-05) plus the Owner injected-failure
+probe (R1-06) are implemented exactly as the correction
+packet prescribes.
+
+### R1-01 — REAL B1.5 capture bundle wired into REAL
+Builder / Validator
+
+`Stage0BMassProbe#_default_build_seam` was forwarding
+projection-shape keys (`source_projection`, `execution`,
+`semantic_graph`, etc.) to the real
+`PreparedCadDatasetBuilder.build`. The real Builder
+expects the B1.5 authority keys.
+
+Correction:
+
+- `_default_build_seam(bundle)` now forwards
+  `source_snapshot` / `workflow_snapshot` /
+  `topology_snapshot` / `canonical_graph` /
+  `structure_result` / `analysis_result` (the real B1.5
+  contract).
+- `_freshness_check` derives Validator workflow
+  authority from `bundle['workflow_snapshot']` (not
+  `bundle['workflow']`).
+- Any capture / build / validate exception before
+  `start_operation` is converted to a STALE result
+  instead of escaping the public Stage-0B contract.
+
+V2-S0B-INT02 inspects a throwaway production default
+build seam against an empty-authority bundle and
+asserts the real Builder's canonical BLOCKED +
+Array blockers contract. V2-S0B-INT03 reads the
+production source and asserts the real B1.5
+keywords are forwarded while the legacy
+projection-shape keywords are NOT.
+
+### R1-02 — no construction exception escapes after
+start
+
+`Stage0BMassProbe#run` now wraps
+`@adapter.build_mass(...)` in an outer
+`begin / rescue StandardError`. Any unexpected adapter /
+SketchUp exception raised after a confirmed start
+becomes a construction failure that goes through
+exactly one `guard.abort(model)` attempt.
+
+V2-S0B-OP15 proves a decorator that delegates to the
+real adapter and then raises yields `FAILED_ROLLED_BACK`
+with exactly one abort attempt recorded.
+V2-S0B-OP16 proves the same decorator + abort false
+yields `HOST_STATE_UNCERTAIN` + session lock.
+
+### R1-03 — real-SketchUp post-validation
+
+`V2SketchupMassAdapter#_z_of` now supports real
+`Sketchup::Vertex#position` (returns a Geom::Point3d),
+test Array coords, and Point3d-like objects.
+
+`_post_validate` now performs the complete Blueprint
+§9 matrix:
+
+- group exists, valid, not deleted;
+- group is a ROOT entity under the model
+  (`typename == 'Group'` + `parent.nil?`);
+- generated group contains at least one Face AND at
+  least one Edge;
+- at least one vertex within `coordinate_epsilon`
+  of z=0;
+- at least one vertex within `coordinate_epsilon`
+  of z=`probe_height`;
+- no vertex below `-coordinate_epsilon`;
+- max-z within `coordinate_epsilon` of
+  `probe_height`;
+- ALL FOUR ownership values round-trip exactly
+  (`schema_version` / `kind` / `footprint_id_full` /
+  `source_content_digest`).
+
+Hidden 1.0e-6 fallback REMOVED. `coordinate_epsilon`
+MUST be Numeric, finite, > 0; defensive re-validation
+in `build_mass` and pre-start BLOCK in
+`Stage0BMassProbe`.
+
+V2-S0B-PV01..PV05 cover:
+PV01 real-Vertex `position` shape;
+PV02 / PV03 missing / negative epsilon blocks before
+start;
+PV04 non-root group fails post-validation;
+PV05 missing `footprint_id_full` attr fails
+post-validation.
+
+### R1-04 — HostOperationGuard rollback / lock
+
+`HostOperationGuard#commit` now does NOT lock on
+confirmed rollback (`abort true` after commit false /
+raise). Only unconfirmed rollback (`abort false /
+raise`) locks.
+
+`equal?(true)` literal Boolean identity used for
+start / commit / abort results.
+
+V2-S0B-OP09 corrected to assert
+`COMMIT_FAILED_ROLLED_BACK` + `guard.uncertain? ==
+false` + `guard.operation_open? == false`.
+V2-S0B-OP09b proves a second write succeeds after
+confirmed rollback. V2-S0B-OP17 proves unconfirmed
+abort false locks.
+
+### R1-05 — build from current re-resolved footprint
+
+`_freshness_check` now returns the matched CURRENT
+SemanticFootprint via `'current_footprint'` field.
+
+Geometry construction consumes `current_footprint`
+(the re-resolved record) instead of the caller's
+original footprint.
+
+Successful public result includes the generated Group
+handle as the explicitly host-only `'group'` field
+(proven by V2-S0B-OK05).
+
+### R1-06 — Owner injected-failure probe
+
+`PushpullRaisingAdapterDecorator` now delegates to
+the REAL adapter's `build_mass(...)` FIRST so real V2
+geometry (group + face + extruded volume + ownership
+attributes) is created inside the open operation.
+THEN a Probe-only exception is raised so Stage0B's
+exception boundary invokes exactly one abort attempt.
+
+The fake's `abort_operation` mechanically calls
+`invalidate_all!` to restore the root-entity snapshot
+so zero-residue rollback is observable.
+
+V2-S0B-PRB01 proves the decorator delegates to the
+real adapter first, then raises; the fake's abort
+restores the root-entity snapshot. V2-S0B-PRB02
+double-checks the snapshot equivalence.
+
+### Required validation
+
+- `ruby -c` on the three corrected production files +
+  the focused test + the owner probe: **Syntax OK**.
+- `git diff --check`: clean.
+- V2-0B focused suite
+  (`tests/test_v2_stage0b_host_mass_probe.rb`):
+  **42 / 42 PASS, 0 fail, 0 error**. 14 new R1-01..R1-06
+  acceptance tests added without weakening the original
+  28 tests.
+- V2-0A focused suite (`V2-S0A-` filter): **43 / 43
+  PASS, 0 fail, 0 error**. R2 closure preserved.
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS**.
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS**.
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS** after
+  RBZ rebuild with the corrected Stage-0B sources.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1509 tests, 1500 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R1 baseline (1495 / 1486 / 5 / 4):
+
+  - +14 tests (the new R1-01..R1-06 acceptance tests);
+  - +14 pass;
+  - 0 new fail;
+  - 0 new error;
+  - the 5 fail / 4 error set is the SAME established
+    pre-existing baseline unchanged by this packet
+    (verified by `git diff --name-only` filter on the
+    R1 implementation commit + isolated re-run
+    comparison; identical failure IDs).
+
+Pre-existing 5 fail / 4 error debt (NOT introduced by
+this R1 packet; identical failure IDs to the R1
+record):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 +
+  S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain` (FakeUI
+  limitation).
+- 1 ERROR on `V17-L1 host_state_changed` (FakeUI
+  limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` (presenter
+  test guard).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code
+paths. CSS / `app.js` / Presenter / Runner are NOT
+modified by this packet. No V1 production file
+modified.
+
+`git diff --check`: clean. LF line endings on the
+modified production files + test + owner probe. No
+broad formatting churn; no unrelated comment reflow.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the
+R1 implementation commit:
+
+```
+Probe/v2_stage0b_owner_probe.rb                                   | modified
+extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb    | modified
+extension/su_ai_plugin/v2/host_operation_guard.rb                   | modified
+extension/su_ai_plugin/v2/stage0b_mass_probe.rb                     | modified
+tests/test_v2_stage0b_host_mass_probe.rb                            | modified
+```
+
+All other files (V1 production, V1 tests, V2-0A
+production, V2-0A tests, V1 RBZ manifest, V1 CSS / HTML
+/ JS, icons): UNCHANGED.
+
+V1 production files, frozen V1.5-V1.9A design authority,
+the shared `CanonicalStructureReconstructor` behavior,
+the V1.9B2 persistence redesign, V2-0A SemanticFootprint
+frozen PASS surfaces, and the V2 Residential Stage 1
+architecture are all preserved unchanged on `dev/v2`.
+
+### dist/SU-AI-Plugin.rbz
+
+The three corrected Stage-0B production files are
+re-packaged. `scripts/build_rbz.rb` was re-run; the
+new RBZ:
+
+```
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_518_910 bytes
+    entries: 82
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The previous RBZ hash / size / entry counts (1,510,021
+bytes / 82 entries from the R1 closure) are superseded.
+No release / tag / external delivery decision was made.
+`main` was NOT touched.
+
+### Closure of the dispatch
+
+V2-0B R1 correction + tests + owner probe + required
+regression evidence complete on `dev/v2`. Submission
+target branch is the assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md`.
+
+Pi has NOT:
+
+- pushed `main`
+- force-pushed
+- rewritten shared remote history
+- rebased published / shared history
+- created a release / tag
+- destructively reset another agent's work
+- modified any V1 production file
+- modified any V2-0A production file
+  (`layer_local_graph_adapter.rb` /
+  `semantic_footprint.rb` /
+  `semantic_footprint_projector.rb`)
+- started Residential Stage 1
+- invoked Codex
+- self-approved Stage 0B
+- gained a `failure_stage` test switch in production
+  (the injected-failure probe uses a Probe-only
+  decorator)
+
+### Stage gate (V2-0B R1 closure)
+
+| Gate                                                                                                                  | Status |
+|-----------------------------------------------------------------------------------------------------------------------|--------|
+| R1-01: real default V1 handoff -> real Builder -> real Validator -> real projector -> fake host SUCCESS                | PASS   |
+| R1-02: adapter raise after start -> exactly one abort -> FAILED_ROLLED_BACK                                           | PASS   |
+| R1-02: adapter raise + abort false -> HOST_STATE_UNCERTAIN + lock                                                    | PASS   |
+| R1-03: real-Vertex `position` is post-validated                                                                      | PASS   |
+| R1-03: complete Blueprint §9 post-validation matrix                                                                  | PASS   |
+| R1-03: hidden epsilon fallback REMOVED; missing / invalid epsilon blocks before start                                 | PASS   |
+| R1-04: confirmed commit-failure rollback -> COMMIT_FAILED_ROLLED_BACK + session READY                                  | PASS   |
+| R1-04: unconfirmed rollback -> HOST_STATE_UNCERTAIN + session lock                                                    | PASS   |
+| R1-04: a second write succeeds after confirmed rollback                                                                | PASS   |
+| R1-05: success result carries the host group handle                                                                    | PASS   |
+| R1-05: geometry is built from the fresh re-resolved current footprint                                                  | PASS   |
+| R1-06: Owner injected-failure probe delegates to real adapter first, then raises                                       | PASS   |
+| R1-06: fake abort mechanically restores the root-entity snapshot so zero residue is observable                       | PASS   |
+| V2-0A 43 / 43 regression                                                                                              | PASS   |
+| V1.7 / V1.8 / B1.2 / B1.5 regressions                                                                                  | PASS   |
+| Full runner: no new fail / error                                                                                     | PASS   |
+| Production files FROZEN (no V1 / V2-0A change)                                                                         | PASS   |
+| `git diff --check`                                                                                                    | PASS   |
+| RBZ rebuild + RBZ smoke                                                                                              | PASS   |
+| Ruby 2.2-era source compatibility guard                                                                              | PASS   |
+| Owner real SU2020 success probe                                                                                       | DEFERRED (Owner gate; not Pi self-approval) |
+| Owner real SU2020 injected-failure probe (zero visible residue)                                                       | DEFERRED (Owner gate; not Pi self-approval) |
+| AIPM direct source / diff review                                                                                     | PENDING |
+
+Codex is NOT invoked by Pi. After Pi completion:
+AIPM direct source review first, then Owner real SU2020
+probes. Only after Owner confirmation of native Undo +
+zero-residue abort does V2-0B close.
+
+---
+
+## V2-0B HOST GEOMETRY PROBE — 2026-09-16 (PREVIOUS, SUPERSEDED)
 
 Updated: 2026-09-16 (V2-0B Host Geometry Probe
 implementation on assigned `dev/v2` per
