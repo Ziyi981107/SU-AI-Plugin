@@ -1,4 +1,217 @@
-## V1.9B1 B1.5 FINAL NARROW CORRECTION R2 — 2026-09-15 (THIS UPDATE)
+## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0A SemanticFootprint execution on
+assigned `dev/v2` per `Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md`).
+V2-0A is the pure-data Stage 0A feasibility / proof stage.
+The implementation + tests + RBZ rebuild are complete on
+`dev/v2`. Pi has stopped and returns control to AIPM for
+direct source review of the V2-0A production modules.
+
+Frozen pipeline implemented (Blueprint §0):
+
+```text
+PreparedCadDataset
+  -> exact mapped-layer filter (LayerLocalGraphAdapter)
+  -> existing CanonicalStructureReconstructor.reconstruct
+  -> Stage-0A acceptance contract (region-level)
+  -> immutable SemanticFootprint records
+```
+
+No SketchUp host write. No V1 production file modified. No
+shared-kernel modification. The V1.8 reconstructor is reused
+verbatim as the geometry authority (Blueprint §8).
+
+### New production files (host-free)
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb
+extension/su_ai_plugin/v2/semantic_footprint.rb
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb
+```
+
+### New focused test file
+
+```
+tests/test_v2_stage0a_semantic_footprint.rb
+```
+
+### Validation
+
+- `ruby -c` on the three new production files: **Syntax OK**.
+- `ruby -c` on the new test file: **Syntax OK**.
+- V2-0A focused suite (`tests/test_v2_stage0a_semantic_footprint.rb`):
+  **35 / 35 PASS, 0 fail, 0 error**. Coverage of the required
+  Blueprint §7 PASS matrix (V2-S0A-P01..P09), REJECT matrix
+  (V2-S0A-R10..R21), no-mutation contract (M01, M02),
+  host-free guard (H01), adapter-level unit tests
+  (U01..U06), SemanticFootprint value-object tests (SF01..SF04),
+  and the deterministic-reorder invariant (D01).
+- Required regression runs:
+  - V1.7 reconstruction / topology (`V17-` filter):
+    **127 / 127 PASS**.
+  - V1.8 structure reconstruction (`V18-` filter):
+    **74 / 74 PASS**.
+  - V1.8 structure reconstruction (`structure_reconstruction`
+    filter): **6 / 6 PASS**.
+  - V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+  - V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+  - V1.9A FINAL P1-A (`V19A-RFR` filter): **15 / 15 PASS**.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1459 tests, 1450 pass, 5 fail, 4 error.
+```
+
+Delta from pre-V2-0A baseline (`80bdbd6` on `dev/v2`):
+
+- pre-V2-0A: 1424 tests, 1415 pass, 5 fail, 4 error
+- post-V2-0A: 1459 tests, 1450 pass, 5 fail, 4 error
+  (delta: +35 V2-0A tests, all passing; 0 new fail; 0 new
+  error)
+
+Pre-existing 5 fail / 4 error debt (NOT introduced by
+this V2-0A packet; verified by `git diff --name-only`
+filter on the V2-0A implementation commit):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 + S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain` (FakeUI limit).
+- 1 ERROR on `V17-L1 host_state_changed` (FakeUI limit).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` (presenter test
+  guard).
+
+`html_render` / `v19a_presenter` / `capability` / V14 /
+V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code paths.
+CSS / `app.js` / Presenter / Runner are NOT modified by
+this packet.
+
+`git diff --check`: clean.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the
+implementation commit:
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb    | new
+extension/su_ai_plugin/v2/semantic_footprint.rb           | new
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb | new
+tests/test_v2_stage0a_semantic_footprint.rb               | new
+```
+
+All other `extension/su_ai_plugin/core/*.rb` files,
+`su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+`su_ai_plugin/loader.rb`,
+`su_ai_plugin/cad_prep_workflow_*.rb`,
+`su_ai_plugin/dialog_runner.rb`,
+`su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+`html/app.js`, `html/style.css`, icons: UNCHANGED.
+
+### dist/SU-AI-Plugin.rbz (technical maintenance only)
+
+The V2 modules are required production code. The
+`RBZ: every required source file from the dev tree is
+shipped (no missing files)` smoke check requires the
+package to mirror the current source tree. After the V2-0A
+implementation commit, the prior dist/SU-AI-Plugin.rbz no
+longer matched; running `scripts/build_rbz.rb` produced a
+fresh RBZ that includes the three new V2 files. This is a
+technical maintenance step (NOT a release decision):
+
+```
+$ ruby scripts/build_rbz.rb
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_472_069 bytes
+    entries: 79
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The V1.9A-frozen RBZ (size 1,205,785 bytes; entries 73;
+SHA-256 `FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`)
+is now superseded by this technical-maintenance RBZ on the
+`dev/v2` branch. The fresh RBZ is required to contain the
+new V2 production files (Blueprint §10). No RBZ release /
+tag / external delivery decision was made. `main` was NOT
+touched. No new RBZ SHA-256 is claimed as a release
+artifact; the production RBZ remains the Owner-installed
+V1.9A artifact unless / until Owner / AIPM re-issues a
+release.
+
+### Frozen V1.x design authority
+
+Frozen V1.5-V1.9A design authority preserved unchanged on
+the assigned `dev/v2`. Pi did NOT rewrite any frozen design
+authority. No V1.4 / V1.5 / V1.6 / V1.7 / V1.8 / V1.9
+algorithm change. No source / provenance authority change.
+No workspace ownership change. No host mutation / Face /
+Observer. No site semantics. No Loader / A2 orchestrator /
+A3 toolbar / V1.9A3 contract change. No V1.9B2 persistence
+reopen. No V2 Residential Stage 1 implementation. No
+MCP / LLM / Agent. No persistence / Accept / Load UI. No
+SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner change. No
+shared `CanonicalStructureReconstructor` change.
+
+### Ruby runtime used for validation
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+Per dispatch: this report does NOT claim Ruby 2.2 runtime
+PASS. The implementation uses Ruby-2.2-compatible primitives
+(`is_a?` / `nil?` / `dup` / `freeze` / `frozen?` /
+`force_encoding` / `valid_encoding?` / `bytes` / `bytesize`
+/ `match?` / `respond_to?` / `to_f` / `finite?` -- all core
+since Ruby 1.x/2.x as appropriate; no Hash#compact, no
+Array#sum, no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no pattern matching,
+no then / yield_self), but the literal Ruby 2.2 contract is
+not runtime-validated in this packet.
+
+```text
+V2_0A                                = PI_COMPLETE_PENDING_AIPM_SOURCE_REVIEW
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CLOSED
+V1_9B1_B1_3                          = CLOSED
+V1_9B1_B1_4                          = CLOSED
+V1_9B1_B1_5                          = CORRECTED_PENDING_AIPM_FINAL_REVIEW_R2
+V1_9B2                               = NOT_STARTED
+V2_0B                                = NOT_STARTED
+V2_RESIDENTIAL_STAGE_1               = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this V2-0A
+   packet's three new production modules + the new
+   focused test file on `dev/v2`.
+2. AIPM decides whether any V2-0B dispatch should
+   begin, or whether any Codex recheck is justified
+   before V2-0B (Pi does NOT self-start V2-0B and does
+   NOT invoke Codex).
+
+CODEX_RISK_TRIGGER = NOT_REQUESTED (per dispatch:
+Pi must not invoke Codex; AIPM source review is the
+next gate).
+
+Pi has completed the V2-0A implementation + tests +
+RBZ rebuild on `dev/v2` and now returns control to
+AIPM for direct source review of the V2-0A
+implementation.
+
+AIPM_REVIEW = PENDING_V2_0A.
+CODEX_NARROW_RECHECK = NOT_INVOKED_BY_PI.
+V2_0B = NOT_STARTED.
+
+---
+
+## V1.9B1 B1.5 FINAL NARROW CORRECTION R2 — 2026-09-15 (PREVIOUS)
 
 Updated: 2026-09-15 (V1.9B1 B1.5 FINAL NARROW
 CORRECTION R2 execution on assigned `dev/v1.9` per

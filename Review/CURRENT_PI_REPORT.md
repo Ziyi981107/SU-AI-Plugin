@@ -1,4 +1,432 @@
-## V1.9B1 B1.5 FINAL NARROW CORRECTION R2 — 2026-09-15 (THIS UPDATE)
+## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0A SemanticFootprint execution on
+assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md`).
+V2-0A is the pure-data Stage 0A feasibility / proof stage
+frozen in the Blueprint. It proves that a published V1
+`PreparedCadDataset` can be projected by an exact mapped CAD
+layer into deterministic, conservative V2 semantic-footprint
+records WITHOUT touching SketchUp host state.
+
+Frozen pipeline implemented:
+
+```text
+PreparedCadDataset
+  -> exact mapped-layer filter (LayerLocalGraphAdapter)
+  -> existing CanonicalStructureReconstructor.reconstruct
+  -> Stage-0A acceptance contract (region-level)
+  -> immutable SemanticFootprint records
+```
+
+No SketchUp host write. No V1 production file modified. No
+shared-kernel modification. The V1.8 reconstructor is reused
+verbatim as the geometry authority (Blueprint §8).
+
+### V2-0A-01 — Three new production modules (host-free)
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb
+extension/su_ai_plugin/v2/semantic_footprint.rb
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb
+```
+
+`LayerLocalGraphAdapter.project(dataset:, layer_name:)`:
+
+- Validates that `dataset` is a finalized `PreparedCadDataset`
+  (`final? == true`); candidates are not consumed.
+- Reads ONLY `dataset.content['semantic_graph']`; never
+  reaches into `WorkingModeRunner` private state.
+- Requires non-empty UTF-8 String `layer_name`.
+- Validates that the mapped layer is known to the PCD (it
+  appears in `node.layer_names` OR `edge.layer_name` of the
+  canonical semantic_graph). Unknown mapped layer =>
+  `BLOCKED`.
+- Filters EDGES by EXACT `edge['layer_name'] == layer_name`
+  (no implicit / empty / wildcard matching). Edge multiplicity
+  is preserved (two parallel edges on the same node pair
+  remain two distinct edges; the V1.8 reconstructor routes
+  parallel components to `:parallel_edges` -> REJECT).
+- Retains only nodes referenced by the FILTERED edges.
+- Rebuilds adjacency from the filtered EDGE records
+  themselves (Blueprint §3.1 §7 + §3.1 §11). The published
+  PCD adjacency is NEVER trusted after filtering.
+- Adapts PCD field names into the canonical-shape expected
+  by `CanonicalStructureReconstructor`:
+  - PCD `node_id`       -> `canonical_node_id`
+  - PCD `xyz`           -> `world_coordinate`
+  - PCD `edge_id`       -> `canonical_edge_id` (prefixed
+                            `v2-` to avoid colliding with
+                            producer-side IDs)
+  - PCD `node_a_id` / `node_b_id` -> preserved
+  - PCD `origin_kind`   -> `origin_kind` (passthrough)
+  - PCD `layer_name`    -> `layer_name` (passthrough)
+  - PCD `source_occurrence_ids` -> plural String Array
+  - PCD `semantic_repair_id`    -> `repair_action_id`
+- Does NOT mutate the dataset input; the projected graph is
+  a fresh deep-frozen Hash. The published PCD adjacency /
+  edge list is read but never written back.
+
+Stable status returns:
+
+- `'PROJECTED'` with a deep-frozen canonical-shape graph.
+- `'BLOCKED'` with a sorted/uniq `reasons` Array (frozen).
+
+Stable blocker reasons (Blueprint §3.1):
+
+- `v2_llga:not_a_prepared_cad_dataset`
+- `v2_llga:pcd_not_finalized`
+- `v2_llga:pcd_schema_mismatch`
+- `v2_llga:missing_semantic_graph`
+- `v2_llga:malformed_semantic_graph`
+- `v2_llga:invalid_layer_name`
+- `v2_llga:empty_mapped_layer`
+- `v2_llga:unknown_mapped_layer`
+- `v2_llga:malformed_node`
+- `v2_llga:malformed_edge`
+- `v2_llga:unresolved_edge_reference`
+
+`SemanticFootprint.build(...)`:
+
+- Immutable V2 Stage-0A footprint value record. Pure factory.
+- Field shape (Blueprint §3.2):
+  - `schema_version`            = `v2.semantic-footprint.v1`
+  - `footprint_id`              = `v2fp-` + first 20 hex chars
+  - `footprint_id_full`         = full 64-hex SHA-256
+  - `semantic_role`             (String, non-empty UTF-8)
+  - `source_layer_name`         (String, non-empty UTF-8)
+  - `source_dataset_id`         (String, non-empty UTF-8)
+  - `source_content_digest`     (String, 64 lowercase hex)
+  - `coordinate_epsilon`        (Float, finite, > 0)
+  - `source_node_ids`           (sorted/uniq Array<String>)
+  - `source_edge_ids`           (sorted/uniq Array<String>)
+  - `projected_world_coordinates` (Array<Array<Float>>,
+                                  each = `[x, y, 0.0]`)
+  - `area_xy`                   (Float >= 0)
+  - `perimeter`                 (Float >= 0)
+- Identity digest is deterministic (Blueprint §5):
+  SHA-256 over a versioned + unambiguous domain containing
+  schema_version, semantic_role, source_layer_name,
+  source_content_digest, sorted source_node_ids,
+  sorted source_edge_ids, and the projected world
+  coordinates (formatted `%.10f` per axis). The
+  `v2fp-` namespace is dataset-relative, NOT a future
+  generated-object identity.
+- `SemanticFootprint.identity_digest_of(footprint)`
+  recomputes the canonical identity hash from the public
+  field set; this matches `footprint_id_full` for any
+  published footprint.
+- All published fields are deep-frozen (Hash / Array /
+  String). Numeric scalars are immutable by definition.
+
+`SemanticFootprintProjector.project(dataset:, semantic_role:, layer_name:)`:
+
+- Validates dataset (finalized PreparedCadDataset).
+- Resolves the single geometry tolerance authority from
+  `dataset.content['execution']['tolerance_values']['coordinate_epsilon']`
+  (Blueprint §3.3). The value MUST be Numeric + finite +
+  strictly > 0; otherwise BLOCKED.
+- Calls `LayerLocalGraphAdapter` for the exact mapped
+  layer; on adapter BLOCKED, the projector BLOCKS with
+  the same reasons.
+- Calls the EXISTING `CanonicalStructureReconstructor.reconstruct`
+  with the SAME explicit `coordinate_epsilon:` kwarg
+  (Blueprint §3.3). The reconstructor sees the projected
+  Hash + the validated eps; no silent 1e-6 fallback when
+  the projector has supplied a non-default value (V1.8
+  SR18-02 authority preserved).
+- Publishes ONLY valid reconstructed REGIONS, never raw
+  loops (Blueprint §4).
+- Applies the Stage-0A acceptance contract on each region:
+  - exactly one outer loop
+  - `hole_loop_ids` empty
+  - region `unresolved_flags` empty
+  - referenced outer loop exists + `valid_for_region == true`
+  - outer loop has at least 3 distinct nodes
+  - source coordinates are finite
+  - inclusive ground-plane check: every source vertex
+    satisfies `abs(z) <= coordinate_epsilon`
+- Rejected regions are surfaced as a deterministic
+  `rejections` list (each entry: region_id, reason,
+  outer_loop_id, unresolved_flags, hole_loop_ids, area_xy).
+- z=0 projection is performed LOCALLY on each accepted
+  footprint's outer-loop coordinates. PCD and reconstructor
+  data remain unchanged (Blueprint §4).
+- No mutation of dataset, adapter graph, or reconstructor
+  result.
+
+Stable status (Blueprint §6):
+
+- `PROJECTED`                  — >= 1 footprint, no rejections
+- `PROJECTED_WITH_REJECTIONS`  — >= 1 footprint + >= 1 rejection
+- `EMPTY`                      — mapped layer yields no
+                                 buildable footprint
+- `BLOCKED`                    — invalid dataset / invalid eps /
+                                 missing or unknown mapped
+                                 layer / other contract failure
+
+Stable rejection reasons:
+
+- `v2_sfp_reject:hole_bearing_region`
+- `v2_sfp_reject:region_unresolved_flags`
+- `v2_sfp_reject:outer_loop_invalid_for_region`
+- `v2_sfp_reject:outer_loop_missing`
+- `v2_sfp_reject:outer_loop_lt_3_distinct_nodes`
+- `v2_sfp_reject:non_finite_vertex_coordinate`
+- `v2_sfp_reject:z_out_of_epsilon`
+- `v2_sfp_reject:zero_or_negative_area`
+
+Stable input-contract blockers:
+
+- `v2_sfp_block:missing_coordinate_epsilon`
+- `v2_sfp_block:invalid_coordinate_epsilon`
+- `v2_sfp_block:invalid_semantic_role`
+- (LLGA blockers re-exposed under `v2_llga:*`)
+
+### V2-0A-02 — Required regression run matrix
+
+| Suite                                                | Result |
+|------------------------------------------------------|--------|
+| V2-0A focused (`tests/test_v2_stage0a_semantic_footprint.rb`) | **35 / 35 PASS** (0 fail, 0 error) |
+| V1.7 reconstruction / topology (`V17-` filter)       | **127 / 127 PASS** |
+| V1.8 structure reconstruction (`V18-` filter)        | **74 / 74 PASS** |
+| V1.8 reconstruction all (`structure_reconstruction` filter) | **6 / 6 PASS** |
+| V1.9B1 B1.2 (`B1.2-` filter)                         | **83 / 83 PASS** |
+| V1.9B1 B1.5 R2 (`B15-` filter)                       | **17 / 17 PASS** |
+| V1.9A FINAL P1-A (`V19A-RFR` filter)                 | **15 / 15 PASS** |
+| Project full test runner                             | **1459 tests: 1450 pass, 5 fail, 4 error** |
+
+Pre-existing baseline (`80bdbd6` on `dev/v2` before this
+packet): **1424 tests: 1415 pass, 5 fail, 4 error**.
+
+Delta:
+
+- +35 V2-0A focused tests, all passing
+- +1 RBZ ship test that fails by default because the prior
+  `dist/SU-AI-Plugin.rbz` did not contain the new V2 files.
+  Resolved by running `scripts/build_rbz.rb` to produce a
+  fresh RBZ that includes the new V2 production files
+  (V2 modules are required production code; the package
+  must reflect the current source tree per the RBZ smoke
+  contract).
+
+The 5 fail / 4 error debt at the project-full-runner level
+is the SAME pre-existing baseline debt unchanged by this
+packet (verified by `git diff --name-only` filter):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS FOLLOW-UP
+  / FINAL P1-A) + 1 ERROR on `html_render` (V1.9A FINAL P1-C)
+  = 5 issues on `html_render` (baseline-preserved)
+- 1 FAIL on `capability.HtmlDialog` (R002 + S2-BLOCK-006)
+- 1 ERROR on `V14 production call chain` (FakeUI
+  limitation)
+- 1 ERROR on `V17-L1 host_state_changed` (FakeUI limitation)
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` (presenter test
+  guard)
+
+These failures are FROZEN V1.9A / V1.9B0 code paths. CSS /
+`app.js` / Presenter / V1.4 / V1.7 Runner integration are
+NOT modified by this packet. Pi did not touch any V1
+production file.
+
+### V2-0A-03 — Frozen V1 boundary preservation (Blueprint §1)
+
+Verified: no V1 production file was modified.
+
+`git diff --name-only HEAD..working-tree` for the
+implementation commit:
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb    | new
+extension/su_ai_plugin/v2/semantic_footprint.rb           | new
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb | new
+tests/test_v2_stage0a_semantic_footprint.rb               | new
+```
+
+All other `extension/su_ai_plugin/core/*.rb` files,
+`su_ai_plugin.rb`, `su_ai_plugin/main.rb`,
+`su_ai_plugin/loader.rb`,
+`su_ai_plugin/cad_prep_workflow_*.rb`,
+`su_ai_plugin/dialog_runner.rb`,
+`su_ai_plugin/ui_bridge.rb`, `html/index.html`,
+`html/app.js`, `html/style.css`, icons: UNCHANGED.
+
+V2-0A does NOT:
+
+- change V1 source-of-truth
+- change V1.4 / V1.5 / V1.6 / V1.7 / V1.8 / V1.9
+  algorithms
+- reach into `WorkingModeRunner` private state
+- mutate Source CAD
+- mutate the V1 Derived Workspace
+- change `pcd.v1`
+- reopen V1.9B2 persistence
+- redefine V1 semantic IDs
+- introduce SketchUp Group / Face / extrusion
+- introduce V2HostOperationGuard
+- introduce selection / pickray / highlight
+- introduce HtmlDialog / toolbar / menu
+- introduce Layer Mapping UI / template storage
+- introduce ResidentialObject / balcony association /
+  floor count / height
+- introduce material palette
+- introduce Site Base / raised community
+- introduce roads / landscape / context buildings
+- introduce MCP / LLM / Agent
+
+### V2-0A-04 — Host-free / no API contract (Blueprint §2)
+
+`tests/test_v2_stage0a_semantic_footprint.rb`
+contains `V2-S0A-H01`: a regex guard that asserts none of the
+three new production modules references:
+
+- `Sketchup.`
+- `UI.`
+- `UI::HtmlDialog`
+- `start_operation`
+- `commit_operation`
+- `abort_operation`
+
+V2-S0A-H01 PASSES on the implementation commit.
+
+### V2-0A-05 — Required Stage-0A regression matrix (Blueprint §7)
+
+`tests/test_v2_stage0a_semantic_footprint.rb`:
+
+| ID        | Description                                                | Result |
+|-----------|------------------------------------------------------------|--------|
+| V2-S0A-P01 | rectangle -> one footprint                                 | PASS |
+| V2-S0A-P02 | concave polygon -> one footprint                           | PASS |
+| V2-S0A-P03 | multiple disconnected loops -> multiple footprints         | PASS |
+| V2-S0A-P04 | cross-layer shared node -> body layer still valid          | PASS |
+| V2-S0A-P05 | cross-layer coincident segment -> body still valid         | PASS |
+| V2-S0A-P06 | fully coincident geometry on distinct layers               | PASS |
+| V2-S0A-P07 | z below epsilon -> accepted, projected to z=0              | PASS |
+| V2-S0A-P08 | z exactly equal to epsilon -> accepted                     | PASS |
+| V2-S0A-P09 | deterministic reorder -> equivalent footprint              | PASS |
+| V2-S0A-R10 | same-layer parallel edges -> BLOCKED or EMPTY              | PASS |
+| V2-S0A-R11 | branching topology -> no footprint                         | PASS |
+| V2-S0A-R12 | bow-tie / self-intersection -> no footprint                | PASS |
+| V2-S0A-R13 | endpoint-on-segment -> no footprint                       | PASS |
+| V2-S0A-R14 | collinear overlap -> no footprint                          | PASS |
+| V2-S0A-R15 | zero-area degenerate -> no footprint                      | PASS |
+| V2-S0A-R16 | nested inner loop -> hole-bearing -> no footprint         | PASS |
+| V2-S0A-R17 | z above epsilon -> no footprint                            | PASS |
+| V2-S0A-R18 | empty layer name -> BLOCKED                                | PASS |
+| V2-S0A-R19 | unknown layer -> BLOCKED                                   | PASS |
+| V2-S0A-R20 | missing / invalid / non-positive eps -> BLOCKED            | PASS |
+| V2-S0A-R21 | malformed edge -> BLOCKED                                  | PASS |
+| V2-S0A-M01 | projector does not mutate dataset content                  | PASS |
+| V2-S0A-M02 | projector does not mutate input graph Hash                 | PASS |
+| V2-S0A-H01 | V2 modules do not call Sketchup / UI APIs                  | PASS |
+| V2-S0A-U01 | adapter returns BLOCKED on non-PCD input                   | PASS |
+| V2-S0A-U02 | adapter returns BLOCKED on non-finalized PCD               | PASS |
+| V2-S0A-U03 | adapter preserves edge multiplicity                        | PASS |
+| V2-S0A-U04 | adapter rebuilds adjacency from filtered edges only        | PASS |
+| V2-S0A-U05 | adapter returns BLOCKED on empty layer_name                | PASS |
+| V2-S0A-U06 | adapter returns BLOCKED on unknown layer                   | PASS |
+| V2-S0A-SF01 | SemanticFootprint.build field shape                        | PASS |
+| V2-S0A-SF02 | SemanticFootprint rejects empty role                       | PASS |
+| V2-S0A-SF03 | SemanticFootprint rejects non-positive epsilon             | PASS |
+| V2-S0A-SF04 | SemanticFootprint rejects non-hex content_digest           | PASS |
+| V2-S0A-D01 | deterministic reorder -> same footprint_id                 | PASS |
+
+### V2-0A-06 — Ruby runtime used for validation
+
+```
+Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe
+ruby -v:        ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]
+```
+
+`ruby -c` on the three new production files: Syntax OK.
+`ruby -c` on the new test file: Syntax OK.
+
+No filesystem-wide Ruby / Node / Git search was performed.
+The vendored Ruby 2.7.8 runtime at
+`.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe` is the
+documented repository-local runtime.
+
+Per dispatch: this report does NOT claim Ruby 2.2 runtime
+PASS. The implementation uses Ruby-2.2-compatible primitives
+(`is_a?` / `nil?` / `dup` / `freeze` / `frozen?` /
+`force_encoding` / `valid_encoding?` / `bytes` / `bytesize` /
+`match?` / `respond_to?` / `to_f` / `finite?` / all core since
+Ruby 1.x/2.x as appropriate; no Hash#compact, no Array#sum,
+no transform_keys / filter_map, no Numeric#positive?, no safe
+navigation, no pattern matching, no then / yield_self).
+
+### V2-0A-07 — RBZ (technical maintenance only)
+
+The `RBZ: every required source file from the dev tree is
+shipped (no missing files)` smoke check requires the .rbz to
+mirror the current source tree. The V2 modules are required
+production code, so the dist package must include them. This
+is a technical maintenance step (NOT a release decision):
+
+```
+$ ruby scripts/build_rbz.rb
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_472_069 bytes
+    entries: 79
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The RBZ SHA-256 has changed (the prior V1.9A-frozen RBZ at
+`FA9E9D7C4A146813183793BE4F3887A42907EAAE036D7706C2727912321AF6A5`
+was 1,205,785 bytes / 73 entries; the new RBZ is 1,472,069
+bytes / 79 entries and contains the three new V2 production
+files).
+
+No RBZ release / tag / external delivery decision was made.
+Stable `main` was NOT touched.
+
+### V2-0A-08 — Stage gate (Blueprint §12)
+
+| Gate                                              | Status |
+|---------------------------------------------------|--------|
+| 1. exact layer-local filtering is deterministic   | PASS  |
+| 2. filtered-edge multiplicity is preserved        | PASS  |
+| 3. adjacency is rebuilt from filtered edges       | PASS  |
+| 4. existing reconstructor is reused (no copy)     | PASS  |
+| 5. acceptance / rejection matrix is green         | PASS  |
+| 6. no SketchUp host dependency in V2-0A           | PASS  |
+| 7. no V1 production file changed                  | PASS  |
+| 8. all required regressions PASS or pre-existing  | PASS  |
+| 9. AIPM source review                              | PENDING |
+
+Codex is NOT invoked by Pi. After Pi completion: AIPM source
+review first.
+
+### V2-0A-09 — Closure of the dispatch
+
+Implementation + tests + RBZ rebuild complete on
+`dev/v2`. Submission target branch is the assigned
+`dev/v2` per `Prompt/CURRENT_PI_DISPATCH.md`.
+
+Pi has NOT:
+
+- pushed `main`
+- force-pushed
+- rewritten shared remote history
+- rebased published / shared history
+- created a release / tag
+- destructively reset another agent's work
+- started V2-0B
+- invoked Codex
+- self-approved Stage 0A
+
+V1 production files, frozen V1.5-V1.9A design authority,
+the shared `CanonicalStructureReconstructor` behavior,
+the V1.9B2 persistence redesign, and the V2 Residential
+Stage 1 architecture are all preserved unchanged on
+`dev/v2`. Pi does NOT start V2-0B and does NOT call
+Codex.
+
+---
+
+## V1.9B1 B1.5 FINAL NARROW CORRECTION R2 — 2026-09-15 (PREVIOUS)
 
 Updated: 2026-09-15 (V1.9B1 B1.5 FINAL NARROW
 CORRECTION R2 execution on assigned `dev/v1.9` per
