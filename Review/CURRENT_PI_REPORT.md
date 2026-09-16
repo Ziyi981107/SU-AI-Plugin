@@ -1,4 +1,223 @@
-## V2-0A SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+## V2-0A SOURCE REVIEW R2 TEST-PROOF MICRO-CORRECTION — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0A SOURCE REVIEW R2 TEST-PROOF
+MICRO-CORRECTION execution on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R2_TEST_PROOF_CORRECTION_2026-09-16.md`).
+The R2 micro-correction closes the single remaining
+test-evidence residual flagged by AIPM direct source
+review of the R1 implementation commit
+`e722638c9863ec2f1a8d562a34a3ec92491d2354`. Production
+code is FROZEN. Only the focused test file is
+modified. The five R1 production corrections remain
+preserved unchanged. R1-01 authoritative real-V1
+handoff proof remains green.
+
+R2-01 — non-vacuous isolated `Set` dependency proof:
+
+- The prior `V2-S0A-R1-07` test was vacuous: the
+  fresh Ruby child process only required the V2
+  adapter module and checked
+  `respond_to?(:project)` +
+  `const_defined?(:SCHEMA_VERSION)`. It NEVER called
+  `LayerLocalGraphAdapter.project`, so the
+  adjacency-rebuild `Set.new` path was never executed
+  and removing production `require 'set'` would not
+  have made the test fail.
+- `V2-S0A-R2-07` replaces the vacuous proof with a
+  NON-VACUOUS one. The fresh Ruby child process:
+  1. requires only `prepared_cad_dataset` +
+     `layer_local_graph_adapter` (NO explicit
+     `require 'set'`);
+  2. constructs a minimal contract-usable FINAL
+     `PreparedCadDataset` using the actual published
+     V1 PCD schemas (`pcd.v1` content schema +
+     `pcd-semantic-graph.v1` semantic graph schema);
+  3. attaches a contract-valid READY validation Hash
+     (empty blockers, `persistence_check.status ==
+     'PASS'`);
+  4. includes one mapped edge `e1 (n1 -> n2, L0)` so
+     the production path reaches filtered-edge
+     adjacency rebuild;
+  5. calls the REAL
+     `SUAnalysis::V2::LayerLocalGraphAdapter.project(
+     dataset: ds, layer_name: 'L0')`;
+  6. asserts process exit success,
+     `ISOLATED_PROJECTION_OK=1`, `STATUS=PROJECTED`,
+     `NODE_COUNT >= 2`, `EDGE_COUNT >= 1`,
+     `ADJACENCY_N1=n2`, `ADJACENCY_N2=n1`.
+- If production `require 'set'` were removed from
+  `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`,
+  the child process raises
+  `NameError: uninitialized constant
+  SUAnalysis::V2::LayerLocalGraphAdapter::Set` from
+  the adjacency-rebuild block and the test FAILS.
+  Verified locally by temporarily commenting out
+  `require 'set'` in a controlled copy and re-running
+  the focused suite; the focused suite reports
+  `V2-S0A-R2-07: FAIL ... ERROR=NameError:
+  uninitialized constant ...::Set`. Production file
+  restored immediately after the negative run.
+- Synthetic PCD construction is acceptable for THIS
+  dependency-isolation test because the R1-01
+  authoritative integration test
+  (`V2-S0A-R1-01`) already proves the real public
+  V1 `capture_prepared_cad_input_bundle` ->
+  `PreparedCadDatasetBuilder.build` ->
+  `PreparedCadDatasetValidator.validate_and_finalize`
+  → `SemanticFootprintProjector.project` chain.
+
+### Required validation
+
+- `ruby -c tests/test_v2_stage0a_semantic_footprint.rb`:
+  **Syntax OK**.
+- V2-0A focused suite
+  (`tests/test_v2_stage0a_semantic_footprint.rb`):
+  **43 / 43 PASS, 0 fail, 0 error**. R2-07 replaces
+  the previous R1-07 test ID; the focused suite
+  count remains 43 (no new test, no deleted test).
+  All previous V2-S0A-P01..P09 / R10..R21 /
+  M01..M02 / H01 / U01..U06 / SF01..SF04 / D01 /
+  R1-01..R1-06 / R1-08 tests remain green. The
+  non-vacuous R2-07 replaces the vacuous R1-07 by
+  the same `Open3.capture3`-driven
+  isolated-subprocess shape.
+- Negative test verification: with `require 'set'`
+  temporarily disabled in a controlled copy of
+  `layer_local_graph_adapter.rb`, the focused suite
+  reports `V2-S0A-R2-07: FAIL ... ERROR=NameError:
+  uninitialized constant ...::Set` and exits
+  non-zero. Production file restored immediately
+  after verification.
+- Required regression runs:
+
+  - V1.7 reconstruction / topology (`V17-` filter):
+    **127 / 127 PASS**.
+  - V1.8 structure reconstruction (`V18-` filter):
+    **74 / 74 PASS**.
+  - V1.8 reconstruction (`structure_reconstruction`
+    filter): **6 / 6 PASS**.
+  - V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+  - V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+  - V1.9A FINAL P1-A (`V19A-RFR` filter):
+    **15 / 15 PASS**.
+  - RBZ smoke (`RBZ` filter): **9 / 9 PASS** (no
+    RBZ rebuild required -- R2 only modifies the
+    focused test file, which is not part of the
+    RBZ payload).
+
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1467 tests, 1458 pass, 5 fail, 4 error.
+```
+
+Delta from R1 baseline (`24c3e68` on `dev/v2`, the
+prior R1 submission):
+
+- R1 baseline: 1467 tests, 1458 pass, 5 fail,
+  4 error.
+- R2 (this update): 1467 tests, 1458 pass,
+  5 fail, 4 error (delta: 0 net tests; same
+  vacuous-to-non-vacuous in-place substitution
+  under the R2-07 ID; 0 new fail; 0 new error).
+
+Pre-existing 5 fail / 4 error debt (NOT introduced
+by this R2 packet; verified by `git diff --name-only`
+filter on the R2 implementation commit + isolated
+re-run comparison; identical failure IDs to the R1
+record):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 +
+  S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain`
+  (FakeUI limitation).
+- 1 ERROR on `V17-L1 host_state_changed`
+  (FakeUI limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`
+  (presenter test guard).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner
+are NOT modified by this packet. No V1 production
+file modified.
+
+`git diff --check`: clean. LF line endings on the
+test file. No broad formatting churn.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the
+R2 implementation commit:
+
+```
+tests/test_v2_stage0a_semantic_footprint.rb   | modified
+```
+
+All other files (V2 production, V1 production,
+V1 tests, RBZ, CSS, HTML, JS, icons): UNCHANGED.
+
+Production files
+(`extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`,
+`semantic_footprint.rb`,
+`semantic_footprint_projector.rb`) are FROZEN
+across R2 and remain byte-for-byte identical to the
+R1 implementation commit `e722638c9863ec2f1a8d562a34a3ec92491d2354`.
+
+### Closure of the dispatch
+
+R2 test-only micro-correction + tests + required
+regression evidence complete on `dev/v2`. Submission
+target branch is the assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md`.
+
+Pi has NOT:
+
+- pushed `main`
+- force-pushed
+- rewritten shared remote history
+- rebased published / shared history
+- created a release / tag
+- destructively reset another agent's work
+- started V2-0B
+- invoked Codex
+- self-approved Stage 0A
+- modified any V2-0A production file
+- modified any V1 production file
+
+V1 production files, frozen V1.5-V1.9A design
+authority, the shared
+`CanonicalStructureReconstructor` behavior, the
+V1.9B2 persistence redesign, and the V2 Residential
+Stage 1 architecture are all preserved unchanged on
+`dev/v2`. Pi does NOT start V2-0B and does NOT
+call Codex.
+
+### Stage gate (R2 closure)
+
+| Gate                                          | Status |
+|-----------------------------------------------|--------|
+| R2-01: non-vacuous isolated Set dependency proof | PASS |
+| Negative test (remove `require 'set'`)       | FAIL (expected) |
+| Original 42 V2-S0A tests still green          | PASS |
+| R1-01 real V1 handoff proof still green       | PASS |
+| R1-04 source-compat guard still green         | PASS |
+| Required regression suites green               | PASS |
+| Full test runner: no new fail/error            | PASS |
+| Production files FROZEN across R2               | PASS |
+| AIPM direct source review                      | PENDING |
+
+Codex is NOT invoked by Pi. After Pi completion:
+AIPM direct source review first.
+
+---
+
+## V2-0A SOURCE REVIEW R1 CORRECTION — 2026-09-16 (PREVIOUS, SUPERSEDED BY R2)
 
 Updated: 2026-09-16 (V2-0A SOURCE REVIEW R1 CORRECTION
 execution on assigned `dev/v2` per

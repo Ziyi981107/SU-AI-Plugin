@@ -1737,41 +1737,183 @@ test 'V2-S0A-R1-06: unknown layer -> BLOCKED (UNKNONW_MAPPED_LAYER)' do
 end
 
 # =================================================================
-# R1-03 ISOLATED-LOAD PROOF (V2-0A-SR-03)
+# R1-03 ISOLATED-LOAD PROOF (V2-0A-SR-03) -> R2-07 NON-VACUOUS UPGRADE
 # =================================================================
 # The V2 adapter uses Set. The V2 production file MUST
 # `require 'set'` itself so load-order independence is
-# guaranteed. This test re-requires the V2 module from a
-# pristine Ruby process WITHOUT requiring any other V2 module
-# first, then exercises a small `LayerLocalGraphAdapter`
-# path that internally uses Set (per-node adjacency).
-test 'V2-S0A-R1-07: V2 adapter loads Set dependency without prior requires' do
-  # Re-load the three V2 modules in a child process from a
-  # fresh Ruby invocation. The child process loads ONLY
-  # what the V2 modules themselves require (no test
-  # runner, no transitive helpers). If the production file
-  # does not `require 'set'`, the child process raises
-  # NameError on the first Set reference. We invoke the
-  # adapter directly inside the child via a tiny shim.
+# guaranteed.
+#
+# R2-01 (V2-0A SOURCE REVIEW R2 TEST-PROOF MICRO-CORRECTION):
+# the R1-07 child shim was vacuous -- it only required the
+# adapter module and checked `respond_to?(:project)` +
+# `const_defined?(:SCHEMA_VERSION)`. It NEVER called
+# `LayerLocalGraphAdapter.project`, so the adjacency-rebuild
+# `Set.new` path was never executed and `require 'set'`
+# could be silently missing without failing the test.
+#
+# R2-07 replaces the vacuous proof with a NON-VACUOUS one:
+# a fresh child Ruby process, NO explicit `require 'set'`,
+# builds a minimal contract-usable FINAL PreparedCadDataset
+# with the actual V1 PCD schemas (`pcd.v1` +
+# `pcd-semantic-graph.v1`), contains at least one mapped
+# edge, calls the REAL
+# `SUAnalysis::V2::LayerLocalGraphAdapter.project` for that
+# edge, and the production adjacency rebuild (the only code
+# path that touches `Set.new`) executes. If production
+# `require 'set'` is removed from
+# `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`,
+# the child process raises `NameError: uninitialized constant
+# ...Set` and the test fails.
+test 'V2-S0A-R2-07: V2 adapter non-vacuous isolated Set dependency proof' do
   require 'open3'
-  shim_path = File.expand_path('_v2_isolated_load_shim.rb', __dir__)
+  shim_path = File.expand_path('_v2_isolated_load_shim_r2.rb', __dir__)
   File.write(shim_path, <<~'RUBY')
-    $LOAD_PATH.unshift(File.expand_path('../stubs', __dir__))
+    # R2-01 isolated non-vacuous Set dependency proof.
+    # Fresh child Ruby process. Does NOT explicitly `require 'set'`.
+    # If the production adapter's `require 'set'` is removed,
+    # the call to `LayerLocalGraphAdapter.project` reaches the
+    # adjacency rebuild path (`adj = Hash.new { |h, k| h[k] = Set.new }`)
+    # and raises NameError on the first Set reference.
     require_relative '../extension/su_ai_plugin/core/prepared_cad_dataset'
     require_relative '../extension/su_ai_plugin/v2/layer_local_graph_adapter'
-    adapter = SUAnalysis::V2::LayerLocalGraphAdapter
-    ok = adapter.respond_to?(:project) &&
-         adapter.const_defined?(:SCHEMA_VERSION)
-    puts "ISOLATED_LOAD_OK=#{ok ? '1' : '0'}"
+    PCore = SUAnalysis::Core::PreparedCadDataset
+    V2    = SUAnalysis::V2::LayerLocalGraphAdapter
+    begin
+      eps = 1.0e-6
+      sp = {
+        'schema_version' => 'pcd-source-projection.v1',
+        'layers'         => [{ 'layer_name' => 'L0', 'role' => 'construction' }],
+        'edges'          => [],
+        'vertices'       => []
+      }
+      ex = {
+        'schema_version'   => 'pcd-execution.v1',
+        'tolerance_values' => {
+          'coordinate_epsilon' => eps,
+          'duplicate'          => 1.0e-4,
+          'short_edge'         => 0.5,
+          'gap_search'         => 0.1,
+          'big_z'              => 0.01,
+          'large_coordinate'   => 1.0e6,
+          'planar_z_snap'      => 0.01
+        }
+      }
+      sg = {
+        'schema_version' => 'pcd-semantic-graph.v1',
+        'nodes' => [
+          {
+            'node_id'               => 'n1',
+            'xyz'                   => [0.0, 0.0, 0.0],
+            'membership_count'      => 1,
+            'layer_names'           => ['L0'],
+            'source_occurrence_ids' => ['occ-n1'],
+            'resolved_clique'       => true
+          },
+          {
+            'node_id'               => 'n2',
+            'xyz'                   => [1.0, 0.0, 0.0],
+            'membership_count'      => 1,
+            'layer_names'           => ['L0'],
+            'source_occurrence_ids' => ['occ-n2'],
+            'resolved_clique'       => true
+          }
+        ],
+        'edges' => [
+          {
+            'edge_id'               => 'e1',
+            'node_a_id'             => 'n1',
+            'node_b_id'             => 'n2',
+            'origin_kind'           => 'source_derived',
+            'layer_name'            => 'L0',
+            'source_occurrence_ids' => ['occ-e1'],
+            'semantic_repair_id'    => nil
+          }
+        ],
+        'adjacency' => { 'n1' => ['n2'], 'n2' => ['n1'] }
+      }
+      content = {
+        'schema_version'           => 'pcd.v1',
+        'source_content_digest'    => ('0' * 64).dup.force_encoding('UTF-8'),
+        'execution_context_digest' => ('0' * 64).dup.force_encoding('UTF-8'),
+        'source_projection'        => sp,
+        'execution'                => ex,
+        'semantic_graph'           => sg,
+        'semantic_structure'       => {
+          'schema_version' => 'pcd-structure.v1',
+          'chains' => [], 'loops' => [], 'regions' => []
+        },
+        'current_issues' => {
+          'schema_version' => 'pcd-issues.v1',
+          'issues' => []
+        },
+        'coherence_evidence' => {
+          'schema_version' => 'pcd-coherence.v1',
+          'digest'         => ('0' * 64).dup.force_encoding('UTF-8')
+        }
+      }
+      cd_us_ascii = PCore.compute_content_digest(content)
+      cd_utf8     = cd_us_ascii.dup.force_encoding('UTF-8')
+      be = {
+        'schema_version' => 'pcd-build-evidence.v1',
+        'producer'       => 'r2-isolated-shim',
+        'sequence'       => 1
+      }
+      bed_us_ascii = PCore.compute_build_evidence_digest(cd_utf8, be)
+      bed_utf8     = bed_us_ascii.dup.force_encoding('UTF-8')
+      cand = PCore.build_candidate(
+        content:              content,
+        content_digest:       cd_utf8,
+        build_evidence:       be,
+        build_evidence_digest: bed_utf8
+      )
+      validation = {
+        'schema_version'                 => 'pcd-validation.v1',
+        'validated_content_digest'        => cd_utf8,
+        'validated_build_evidence_digest' => bed_utf8,
+        'validated'                       => true,
+        'source_revision'                 => 1,
+        'substate_matrix'                 => {},
+        'warnings'                        => [],
+        'blockers'                        => [],
+        'persistence_check'               => {
+          'envelope' => 'pcd-final.v1',
+          'status'   => 'PASS'
+        },
+        'checks' => []
+      }
+      final_ds = cand.with_validation(validation)
+      out = V2.project(dataset: final_ds, layer_name: 'L0')
+      adj = out['graph']['adjacency']
+      puts "ISOLATED_PROJECTION_OK=1"
+      puts "STATUS=#{out['status']}"
+      puts "NODE_COUNT=#{out['graph']['nodes'].size}"
+      puts "EDGE_COUNT=#{out['graph']['edges'].size}"
+      puts "ADJACENCY_N1=#{(adj['n1'] || []).sort.join(',')}"
+      puts "ADJACENCY_N2=#{(adj['n2'] || []).sort.join(',')}"
+    rescue => e
+      puts "ISOLATED_PROJECTION_OK=0"
+      puts "ERROR=#{e.class}: #{e.message}"
+    end
   RUBY
   out, _err, status = Open3.capture3(
     ENV['RUBY_EXE'] ||
       File.expand_path('../.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe', __dir__),
     shim_path
   )
-  assert status.success?, "R1-07: isolated-load subprocess failed: #{status.inspect}\n#{out}"
-  assert out.include?('ISOLATED_LOAD_OK=1'),
-         "R1-07: isolated-load V2 modules did not surface Set dependency correctly:\n#{out}"
+  assert status.success?,
+         "R2-07: isolated subprocess failed: status=#{status.inspect}\n#{out}"
+  assert out.include?('ISOLATED_PROJECTION_OK=1'),
+         "R2-07: subprocess did not report ISOLATED_PROJECTION_OK=1:\n#{out}"
+  assert out.include?('STATUS=PROJECTED'),
+         "R2-07: subprocess did not return PROJECTED status:\n#{out}"
+  assert out =~ /NODE_COUNT=(\d+)/ && $1.to_i >= 2,
+         "R2-07: subprocess did not project at least 2 nodes:\n#{out}"
+  assert out =~ /EDGE_COUNT=(\d+)/ && $1.to_i >= 1,
+         "R2-07: subprocess did not project at least 1 edge:\n#{out}"
+  assert out.include?('ADJACENCY_N1=n2'),
+         "R2-07: expected ADJACENCY_N1=n2 (single mapped edge n1<->n2); got:\n#{out}"
+  assert out.include?('ADJACENCY_N2=n1'),
+         "R2-07: expected ADJACENCY_N2=n1 (single mapped edge n1<->n2); got:\n#{out}"
 ensure
   File.delete(shim_path) if shim_path && File.exist?(shim_path)
 end
