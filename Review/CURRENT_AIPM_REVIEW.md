@@ -1,107 +1,118 @@
-# CURRENT AIPM REVIEW — V2-0A FINAL CLOSURE
+# CURRENT AIPM REVIEW — V2-0B DIRECT SOURCE REVIEW R1
 
 Project: SU-AI-Plugin
-Stage: V2-0A SemanticFootprint
+Stage: V2-0B Host Geometry Probe
 Date: 2026-09-16
 Reviewer: ChatGPT / AIPM
 Final Product Owner: Owner
-Reviewed R1 implementation: `e722638c9863ec2f1a8d562a34a3ec92491d2354`
-Reviewed R2 closure commit: `b476da98f135deeb0da40e01512f0807ca3a4823`
+Reviewed implementation: `8c59b1908ade02897938c1e4b479b9b7d444333f`
 
-VERDICT: **PASS — V2-0A CLOSED**
-PRODUCTION REDESIGN: **NO**
-CODEX: **NOT REQUIRED**
-V2-0B: **AUTHORIZED FOR IMPLEMENTATION UNDER FROZEN BLUEPRINT**
+VERDICT: **NOT PASS — NARROW CORRECTION REQUIRED**
+V2-0A: **CLOSED / PASS — DO NOT REOPEN**
+V2-0B REAL SU2020 OWNER TEST: **HOLD**
+RESIDENTIAL STAGE 1: **NOT STARTED**
+CODEX: **NOT INVOKED — CORRECT SOURCE DEFECTS FIRST**
 
 ## Owner Summary
 
-V2-0A now proves the required pure-data seam:
+The implementation direction is correct, but the current source cannot yet be trusted on the real SU2020 gate.
 
-`PreparedCadDataset`
-→ exact mapped-layer filtering
-→ layer-local adjacency rebuild
-→ existing `CanonicalStructureReconstructor`
-→ immutable V2 `SemanticFootprint`.
+The key issue is not test count. Several focused tests use fakes that do not match the actual V1 public bundle or real SketchUp Vertex shape, so 28/28 does not prove the real path.
 
-The R1 production corrections remain valid and frozen:
+AIPM found six narrow correction areas. No V2 architecture redesign is required.
 
-- actual `pcd.v1` / `pcd-semantic-graph.v1` schemas are consumed;
-- a real public V1 handoff → Builder → Validator → V2 projector integration proof exists;
-- finalized-but-NOT_READY PCDs are blocked;
-- `LayerLocalGraphAdapter` explicitly owns `require 'set'`;
-- V2-0A production files follow the Ruby-2.2-era helper contract;
-- known mapped layer with zero matching edges returns `EMPTY`; unknown layer remains BLOCKED;
-- V1 production files remain unchanged.
+## BLOCK R1-01 — production default V1 handoff is miswired
 
-## R2 closure — PASS
+`Stage0BMassProbe#_default_build_seam` calls the real `PreparedCadDatasetBuilder.build` with the wrong keyword contract and projection-style bundle keys.
 
-The prior R1-07 isolated-load proof was vacuous because it loaded the adapter but never executed the adjacency rebuild path that uses `Set.new`.
+The real B1.5 public bundle contains `source_snapshot`, `workflow_snapshot`, `topology_snapshot`, `canonical_graph`, `structure_result`, `analysis_result`.
 
-R2 replaced it with `V2-S0A-R2-07`, which in a fresh child Ruby process:
+The real Builder accepts those same authority inputs.
 
-- does not explicitly `require 'set'`;
-- builds a minimal contract-usable final PCD using the real V1 schema names;
-- includes a mapped edge;
-- calls the real `LayerLocalGraphAdapter.project(dataset:, layer_name:)`;
-- requires `PROJECTED`;
-- verifies projected node/edge counts and bidirectional adjacency.
+The current focused `V2-S0B-INT01` does not catch this because it injects lambda capture/build/validate seams that return a synthetic prebuilt dataset.
 
-Direct source review confirms the test reaches the production adjacency code:
+Consequence: the default production/Owner path can fail before geometry creation despite the green integration test.
 
-`adj = Hash.new { |h, k| h[k] = Set.new }`.
+## BLOCK R1-02 — exceptions after start can escape without abort
 
-The R2 commit is exactly one commit ahead of the dispatch baseline and changes only:
+`Stage0BMassProbe#run` calls `adapter.build_mass` without an outer rescue.
 
-- `tests/test_v2_stage0a_semantic_footprint.rb` — substantive test correction;
-- `CURRENT_STATE.md` — completion state;
-- `Review/CURRENT_PI_REPORT.md` — implementation evidence.
+Any unexpected adapter/SketchUp exception after confirmed operation start can escape without the mandatory single abort attempt.
 
-No V1 or V2 production source file changed in R2.
+The current Owner injected-failure decorator actually raises before construction and therefore does not prove rollback of mutated geometry; with the current orchestrator the raise can escape while the operation is open.
 
-Pi also reported the required negative proof: temporarily removing production `require 'set'` makes the focused R2-07 proof fail with `NameError`, after which production was restored.
+## BLOCK R1-03 — post-validation is not real-SketchUp-complete
 
-## Validation accepted
+The adapter's `_z_of` does not support the real `Sketchup::Vertex#position` shape. Real SketchUp vertices expose their Point3d through `position`.
 
-R2 evidence accepted:
+The current post-validation also omits required proof of:
 
-- V2-0A focused: 43/43 PASS;
-- V1.7 relevant: 127/127 PASS;
-- V1.8 structure: 74/74 PASS;
-- V1.9B1 B1.2: 83/83 PASS;
-- V1.9B1 B1.5: 17/17 PASS;
-- V1.9A FINAL P1-A: 15/15 PASS;
-- RBZ smoke: 9/9 PASS;
-- full runner: 1467 tests / 1458 pass / 5 fail / 4 error;
-- the 5 fail / 4 error set is the same established pre-existing baseline; R2 introduced no new fail/error;
-- `git diff --check` clean.
+- root ownership;
+- Face + Edge presence;
+- explicit base z≈0 vertex;
+- explicit top z≈probe_height vertex;
+- footprint_id_full attribute round-trip;
+- source_content_digest attribute round-trip.
 
-## V2-0A frozen PASS surfaces
+It also introduces a hidden fallback epsilon (`1e-6`) instead of requiring the footprint's frozen `coordinate_epsilon` authority.
 
-Do not reopen without new evidence:
+## BLOCK R1-04 — confirmed rollback incorrectly locks the session
 
-- actual PCD schema contract;
-- readiness gate;
-- explicit Set dependency;
-- exact layer matching;
-- known-empty vs unknown-layer semantics;
-- filtered-edge multiplicity preservation;
-- adjacency rebuild from filtered edges only;
-- V1.8 reconstructor reuse;
-- PB-06 epsilon / multi-hole shared-kernel fix;
-- Stage-0A region acceptance/rejection;
-- z=0 local projection;
-- SemanticFootprint identity;
-- no-host/no-V1-mutation contract;
-- Ruby 2.2-era production compatibility guard.
+In `HostOperationGuard#commit`, commit failure followed by `abort_operation == true` returns `COMMIT_FAILED_ROLLED_BACK` but also calls `lock!`.
 
-## Next
+The frozen contract says confirmed rollback is known-safe and MUST NOT enter HOST_STATE_UNCERTAIN. Only unconfirmed rollback may lock later writes.
 
-V2-0B is authorized under:
+The current OP09 test encodes the implementation bug rather than the Blueprint: it expects the guard to be uncertain after confirmed rollback.
 
-`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
+## BLOCK R1-05 — current footprint/host-handle result seam is incomplete
 
-V2-0B is the first real SketchUp write probe. It must prove current-footprint stale checking, one V2-owned root Group, Face + upward extrusion, one normal native Undo operation, confirmed rollback, and zero visible residue on confirmed abort.
+Freshness re-resolution finds a current matched footprint but discards it; construction still uses the caller's original footprint.
 
-Pi may execute only the current ACTIVE V2-0B dispatch. V2 Residential Stage 1 remains NOT STARTED.
+The success result also omits the generated Group handle even though the Owner probe reads `result['group']`.
+
+V2-0B must build from the re-resolved current footprint and expose the generated group as a host-only result field.
+
+## BLOCK R1-06 — Owner injected-failure proof is not yet a rollback proof
+
+The probe comments promise failure after mutation has begun, but `_inject_failure_build_mass` raises immediately before real adapter construction.
+
+The corrected probe must create real V2 geometry inside the open operation and then raise before commit, allowing the production exception boundary to abort and prove zero residue.
+
+## Source facts accepted
+
+The following direction remains correct and should not be redesigned:
+
+- one normal non-transparent operation;
+- model-root independent group;
+- empty `add_group` then geometry inside group;
+- +Z orientation before positive pushpull;
+- ownership dictionary inside the same operation;
+- full content_digest stale authority;
+- exact footprint_id_full re-resolution;
+- root-context checks before capture and immediately before start;
+- V2 session uncertainty lock when rollback cannot be confirmed;
+- V1 and V2-0A frozen boundaries.
+
+## Automated evidence status
+
+Pi reported:
+
+- V2-0B focused 28/28 PASS;
+- V2-0A 43/43 PASS;
+- V1.7 127/127 PASS;
+- V1.8 74/74 PASS;
+- B1.2 83/83 PASS;
+- B1.5 17/17 PASS;
+- full runner 1495 / 1486 pass / 5 fail / 4 error with no new fail/error.
+
+These are useful regression evidence, but they do not close the source-review BLOCKs above.
+
+## Required correction authority
+
+Pi must follow:
+
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
+
+No Owner real-SU test before the correction passes direct source review.
 
 END
