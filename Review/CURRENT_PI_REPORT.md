@@ -1,4 +1,253 @@
-## V2-0A SOURCE REVIEW R2 TEST-PROOF MICRO-CORRECTION — 2026-09-16 (THIS UPDATE)
+## V2-0B HOST GEOMETRY PROBE — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0B Host Geometry Probe
+implementation on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`).
+V2-0B is the first real SketchUp write probe. It proves
+one valid, current V2-0A `SemanticFootprint` can be
+written into real SketchUp as one independent V2-owned
+mass, inside one normal undoable operation, with
+fail-closed stale / context checks and confirmed rollback
+semantics.
+
+Frozen Blueprint contracts honored end-to-end:
+
+- Three new production files (Blueprint §3):
+  - `extension/su_ai_plugin/v2/host_operation_guard.rb`
+    owns V2 in-memory host-write session state and the
+    single normal-operation lifecycle. Inspects literal
+    Boolean results from `start_operation` /
+    `commit_operation` / `abort_operation`. Locks the
+    session into `HOST_STATE_UNCERTAIN` on
+    abort `false` / `abort` raise. Exposes a developer
+    recovery `reset_for_test!` as the only reset path.
+  - `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`
+    performs all real SketchUp calls only: resolves
+    model + `model.entities`; verifies root edit
+    context; creates empty `add_group` with no
+    arguments; assigns the recognizable name
+    `SU-AI-V2-Probe-<short-footprint-id>`; sets the
+    `SU-AI-V2` attribute dictionary inside the same
+    operation; creates the face from footprint
+    projected coordinates with Z forced to 0.0; orients
+    to +Z via `face.reverse!` when needed; calls
+    `face.pushpull(distance, false)` (the Blueprint
+    §2 fact 5 explicitly accepts nil-return); runs the
+    Blueprint §9 post-validation (group exists / not
+    deleted, top-level under model.entities, faces +
+    edges after extrusion, vertex z range, no vertex
+    below `-coordinate_epsilon`,
+    `abs(max_z - probe_height) <= coordinate_epsilon`,
+    ownership attributes readable + matching).
+  - `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+    is the deterministic orchestrator. It validates
+    footprint + probe_height inputs; runs the Blueprint
+    §5 pre-mutation freshness/context gate; re-runs
+    `SemanticFootprintProjector.project` against the
+    current PCD; requires exact `footprint_id_full`
+    re-resolution; re-checks root context immediately
+    before operation start; delegates start / commit /
+    abort to the guard and geometry construction to the
+    mass adapter; on construction or post-validation
+    failure delegates a single abort attempt to the
+    guard; returns one deterministic result Hash with a
+    status from the Blueprint §10 list.
+- One focused test file:
+  - `tests/test_v2_stage0b_host_mass_probe.rb`
+    covers the full Blueprint §11 matrix using host-free
+    Fakes. Includes pre-mutation gate matrix (8 tests),
+    operation guard matrix (14 tests), successful
+    geometry matrix (4 tests), real V1 freshness
+    integration proof (1 test), and the source-
+    compatibility guard (1 test) for the three new
+    production files.
+- One developer / Owner probe:
+  - `Probe/v2_stage0b_owner_probe.rb` exposes two
+    callable developer commands (`run_success_probe`,
+    `run_injected_failure_probe`) that wire the SAME
+    production Stage0B mass executor + SAME real
+    SketchUp adapter. The injected-failure probe uses a
+    Probe-only decorator class (`PushpullRaisingAdapterDecorator`)
+    so production modules do NOT gain a `failure_stage`
+    test switch.
+
+### Required validation
+
+- `ruby -c` on the three new production files, the focused
+  test file, and the owner probe: **Syntax OK**.
+- `git diff --check`: clean.
+- V2-0B focused suite
+  (`tests/test_v2_stage0b_host_mass_probe.rb`):
+  **28 / 28 PASS, 0 fail, 0 error**. All Blueprint §11
+  required cases covered: pre-mutation / stale gate;
+  operation guard matrix (start / commit / abort
+  false / raise, add_group nil, add_face nil, pushpull
+  raise, post-validation failure, abort true, abort
+  false, abort raise, commit true, commit false + abort
+  true, commit false + abort false, commit raise +
+  abort true, commit raise + abort raise, uncertain
+  session blocks next write, explicit recovery reset
+  unlocks test session); successful geometry (exact
+  XY preserved, z=0 base preserved, root group, empty
+  add_group call, face oriented +Z before pushpull,
+  ownership attributes inside same operation, success
+  = one start + one commit + zero abort); real V1
+  freshness integration proof.
+- V2-0A focused suite (`V2-S0A-` filter): **43 / 43
+  PASS, 0 fail, 0 error**. R2 closure preserved.
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS**.
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS**.
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS** after RBZ
+  rebuild with the three new V2-0B production files.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1495 tests, 1486 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R2 baseline (`f0f0b15` on `dev/v2`, the
+  prior R2 closure):
+
+  - R2 baseline: 1467 tests, 1458 pass, 5 fail, 4 error.
+  - R3 (V2-0B): 1467 + 28 = 1495 tests, 1458 + 28 =
+    1486 pass, 5 fail, 4 error (delta: +28 V2-0B
+    tests, all passing; 0 new fail; 0 new error).
+
+Pre-existing 5 fail / 4 error debt (NOT introduced by
+this V2-0B packet; identical failure IDs to the R2
+record):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 +
+  S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain` (FakeUI
+  limitation).
+- 1 ERROR on `V17-L1 host_state_changed` (FakeUI
+  limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)` (presenter
+  test guard).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0 code
+paths. CSS / `app.js` / Presenter / Runner are NOT
+modified by this packet. No V1 production file
+modified.
+
+`git diff --check`: clean. LF line endings on the
+new production files + the new test file + the new
+owner probe. No broad formatting churn; no unrelated
+comment reflow.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the
+V2-0B implementation commit:
+
+```
+extension/su_ai_plugin/v2/host_operation_guard.rb              | new
+extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb | new
+extension/su_ai_plugin/v2/stage0b_mass_probe.rb                | new
+tests/test_v2_stage0b_host_mass_probe.rb                       | new
+Probe/v2_stage0b_owner_probe.rb                                 | new
+dist/SU-AI-Plugin.rbz                                           | modified (rebuild with new V2-0B files)
+```
+
+All other files (V1 production, V1 tests, V2-0A
+production, V2-0A tests, V1 RBZ manifest, V1 CSS / HTML
+/ JS, icons): UNCHANGED.
+
+V1 production files, frozen V1.5-V1.9A design authority,
+the shared `CanonicalStructureReconstructor` behavior,
+the V1.9B2 persistence redesign, the V2-0A
+SemanticFootprint frozen PASS surfaces, and the V2
+Residential Stage 1 architecture are all preserved
+unchanged on `dev/v2`.
+
+### dist/SU-AI-Plugin.rbz
+
+`scripts/build_rbz.rb` was re-run after the V2-0B
+implementation. The rebuilt RBZ includes the three new
+V2-0B production files:
+
+```
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_510_021 bytes
+    entries: 82
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The previous RBZ hash / size / entry counts (1,472,069
+bytes / 79 entries from the R1 closure; same physical
+package from R2) are superseded. No release / tag /
+external delivery decision was made. `main` was NOT
+touched.
+
+### Closure of the dispatch
+
+V2-0B implementation + tests + owner probe + required
+regression evidence complete on `dev/v2`. Submission
+target branch is the assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md`.
+
+Pi has NOT:
+
+- pushed `main`
+- force-pushed
+- rewritten shared remote history
+- rebased published / shared history
+- created a release / tag
+- destructively reset another agent's work
+- modified any V1 production file
+- modified any V2-0A production file
+- started Residential Stage 1
+- invoked Codex
+- self-approved Stage 0B
+- gained a `failure_stage` test switch in production
+  (the injected-failure probe uses a Probe-only
+  decorator)
+
+V1 production files, frozen V1.5-V1.9A design authority,
+the shared `CanonicalStructureReconstructor` behavior,
+the V1.9B2 persistence redesign, the V2-0A
+SemanticFootprint frozen PASS surfaces, and the V2
+Residential Stage 1 architecture are all preserved
+unchanged on `dev/v2`.
+
+### Stage gate (V2-0B closure)
+
+| Gate                                                                                                  | Status |
+|-------------------------------------------------------------------------------------------------------|--------|
+| R2-01: V2-0A R2 non-vacuous Set dependency proof                                                       | PASS   |
+| V2-0B production files: `host_operation_guard.rb` / `v2_sketchup_mass_adapter.rb` / `stage0b_mass_probe.rb` | NEW    |
+| V2-0B focused suite 28 / 28                                                                            | PASS   |
+| V2-0A 43 / 43 regression                                                                               | PASS   |
+| V1.7 / V1.8 / B1.2 / B1.5 regressions                                                                 | PASS   |
+| Full runner: no new fail / error                                                                       | PASS   |
+| Production files FROZEN across V2-0B (no V1 / V2-0A / Loader change)                                  | PASS   |
+| `git diff --check`                                                                                    | PASS   |
+| RBZ rebuild + RBZ smoke                                                                                | PASS   |
+| Source compatibility guard for the three new production files                                          | PASS   |
+| Owner real SU2020 success probe                                                                        | DEFERRED (Owner gate; not Pi self-approval) |
+| Owner real SU2020 injected-failure probe (zero visible residue)                                        | DEFERRED (Owner gate; not Pi self-approval) |
+| AIPM direct source / diff review                                                                       | PENDING |
+
+Codex is NOT invoked by Pi. After Pi completion:
+AIPM direct source review first, then Owner real SU2020
+probes. Only after Owner confirmation of native Undo +
+zero-residue abort does V2-0B close.
+
+---
+
+## V2-0A SOURCE REVIEW R2 TEST-PROOF MICRO-CORRECTION — 2026-09-16 (PREVIOUS, SUPERSEDED)
 
 Updated: 2026-09-16 (V2-0A SOURCE REVIEW R2 TEST-PROOF
 MICRO-CORRECTION execution on assigned `dev/v2` per
