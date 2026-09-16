@@ -7,18 +7,25 @@ STATUS: ACTIVE
 
 ## Baseline
 
-V2 branch was created from the PB-06-reviewed commit:
+V2 branch was created from the PB-06-reviewed code baseline:
 
 `80bdbd62e63c8e8df1ffe3816df2d0cdd84e405f`
 
-AIPM then added the frozen V2-0A technical blueprint on `dev/v2`.
+AIPM then added the frozen V2-0A technical blueprint and this ACTIVE dispatch on `dev/v2`.
 
-Expected remote HEAD before Pi implementation:
+Pi must fetch and fast-forward/switch cleanly to the CURRENT `origin/dev/v2` before work.
 
-`7c62a7a9e4eb9959fab07f2b7de01b29dcf006dd`
+Before implementation, verify all of the following:
 
-Pi must fetch and fast-forward/switch to `origin/dev/v2` before work.
-If local cannot reach this exact baseline cleanly, STOP and report to AIPM.
+- current branch is `dev/v2`;
+- local `dev/v2` == current `origin/dev/v2`;
+- commit `80bdbd62e63c8e8df1ffe3816df2d0cdd84e405f` is an ancestor of HEAD;
+- `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0A_SEMANTIC_FOOTPRINT_2026-09-16.md` exists;
+- this `Prompt/CURRENT_PI_DISPATCH.md` has `STATUS: ACTIVE` and target `dev/v2`.
+
+Do NOT use a self-referential exact-HEAD gate for this dispatch: the dispatch/blueprint documentation itself advances the branch. The current remote `origin/dev/v2` is the task start authority once the above ancestry/file checks pass.
+
+If the branch cannot fast-forward cleanly or the ancestry/authority checks fail, STOP and report to AIPM.
 
 Do not work on `dev/v1.9` or `fix/v2-pb06-reconstructor`.
 
