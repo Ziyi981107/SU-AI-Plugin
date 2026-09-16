@@ -105,6 +105,7 @@ module SUAnalysis
       # Stable input-contract blocker reason codes.
       BLOCKER_NOT_A_PCD              = LayerLocalGraphAdapter::REASON_NOT_A_PCD
       BLOCKER_NOT_FINALIZED          = LayerLocalGraphAdapter::REASON_NOT_FINALIZED
+      BLOCKER_NOT_READY              = LayerLocalGraphAdapter::REASON_NOT_READY
       BLOCKER_PCD_SCHEMA_MISMATCH    = LayerLocalGraphAdapter::REASON_PCD_SCHEMA_MISMATCH
       BLOCKER_MISSING_SEMANTIC_GRAPH = LayerLocalGraphAdapter::REASON_MISSING_SEMANTIC_GRAPH
       BLOCKER_INVALID_LAYER_NAME     = LayerLocalGraphAdapter::REASON_INVALID_LAYER_NAME
@@ -140,6 +141,14 @@ module SUAnalysis
         if adapter_out['status'] != 'PROJECTED'
           reasons.concat(Array(adapter_out['reasons']))
           return _blocked(reasons.uniq)
+        end
+        # R1-05: known mapped layer with zero matching edges =>
+        # adapter returns PROJECTED with `empty: true`. The
+        # projector maps this to its EMPTY status (no
+        # footprint, no rejection, no blocker) without
+        # invoking the reconstructor.
+        if adapter_out['empty'] == true
+          return _empty(reasons.uniq)
         end
         local_graph = adapter_out['graph']
         # Step 3: call the existing V1.8 reconstructor with

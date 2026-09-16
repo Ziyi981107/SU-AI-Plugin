@@ -138,7 +138,7 @@ module SUAnalysis
         perim_f      = _strict_non_negative_float('perimeter', perimeter)
         # Validate the source content_digest format (must be a
         # full 64-hex SHA-256 of the source PreparedCadDataset).
-        unless digest_str.match?(/\A[0-9a-f]{64}\z/)
+        unless digest_str =~ /\A[0-9a-f]{64}\z/
           raise ArgumentError,
                 "source_content_digest must be a full 64-hex SHA-256; got #{digest_str.inspect[0, 80]}"
         end

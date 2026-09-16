@@ -32,6 +32,7 @@
 #
 
 require 'digest'
+require 'set'
 
 module SUAnalysis
   module V2
@@ -57,6 +58,7 @@ module SUAnalysis
       # Stable blocker reason codes (Blueprint §6).
       REASON_NOT_A_PCD              = 'v2_llga:not_a_prepared_cad_dataset'.freeze
       REASON_NOT_FINALIZED          = 'v2_llga:pcd_not_finalized'.freeze
+      REASON_NOT_READY              = 'v2_llga:pcd_not_ready'.freeze
       REASON_PCD_SCHEMA_MISMATCH    = 'v2_llga:pcd_schema_mismatch'.freeze
       REASON_MISSING_SEMANTIC_GRAPH = 'v2_llga:missing_semantic_graph'.freeze
       REASON_MALFORMED_GRAPH        = 'v2_llga:malformed_semantic_graph'.freeze
@@ -68,8 +70,12 @@ module SUAnalysis
       REASON_UNRESOLVED_EDGE_REF    = 'v2_llga:unresolved_edge_reference'.freeze
 
       # PCD content schema_version expected by V2 Stage-0A.
-      EXPECTED_CONTENT_SCHEMA = 'pcd-content.v1'.freeze
-      EXPECTED_GRAPH_SCHEMA   = 'semantic-graph.v1'.freeze
+      # MUST equal the real PreparedCadDatasetBuilder publisher
+      # (V1.9B1 R1 SOURCE_REVIEW_R1_CORRECTION §1).
+      EXPECTED_CONTENT_SCHEMA = 'pcd.v1'.freeze
+      # The semantic_graph child schema MUST equal the real
+      # PreparedCadDatasetBuilder publisher.
+      EXPECTED_GRAPH_SCHEMA   = 'pcd-semantic-graph.v1'.freeze
 
       # Project one exact mapped layer from a validated PCD
       # into the canonical-shape graph expected by
@@ -164,15 +170,45 @@ module SUAnalysis
           return _blocked(reasons.uniq)
         end
         if filtered_edges.empty?
-          # Mapped layer exists in the inventory but contributes
-          # NO edges to the canonical graph. Blueprint §3.1
-          # failure mode: fail closed (EMPTY is a per-projector
-          # status, not a per-adapter status; the adapter
-          # reports BLOCKED so the projector can distinguish
-          # "this layer has no edges" from "no readable
-          # semantic_graph").
-          reasons << REASON_UNKNOWN_MAPPED_LAYER
-          return _blocked(reasons.uniq)
+          # R1-05 (V2-0A SOURCE_REVIEW_R1_CORRECTION §5):
+          # a KNOWN mapped layer (already validated by
+          # `known_layers.include?(layer_str)` above) that
+          # contributes zero matching edges is a SUCCESSFUL
+          # empty projection -- the projector maps this to
+          # its EMPTY status. The adapter MUST NOT label this
+          # case as UNKNOWN_MAPPED_LAYER (the layer was
+          # explicitly known). Return a frozen empty graph so
+          # the projector can distinguish this from BLOCKED.
+          empty_graph = {
+            'schema_version'             => SCHEMA_VERSION,
+            'source_snapshot_id'         => (dataset.respond_to?(:content) ?
+                                              _read_pcd_source_id(dataset) : ''),
+            'workspace_id'               => (dataset.respond_to?(:dataset_id) ?
+                                              dataset.dataset_id.to_s : ''),
+            'source_dataset_id'          => (dataset.respond_to?(:dataset_id) ?
+                                              dataset.dataset_id.to_s : ''),
+            'source_content_digest'      => (dataset.respond_to?(:content_digest) ?
+                                              dataset.content_digest.to_s : ''),
+            'source_layer_name'          => layer_str.dup,
+            'nodes'                      => [].freeze,
+            'edges'                      => [].freeze,
+            'adjacency'                  => {}.freeze,
+            'unresolved_topology_issues' => [].freeze,
+            'metrics'                    => {},
+            'non_transitive_clusters'    => [].freeze,
+            'open_endpoints'             => [].freeze,
+            'tolerance_digest'           => 'v2-llga-v1'.freeze,
+            'digest'                     => Digest::SHA256.hexdigest(
+              "v2-llga-empty|#{layer_str}|#{dataset.respond_to?(:dataset_id) ? dataset.dataset_id.to_s : ''}"
+            )
+          }
+          deep_freeze(empty_graph)
+          return {
+            'status'  => 'PROJECTED',
+            'graph'   => empty_graph,
+            'reasons' => [].freeze,
+            'empty'   => true
+          }
         end
         # Build the set of canonical-node IDs referenced by the
         # FILTERED edges. Other nodes are dropped.
@@ -307,13 +343,42 @@ module SUAnalysis
           blockers << REASON_NOT_FINALIZED
           return [nil, blockers]
         end
+        # R1-02 (V2-0A SOURCE_REVIEW_R1_CORRECTION §2):
+        # a finalized PCD is V2-usable only when the
+        # attached validation Hash is itself READY: blockers
+        # Array is empty AND persistence_check.status ==
+        # 'PASS'. Warnings are allowed. The candidate's
+        # `final?` (validation != nil) is NOT sufficient
+        # because a NOT_READY Validator result can still
+        # carry a final dataset.
+        validation = dataset.respond_to?(:validation) ?
+                       dataset.validation : nil
+        unless validation.is_a?(Hash)
+          blockers << REASON_NOT_READY + ':validation_missing'
+          return [nil, blockers]
+        end
+        v_blockers = validation['blockers']
+        unless v_blockers.is_a?(Array) && v_blockers.empty?
+          blockers << REASON_NOT_READY + ':blockers_non_empty'
+          return [nil, blockers]
+        end
+        persistence_check = validation['persistence_check']
+        unless persistence_check.is_a?(Hash)
+          blockers << REASON_NOT_READY + ':persistence_check_missing'
+          return [nil, blockers]
+        end
+        p_status = persistence_check['status']
+        unless p_status.is_a?(String) && p_status == 'PASS'
+          blockers << REASON_NOT_READY + ":persistence_check=#{p_status.inspect}"
+          return [nil, blockers]
+        end
         content = dataset.content
         unless content.is_a?(Hash)
           blockers << REASON_MISSING_SEMANTIC_GRAPH
           return [nil, blockers]
         end
         content_schema = content['schema_version'].to_s
-        unless content_schema == 'pcd-content.v1'
+        unless content_schema == EXPECTED_CONTENT_SCHEMA
           blockers << REASON_PCD_SCHEMA_MISMATCH +
                           ":got=#{content_schema.inspect}"
           return [nil, blockers]
@@ -324,7 +389,7 @@ module SUAnalysis
           return [nil, blockers]
         end
         graph_schema = graph['schema_version'].to_s
-        unless graph_schema == 'semantic-graph.v1'
+        unless graph_schema == EXPECTED_GRAPH_SCHEMA
           blockers << REASON_MALFORMED_GRAPH +
                           ":schema=#{graph_schema.inspect}"
           return [nil, blockers]
