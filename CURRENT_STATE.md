@@ -1,4 +1,267 @@
-## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (THIS UPDATE)
+## V2-0A SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0A SOURCE REVIEW R1 CORRECTION
+execution on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`).
+The R1 correction closes the AIPM direct source review
+BLOCKs against the prior V2-0A implementation
+(commit `d947a78`) without changing the V2-0A
+architecture. Five narrow implementation corrections:
+
+- **R1-01 / V2-0A-SR-01**: real PCD schema contract.
+  The adapter now consumes the ACTUAL published V1
+  schema — `content.schema_version == 'pcd.v1'` and
+  `content['semantic_graph'].schema_version ==
+  'pcd-semantic-graph.v1'` — using named constants
+  `EXPECTED_CONTENT_SCHEMA` and `EXPECTED_GRAPH_SCHEMA`.
+  Added a real public V1 handoff integration proof:
+  `WorkingModeRunner.capture_prepared_cad_input_bundle`
+  → `PreparedCadDatasetBuilder.build` →
+  `PreparedCadDatasetValidator.validate_and_finalize` →
+  READY → `SemanticFootprintProjector.project` → one
+  footprint. No schema patching. The synthetic geometry
+  fixtures now also use the real PCD schemas.
+
+- **R1-02 / V2-0A-SR-02**: real validation/readiness
+  gate. The adapter now requires `final? == true` AND
+  the attached validation Hash is itself READY:
+  `validation.is_a?(Hash)` + `validation['blockers']`
+  is an empty Array + `validation['persistence_check']`
+  is a Hash + `validation['persistence_check']['status']`
+  == `'PASS'`. Warnings remain allowed. The new stable
+  blocker `v2_llga:pcd_not_ready` (with sub-reasons
+  `:validation_missing`, `:blockers_non_empty`,
+  `:persistence_check_missing`, `:persistence_check=...`)
+  is emitted for finalized-but-not-usable PCDs. The
+  synthetic geometry fixtures were updated to include
+  a contract-valid READY validation Hash (`blockers: []`
+  + `persistence_check.status: 'PASS'`) so V2-0A
+  unit tests still pass.
+
+- **R1-03 / V2-0A-SR-03**: explicit `Set` dependency.
+  `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
+  now `require 'set'` at the top of the production
+  file. Verified via a child-process isolated-load
+  shim (V2-S0A-R1-07) that exercises the adapter
+  without any earlier test requiring `Set`. The test
+  invokes the vendored Ruby 2.7.8 in a fresh subprocess
+  and asserts the adapter surfaces its public contract
+  + schema-version constant.
+
+- **R1-04 / V2-0A-SR-04**: Ruby 2.2-era compatibility.
+  `extension/su_ai_plugin/v2/semantic_footprint.rb`
+  replaced `String#match?` with `String#=~` for the
+  full 64-hex digest format check. Audited the three
+  V2-0A production files for any other newly introduced
+  post-Ruby-2.2 helper (`Array#sum`, `Hash#compact`,
+  `filter_map`, `transform_keys`, `Numeric#positive?`,
+  safe navigation `&.`, `Object#then`, `Object#yield_self`,
+  case-in pattern matching). The source-compatibility
+  guard test V2-S0A-R1-08 enforces this on every
+  test run. No pre-existing V1 production compatibility
+  debt was reopened.
+
+- **R1-05 / V2-0A-SR-05**: EMPTY semantics for known
+  mapped layer with zero matching edges. The adapter
+  now returns a successful PROJECTED empty graph
+  (`empty: true`) when the mapped layer is in the
+  PCD inventory but contributes zero matching edges.
+  The projector maps this to its EMPTY status (no
+  footprint, no rejection, no blocker) without invoking
+  the V1.8 reconstructor. Unknown mapped layers still
+  BLOCKED via `v2_llga:unknown_mapped_layer` (R1-06
+  regression test).
+
+### Validation
+
+- `ruby -c` on the three V2 production files: **Syntax OK**.
+- `ruby -c` on the test file: **Syntax OK**.
+- V2-0A focused suite
+  (`tests/test_v2_stage0a_semantic_footprint.rb`):
+  **43 / 43 PASS, 0 fail, 0 error**. Coverage of the
+  required R1 correction matrix:
+
+  - B15-T01..B15-T16 equivalent + P01..P09 + R10..R21 +
+    M01..M02 + H01 + U01..U06 + SF01..SF04 + D01
+    (35 original V2-0A tests, all still green).
+  - **R1-01**: real V1 public handoff → V2-0A projector
+    end-to-end one-footprint (BUILDER BUILT → VALIDATOR
+    READY → ADAPTER PROJECTED → PROJECTOR PROJECTED).
+  - **R1-02**: finalized PCD with non-empty blockers
+    → BLOCKED with `v2_llga:pcd_not_ready`.
+  - **R1-03**: finalized PCD with persistence FAIL
+    → BLOCKED with persistence_check reason.
+  - **R1-04**: candidate (validation nil) → BLOCKED
+    with `v2_llga:pcd_not_finalized`.
+  - **R1-05**: known layer zero edges → EMPTY (not
+    BLOCKED; no footprint; no rejection; no blocker).
+  - **R1-06**: unknown layer → BLOCKED with
+    `v2_llga:unknown_mapped_layer`.
+  - **R1-07**: V2 adapter loads Set dependency without
+    prior requires (isolated subprocess; ISOLATED_LOAD_OK=1).
+  - **R1-08**: V2 production files use only Ruby
+    2.2-compatible helpers (regex guard for the 9
+    forbidden helpers).
+
+- Required regression runs:
+
+  - V1.7 reconstruction / topology (`V17-` filter):
+    **127 / 127 PASS**.
+  - V1.8 structure reconstruction (`V18-` filter):
+    **74 / 74 PASS**.
+  - V1.8 reconstruction (`structure_reconstruction`
+    filter): **6 / 6 PASS**.
+  - V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+  - V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+  - V1.9A FINAL P1-A (`V19A-RFR` filter):
+    **15 / 15 PASS**.
+
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+```text
+1467 tests, 1458 pass, 5 fail, 4 error.
+```
+
+Delta from pre-R1 baseline
+(`9943eab` on `dev/v2`, the prior V2-0A commit):
+
+- pre-R1: 1459 tests, 1450 pass, 5 fail, 4 error
+- post-R1: 1467 tests, 1458 pass, 5 fail, 4 error
+  (delta: +8 R1 tests, all passing; 0 new fail; 0 new
+  error)
+
+The 5 fail / 4 error debt is the SAME pre-existing
+baseline unchanged by this packet (verified by
+`git diff --name-only` filter on the R1 implementation
+commit + isolated re-run comparison):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 + S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain`
+  (FakeUI limitation).
+- 1 ERROR on `V17-L1 host_state_changed`
+  (FakeUI limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`
+  (presenter test guard).
+
+`html_render` / `v19a_presenter` / `capability` /
+V14 / V17-L1 surfaces are FROZEN V1.9A / V1.9B0
+code paths. CSS / `app.js` / Presenter / Runner are
+NOT modified by this packet. No V1 production file
+modified.
+
+`git diff --check`: clean.
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the R1
+implementation commit:
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb   | modified
+extension/su_ai_plugin/v2/semantic_footprint.rb          | modified
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb | modified
+tests/test_v2_stage0a_semantic_footprint.rb             | modified
+```
+
+All other files (V1 production, V1 tests, RBZ,
+CSS, HTML, JS, icons): UNCHANGED.
+
+### dist/SU-AI-Plugin.rbz
+
+The V2 production file modifications do not introduce
+new files; the existing RBZ already contains the three
+V2 production files from the prior V2-0A commit.
+The RBZ smoke check `RBZ: every required source file
+from the dev tree is shipped` continues to PASS without
+rebuilding. No release / tag / external delivery decision
+was made. `main` was NOT touched.
+
+### Frozen V1.x design authority
+
+Frozen V1.5-V1.9A design authority preserved unchanged
+on the assigned `dev/v2`. Pi did NOT rewrite any frozen
+design authority. No V1.4 / V1.5 / V1.6 / V1.7 / V1.8
+/ V1.9 algorithm change. No source / provenance
+authority change. No workspace ownership change. No
+host mutation / Face / Observer. No site semantics.
+No Loader / A2 orchestrator / A3 toolbar / V1.9A3
+contract change. No V1.9B2 persistence reopen. No V2
+Residential Stage 1 implementation. No MCP / LLM /
+Agent. No persistence / Accept / Load UI. No
+SUCapability change. No Validator change. No
+PreparedCadDataset change. No WorkingModeRunner
+change. No shared `CanonicalStructureReconstructor`
+change.
+
+The V2-0A R1 correction is a narrow implementation
+correction. The architecture remains frozen per the
+Stage 0A Blueprint. No `pcd.v1` change. No shared
+reconstructor change. No SemanticFootprint identity
+redesign. No V1 production file change. No V2-0B
+start. No Codex invocation.
+
+### Ruby runtime used for validation
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses Ruby-2.2-
+compatible primitives (`is_a?` / `nil?` / `dup` /
+`freeze` / `frozen?` / `force_encoding` /
+`valid_encoding?` / `bytes` / `bytesize` / `=~` /
+`respond_to?` / `to_f` / `finite?` -- all core since
+Ruby 1.x/2.x as appropriate; no Hash#compact, no
+Array#sum, no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no pattern
+matching, no then / yield_self), but the literal
+Ruby 2.2 contract is not runtime-validated in this
+packet.
+
+```text
+V2_0A                                = PI_COMPLETE_PENDING_AIPM_SOURCE_REVIEW_R1
+V1_9A                                = CLOSED_FROZEN
+V1_9B0                               = CLOSED_OWNER_PASS
+V1_9B1_B1_2                          = CLOSED
+V1_9B1_B1_3                          = CLOSED
+V1_9B1_B1_4                          = CLOSED
+V1_9B1_B1_5                          = CORRECTED_PENDING_AIPM_FINAL_REVIEW_R2
+V1_9B2                               = NOT_STARTED
+V2_0B                                = NOT_STARTED
+V2_RESIDENTIAL_STAGE_1               = NOT_STARTED
+```
+
+Next expected action:
+
+1. AIPM direct source / diff review of this R1
+   packet's corrections (R1-01..R1-05) + new
+   regression tests (R1-01..R1-08) on `dev/v2`.
+2. AIPM decides whether any further narrow
+   correction or V2-0B dispatch should begin.
+   AIPM decides whether any Codex recheck is justified
+   before V2-0B (Pi does NOT self-start V2-0B and
+   does NOT invoke Codex).
+
+CODEX_RISK_TRIGGER = NOT_REQUESTED (per dispatch:
+Pi must not invoke Codex; AIPM source review is the
+next gate).
+
+Pi has completed the V2-0A R1 correction + tests
+on `dev/v2` and now returns control to AIPM for
+direct source review of the R1 implementation.
+
+AIPM_REVIEW = PENDING_V2_0A_R1.
+CODEX_NARROW_RECHECK = NOT_INVOKED_BY_PI.
+V2_0B = NOT_STARTED.
+
+---
+
+## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (PREVIOUS, SUPERSEDED BY R1)
 
 Updated: 2026-09-16 (V2-0A SemanticFootprint execution on
 assigned `dev/v2` per `Prompt/CURRENT_PI_DISPATCH.md` +

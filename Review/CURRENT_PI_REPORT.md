@@ -1,4 +1,339 @@
-## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (THIS UPDATE)
+## V2-0A SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+
+Updated: 2026-09-16 (V2-0A SOURCE REVIEW R1 CORRECTION
+execution on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`).
+The R1 correction closes the AIPM direct source review
+BLOCKs against the prior V2-0A implementation
+(commit `d947a78`). The V2-0A architecture remains frozen
+per the Blueprint. This packet is a narrow implementation
+correction only.
+
+Five R1 corrections:
+
+### R1-01 / V2-0A-SR-01 — real PreparedCadDataset schema mismatch
+
+The implementation previously validated synthetic schema
+names (`pcd-content.v1`, `semantic-graph.v1`). The real
+V1.9 `PreparedCadDatasetBuilder` publishes:
+
+- `content.schema_version == 'pcd.v1'`
+- `content['semantic_graph'].schema_version == 'pcd-semantic-graph.v1'`
+
+Correction:
+
+- `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
+  consumes the ACTUAL published V1 contract via named
+  constants `EXPECTED_CONTENT_SCHEMA = 'pcd.v1'` and
+  `EXPECTED_GRAPH_SCHEMA = 'pcd-semantic-graph.v1'`.
+- The synthetic geometry fixtures in the test file now
+  build content + graph Hashes with these REAL
+  schema names.
+- A real public V1 handoff integration proof was added
+  (`V2-S0A-R1-01`):
+
+  ```ruby
+  WorkingModeRunner.capture_prepared_cad_input_bundle(
+    analysis_result: ar
+  ) ->
+  PreparedCadDatasetBuilder.build(...) ->
+  PreparedCadDatasetValidator.validate_and_finalize(
+    dataset: cand, workflow_snapshot: ws
+  ) -> READY ->
+  SemanticFootprintProjector.project(
+    dataset: ds, semantic_role: 'body', layer_name: 'L0'
+  ) -> PROJECTED + 1 footprint.
+  ```
+
+  The helper `v2_real_handoff_dataset(edges)` performs
+  the full public path on a clean rectangle, runs the
+  deterministic workflow stages (duplicate repair batch,
+  compute_planar_normalization, apply if needed,
+  compute_gap_repair) so the Validator sees a truthful
+  READY state, and returns the FINALIZED PCD. The test
+  asserts the real schema names appear on the
+  `dataset.content` / `dataset.content['semantic_graph']`
+  surfaces.
+
+### R1-02 / V2-0A-SR-02 — fake-final test fixture / readiness gate
+
+The adapter previously treated `dataset.final?` alone as
+sufficient V2 readiness. That is insufficient because a
+NOT_READY Validator result can still carry a final dataset
+(validation Hash attached).
+
+Correction:
+
+`extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
+`_extract_pcd_graph` now requires ALL of:
+
+1. `dataset.is_a?(PreparedCadDataset)`
+2. `dataset.final? == true`
+3. `dataset.validation.is_a?(Hash)`
+4. `dataset.validation['blockers'].is_a?(Array)` AND empty
+5. `dataset.validation['persistence_check'].is_a?(Hash)`
+6. `dataset.validation['persistence_check']['status'] ==
+   'PASS'`
+
+Warnings are allowed. Failures are surfaced as a new
+stable blocker `v2_llga:pcd_not_ready` with sub-reasons:
+
+- `:validation_missing`
+- `:blockers_non_empty`
+- `:persistence_check_missing`
+- `:persistence_check=<status>` (non-PASS status)
+
+The synthetic geometry fixtures were updated to include
+a contract-valid READY validation Hash:
+
+```ruby
+'warnings' => [],
+'blockers' => [],
+'persistence_check' => { 'envelope' => 'pcd-final.v1', 'status' => 'PASS' },
+'checks' => []
+```
+
+Real-V1-handoff READY PCD -> allowed (R1-01).
+Finalized PCD with non-empty blockers -> BLOCKED (R1-02).
+Finalized PCD with persistence FAIL -> BLOCKED (R1-03).
+Candidate (validation nil) -> BLOCKED (R1-04).
+
+No V1 validation redesign. No new V1 status field.
+
+### R1-03 / V2-0A-SR-03 — explicit `Set` dependency
+
+`LayerLocalGraphAdapter` calls `Set.new` in the adjacency
+rebuild but did not require the Ruby stdlib `set` module.
+
+Correction:
+
+`extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
+now contains `require 'set'` at the top of the
+production file. The adapter no longer relies on
+load-order / transitive requires.
+
+Source/runtime proof (`V2-S0A-R1-07`):
+
+A child-process isolated-load shim is generated at
+`tests/_v2_isolated_load_shim.rb` and invoked via
+`Open3.capture3` against the vendored Ruby 2.7.8
+runtime. The shim loads ONLY what the V2 module
+itself requires and asserts that the adapter surfaces
+its public contract + schema-version constant. The
+test passes `ISOLATED_LOAD_OK=1` after the R1 fix.
+
+### R1-04 / V2-0A-SR-04 — Ruby 2.2-era compatibility
+
+`SemanticFootprint.build` previously used `String#match?`
+for the full 64-hex SHA-256 digest format check.
+`String#match?` is Ruby 2.4+.
+
+Correction:
+
+`extension/su_ai_plugin/v2/semantic_footprint.rb`
+replaced `digest_str.match?(/\A[0-9a-f]{64}\z/)` with
+the Ruby-2.2-compatible `digest_str =~ /\A[0-9a-f]{64}\z/`.
+
+Audit of all three new V2 production files for any
+other newly introduced post-Ruby-2.2 helper
+(`Array#sum`, `Hash#compact`, `filter_map`,
+`transform_keys`, `Numeric#positive?`, safe navigation
+`&.`, `Object#then`, `Object#yield_self`, case-in
+pattern matching): no other usages found.
+
+Source/runtime guard (`V2-S0A-R1-08`):
+
+A regex guard test enumerates the forbidden helpers
+and asserts that NONE of the three V2 production
+files matches any of them. The guard fires on every
+test run.
+
+No pre-existing V1 production compatibility debt was
+reopened.
+
+### R1-05 / V2-0A-SR-05 — EMPTY semantics for known layer with zero edges
+
+The Blueprint §6 says `EMPTY` means a mapped layer exists
+in the PCD layer inventory / graph context but yields no
+buildable footprint. The prior adapter reported
+`UNKNOWN_MAPPED_LAYER` when the layer was known through
+the node inventory but contributed zero edges. That
+mis-classified a known layer as unknown.
+
+Correction:
+
+- `extension/su_ai_plugin/v2/layer_local_graph_adapter.rb`
+  now returns a SUCCESSFUL PROJECTED adapter result
+  containing a frozen empty canonical-shape graph
+  (`empty: true`) when the mapped layer is in the
+  PCD inventory but contributes zero matching edges.
+  No `UNKNOWN_MAPPED_LAYER` blocker is emitted.
+- `extension/su_ai_plugin/v2/semantic_footprint_projector.rb`
+  detects `adapter_out['empty'] == true` and returns
+  the projector `EMPTY` status (no footprint, no
+  rejection, no blocker, no reconstructor invocation).
+- Unknown mapped layer still BLOCKED via
+  `v2_llga:unknown_mapped_layer` (R1-06).
+
+No reconstructor exception may escape for this case.
+No geometry repair is introduced.
+
+### Validation
+
+- `ruby -c` on the three V2 production files: **Syntax OK**.
+- `ruby -c` on the test file: **Syntax OK**.
+- V2-0A focused suite
+  (`tests/test_v2_stage0a_semantic_footprint.rb`):
+  **43 / 43 PASS, 0 fail, 0 error**. Coverage of the
+  required R1 matrix:
+
+  | ID | Description | Result |
+  |----|-------------|--------|
+  | V2-S0A-P01..P09 | Blueprint §7 PASS matrix | PASS |
+  | V2-S0A-R10..R21 | Blueprint §7 REJECT matrix | PASS |
+  | V2-S0A-M01..M02 | no-mutation contract | PASS |
+  | V2-S0A-H01 | V2 modules do not call Sketchup / UI APIs | PASS |
+  | V2-S0A-U01..U06 | adapter-level unit tests | PASS |
+  | V2-S0A-SF01..SF04 | SemanticFootprint value-object | PASS |
+  | V2-S0A-D01 | deterministic reorder invariant | PASS |
+  | V2-S0A-R1-01 | real V1 public handoff -> V2-0A one footprint | PASS |
+  | V2-S0A-R1-02 | finalized PCD with non-empty blockers -> BLOCKED | PASS |
+  | V2-S0A-R1-03 | finalized PCD with persistence FAIL -> BLOCKED | PASS |
+  | V2-S0A-R1-04 | candidate (validation nil) -> BLOCKED | PASS |
+  | V2-S0A-R1-05 | known layer zero edges -> EMPTY | PASS |
+  | V2-S0A-R1-06 | unknown layer -> BLOCKED | PASS |
+  | V2-S0A-R1-07 | isolated-load Set dependency proof | PASS |
+  | V2-S0A-R1-08 | Ruby 2.2-era compatibility guard | PASS |
+
+- Required regression runs:
+
+  - V1.7 reconstruction / topology (`V17-` filter):
+    **127 / 127 PASS**.
+  - V1.8 structure reconstruction (`V18-` filter):
+    **74 / 74 PASS**.
+  - V1.8 reconstruction (`structure_reconstruction`
+    filter): **6 / 6 PASS**.
+  - V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+  - V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+  - V1.9A FINAL P1-A (`V19A-RFR` filter):
+    **15 / 15 PASS**.
+  - RBZ smoke (`RBZ` filter): **9 / 9 PASS** (no
+    rebuild required -- the R1 changes modify
+    existing V2 production files but do not add new
+    files).
+
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1467 tests, 1458 pass, 5 fail, 4 error.
+  ```
+
+  Delta from pre-R1 baseline (`9943eab` on `dev/v2`,
+  the prior V2-0A commit):
+
+  - pre-R1: 1459 tests, 1450 pass, 5 fail, 4 error
+  - post-R1: 1467 tests, 1458 pass, 5 fail, 4 error
+    (delta: +8 R1 tests, all passing; 0 new fail;
+    0 new error)
+
+Pre-existing 5 fail / 4 error debt (NOT introduced by
+this R1 packet; verified by `git diff --name-only`
+filter on the R1 implementation commit + isolated
+re-run comparison):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog` (R002 + S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain`
+  (FakeUI limitation).
+- 1 ERROR on `V17-L1 host_state_changed`
+  (FakeUI limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`
+  (presenter test guard).
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the R1
+implementation commit:
+
+```
+extension/su_ai_plugin/v2/layer_local_graph_adapter.rb   | modified
+extension/su_ai_plugin/v2/semantic_footprint.rb          | modified
+extension/su_ai_plugin/v2/semantic_footprint_projector.rb | modified
+tests/test_v2_stage0a_semantic_footprint.rb             | modified
+```
+
+No V1 production file modified. No V1 test file
+modified. No V1 RBZ change. No V1 CSS / HTML / JS
+change.
+
+### Ruby runtime used for validation
+
+- `Ruby executable: ./.vendor/ruby/rubyinstaller-2.7.8-1-x64/bin/ruby.exe`
+- `ruby -v: ruby 2.7.8p225 (2023-03-30 revision 1f4d455848) [x64-mingw32]`
+
+Per dispatch: this report does NOT claim Ruby 2.2
+runtime PASS. The implementation uses Ruby-2.2-
+compatible primitives (`is_a?` / `nil?` / `dup` /
+`freeze` / `frozen?` / `force_encoding` /
+`valid_encoding?` / `bytes` / `bytesize` / `=~` /
+`respond_to?` / `to_f` / `finite?` -- all core since
+Ruby 1.x/2.x as appropriate; no Hash#compact, no
+Array#sum, no transform_keys / filter_map, no
+Numeric#positive?, no safe navigation, no pattern
+matching, no then / yield_self), but the literal
+Ruby 2.2 contract is not runtime-validated in this
+packet.
+
+### Stage gate (R1 closure)
+
+| Gate                                              | Status |
+|---------------------------------------------------|--------|
+| R1-01: real PCD schema + real handoff proof        | PASS  |
+| R1-02: usable validation/readiness                 | PASS  |
+| R1-03: Set dependency explicit                     | PASS  |
+| R1-04: Ruby 2.2-era compatibility                 | PASS  |
+| R1-05: EMPTY vs UNKNOWN for known zero-edge layer | PASS  |
+| Original 35 Stage-0A tests still green            | PASS  |
+| Required regression suites green                   | PASS  |
+| Full test runner: no new fail/error                | PASS  |
+| AIPM direct source review                          | PENDING |
+
+Codex is NOT invoked by Pi. After Pi completion:
+AIPM direct source review first.
+
+### Closure of the dispatch
+
+R1 implementation + tests + required regression
+evidence complete on `dev/v2`. Submission target
+branch is the assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md`.
+
+Pi has NOT:
+
+- pushed `main`
+- force-pushed
+- rewritten shared remote history
+- rebased published / shared history
+- created a release / tag
+- destructively reset another agent's work
+- started V2-0B
+- invoked Codex
+- self-approved Stage 0A
+
+V1 production files, frozen V1.5-V1.9A design authority,
+the shared `CanonicalStructureReconstructor` behavior,
+the V1.9B2 persistence redesign, and the V2 Residential
+Stage 1 architecture are all preserved unchanged on
+`dev/v2`. Pi does NOT start V2-0B and does NOT call
+Codex.
+
+---
+
+## V2-0A SEMANTIC FOOTPRINT — 2026-09-16 (PREVIOUS, SUPERSEDED BY R1)
 
 Updated: 2026-09-16 (V2-0A SemanticFootprint execution on
 assigned `dev/v2` per
