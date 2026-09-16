@@ -1,4 +1,4 @@
-# CURRENT AIPM REVIEW — V2-0A R1 SOURCE REVIEW
+# CURRENT AIPM REVIEW — V2-0A FINAL CLOSURE
 
 Project: SU-AI-Plugin
 Stage: V2-0A SemanticFootprint
@@ -6,78 +6,102 @@ Date: 2026-09-16
 Reviewer: ChatGPT / AIPM
 Final Product Owner: Owner
 Reviewed R1 implementation: `e722638c9863ec2f1a8d562a34a3ec92491d2354`
+Reviewed R2 closure commit: `b476da98f135deeb0da40e01512f0807ca3a4823`
 
-VERDICT: **FIX REQUIRED — ONE TEST-EVIDENCE RESIDUAL ONLY**
+VERDICT: **PASS — V2-0A CLOSED**
 PRODUCTION REDESIGN: **NO**
 CODEX: **NOT REQUIRED**
-V2-0B: **NOT STARTED**
+V2-0B: **AUTHORIZED FOR IMPLEMENTATION UNDER FROZEN BLUEPRINT**
 
 ## Owner Summary
 
-The R1 production corrections are directionally correct and remain frozen:
+V2-0A now proves the required pure-data seam:
 
-- actual `pcd.v1` / `pcd-semantic-graph.v1` contract is consumed;
-- real public V1 handoff → Builder → Validator → V2 projector integration proof exists;
+`PreparedCadDataset`
+→ exact mapped-layer filtering
+→ layer-local adjacency rebuild
+→ existing `CanonicalStructureReconstructor`
+→ immutable V2 `SemanticFootprint`.
+
+The R1 production corrections remain valid and frozen:
+
+- actual `pcd.v1` / `pcd-semantic-graph.v1` schemas are consumed;
+- a real public V1 handoff → Builder → Validator → V2 projector integration proof exists;
 - finalized-but-NOT_READY PCDs are blocked;
 - `LayerLocalGraphAdapter` explicitly owns `require 'set'`;
-- new V2 code removes `String#match?` and keeps the Ruby-2.2-era helper contract;
-- known mapped layer with zero edges returns projector `EMPTY`; unknown layer remains BLOCKED;
-- no V1 production file is changed.
+- V2-0A production files follow the Ruby-2.2-era helper contract;
+- known mapped layer with zero matching edges returns `EMPTY`; unknown layer remains BLOCKED;
+- V1 production files remain unchanged.
 
-Direct source review found one remaining acceptance-proof gap only.
+## R2 closure — PASS
 
-## BLOCK V2-0A-R2-01 — isolated Set proof does not execute Set path
+The prior R1-07 isolated-load proof was vacuous because it loaded the adapter but never executed the adjacency rebuild path that uses `Set.new`.
 
-Current `V2-S0A-R1-07` creates a fresh Ruby child process and requires:
+R2 replaced it with `V2-S0A-R2-07`, which in a fresh child Ruby process:
 
-- `prepared_cad_dataset`
-- `layer_local_graph_adapter`
+- does not explicitly `require 'set'`;
+- builds a minimal contract-usable final PCD using the real V1 schema names;
+- includes a mapped edge;
+- calls the real `LayerLocalGraphAdapter.project(dataset:, layer_name:)`;
+- requires `PROJECTED`;
+- verifies projected node/edge counts and bidirectional adjacency.
 
-but the child then only checks:
+Direct source review confirms the test reaches the production adjacency code:
 
-- `adapter.respond_to?(:project)`
-- `adapter.const_defined?(:SCHEMA_VERSION)`
+`adj = Hash.new { |h, k| h[k] = Set.new }`.
 
-and prints `ISOLATED_LOAD_OK=1`.
+The R2 commit is exactly one commit ahead of the dispatch baseline and changes only:
 
-It never calls `LayerLocalGraphAdapter.project`. Therefore it never reaches filtered-edge adjacency reconstruction, where the production code actually executes `Set.new`.
+- `tests/test_v2_stage0a_semantic_footprint.rb` — substantive test correction;
+- `CURRENT_STATE.md` — completion state;
+- `Review/CURRENT_PI_REPORT.md` — implementation evidence.
 
-The production fix itself (`require 'set'`) is correct, but this test would still pass even if no code path requiring `Set` were executed. It does not satisfy the frozen R1 requirement to prove load-order independence by projecting a simple valid fixture.
+No V1 or V2 production source file changed in R2.
 
-Required narrow correction:
+Pi also reported the required negative proof: temporarily removing production `require 'set'` makes the focused R2-07 proof fail with `NameError`, after which production was restored.
 
-`Prompt/AIPM_V2_0A_SOURCE_REVIEW_R2_TEST_PROOF_CORRECTION_2026-09-16.md`
+## Validation accepted
 
-## PASS / PRESERVE
+R2 evidence accepted:
+
+- V2-0A focused: 43/43 PASS;
+- V1.7 relevant: 127/127 PASS;
+- V1.8 structure: 74/74 PASS;
+- V1.9B1 B1.2: 83/83 PASS;
+- V1.9B1 B1.5: 17/17 PASS;
+- V1.9A FINAL P1-A: 15/15 PASS;
+- RBZ smoke: 9/9 PASS;
+- full runner: 1467 tests / 1458 pass / 5 fail / 4 error;
+- the 5 fail / 4 error set is the same established pre-existing baseline; R2 introduced no new fail/error;
+- `git diff --check` clean.
+
+## V2-0A frozen PASS surfaces
 
 Do not reopen without new evidence:
 
-- R1-01 real schema correction + real V1 public handoff integration;
-- R1-02 readiness gate;
-- R1-03 production `require 'set'` fix;
-- R1-04 Ruby 2.2-era production compatibility fix;
-- R1-05 EMPTY vs UNKNOWN production behavior;
+- actual PCD schema contract;
+- readiness gate;
+- explicit Set dependency;
 - exact layer matching;
-- edge multiplicity preservation;
-- adjacency rebuild semantics;
-- V1.8 reconstructor authority;
-- Stage-0A region acceptance;
-- local z=0 projection;
+- known-empty vs unknown-layer semantics;
+- filtered-edge multiplicity preservation;
+- adjacency rebuild from filtered edges only;
+- V1.8 reconstructor reuse;
+- PB-06 epsilon / multi-hole shared-kernel fix;
+- Stage-0A region acceptance/rejection;
+- z=0 local projection;
 - SemanticFootprint identity;
-- no-host contract;
-- V1 production freeze.
+- no-host/no-V1-mutation contract;
+- Ruby 2.2-era production compatibility guard.
 
 ## Next
 
-Pi executes only the R2 test-proof micro-correction.
+V2-0B is authorized under:
 
-After Pi returns:
+`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
 
-1. AIPM verifies the substantive diff is test-only;
-2. AIPM verifies the child process really calls `LayerLocalGraphAdapter.project` with at least one mapped edge and asserts projected adjacency;
-3. AIPM checks focused/regression/full-runner evidence;
-4. if clean, close V2-0A and consider the next V2 stage.
+V2-0B is the first real SketchUp write probe. It must prove current-footprint stale checking, one V2-owned root Group, Face + upward extrusion, one normal native Undo operation, confirmed rollback, and zero visible residue on confirmed abort.
 
-No Codex escalation is justified for this test-only residual unless the scope unexpectedly expands into production code.
+Pi may execute only the current ACTIVE V2-0B dispatch. V2 Residential Stage 1 remains NOT STARTED.
 
 END
