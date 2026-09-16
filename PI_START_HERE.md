@@ -16,20 +16,15 @@ The sole normal formal current implementation dispatch is:
 
 `Prompt/CURRENT_PI_DISPATCH.md`
 
-The normal implementation return artifact is now:
+The sole normal current implementation return channel is:
 
-`output/CURRENT_PI_REPORT.md`
+`Review/CURRENT_PI_REPORT.md`
 
-It is LOCAL-ONLY / gitignored implementation evidence and MUST NOT be committed
-or pushed.
+`Review/CURRENT_PI_REPORT.md` is implementation evidence, not task authority.
 
-`Review/` is a historical/durable-evidence archive and is READ-ONLY for Pi
-unless the current AIPM dispatch explicitly authorizes a durable tracked Review
-artifact.
+The sole normal current AIPM source-review record is:
 
-For report/review artifact placement, `REPORT_ARTIFACT_POLICY.md` is the current
-authority and supersedes legacy Review-placement text in older governance or
-historical files.
+`Review/CURRENT_AIPM_REVIEW.md`
 
 ---
 
@@ -39,16 +34,11 @@ Before choosing or starting implementation work, Pi must read:
 
 1. `AGENTS.md`
 2. `PROJECT_HANDOFF.md`
-3. `REPORT_ARTIFACT_POLICY.md`
-4. `PROJECT_MASTER_PLAN_V1X.md`
-5. `CURRENT_STATE.md`
-6. `Prompt/CURRENT_PI_DISPATCH.md`
-7. Any durable AIPM Technical Blueprint / Guidance files explicitly referenced
+3. `PROJECT_MASTER_PLAN_V1X.md`
+4. `CURRENT_STATE.md`
+5. `Prompt/CURRENT_PI_DISPATCH.md`
+6. Any durable AIPM Technical Blueprint / Guidance files explicitly referenced
    by `CURRENT_PI_DISPATCH.md`
-
-For report/review artifact placement only, `REPORT_ARTIFACT_POLICY.md` is newer
-and authoritative over legacy references in `AGENTS.md` / `PROJECT_HANDOFF.md`.
-This is not a governance conflict and must not trigger STOP.
 
 Pi may execute only the current dispatch, and only after the project's normal
 user authorization / Proceed flow.
@@ -71,7 +61,7 @@ If `Prompt/CURRENT_PI_DISPATCH.md` is:
 - unreadable or malformed;
 - internally contradictory;
 - contradictory with a referenced durable contract; or
-- not `STATUS: ACTIVE` for implementation;
+- `STATUS: NO ACTIVE DISPATCH`;
 
 Pi must STOP and report that there is no executable current dispatch.
 
@@ -79,9 +69,6 @@ Do not guess, resume, invent, or select another task.
 
 If a referenced Blueprint / Guidance file is missing or contradictory, Pi must
 STOP the affected work and report the exact path or conflict to AIPM.
-
-The explicit report-placement override in `REPORT_ARTIFACT_POLICY.md` is
-intentional and is not a conflict with historical Review wording.
 
 ---
 
@@ -133,17 +120,10 @@ affected work and report the design gap to AIPM.
 ## 5. Completion rule
 
 For an ACTIVE dispatch, Pi completes the entire frozen task and required
-tests/build/package evidence, updates `CURRENT_STATE.md`, writes/replaces the
-LOCAL `output/CURRENT_PI_REPORT.md`, creates the final stable commit, pushes
-only the assigned `dev/vX.Y` as the formal complete-task submission, then STOPs
-and returns control to AIPM.
-
-Pi MUST NOT add/commit/push `output/`.
-Pi MUST NOT update `Review/` during routine work unless the current dispatch
-explicitly authorizes a durable tracked Review artifact.
-
-The terminal completion summary must include implementation SHA, final remote
-HEAD, changed files, test summary, known pre-existing failures, and STOP.
+tests/build/package evidence, updates `CURRENT_STATE.md` and
+`Review/CURRENT_PI_REPORT.md`, creates the final stable commit, pushes only the
+assigned `dev/vX.Y` as the formal complete-task submission, then STOPs and
+returns control to AIPM.
 
 Pi may create local checkpoint commits before completion, but must not submit
 an incomplete dispatch for formal review.
@@ -158,5 +138,5 @@ directly, or infer a next action from historical files.
 
 **Read the permanent bootstrap stack, execute only an authorized ACTIVE
 `CURRENT_PI_DISPATCH` on its assigned `dev/vX.Y` inside the frozen AIPM
-contract, write routine evidence only to gitignored `output/CURRENT_PI_REPORT.md`,
-submit the tracked implementation, then STOP and return control to AIPM.**
+contract, complete and submit it through `CURRENT_PI_REPORT`, then STOP and
+return control to AIPM.**

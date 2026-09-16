@@ -43,8 +43,5 @@ data/_check_tmp/
 *.tmp
 *.download
 
-# --- Local agent/report output; never committed ---
-output/
-
 # --- Per-Q019: built RBZ (rebuilt from sources; never committed) ---
 dist/
