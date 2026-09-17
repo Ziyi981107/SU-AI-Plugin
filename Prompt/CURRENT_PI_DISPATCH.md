@@ -1,6 +1,6 @@
-# CURRENT PI DISPATCH — V2-0B SOURCE REVIEW R1 CORRECTION
+# CURRENT PI DISPATCH — V2-0B SOURCE REVIEW R2 CORRECTION
 
-Date: 2026-09-16
+Date: 2026-09-17
 Project: SU-AI-Plugin
 TARGET_BRANCH: dev/v2
 STATUS: ACTIVE
@@ -9,19 +9,23 @@ STATUS: ACTIVE
 
 V2-0A = CLOSED / PASS.
 
-V2-0B implementation commit under correction:
+V2-0B original implementation:
 
 `8c59b1908ade02897938c1e4b479b9b7d444333f`
+
+V2-0B R1 correction under review:
+
+`a43c34c151148c969bf2443cfe466864802ec63d`
 
 AIPM direct source review:
 
 `Review/CURRENT_AIPM_REVIEW.md`
 
-Correction authority:
+Current correction authority:
 
-`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`
 
-Frozen Stage Technical Blueprint remains authoritative except where the correction packet explicitly tightens evidence/implementation to satisfy the same Blueprint:
+Frozen Stage Blueprint remains authoritative:
 
 `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
 
@@ -35,18 +39,18 @@ git pull --ff-only origin dev/v2
 
 Verify:
 
-- current branch is `dev/v2`;
+- branch is `dev/v2`;
 - local == latest `origin/dev/v2` before editing;
-- implementation commit `8c59b1908ade02897938c1e4b479b9b7d444333f` is an ancestor of HEAD;
-- `Review/CURRENT_AIPM_REVIEW.md` says V2-0B NOT PASS / R1 correction required;
-- R1 correction file exists;
+- R1 commit `a43c34c151148c969bf2443cfe466864802ec63d` is an ancestor of HEAD;
+- `Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md` exists locally after pull;
+- `Review/CURRENT_AIPM_REVIEW.md` says V2-0B R2 correction required;
 - this dispatch is ACTIVE.
 
-If not, STOP.
+If any check fails, STOP.
 
-## Execute ONLY the R1 correction
+## Execute ONLY R2
 
-Read in order:
+Read:
 
 1. `PI_START_HERE.md`
 2. `AGENTS.md`
@@ -57,66 +61,64 @@ Read in order:
 7. `Prompt/CURRENT_PI_DISPATCH.md`
 8. `Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
 9. `Prompt/AIPM_V2_0B_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
+10. `Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`
 
-Implement R1-01 through R1-06 exactly.
+Implement exactly:
 
-Allowed production files only:
+- R2-01 real SketchUp root-Group parent authority;
+- R2-02 exact ownership identity/digest post-validation;
+- R2-03 truthful production-default V1 handoff -> Stage0B integration proof.
 
-- `extension/su_ai_plugin/v2/host_operation_guard.rb`
+## Allowed production scope
+
+Only if required:
+
 - `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`
 - `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
 
-Allowed test/probe files:
+Do not change `host_operation_guard.rb` behavior without STOP/report.
+
+Allowed tests/probe:
 
 - `tests/test_v2_stage0b_host_mass_probe.rb`
-- `Probe/v2_stage0b_owner_probe.rb`
+- `Probe/v2_stage0b_owner_probe.rb` only if necessary to preserve probe compatibility.
 
 Completion docs:
 
 - `CURRENT_STATE.md`
 - `Review/CURRENT_PI_REPORT.md`
 
-Do not modify any V1 production file or V2-0A production file.
+Do NOT modify V1 production, V2-0A production, Loader/UI/Tool/HtmlDialog, Residential Stage 1, MCP/LLM/Agent.
 
-If another production file is required, STOP with:
+If scope expansion is required, STOP with:
 
-`V2_0B_R1_SCOPE_EXPANSION_REQUIRED`
+`V2_0B_R2_SCOPE_EXPANSION_REQUIRED`
 
-## Non-negotiable acceptance
+## Acceptance
 
-The corrected packet must prove:
+Must prove:
 
-- real default B1.5 capture bundle -> real default Builder -> real default Validator -> real V2-0A projector works with fake host;
-- no construction exception after start can escape without exactly one abort attempt;
-- confirmed rollback leaves guard READY;
-- unconfirmed rollback locks guard HOST_STATE_UNCERTAIN;
-- real SketchUp Vertex-shaped `position` coordinates are post-validated correctly;
-- complete Blueprint §9 post-validation exists;
-- no hidden epsilon fallback;
-- success result carries the host-only generated group handle;
-- geometry is built from the fresh re-resolved current footprint;
-- Owner injected-failure probe actually creates geometry first, then fails before commit so abort removes real geometry;
-- focused fake abort mechanically restores/removes generated V2 group on confirmed rollback;
-- no production `failure_stage` switch.
-
-## Validation
-
-Run all validation listed in the R1 correction packet.
-
-No new fail/error is acceptable relative to the established full-runner 5 fail / 4 error debt.
+- real top-level SketchUp Group is accepted by `parent == model` / equivalent correct host authority; nested group rejected;
+- wrong-but-non-empty `footprint_id_full` rejected;
+- wrong-but-non-empty `source_content_digest` rejected;
+- exact ownership values accepted;
+- one runtime integration test genuinely runs the real/default `WorkingModeRunner.capture_prepared_cad_input_bundle -> PreparedCadDatasetBuilder -> PreparedCadDatasetValidator -> SemanticFootprintProjector -> Stage0B` pure-data path, with only host boundary faked;
+- no fake capture/build/validate/projector lambdas in that truthful integration case;
+- all existing R1 transaction/freshness/rollback contracts remain green;
+- no new full-runner fail/error beyond established 5 fail / 4 error debt.
 
 ## Stop rule
 
-After correction implementation and required tests:
+After implementation/tests:
 
 1. update `CURRENT_STATE.md`;
 2. update `Review/CURRENT_PI_REPORT.md`;
 3. commit + push only `dev/v2`;
 4. STOP;
-5. do NOT run Owner real SU2020 probe;
+5. do NOT run real SU2020 Owner probe;
 6. do NOT start Residential Stage 1;
-7. do NOT invoke Codex yourself.
+7. do NOT invoke Codex.
 
-Control returns to AIPM direct source review.
+Control returns to AIPM source review.
 
 END
