@@ -1,89 +1,103 @@
-# CURRENT AIPM REVIEW — V2-0B DIRECT SOURCE REVIEW R2 REQUIRED
+# CURRENT AIPM REVIEW — V2-0B R2 SOURCE PASS
 
 Project: SU-AI-Plugin
 Stage: V2-0B Host Geometry Probe
 Date: 2026-09-17
 Reviewer: ChatGPT / AIPM
 Final Product Owner: Owner
-Reviewed R1 correction: `a43c34c151148c969bf2443cfe466864802ec63d`
+Reviewed implementation: `5a3c8cd02cad1948a46901b80f5463f6d994bfff`
 
-VERDICT: **NOT PASS — THREE NARROW R2 RESIDUALS**
+VERDICT: **PASS — SOURCE GATE CLOSED**
 V2-0A: **CLOSED / PASS — DO NOT REOPEN**
-V2-0B REAL SU2020 OWNER TEST: **HOLD**
+V2-0B AUTOMATED/SOURCE GATE: **PASS**
+V2-0B REAL SU2020 OWNER TEST: **AUTHORIZED / REQUIRED**
 RESIDENTIAL STAGE 1: **NOT STARTED**
 CODEX: **NOT REQUIRED**
 
 ## Owner Summary
 
-R1 correctly closes the major first-review defects: real B1.5 Builder wiring, post-start exception abort boundary, real Vertex#position Z reading, confirmed-vs-unconfirmed rollback lock semantics, current-footprint construction, host-only success Group handle, and mutate-then-abort injected-failure behavior.
+The R2 implementation closes all three source-review residuals that previously blocked real SketchUp testing.
 
-Three residuals remain before real SU2020 testing. They are narrow and do not require architecture redesign.
+AIPM directly reviewed the real remote commit and production/test source. No new substantive source BLOCK remains before the Owner real-SU2020 gate.
 
-## R2-01 — root Group parent authority is wrong
+## R2-01 — PASS
 
-Current adapter checks real root ownership using `group.parent.nil?`.
+`V2SketchupMassAdapter#_post_validate` now receives the current target model and validates real root ownership using model identity rather than the previous `parent.nil?` assumption.
 
-SketchUp official Entity parent contract returns the containing Model / ComponentDefinition (narratively Model / ComponentDefinition / Group depending on containment). A top-level Group under `model.entities` therefore must be validated against the current Model, not nil.
+`_is_root_group?(group, model)` requires:
 
-Current code can reject a correct real-SU2020 root Group as `group_not_root`.
+- `typename == 'Group'`;
+- a real `parent` accessor;
+- non-nil parent;
+- `group.parent.equal?(model)`;
+- and, when exposed, `group.model.equal?(model)`.
 
-Required: validate root Group with current-model parent authority; fake host must mirror that real shape.
+Nested/non-model parents are rejected. Focused tests cover root, nested, and nil-parent cases.
 
-## R2-02 — ownership identity/digest check is non-empty-only
+## R2-02 — PASS
 
-Current post-validation checks schema and kind exactly, but only verifies stored `footprint_id_full` and `source_content_digest` are non-empty.
+Ownership post-validation now compares the generated group's values exactly against the CURRENT freshness-re-resolved footprint:
 
-Frozen Blueprint requires exact match to the current re-resolved SemanticFootprint.
+- `schema_version == 'v2.host-object.v1'`;
+- `kind == 'stage0b_mass_probe'`;
+- full exact `footprint_id_full` equality;
+- full exact `source_content_digest` equality.
 
-Required: wrong-but-non-empty footprint ID or digest must fail before commit and rollback through the existing operation path.
+Wrong-but-non-empty ID/digest values fail through the existing rollback path.
 
-## R2-03 — R1 INT02 is not truthful end-to-end default handoff
+Non-blocking note: the implementation currently checks mismatch before the explicit missing-value reason, so a missing ID/digest may surface as `*_mismatch` rather than `*_attr_missing`. This does not weaken fail-closed behavior, rollback safety, ownership authority, or the Owner Gate and does not justify an R3 correction.
 
-R1 production default Builder wiring is now correct.
+## R2-03 — PASS
 
-However `V2-S0B-INT02` explicitly builds an empty-authority B1.5-shaped bundle and proves only that the real Builder returns canonical BLOCKED rather than raising due to bad keyword names. That is useful contract evidence, but it is not the required successful default:
+The new truthful integration test executes the real/default pure-data chain:
 
-`WorkingModeRunner.capture_prepared_cad_input_bundle -> PreparedCadDatasetBuilder -> PreparedCadDatasetValidator -> SemanticFootprintProjector -> Stage0B`
+`WorkingModeRunner.capture_prepared_cad_input_bundle`
+→ `PreparedCadDatasetBuilder.build`
+→ `PreparedCadDatasetValidator.validate_and_finalize`
+→ `SemanticFootprintProjector.project`
+→ `Stage0BMassProbe`
 
-integration proof.
+Only the SketchUp host boundary is faked. The `Stage0BMassProbe` instance in this integration case receives no fake capture/build/validate/projector lambdas and therefore runs production defaults.
 
-Required: reuse the already-proven truthful V2-0A runner fixture pattern and run Stage0B with default capture/build/validate/projector seams; only the SketchUp host boundary may be fake.
+The integration reaches SUCCESS, creates exactly one fake root V2 Group, verifies exact ownership attributes, and records one start + one commit + zero aborts.
 
-## R1 surfaces accepted / frozen
+A runtime negative test also proves the production default Builder seam rejects the legacy projection-shaped keyword contract.
 
-Do not reopen without new evidence:
+## Regression evidence accepted
 
-- R1-01 production `_default_build_seam` keyword wiring itself;
-- R1-02 unexpected post-start adapter exception -> exactly one abort attempt;
-- R1-03 real `Sketchup::Vertex#position` Z reading;
-- no hidden coordinate_epsilon fallback;
-- R1-04 confirmed rollback keeps session READY; unconfirmed rollback locks;
-- R1-05 geometry consumes current re-resolved footprint;
-- success result exposes host-only Group handle;
-- R1-06 Owner injected failure creates real geometry then raises before commit;
-- V1 and V2-0A production boundaries remain frozen.
+Pi reports and the reviewed packet records:
 
-## Current automated evidence
+- V2-0B focused: **50 / 50 PASS**;
+- V2-0A focused: **43 / 43 PASS**;
+- V1.7: **127 / 127 PASS**;
+- V1.8: **74 / 74 PASS**;
+- V1.9B1 B1.2: **83 / 83 PASS**;
+- V1.9B1 B1.5: **17 / 17 PASS**;
+- RBZ smoke: **9 / 9 PASS**;
+- Ruby 2.2-era source compatibility guard: **PASS**;
+- `git diff --check`: clean;
+- full runner: **1517 tests / 1508 pass / 5 fail / 4 error** with the same established pre-existing failure IDs and no new fail/error.
 
-Pi reports R1:
+The R2 substantive production change is confined to `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`; focused tests are updated in `tests/test_v2_stage0b_host_mass_probe.rb`. V1 production, V2-0A production, `host_operation_guard.rb`, `stage0b_mass_probe.rb`, Loader/UI/Tool/HtmlDialog, Residential Stage 1, MCP/LLM/Agent remain unchanged.
 
-- V2-0B focused: 42/42 PASS;
-- V2-0A: 43/43 PASS;
-- V1.7: 127/127 PASS;
-- V1.8: 74/74 PASS;
-- B1.2: 83/83 PASS;
-- B1.5: 17/17 PASS;
-- full runner: 1509 tests / 1500 pass / 5 fail / 4 error;
-- no new fail/error versus established debt.
+## Final V2-0B Owner Gate
 
-These regressions are accepted but do not close R2-01..03.
+Automated/source evidence is now sufficient to authorize real-host validation.
 
-## Required correction authority
+Owner must run in real SU2020:
 
-Pi must follow:
+1. `Probe/v2_stage0b_owner_probe.rb` — `run_success_probe`;
+2. confirm one V2 probe mass is generated successfully;
+3. invoke exactly one native SketchUp Undo and confirm the entire generated probe Group disappears;
+4. run `run_injected_failure_probe`;
+5. confirm the result reports confirmed rollback and zero visible V2 probe residue remains.
 
-`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`
+If both real-host probes pass, AIPM may declare:
 
-No real SU2020 Owner test until R2 passes direct AIPM source review.
+`V2-0B = CLOSED / PASS`
+
+If either probe fails, real-host evidence overrides automated tests. STOP and return the exact console output / visible behavior to AIPM for a narrow correction.
+
+Do NOT start Residential Stage 1 before this Owner Gate closes.
 
 END
