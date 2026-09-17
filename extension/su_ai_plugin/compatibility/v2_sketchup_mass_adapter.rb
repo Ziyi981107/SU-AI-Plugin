@@ -136,12 +136,20 @@ module SUAnalysis
 
         # 3. Set minimal V2 ownership attributes inside the same
         #    operation (Blueprint §8 step 4).
-        _set_attribute(group, ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
-        _set_attribute(group, ATTR_KIND, KIND)
-        _set_attribute(group, ATTR_FOOTPRINT_ID_FULL,
-                       footprint['footprint_id_full'].to_s)
-        _set_attribute(group, ATTR_SOURCE_CONTENT_DIGEST,
-                       footprint['source_content_digest'].to_s)
+        # R2-02: ownership values MUST round-trip EXACTLY
+        # against the CURRENT target footprint. The values
+        # are stored as String (String#set_attribute is
+        # the production adapter contract). The post-
+        # validator below performs the strict exact-equality
+        # check against the same footprint record.
+        expected_schema = SCHEMA_VERSION
+        expected_kind   = KIND
+        expected_fpid   = footprint['footprint_id_full'].to_s
+        expected_scd    = footprint['source_content_digest'].to_s
+        _set_attribute(group, ATTR_SCHEMA_VERSION, expected_schema)
+        _set_attribute(group, ATTR_KIND, expected_kind)
+        _set_attribute(group, ATTR_FOOTPRINT_ID_FULL, expected_fpid)
+        _set_attribute(group, ATTR_SOURCE_CONTENT_DIGEST, expected_scd)
 
         # 4. Build host points from the footprint's projected
         #    world coordinates. Do NOT change XY. Z MUST remain
@@ -199,7 +207,13 @@ module SUAnalysis
         end
 
         # 8. Post-validate real generated geometry.
-        pv = _post_validate(group, probe_height.to_f, eps)
+        # R2-01 + R2-02: the post-validator must know both
+        # the current target model (for real SketchUp root
+        # Group parent authority) and the expected current
+        # footprint identity / digest (for exact ownership
+        # round-trip).
+        pv = _post_validate(group, probe_height.to_f, eps, m,
+                             footprint)
         return failure(STATUS_POST_VALIDATION_FAILED, pv) unless pv == :ok
 
         { status: STATUS_SUCCESS, group: group }
@@ -271,10 +285,11 @@ module SUAnalysis
       end
 
       # Post-validate real generated geometry. Per Blueprint
-      # §9 (R1-03):
+      # §9 (R1-03 + R2-01 + R2-02):
       #
       #   - group exists and is valid/not deleted;
-      #   - group is a ROOT entity under the current model;
+      #   - group is a ROOT entity under the CURRENT target
+      #     model (parent authority == current model, not nil);
       #   - generated group contains at least one Face AND
       #     at least one Edge after extrusion;
       #   - at least one generated vertex is within
@@ -284,14 +299,26 @@ module SUAnalysis
       #   - no generated vertex is below -coordinate_epsilon;
       #   - generated max-z satisfies
       #     abs(max_z - probe_height) <= coordinate_epsilon;
-      #   - all FOUR ownership values round-trip exactly:
-      #     schema_version / kind /
-      #     footprint_id_full / source_content_digest.
-      def _post_validate(group, probe_height, eps)
+      #   - all FOUR ownership values round-trip EXACTLY
+      #     against the CURRENT target footprint:
+      #       schema_version == 'v2.host-object.v1'
+      #       kind           == 'stage0b_mass_probe'
+      #       footprint_id_full    == current footprint id
+      #       source_content_digest == current footprint digest
+      #
+      # R2-01: parent authority check now requires the group
+      # parent to be the current target model (real SketchUp
+      # top-level Group under `model.entities` reports the
+      # Model as its parent -- not nil).
+      #
+      # R2-02: ownership values must be EXACT equality with
+      # the supplied current footprint record. Wrong-but-
+      # non-empty values now fail post-validation.
+      def _post_validate(group, probe_height, eps, model, footprint)
         return 'no_group' unless group
         return 'group_invalid' if group.respond_to?(:valid?) && !group.valid?
         return 'group_deleted' if group.respond_to?(:deleted?) && group.deleted?
-        unless _is_root_group?(group)
+        unless _is_root_group?(group, model)
           return 'group_not_root'
         end
         face_count = 0
@@ -309,15 +336,26 @@ module SUAnalysis
         return 'max_z_not_near_height' if (max_z.to_f - probe_height.to_f).abs > eps.to_f
         return 'no_z0_vertex'   unless zs.any? { |z| (z.to_f - 0.0).abs <= eps.to_f }
         return 'no_zH_vertex'   unless zs.any? { |z| (z.to_f - probe_height.to_f).abs <= eps.to_f }
-        # R1-03: all FOUR ownership values must round-trip.
+        # R1-03 + R2-02: all FOUR ownership values MUST
+        # round-trip exactly against the CURRENT target
+        # footprint. The footprint record is the freshness-
+        # re-resolved record -- the same one used to write
+        # the attributes. Wrong-but-non-empty values now
+        # fail post-validation.
+        expected_schema = SCHEMA_VERSION
+        expected_kind   = KIND
+        expected_fpid   = footprint ? footprint['footprint_id_full'].to_s : ''
+        expected_scd    = footprint ? footprint['source_content_digest'].to_s : ''
         schema = _get_attribute(group, ATTR_SCHEMA_VERSION)
-        return 'missing_schema_version_attr' unless schema == SCHEMA_VERSION
+        return 'schema_version_mismatch' unless schema == expected_schema
         kind = _get_attribute(group, ATTR_KIND)
-        return 'missing_kind_attr' unless kind == KIND
+        return 'kind_mismatch' unless kind == expected_kind
         fpid = _get_attribute(group, ATTR_FOOTPRINT_ID_FULL)
-        return 'missing_footprint_id_full_attr' if fpid.nil? || fpid.to_s.empty?
+        return 'footprint_id_full_mismatch' unless fpid == expected_fpid
+        return 'footprint_id_full_attr_missing' if fpid.nil? || fpid.to_s.empty?
         scd  = _get_attribute(group, ATTR_SOURCE_CONTENT_DIGEST)
-        return 'missing_source_content_digest_attr' if scd.nil? || scd.to_s.empty?
+        return 'source_content_digest_mismatch' unless scd == expected_scd
+        return 'source_content_digest_attr_missing' if scd.nil? || scd.to_s.empty?
         :ok
       end
 
@@ -330,23 +368,73 @@ module SUAnalysis
         end
       end
 
-      # Real SketchUp top-level groups have parent == nil
-      # (the Model itself). The FakeModel's group has
-      # @entities but no @parent (i.e. parent is nil /
-      # undefined). Components report ComponentInstance and
-      # are NOT a root group.
-      def _is_root_group?(group)
+      # R2-01: Real SketchUp root-Group parent authority.
+      #
+      # Per the frozen V2-0B Stage Technical Blueprint §9 +
+      # R2 correction packet, the real post-validation root
+      # test MUST prove:
+      #
+      #   1. entity is a Group (typename == 'Group');
+      #   2. group belongs to the current target model;
+      #   3. group's parent authority is the current Model
+      #      (not nil, not a nested Group / ComponentDefinition);
+      #   4. nested Group / ComponentDefinition-owned Group
+      #      MUST NOT pass.
+      #
+      # Real SketchUp top-level groups created via
+      # `model.entities.add_group` report the Model itself as
+      # their parent (SketchUp official Entity parent
+      # contract). The previous `parent.nil?` assumption
+      # incorrectly accepted some real-SU root groups whose
+      # parent was reported as a non-nil but non-Model
+      # container, and would also reject a correct
+      # real-SU2020 root Group whose parent authority IS
+      # the current Model object.
+      #
+      # Required contract:
+      #   - parent accessor MUST exist;
+      #   - parent MUST NOT be nil;
+      #   - parent MUST be the same object (identity-equal)
+      #     as the current target model;
+      #   - additionally, if the host exposes a `model`
+      #     accessor on the group, that accessor MUST also
+      #     return the current target model.
+      def _is_root_group?(group, model)
         return false unless group.respond_to?(:typename)
         return false unless group.typename.to_s == 'Group'
-        if group.respond_to?(:parent)
-          parent = group.parent
-          return parent.nil?
+        unless group.respond_to?(:parent)
+          # Hosts that do not expose a parent accessor at
+          # all cannot satisfy the Blueprint §9 root-authority
+          # contract for the real host. Reject rather than
+          # silently accept.
+          return false
         end
-        # Fakes that do not implement parent: treat as root
-        # when no parent accessor exists. This is acceptable
-        # for the focused fake host because the FakeModel
-        # only ever creates the group via model.entities.add_group
-        # and does not nest it.
+        parent = group.parent
+        # R2-01 hard rule: nil parent is NEVER a real-root
+        # criterion. A nil parent on a real-SU top-level
+        # group would not satisfy "group belongs to current
+        # model". Reject.
+        return false if parent.nil?
+        # Identity-equal to the current target model.
+        # `equal?` is object identity, which is what
+        # real SketchUp gives us (the parent is the very
+        # Model instance the caller holds).
+        unless parent.equal?(model)
+          return false
+        end
+        # Optional additional identity check when the host
+        # exposes `group.model`. A correct real SketchUp
+        # top-level Group's `#model` returns the very same
+        # Model object. If the accessor is available and
+        # disagrees, the group does NOT belong to the
+        # current model -> reject.
+        if group.respond_to?(:model) && model.respond_to?(:equal?)
+          gm = group.model
+          return false if gm.nil?
+          unless gm.equal?(model)
+            return false
+          end
+        end
         true
       end
 

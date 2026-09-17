@@ -1,4 +1,244 @@
-## V2-0B SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+## V2-0B SOURCE REVIEW R2 CORRECTION — 2026-09-17 (THIS UPDATE)
+
+Updated: 2026-09-17 (V2-0B SOURCE REVIEW R2 CORRECTION
+implementation on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`).
+V2-0B R1 correction commit `a43c34c` was reviewed
+NOT PASS by AIPM direct source review; the R2
+correction closes three narrow residuals without changing
+the V2-0B frozen contracts. Production code is
+constrained to the two V2-0B production files allowed
+by the R2 packet; no V1 / V2-0A production file
+modified; `host_operation_guard.rb` behavior unchanged.
+
+R2-01 — Real SketchUp root-Group parent authority:
+
+- `V2SketchupMassAdapter#_post_validate` now receives
+  the current target `model` so the root authority
+  check can be identity-based.
+- `V2SketchupMassAdapter#_is_root_group?` now requires
+  `group.parent.equal?(model)` (with optional
+  `group.model.equal?(model)` as additional check). It
+  rejects `parent.nil?` as a real-root criterion. It
+  rejects nested groups / component-definition-owned
+  groups whose parent is not the current Model.
+- Fake host's `V2FakeGroup` now mirrors the real
+  SketchUp top-level shape (`@parent = model_ref`,
+  `@model = model_ref`). Nested groups can be simulated
+  by overriding `@parent` to a non-Model container in
+  tests.
+
+R2-02 — Ownership attributes must match the CURRENT
+target exactly:
+
+- `V2SketchupMassAdapter#_post_validate` now receives
+  the current target `footprint` and compares ALL FOUR
+  ownership values against the same record that was
+  used to write them:
+  `schema_version` / `kind` /
+  `footprint_id_full` (exact) /
+  `source_content_digest` (exact).
+- No prefix / truncated / dataset_id substitution /
+  non-empty-only acceptance.
+- Failure reason strings distinguish
+  `footprint_id_full_attr_missing` vs
+  `footprint_id_full_mismatch` (and the same for
+  `source_content_digest`).
+
+R2-03 — Truthful production-default V1 handoff proof:
+
+- The previous R1 INT02 test name misleadingly claimed
+  a real end-to-end SUCCESS proof. The test is RENAMED
+  to honestly describe its scope:
+  `V2-S0B-INT02: production default Builder keyword-
+  contract rejection proof (R1-01 / R2-03)`.
+- A NEW truthful integration test is added:
+  `V2-S0B-R2-INT04: real V1 handoff + production
+  defaults + fake host => SUCCESS (R2-03)`. This test:
+  1. runs real deterministic V1 workflow stages
+     (duplicate repair, planar normalization, gap
+     repair);
+  2. calls real
+     `WorkingModeRunner.capture_prepared_cad_input_bundle`;
+  3. uses real production
+     `PreparedCadDatasetBuilder.build`;
+  4. uses real production
+     `PreparedCadDatasetValidator.validate_and_finalize`;
+  5. uses real production
+     `SemanticFootprintProjector.project`;
+  6. obtains the real current `SemanticFootprint`;
+  7. runs `Stage0BMassProbe` end-to-end with NO
+     injected fake capture/build/validate/projector
+     lambdas.
+  The SketchUp host boundary is the only fake surface;
+  the real `V2SketchupMassAdapter` is used against the
+  fake model.
+- A NEW negative runtime proof is added:
+  `V2-S0B-R2-INT05: production _default_build_seam
+  rejects legacy projection-shape keys (R2-03)`. This
+  test directly invokes the production default build
+  seam with the OLD projection-shape keys
+  (`source_projection`, `execution`, `semantic_graph`,
+  `semantic_structure`, `current_issues`,
+  `coherence_evidence`) and asserts that the seam
+  either raises or returns a non-`BUILT` Hash.
+
+### Validation
+
+- `ruby -c` on modified / new Ruby files: **Syntax OK**.
+- `git diff --check`: clean.
+- V2-0B focused suite
+  (`tests/test_v2_stage0b_host_mass_probe.rb`):
+  **50 / 50 PASS, 0 fail, 0 error**. The 8 new R2
+  tests are R2-ROOT-01..03, R2-OWN-01..03, R2-INT04,
+  R2-INT05; all 42 pre-existing R0 / R1 tests remain
+  green unchanged.
+- V2-0A focused suite (`V2-S0A-` filter): **43 / 43
+  PASS**.
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS**.
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS**.
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS** after
+  `scripts/build_rbz.rb` re-ran with the R2-corrected
+  Stage-0B adapter.
+- Ruby 2.2-era source compatibility guard
+  (`V2-S0B-COMPAT01`): **PASS**.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1517 tests, 1508 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R1 baseline (1509 / 1500 / 5 / 4):
+
+  - +8 R2 tests, all passing;
+  - +8 pass;
+  - 0 new fail;
+  - 0 new error;
+  - the 5 fail / 4 error set is the SAME established
+    pre-existing baseline unchanged by this R2 packet
+    (verified by `git diff --name-only` filter on the
+    R2 implementation commit + isolated re-run
+    comparison; identical failure IDs to the R1
+    record).
+
+Pre-existing 5 fail / 4 error debt (NOT introduced by
+this R2 packet; identical failure IDs to the R1
+record):
+
+- 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+  FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+  (V1.9A FINAL P1-C) = 5 issues on `html_render`.
+- 1 FAIL on `capability.HtmlDialog`
+  (R002 + S2-BLOCK-006).
+- 1 ERROR on `V14 production call chain`
+  (FakeUI limitation).
+- 1 ERROR on `V17-L1 host_state_changed`
+  (FakeUI limitation).
+- 1 ERROR on `v19a_presenter (FINAL P1-B)`
+  (presenter test guard).
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the R2
+implementation commit:
+
+```
+extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb | modified
+tests/test_v2_stage0b_host_mass_probe.rb                          | modified
+```
+
+All other files (V1 production, V1 tests, V2-0A
+production, V2-0A tests, V1 RBZ manifest, V1 CSS / HTML
+/ JS, icons): UNCHANGED.
+
+V1 production files, frozen V1.5-V1.9A design
+authority, the shared `CanonicalStructureReconstructor`
+behavior, the V1.9B2 persistence redesign, V2-0A
+SemanticFootprint frozen PASS surfaces, and the V2
+Residential Stage 1 architecture are all preserved
+unchanged on `dev/v2`.
+
+The `host_operation_guard.rb` behavior is unchanged --
+the R2 packet did not require any change to its
+public/private surface, lock semantics, or operation
+result inspection.
+
+### dist/SU-AI-Plugin.rbz
+
+The R2-corrected Stage-0B production file
+(`v2_sketchup_mass_adapter.rb`) is part of the RBZ
+payload per the repository packaging contract. After
+the R2 implementation commit, the prior dist RBZ no
+longer matched the dev-tree source; running
+`scripts/build_rbz.rb` produced a fresh RBZ:
+
+```
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_523_141 bytes
+    entries: 82
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The previous RBZ hash / size / entry counts are
+superseded. No release / tag / external delivery
+decision was made. `main` was NOT touched.
+
+### Frozen / forbidden — confirmed not touched
+
+- V1 production files unchanged.
+- `pcd.v1` / `PreparedCadDataset` / Validator /
+  Runner unchanged.
+- `CanonicalStructureReconstructor` unchanged.
+- Three V2-0A production files unchanged
+  (`layer_local_graph_adapter.rb` /
+  `semantic_footprint.rb` /
+  `semantic_footprint_projector.rb`).
+- `host_operation_guard.rb` unchanged.
+- `stage0b_mass_probe.rb` unchanged (default seams
+  remain the real B1.5 contract; freshness check
+  already passes the `current_footprint` to
+  `build_mass`).
+- Loader / UI / Tool / HtmlDialog untouched.
+- No selection Tool / pickray / highlight.
+- No Residential Stage 1 / floors / seams / balconies
+  / parapets.
+- No update / regenerate.
+- No site / raised community / roads / landscape.
+- No materials.
+- No MCP / LLM / Agent.
+- V2 Residential Stage 1 NOT STARTED.
+- Codex NOT invoked.
+- `main` NOT pushed / force-pushed / rewritten.
+- No production `failure_stage` switch added.
+
+### Real-SketchUp Gate
+
+Automated tests cannot close Stage 0B alone. Final
+Stage-0B Gate after this R2 correction:
+
+1. AIPM direct source / diff review of this R2 commit
+   (next gate);
+2. real SU2020 Owner success probe via
+   `Probe/v2_stage0b_owner_probe.rb`
+   `run_success_probe` (success mass + one native
+   Undo removes the entire probe mass);
+3. real SU2020 Owner injected-failure probe
+   `run_injected_failure_probe` (zero visible residue
+   after confirmed abort);
+4. only then V2-0B = CLOSED.
+
+Pi STOPs here. No Owner real-SU2020 probe was run.
+
+---
+
+## V2-0B SOURCE REVIEW R1 CORRECTION — 2026-09-16 (PREVIOUS)
 
 Updated: 2026-09-16 (V2-0B SOURCE REVIEW R1 CORRECTION
 implementation on assigned `dev/v2` per

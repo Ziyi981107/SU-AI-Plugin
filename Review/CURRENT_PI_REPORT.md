@@ -1,4 +1,363 @@
-## V2-0B SOURCE REVIEW R1 CORRECTION — 2026-09-16 (THIS UPDATE)
+## V2-0B SOURCE REVIEW R2 CORRECTION — 2026-09-17 (THIS UPDATE)
+
+Updated: 2026-09-17 (V2-0B SOURCE REVIEW R2 CORRECTION
+implementation on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`).
+The R2 correction closes the three narrow source
+residuals flagged by AIPM direct source review of the
+V2-0B R1 correction commit `a43c34c`. Production code is
+constrained to the two V2-0B production files allowed
+by the R2 packet. The R1 surfaces (R1-01..R1-06) remain
+frozen and unchanged.
+
+### R2-01 — Real SketchUp root-Group parent authority
+
+The R1 `_is_root_group?` check used the assumption
+`group.parent.nil?`. Real SketchUp `Entity#parent`
+returns the containing Model / ComponentDefinition for
+top-level groups under `model.entities`. A correct
+real-SU2020 root Group could be wrongly rejected as
+`group_not_root`.
+
+Correction:
+
+- `_post_validate(group, probe_height, eps, model, footprint)`
+  now receives the current target model so the root
+  authority check can be identity-based.
+- `_is_root_group?(group, model)` now requires:
+  1. `group.typename == 'Group'`;
+  2. `group.parent` accessor MUST exist;
+  3. `group.parent` MUST NOT be nil;
+  4. `group.parent.equal?(model)` (object-identity
+     equality with the current target model);
+  5. optional additional identity check:
+     `group.model.equal?(model)` when the host exposes
+     `group#model`.
+- The fake host's `V2FakeGroup` now mirrors real SketchUp
+  top-level shape: `@parent = model_ref` and `@model =
+  model_ref` so the identity check succeeds for root
+  groups and fails for nested groups.
+- `parent.nil?` is NEVER a real-root criterion.
+
+New tests:
+
+- `V2-S0B-R2-ROOT-01`: root Group `parent == model`
+  → `SUCCESS` (R2-01).
+- `V2-S0B-R2-ROOT-02`: nested Group `parent != model`
+  → `group_not_root` → `FAILED_ROLLED_BACK` via the
+  existing one-abort path; session stays `READY` (R2-01).
+- `V2-S0B-R2-ROOT-03`: `parent == nil` MUST NOT pass as
+  a real-host root → `group_not_root` → `FAILED_ROLLED_BACK`
+  (R2-01).
+
+### R2-02 — Ownership attributes must match the CURRENT
+target exactly
+
+The R1 post-validation required only that stored
+`footprint_id_full` and `source_content_digest` be
+non-empty. The frozen Blueprint requires exact match to
+the current re-resolved SemanticFootprint identity /
+digest.
+
+Correction:
+
+- `_post_validate` now receives the current target
+  `footprint` (the same record whose
+  `footprint_id_full` / `source_content_digest` was used
+  to write the attributes during construction).
+- Ownership checks are now full exact-equality:
+  - `schema == 'v2.host-object.v1'` (unchanged);
+  - `kind == 'stage0b_mass_probe'` (unchanged);
+  - `stored footprint_id_full == current_footprint['footprint_id_full']`;
+  - `stored source_content_digest == current_footprint['source_content_digest']`.
+- No prefix / truncated / non-empty-only acceptance.
+- Failure reason strings distinguish `missing` from
+  `mismatch` to surface the defect precisely.
+
+New tests:
+
+- `V2-S0B-R2-OWN-01`: exact complete ownership values
+  → `SUCCESS` (R2-02).
+- `V2-S0B-R2-OWN-02`: wrong-but-non-empty
+  `footprint_id_full` → `FAILED_ROLLED_BACK` with error
+  referencing `footprint_id_full` (R2-02).
+- `V2-S0B-R2-OWN-03`: wrong-but-non-empty
+  `source_content_digest` → `FAILED_ROLLED_BACK` with
+  error referencing `source_content_digest` (R2-02).
+
+### R2-03 — Truthful production-default V1 handoff proof
+
+The R1 `V2-S0B-INT02` test name claimed a real
+end-to-end SUCCESS proof but actually only proved the
+default `Builder` keyword contract returns canonical
+`BLOCKED` on an empty-authority bundle. The required
+truthful integration proof — real public V1 capture →
+real `PreparedCadDatasetBuilder` → real
+`PreparedCadDatasetValidator` → real
+`SemanticFootprintProjector` → `Stage0B` with DEFAULT
+capture/build/validate/projector seams — was not
+exercised.
+
+Correction:
+
+- The R1 INT02 test is RENAMED to truthfully describe
+  its scope:
+  `V2-S0B-INT02: production default Builder keyword-
+  contract rejection proof (R1-01 / R2-03)`.
+  The test itself is unchanged; only its name and
+  comment are clarified.
+- A NEW truthful integration test is added:
+  `V2-S0B-R2-INT04: real V1 handoff + production
+  defaults + fake host => SUCCESS (R2-03)`.
+  This test:
+  1. resets `WorkingModeRunner`;
+  2. builds a clean rectangle `SourceSnapshot` +
+     `AnalysisResult`;
+  3. runs the deterministic V1 workflow stages (duplicate
+     repair, planar normalization, gap repair) so the B1
+     Validator sees a truthful workflow state;
+  4. calls the real
+     `WorkingModeRunner.capture_prepared_cad_input_bundle`;
+  5. calls the real `PreparedCadDatasetBuilder.build`
+     with the real B1.5 keyword contract (production
+     default `PreparedCadDatasetBuilder.build` invocation
+     inside the test -- not a fake lambda);
+  6. calls the real
+     `PreparedCadDatasetValidator.validate_and_finalize`;
+  7. calls the real `SemanticFootprintProjector.project`;
+  8. obtains the real `SemanticFootprint` from the
+     projector;
+  9. runs `Stage0BMassProbe` end-to-end with NO injected
+     fake capture/build/validate/projector lambdas -- the
+     probe falls back to its PRODUCTION defaults
+     (`WorkingModeRunner.capture_prepared_cad_input_bundle`
+     → `PreparedCadDatasetBuilder.build` →
+     `PreparedCadDatasetValidator.validate_and_finalize` →
+     `SemanticFootprintProjector.project`).
+- The test asserts:
+  - `status == 'SUCCESS'`;
+  - exactly one fake root V2 Group exists;
+  - ownership attributes match the re-resolved footprint
+    EXACTLY;
+  - one start + one commit + zero aborts in the
+    operation log.
+- A NEW negative runtime proof is added:
+  `V2-S0B-R2-INT05: production _default_build_seam
+  rejects legacy projection-shape keys (R2-03)`.
+  This test directly invokes the production default
+  build seam with the OLD projection-shape keys
+  (`source_projection`, `execution`, `semantic_graph`,
+  `semantic_structure`, `current_issues`,
+  `coherence_evidence`) and asserts that the seam
+  EITHER raises (Ruby ArgumentError on unknown kwargs)
+  OR returns a non-`BUILT` Hash. This is a RUNTIME
+  proof (not source-text grep) that the production
+  seam does NOT silently accept the legacy contract.
+
+### Negative proof verification
+
+The R2 negative assertions were empirically verified by
+locally reverting each R2 production correction and
+confirming the corresponding R2 test FAILS. The
+production code was restored to its R2 final state
+after each negative verification, then re-validated
+against the full V2-0B suite.
+
+- Reverted R2-03 (`_default_build_seam` to
+  projection-shape keys):
+  - `V2-S0B-R2-INT04` FAILED with
+    `STALE_PREPARED_DATASET / build_failed`
+    (real Builder rejected the wrong contract).
+  - `V2-S0B-R2-INT05` PASSED (negative proof that the
+    seam rejects the legacy contract).
+- Reverted R2-01 (`_is_root_group?` to
+  `parent.nil?`):
+  - `V2-S0B-R2-ROOT-03` FAILED with `SUCCESS` when it
+    should have returned `group_not_root`.
+- Reverted R2-02 (`footprint_id_full` check to
+  non-empty-only):
+  - `V2-S0B-R2-OWN-02` FAILED with `SUCCESS` when it
+    should have returned `FAILED_ROLLED_BACK`.
+
+In all three negative-verification runs the production
+file was restored immediately after the test
+observation, no commit was created on the reverted
+state, and the V2-0B suite was re-run end-to-end with
+all 50 tests passing on the restored production code.
+
+### Validation
+
+- `ruby -c` on modified / new Ruby files: **Syntax OK**.
+- V2-0B focused suite
+  (`tests/test_v2_stage0b_host_mass_probe.rb`):
+  **50 / 50 PASS, 0 fail, 0 error**. Coverage of the
+  R2 correction matrix:
+
+  | ID group | Description | Count | Result |
+  |----------|-------------|-------|--------|
+  | V2-S0B-G01..G08 | stale / context gate | 8 | PASS |
+  | V2-S0B-OP01..OP14 + OP15..OP17 + OP09b | operation guard matrix | 18 | PASS |
+  | V2-S0B-OK01..OK05 | successful geometry matrix | 5 | PASS |
+  | V2-S0B-INT01 | real public V1 capture -> Builder -> Validator | 1 | PASS |
+  | V2-S0B-COMPAT01 | source compatibility guard | 1 | PASS |
+  | V2-S0B-INT02 (renamed) | production default Builder keyword-contract rejection proof | 1 | PASS |
+  | V2-S0B-INT03 | source-text default seam keyword contract check | 1 | PASS |
+  | V2-S0B-PV01..PV05 | R1-03 post-validation tests | 5 | PASS |
+  | V2-S0B-PRB01..PRB02 | R1-06 Owner injected-failure tests | 2 | PASS |
+  | V2-S0B-R2-ROOT-01..03 | R2-01 root-parent authority tests (NEW) | 3 | PASS |
+  | V2-S0B-R2-OWN-01..03 | R2-02 exact ownership tests (NEW) | 3 | PASS |
+  | V2-S0B-R2-INT04 | R2-03 truthful V1 handoff integration (NEW) | 1 | PASS |
+  | V2-S0B-R2-INT05 | R2-03 negative runtime proof (NEW) | 1 | PASS |
+
+  Total: 50 tests in the focused suite (was 42 pre-R2;
+  +8 new R2 tests, all passing).
+
+- V2-0A focused suite (`V2-S0A-` filter): **43 / 43
+  PASS**.
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS**.
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS**.
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS** after
+  `scripts/build_rbz.rb` re-ran with the R2-corrected
+  `v2_sketchup_mass_adapter.rb`.
+- `git diff --check`: clean.
+- Ruby 2.2-era source compatibility guard
+  (`V2-S0B-COMPAT01`): **PASS** -- no new Ruby-2.2-
+  incompatible helpers introduced.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1517 tests, 1508 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R1 baseline (1509 / 1500 / 5 / 4):
+
+  - +8 R2 tests (R2-ROOT-01/02/03, R2-OWN-01/02/03,
+    R2-INT04, R2-INT05), all passing;
+  - +8 pass;
+  - 0 new fail;
+  - 0 new error;
+  - the 5 fail / 4 error set is the SAME pre-existing
+    baseline unchanged by this R2 packet (verified by
+    `git diff --name-only` filter on the R2
+    implementation commit + isolated re-run comparison);
+    identical failure IDs to the R1 record:
+
+    - 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+      FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+      (V1.9A FINAL P1-C) = 5 issues on `html_render`;
+    - 1 FAIL on `capability.HtmlDialog`
+      (R002 + S2-BLOCK-006);
+    - 1 ERROR on `V14 production call chain`
+      (FakeUI limitation);
+    - 1 ERROR on `V17-L1 host_state_changed`
+      (FakeUI limitation);
+    - 1 ERROR on `v19a_presenter (FINAL P1-B)`
+      (presenter test guard).
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the R2
+implementation commit:
+
+```
+extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb | modified |
+tests/test_v2_stage0b_host_mass_probe.rb                          | modified |
+```
+
+All other files (V1 production, V1 tests, V2-0A
+production, V2-0A tests, V1 RBZ manifest, V1 CSS / HTML
+/ JS, icons): UNCHANGED.
+
+Production files NOT modified by this R2 packet:
+
+- `extension/su_ai_plugin/v2/host_operation_guard.rb`
+  (behavior unchanged; not even compiled into the
+  signature consequence). NOT modified.
+- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+  (default seams unchanged; the freshness check
+  already passes the `current_footprint` to
+  `build_mass`). NOT modified.
+- `Probe/v2_stage0b_owner_probe.rb` (public probe
+  contract unchanged). NOT modified.
+
+The V1 production files, the V2-0A production files
+(`layer_local_graph_adapter.rb`,
+`semantic_footprint.rb`,
+`semantic_footprint_projector.rb`), and the V2-0B
+`host_operation_guard.rb` are all preserved unchanged
+on `dev/v2`.
+
+### dist/SU-AI-Plugin.rbz
+
+`scripts/build_rbz.rb` was re-run after the R2
+implementation. The new RBZ:
+
+```
+OK: wrote D:/Projects/SU-AI-Plugin/dist/SU-AI-Plugin.rbz
+    size: 1_523_141 bytes
+    entries: 82
+    entry-point: su_ai_plugin.rb (OK, at the .rbz root)
+    support folder: su_ai_plugin/ (OK, sibling of the entry-point)
+```
+
+The previous RBZ hash / size / entry counts are
+superseded. No release / tag / external delivery
+decision was made. `main` was NOT touched.
+
+### Frozen / forbidden — confirmed not touched
+
+- V1 production files unchanged.
+- `pcd.v1` / `PreparedCadDataset` / Validator /
+  Runner unchanged.
+- `CanonicalStructureReconstructor` unchanged.
+- Three V2-0A production files unchanged
+  (`layer_local_graph_adapter.rb` /
+  `semantic_footprint.rb` /
+  `semantic_footprint_projector.rb`).
+- `host_operation_guard.rb` unchanged.
+- Loader / UI / Tool / HtmlDialog untouched.
+- No selection Tool / pickray / highlight.
+- No Residential Stage 1 / floors / seams / balconies /
+  parapets.
+- No update / regenerate.
+- No site / raised community / roads / landscape.
+- No materials.
+- No MCP / LLM / Agent.
+- V2 Residential Stage 1 NOT STARTED.
+- Codex NOT invoked.
+- `main` NOT pushed / force-pushed / rewritten.
+- No production `failure_stage` switch added.
+- No Owner real-SU2020 probe run.
+
+### Real-SketchUp Gate
+
+Automated tests cannot close Stage 0B alone. Final
+Stage-0B Gate after this R2 correction:
+
+1. AIPM direct source / diff review of this R2 commit
+   (next gate);
+2. real SU2020 Owner success probe via
+   `Probe/v2_stage0b_owner_probe.rb`
+   `run_success_probe` (success mass + one native Undo
+   removes the entire probe mass);
+3. real SU2020 Owner injected-failure probe
+   `run_injected_failure_probe` (zero visible residue
+   after confirmed abort);
+4. only then V2-0B = CLOSED.
+
+Pi STOPs here and returns control to AIPM for direct
+source review of the R2 implementation. Pi does NOT
+run the Owner real-SU2020 probe.
+
+---
+
+## V2-0B SOURCE REVIEW R1 CORRECTION — 2026-09-16 (PREVIOUS)
 
 Updated: 2026-09-16 (V2-0B SOURCE REVIEW R1 CORRECTION
 implementation on assigned `dev/v2` per

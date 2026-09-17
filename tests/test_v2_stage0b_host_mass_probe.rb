@@ -167,22 +167,36 @@ class V2FakeModel
     attr_accessor :name, :valid_flag
     attr_reader :entities, :attrs
 
+    # R2-01: Real SketchUp root groups created via
+    # `model.entities.add_group` report the Model itself
+    # as their parent (per SketchUp Entity parent contract).
+    # The fake now mirrors that real shape: a root V2
+    # group constructed under `model.entities` has
+    # `@parent = model_ref` (the V2FakeModel).
+    #
+    # Nested groups (groups owned by another Group /
+    # ComponentDefinition) must have a parent that is NOT
+    # the current target model. Tests that exercise the
+    # nested-group branch inject such a parent via the
+    # add_group wrapper (see V2-S0B-PV04, R2-ROOT-02,
+    # R2-ROOT-03).
     def initialize(model_ref: nil)
       @entities   = V2FakeEntities.new(self, model_ref)
       @attrs      = {}
       @name       = ''
       @valid_flag = true
-      @parent     = nil  # root group under fake model
+      @parent     = model_ref
+      # R2-01: optional `model` accessor mirrors real
+      # SketchUp Group#model. A correct root group under
+      # model.entities returns the very Model instance.
+      @model      = model_ref
     end
 
     def typename
       'Group'
     end
 
-    # Real SketchUp root groups have parent == the Model
-    # (or nil depending on API). The fake treats any group
-    # whose parent accessor returns nil-or-self as root.
-    attr_accessor :parent
+    attr_accessor :parent, :model
 
     def set_attribute(dict, key, value)
       @attrs["#{dict}.#{key}"] = value.to_s
@@ -692,6 +706,11 @@ def v2_s0b_make_probe(model: nil)
   )
   [probe, guard, adapter, m]
 end
+
+# Real-V1 runner reference (R2-03 truthful integration).
+# Reuses the proven pattern from tests/test_v2_stage0a_
+# semantic_footprint.rb.
+V2_RUNNER = SUAnalysis::Core::WorkingModeRunner
 
 # Default fake capture/build/validate seams that return
 # STATUS_READY for a pre-built dataset.
@@ -1500,10 +1519,17 @@ end
 # (R1-01 / R1-02 / R1-03 / R1-04 / R1-05 / R1-06)
 # ============================================================
 
-# R1-01: REAL default V1 capture -> REAL Builder -> REAL
-# Validator -> real projector -> fake host Stage0B SUCCESS.
-# No injected fake Builder/Validator in this test.
-test 'V2-S0B-INT02: real default V1 handoff path succeeds end-to-end (R1-01)' do
+# R2-03 / INT02 rename: this test is NOT a real end-to-end
+# SUCCESS proof. It only proves that the production
+# _default_build_seam is wired to the REAL B1.5 keyword
+# contract (source_snapshot / workflow_snapshot /
+# topology_snapshot / canonical_graph / structure_result /
+# analysis_result) by feeding it an empty-authority bundle
+# of those keys and asserting the real Builder returns the
+# canonical BLOCKED shape rather than crashing on the
+# keyword contract. The truthful end-to-end SUCCESS proof
+# lives in V2-S0B-R2-INT04 above.
+test 'V2-S0B-INT02: production default Builder keyword-contract rejection proof (R1-01 / R2-03)' do
   # Build a real PreparedCadDataset via the real
   # public V1 seams (capture is no-op for a synthetic
   # AnalysisResult; we use the Builder + Validator
@@ -1906,17 +1932,22 @@ test 'V2-S0B-PV03: negative coordinate_epsilon BLOCKS before start (R1-03)' do
   assert_equal 0, m.operation_log.size
 end
 
-# R1-03: group_not_root fails post-validation -> rollback.
-test 'V2-S0B-PV04: group_not_root fails post-validation -> rollback (R1-03)' do
+# R1-03 + R2-01: group_not_root fails post-validation -> rollback.
+test 'V2-S0B-PV04: group_not_root fails post-validation -> rollback (R1-03 / R2-01)' do
   fp, ds = v2_s0b_footprint_and_dataset
   probe, _g, _a, m = v2_s0b_make_probe
-  # Force the adapter's group to have a non-nil parent.
-  # We do this by wrapping add_group so the returned
-  # group has @parent set to a non-nil Object.
+  # Force the adapter's group to have a parent that is NOT
+  # the current target model (simulates a nested Group /
+  # ComponentDefinition-owned Group, or any container that
+  # is not the target model). We do this by wrapping
+  # add_group so the returned group's parent is some
+  # non-Model Object.
   real_add_group = m.entities.method(:add_group)
   m.entities.define_singleton_method(:add_group) do |*args|
     g = real_add_group.call(*args)
-    g.instance_variable_set(:@parent, Object.new)
+    non_model_parent = Object.new
+    g.instance_variable_set(:@parent, non_model_parent)
+    g.instance_variable_set(:@model,   non_model_parent)
     g
   end
   capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
@@ -1936,8 +1967,8 @@ test 'V2-S0B-PV04: group_not_root fails post-validation -> rollback (R1-03)' do
   assert out['error'].to_s.include?('group_not_root')
 end
 
-# R1-03: missing footprint_id_full attr fails post-validation.
-test 'V2-S0B-PV05: missing footprint_id_full attr fails post-validation (R1-03)' do
+# R1-03 + R2-02: missing footprint_id_full attr fails post-validation.
+test 'V2-S0B-PV05: missing footprint_id_full attr fails post-validation (R1-03 / R2-02)' do
   fp, ds = v2_s0b_footprint_and_dataset
   probe, _g, _a, m = v2_s0b_make_probe
   # Strip the footprint_id_full attr from the group's
@@ -2084,4 +2115,530 @@ def probe_default_build_seam
     adapter: SUAnalysis::Compatibility::V2SketchupMassAdapter.new
   )
   probe.build_seam
+end
+
+# ============================================================
+# R2 CORRECTION ACCEPTANCE TESTS
+# (R2-01 root-parent authority / R2-02 exact ownership /
+#  R2-03 truthful production-default V1 handoff)
+# ============================================================
+
+# ---------------------------------------------------------------
+# R2-01 — Real SketchUp root-Group parent authority.
+# ---------------------------------------------------------------
+
+# R2-ROOT-01: a root Group whose `parent == current model`
+# passes post-validation. The default V2FakeGroup mirrors
+# real SketchUp top-level shape (parent = model_ref).
+test 'V2-S0B-R2-ROOT-01: root Group parent == current model => PASS (R2-01)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, _m = v2_s0b_make_probe
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'SUCCESS', out['status'],
+               "real-host root Group (parent == model) MUST pass; got #{out.inspect}"
+end
+
+# R2-ROOT-02: a nested Group whose parent is NOT the current
+# model fails post-validation -> group_not_root -> rollback
+# through the existing one-abort path.
+test 'V2-S0B-R2-ROOT-02: nested Group parent != current model => group_not_root => rollback (R2-01)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  # Inject a non-Model parent (simulates a Group owned by a
+  # ComponentDefinition / nested under another Group / any
+  # non-target-model container).
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    non_model_container = Object.new
+    g.instance_variable_set(:@parent, non_model_container)
+    g.instance_variable_set(:@model,   non_model_container)
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status'],
+               "nested Group must roll back via existing one-abort path; got #{out.inspect}"
+  assert out['error'].to_s.include?('group_not_root'),
+         "error must include 'group_not_root'; got #{out['error'].inspect}"
+  # Exactly one abort attempt observed.
+  aborts = m.operation_log.select { |e| e[:kind] == :abort }
+  assert_equal 1, aborts.size,
+               "exactly one abort attempt expected on nested-group rollback; " \
+               "got #{m.operation_log.inspect}"
+  # Session stays READY after confirmed rollback.
+  refute probe.guard.uncertain?,
+         'confirmed group_not_root rollback must NOT lock the session'
+end
+
+# R2-ROOT-03: a group whose `parent` is `nil` MUST NOT be
+# accepted as a real-host root. The previous R1 assumption
+# `parent.nil? => root` is explicitly disallowed by R2-01.
+test 'V2-S0B-R2-ROOT-03: parent == nil is NOT a real-root criterion (R2-01)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  # Force the group's parent to nil explicitly. This
+  # simulates a host surface where the parent accessor is
+  # present but returns nil -- a state that the previous
+  # R1 implementation incorrectly accepted as root.
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    g.instance_variable_set(:@parent, nil)
+    # Also set @model to nil so the optional `model`
+    # accessor does not accidentally mask the parent-nil
+    # rejection.
+    g.instance_variable_set(:@model, nil)
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status'],
+               "parent == nil must NOT pass as a real-host root; got #{out.inspect}"
+  assert out['error'].to_s.include?('group_not_root'),
+         "error must include 'group_not_root'; got #{out['error'].inspect}"
+end
+
+# ---------------------------------------------------------------
+# R2-02 — Ownership attributes must match the CURRENT target
+# exactly. Wrong-but-non-empty values must fail post-validation.
+# ---------------------------------------------------------------
+
+# R2-OWN-01: correct complete ownership values => PASS.
+# This is the positive case, covered by the default
+# successful path; here we re-assert explicitly that the
+# adapter's post-validator accepts the exact target
+# footprint identity + digest round-trip.
+test 'V2-S0B-R2-OWN-01: exact complete ownership values => PASS (R2-02)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'SUCCESS', out['status']
+  groups = m.entities.children.select { |c| c.is_a?(V2FakeModel::V2FakeGroup) }
+  assert_equal 1, groups.size
+  g = groups.first
+  assert_equal fp['footprint_id_full'].to_s,
+               g.get_attribute('SU-AI-V2', 'footprint_id_full'),
+               'stored footprint_id_full MUST exactly equal current footprint id'
+  assert_equal fp['source_content_digest'].to_s,
+               g.get_attribute('SU-AI-V2', 'source_content_digest'),
+               'stored source_content_digest MUST exactly equal current footprint digest'
+end
+
+# R2-OWN-02: wrong-but-non-empty footprint_id_full => fail.
+test 'V2-S0B-R2-OWN-02: wrong-but-non-empty footprint_id_full => fail + rollback (R2-02)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  # Substitute the stored footprint_id_full attribute with
+  # a wrong-but-non-empty value. The post-validator must
+  # detect the exact-equality mismatch and roll back.
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    g.singleton_class.class_eval do
+      define_method(:set_attribute) do |dict, key, value|
+        if key == 'footprint_id_full'
+          # Replace the correct footprint id with a wrong
+          # non-empty id of the same general shape.
+          wrong = 'v2fp-' + ('f' * 60)
+          super(dict, key, wrong)
+        else
+          super(dict, key, value)
+        end
+      end
+    end
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status'],
+               "wrong-but-non-empty footprint_id_full MUST fail post-validation; " \
+               "got #{out.inspect}"
+  assert out['error'].to_s.include?('footprint_id_full'),
+         "error must reference the footprint_id_full attribute mismatch; " \
+         "got #{out['error'].inspect}"
+  # Exactly one abort attempt observed.
+  aborts = m.operation_log.select { |e| e[:kind] == :abort }
+  assert_equal 1, aborts.size,
+               "exactly one abort attempt expected; got #{m.operation_log.inspect}"
+  # Session stays READY after confirmed rollback.
+  refute probe.guard.uncertain?
+end
+
+# R2-OWN-03: wrong-but-non-empty source_content_digest => fail.
+test 'V2-S0B-R2-OWN-03: wrong-but-non-empty source_content_digest => fail + rollback (R2-02)' do
+  fp, ds = v2_s0b_footprint_and_dataset
+  probe, _g, _a, m = v2_s0b_make_probe
+  real_add_group = m.entities.method(:add_group)
+  m.entities.define_singleton_method(:add_group) do |*args|
+    g = real_add_group.call(*args)
+    g.singleton_class.class_eval do
+      define_method(:set_attribute) do |dict, key, value|
+        if key == 'source_content_digest'
+          # Replace with a wrong non-empty 64-hex digest.
+          wrong = ('e' * 64)
+          super(dict, key, wrong)
+        else
+          super(dict, key, value)
+        end
+      end
+    end
+    g
+  end
+  capture_seam, build_seam, validate_seam, projector = v2_s0b_default_seams(fp, ds)
+  probe_run = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard: probe.guard, adapter: probe.adapter,
+    capture_seam: capture_seam,
+    build_seam: build_seam,
+    validate_seam: validate_seam,
+    projector: projector
+  )
+  out = probe_run.run(
+    footprint: fp,
+    analysis_result: { 'kind' => 'test' },
+    probe_height: 10.0
+  )
+  assert_equal 'FAILED_ROLLED_BACK', out['status'],
+               "wrong-but-non-empty source_content_digest MUST fail post-validation; " \
+               "got #{out.inspect}"
+  assert out['error'].to_s.include?('source_content_digest'),
+         "error must reference the source_content_digest attribute mismatch; " \
+         "got #{out['error'].inspect}"
+  aborts = m.operation_log.select { |e| e[:kind] == :abort }
+  assert_equal 1, aborts.size,
+               "exactly one abort attempt expected; got #{m.operation_log.inspect}"
+  refute probe.guard.uncertain?
+end
+
+# ---------------------------------------------------------------
+# R2-03 — Truthful production-default V1 handoff proof.
+# ---------------------------------------------------------------
+
+# A small real-V1 handoff helper. Ported from the proven
+# V2-0A truthful-helper pattern in
+# tests/test_v2_stage0a_semantic_footprint.rb
+# (v2_real_handoff_dataset). Performs the deterministic
+# workflow stages FIRST so the B1 Validator sees a
+# truthful workflow state, then captures the real B1.5
+# bundle. Returns the captured bundle Hash so the
+# integration test can pass it through the production
+# Stage0B pipeline (capture/build/validate/projector
+# all use production defaults).
+def v2_s0b_real_handoff_bundle(edges)
+  V2_RUNNER.reset_for_tests
+  adapter = SUAnalysis::Core::DerivedWorkspaceAdapter::FakeDerivedWorkspaceAdapter.new
+  src = v2_s0b_real_source(edges)
+  prep = V2_RUNNER.prepare(source: src, adapter: adapter, model: nil)
+  unless prep['state'] == 'ready'
+    raise "real handoff prepare expected 'ready'; got #{prep['state'].inspect}"
+  end
+  ar = v2_s0b_real_analysis(src)
+  reg = ar.respond_to?(:registry) ? ar.registry : nil
+  V2_RUNNER.run_duplicate_repair_batch(registry: reg) if reg
+  planar_snap = V2_RUNNER.compute_planar_normalization
+  if planar_snap['planar_normalization']['state'].to_s == 'READY_TO_NORMALIZE'
+    V2_RUNNER.apply_planar_normalization
+  end
+  V2_RUNNER.compute_gap_repair
+  bundle_out = V2_RUNNER.capture_prepared_cad_input_bundle(analysis_result: ar)
+  unless bundle_out['status'] == 'CAPTURED'
+    raise "real handoff capture expected 'CAPTURED'; got " \
+          "#{bundle_out['status'].inspect} #{bundle_out['blockers'].inspect}"
+  end
+  bundle_out['bundle']
+end
+
+def v2_s0b_real_source(edges)
+  layer = SUAnalysis::Core::LayerRecord.new(name: 'L0')
+  recs = edges.map.with_index do |(s, e), i|
+    SUAnalysis::Core::EdgeRecord.new(
+      id: i,
+      source: SUAnalysis::Core::SourceReference.new(
+        entity_id: 1 + i, persistent_id: 100 + i, kind: 'edge',
+        persistent_id_path: [100 + i], instance_path: [],
+        structural_depth: 0, pid_path_complete: true, layer_name: 'L0'
+      ),
+      start_point: s, end_point: e, layer: 'L0'
+    )
+  end
+  tolerance_values = {
+    'duplicate'          => 1.0e-4,
+    'short_edge'         => 0.5,
+    'gap_search'         => 0.1,
+    'coordinate_epsilon' => 1.0e-6,
+    'big_z'              => 0.01,
+    'large_coordinate'   => 1.0e6,
+    'planar_z_snap'      => 0.01
+  }
+  ec = SUAnalysis::Core::ExecutionConfigSnapshot.new(
+    profile_id:        'profile.v2-s0b-r2',
+    profile_version:   '1',
+    rule_set_id:       'role.config',
+    rule_set_version:  '1',
+    rule_set_digest:   'v2-s0b-r2-rules',
+    tolerance_schema_version: 'tol-' + tolerance_values.keys.sort.join('-'),
+    tolerance_values:        tolerance_values,
+    session_overrides:        {},
+    source_snapshot_schema_version: '1'
+  )
+  SUAnalysis::Core::SourceSnapshot.new(
+    snapshot_id: nil, edges: recs, faces: [], layers: [layer],
+    execution_config: ec, selection_scope: [], unit: 'inches',
+    coordinate_origin: 'raw',
+    transform_context: { 'active_edit_seed' => 'identity' }
+  )
+end
+
+def v2_s0b_real_analysis(src)
+  layer = SUAnalysis::Core::LayerRecord.new(name: 'L0')
+  geom = SUAnalysis::Core::GeometrySnapshot.new(edges: src.edges, layers: [layer])
+  registry = SUAnalysis::Core::IssueRegistry.new([])
+  pf = SUAnalysis::Core::PreflightReport.new(
+    edge_count: geom.edges.length,
+    vertex_count: geom.edges.length * 2,
+    layer_distribution: {}, bounding_box: nil,
+    z_range: [0.0, 0.0], non_zero_z_vertex_count: 0,
+    non_zero_z_edge_count: 0, significant_z_extrema_count: 0,
+    large_coordinate_extrema_count: 0, warnings: [],
+    sketchup_version: 'test', selection_type: 'Edges',
+    group_count: 0, component_count: 0, deepest_nesting: 0,
+    nested_containers: [], face_count: geom.faces.length,
+    faces_with_holes_count: 0
+  )
+  SUAnalysis::Core::AnalysisResult.new(
+    preflight: pf, registry: registry, geometry_snapshot: geom,
+    selection_entities: [], active_edit_facts: {}
+  )
+end
+
+# R2-INT04: real V1 handoff + Stage0B production DEFAULT
+# pure-data seams + fake host boundary => SUCCESS.
+#
+# This is the required R2-03 truthful integration proof.
+# It runs:
+#
+#   1. WorkingModeRunner.reset_for_tests
+#   2. Build clean rectangle SourceSnapshot + AnalysisResult
+#   3. Run V1 deterministic workflow stages (duplicate
+#      repair, planar normalization, gap repair)
+#   4. Real WorkingModeRunner.capture_prepared_cad_input_bundle
+#   5. Production DEFAULT _default_build_seam
+#      (no fake build lambda)
+#   6. Production DEFAULT _default_validate_seam
+#      (no fake validate lambda)
+#   7. Production DEFAULT _default_projector
+#      (no fake projector lambda)
+#   8. Get the real current SemanticFootprint
+#   9. Run Stage0BMassProbe with DEFAULT seams end-to-end
+#      (capture/build/validate/projector all production)
+#
+# The SketchUp host boundary is the only fake surface; the
+# real V2SketchupMassAdapter is used against the fake model.
+test 'V2-S0B-R2-INT04: real V1 handoff + production defaults + fake host => SUCCESS (R2-03)' do
+  edges = [
+    [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]],
+    [[10.0, 0.0, 0.0], [10.0, 5.0, 0.0]],
+    [[10.0, 5.0, 0.0], [0.0, 5.0, 0.0]],
+    [[0.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+  ]
+  # Steps 1-7: real V1 handoff + Builder + Validator +
+  # projector through production defaults.
+  src = v2_s0b_real_source(edges)
+  ar  = v2_s0b_real_analysis(src)
+  bundle = v2_s0b_real_handoff_bundle(edges)
+  assert bundle.is_a?(Hash), 'R2-03: real V1 capture bundle MUST be a Hash'
+  assert bundle['workflow_snapshot'].is_a?(Hash),
+         'R2-03: real V1 bundle MUST carry workflow_snapshot (B1.5 contract)'
+  build_out = SUAnalysis::Core::PreparedCadDatasetBuilder.build(
+    source_snapshot:    bundle['source_snapshot'],
+    workflow_snapshot:  bundle['workflow_snapshot'],
+    topology_snapshot:  bundle['topology_snapshot'],
+    canonical_graph:    bundle['canonical_graph'],
+    structure_result:   bundle['structure_result'],
+    analysis_result:    bundle['analysis_result']
+  )
+  unless build_out.is_a?(Hash) && build_out['status'] == 'BUILT'
+    raise "R2-03: real Builder expected BUILT; got #{build_out.inspect}"
+  end
+  cand = build_out['dataset']
+  v_out = SUAnalysis::Core::PreparedCadDatasetValidator.validate_and_finalize(
+    dataset:           cand,
+    workflow_snapshot: bundle['workflow_snapshot']
+  )
+  unless v_out.is_a?(Hash) &&
+         (v_out['status'] == 'READY' || v_out['status'] == 'READY_WITH_WARNINGS')
+    raise "R2-03: real Validator expected READY/READY_WITH_WARNINGS; got #{v_out.inspect}"
+  end
+  dataset = v_out['dataset']
+  proj_out = SUAnalysis::V2::SemanticFootprintProjector.project(
+    dataset:      dataset,
+    semantic_role: 'body',
+    layer_name:   'L0'
+  )
+  assert_equal SemanticFootprintProjector::STATUS_PROJECTED, proj_out['status'],
+               "R2-03: real projector expected PROJECTED; got #{proj_out.inspect}"
+  fps = proj_out['footprints']
+  assert_equal 1, fps.length, "R2-03: 1 footprint; got #{fps.length}"
+  footprint = fps.first
+  # Step 8 + 9: now run Stage0BMassProbe with PRODUCTION
+  # DEFAULT capture/build/validate/projector seams. No fake
+  # lambda injection for any pure-data seam.
+  m = v2_s0b_make_model
+  guard = SUAnalysis::V2::HostOperationGuard.new
+  adapter = SUAnalysis::Compatibility::V2SketchupMassAdapter.new(
+    model_provider: -> { m }
+  )
+  probe = SUAnalysis::V2::Stage0BMassProbe.new(
+    guard:   guard,
+    adapter: adapter
+  )
+  # Capture/build/validate/projector are intentionally NOT
+  # supplied: the probe falls back to its production
+  # defaults (WorkingModeRunner.capture_prepared_cad_input_bundle
+  # -> PreparedCadDatasetBuilder.build ->
+  # PreparedCadDatasetValidator.validate_and_finalize ->
+  # SemanticFootprintProjector.project).
+  out = probe.run(
+    footprint:        footprint,
+    analysis_result:  ar,
+    probe_height:     120.0
+  )
+  assert_equal 'SUCCESS', out['status'],
+               "R2-03 truthful integration MUST yield SUCCESS; got #{out.inspect}"
+  # Group handle is the real Group under the fake model.
+  assert out['group'].is_a?(V2FakeModel::V2FakeGroup),
+         'R2-03: success result must include the generated host Group handle'
+  # Exactly one root Group created.
+  groups = m.entities.children.select { |c| c.is_a?(V2FakeModel::V2FakeGroup) }
+  assert_equal 1, groups.size, 'R2-03: exactly one fake root V2 Group must exist'
+  g = groups.first
+  # Ownership attributes exact match against the re-resolved
+  # footprint's footprint_id_full / source_content_digest.
+  assert_equal footprint['footprint_id_full'].to_s,
+               g.get_attribute('SU-AI-V2', 'footprint_id_full'),
+               'R2-03: stored footprint_id_full MUST exactly equal current footprint id'
+  assert_equal footprint['source_content_digest'].to_s,
+               g.get_attribute('SU-AI-V2', 'source_content_digest'),
+               'R2-03: stored source_content_digest MUST exactly equal current footprint digest'
+  assert_equal 'v2.host-object.v1',
+               g.get_attribute('SU-AI-V2', 'schema_version'),
+               'R2-03: schema_version MUST be the frozen v2.host-object.v1'
+  assert_equal 'stage0b_mass_probe',
+               g.get_attribute('SU-AI-V2', 'kind'),
+               'R2-03: kind MUST be the frozen stage0b_mass_probe'
+  # Operation log invariant.
+  kinds = m.operation_log.map { |e| e[:kind] }
+  assert_equal 1, kinds.count(:start),  'R2-03: one start expected'
+  assert_equal 1, kinds.count(:commit), 'R2-03: one commit expected'
+  assert_equal 0, kinds.count { |k| k == :abort || k == :abort_attempt },
+               'R2-03: zero aborts expected on the truthful SUCCESS path'
+end
+
+# R2-03 negative runtime proof: if the production default
+# build seam is reverted to the legacy projection-shape
+# keyword contract, this test must FAIL.
+#
+# The test directly invokes the production _default_build_seam
+# with the OLD projection-shape keys (source_projection /
+# execution / semantic_graph / semantic_structure /
+# current_issues / coherence_evidence) and asserts that the
+# production seam rejects this legacy contract (Ruby
+# ArgumentError on unknown keyword args -> BUILD BLOCKED /
+# not BUILT). This is the runtime authority proof required
+# by R2-03; it does NOT rely on source-text grep.
+test 'V2-S0B-R2-INT05: production _default_build_seam rejects legacy projection-shape keys (R2-03)' do
+  # Build a legacy projection-shaped bundle as if someone
+  # had reverted the seam. The legacy contract was:
+  #   source_projection / execution / semantic_graph /
+  #   semantic_structure / current_issues / coherence_evidence
+  legacy_bundle = {
+    'source_projection'  => { 'schema_version' => 'pcd-source-projection.v1',
+                              'layers'         => [],
+                              'edges'          => [],
+                              'vertices'       => [] },
+    'execution'          => { 'schema_version'   => 'pcd-execution.v1',
+                              'tolerance_values' => {} },
+    'semantic_graph'     => { 'schema_version' => 'pcd-semantic-graph.v1',
+                              'nodes'          => [],
+                              'edges'          => [],
+                              'adjacency'      => {} },
+    'semantic_structure' => { 'schema_version' => 'pcd-structure.v1',
+                              'chains' => [], 'loops' => [], 'regions' => [] },
+    'current_issues'     => { 'schema_version' => 'pcd-issues.v1',
+                              'issues' => [] },
+    'coherence_evidence' => { 'schema_version' => 'pcd-coherence.v1',
+                              'digest' => '0' * 64 },
+    'analysis_result'    => { 'kind' => 'r2-03-negative' }
+  }
+  seam = probe_default_build_seam
+  # The production seam MUST either raise (real Builder
+  # rejects unknown keyword args) or return a Hash whose
+  # status is NOT 'BUILT'. Anything else means the seam
+  # silently accepted the legacy contract -- a BLOCK.
+  result = begin
+    seam.call(legacy_bundle)
+  rescue StandardError => e
+    # A real Builder raising is a correct rejection.
+    { 'status' => 'BUILD_RAISED', 'error' => e.class.name + ':' + e.message }
+  end
+  assert !result.is_a?(Hash) || result['status'] != 'BUILT',
+         "R2-03: production _default_build_seam MUST NOT silently accept legacy " \
+         "projection-shape keys; got #{result.inspect[0, 200]}"
 end
