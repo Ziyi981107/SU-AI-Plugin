@@ -1,118 +1,89 @@
-# CURRENT AIPM REVIEW — V2-0B DIRECT SOURCE REVIEW R1
+# CURRENT AIPM REVIEW — V2-0B DIRECT SOURCE REVIEW R2 REQUIRED
 
 Project: SU-AI-Plugin
 Stage: V2-0B Host Geometry Probe
-Date: 2026-09-16
+Date: 2026-09-17
 Reviewer: ChatGPT / AIPM
 Final Product Owner: Owner
-Reviewed implementation: `8c59b1908ade02897938c1e4b479b9b7d444333f`
+Reviewed R1 correction: `a43c34c151148c969bf2443cfe466864802ec63d`
 
-VERDICT: **NOT PASS — NARROW CORRECTION REQUIRED**
+VERDICT: **NOT PASS — THREE NARROW R2 RESIDUALS**
 V2-0A: **CLOSED / PASS — DO NOT REOPEN**
 V2-0B REAL SU2020 OWNER TEST: **HOLD**
 RESIDENTIAL STAGE 1: **NOT STARTED**
-CODEX: **NOT INVOKED — CORRECT SOURCE DEFECTS FIRST**
+CODEX: **NOT REQUIRED**
 
 ## Owner Summary
 
-The implementation direction is correct, but the current source cannot yet be trusted on the real SU2020 gate.
+R1 correctly closes the major first-review defects: real B1.5 Builder wiring, post-start exception abort boundary, real Vertex#position Z reading, confirmed-vs-unconfirmed rollback lock semantics, current-footprint construction, host-only success Group handle, and mutate-then-abort injected-failure behavior.
 
-The key issue is not test count. Several focused tests use fakes that do not match the actual V1 public bundle or real SketchUp Vertex shape, so 28/28 does not prove the real path.
+Three residuals remain before real SU2020 testing. They are narrow and do not require architecture redesign.
 
-AIPM found six narrow correction areas. No V2 architecture redesign is required.
+## R2-01 — root Group parent authority is wrong
 
-## BLOCK R1-01 — production default V1 handoff is miswired
+Current adapter checks real root ownership using `group.parent.nil?`.
 
-`Stage0BMassProbe#_default_build_seam` calls the real `PreparedCadDatasetBuilder.build` with the wrong keyword contract and projection-style bundle keys.
+SketchUp official Entity parent contract returns the containing Model / ComponentDefinition (narratively Model / ComponentDefinition / Group depending on containment). A top-level Group under `model.entities` therefore must be validated against the current Model, not nil.
 
-The real B1.5 public bundle contains `source_snapshot`, `workflow_snapshot`, `topology_snapshot`, `canonical_graph`, `structure_result`, `analysis_result`.
+Current code can reject a correct real-SU2020 root Group as `group_not_root`.
 
-The real Builder accepts those same authority inputs.
+Required: validate root Group with current-model parent authority; fake host must mirror that real shape.
 
-The current focused `V2-S0B-INT01` does not catch this because it injects lambda capture/build/validate seams that return a synthetic prebuilt dataset.
+## R2-02 — ownership identity/digest check is non-empty-only
 
-Consequence: the default production/Owner path can fail before geometry creation despite the green integration test.
+Current post-validation checks schema and kind exactly, but only verifies stored `footprint_id_full` and `source_content_digest` are non-empty.
 
-## BLOCK R1-02 — exceptions after start can escape without abort
+Frozen Blueprint requires exact match to the current re-resolved SemanticFootprint.
 
-`Stage0BMassProbe#run` calls `adapter.build_mass` without an outer rescue.
+Required: wrong-but-non-empty footprint ID or digest must fail before commit and rollback through the existing operation path.
 
-Any unexpected adapter/SketchUp exception after confirmed operation start can escape without the mandatory single abort attempt.
+## R2-03 — R1 INT02 is not truthful end-to-end default handoff
 
-The current Owner injected-failure decorator actually raises before construction and therefore does not prove rollback of mutated geometry; with the current orchestrator the raise can escape while the operation is open.
+R1 production default Builder wiring is now correct.
 
-## BLOCK R1-03 — post-validation is not real-SketchUp-complete
+However `V2-S0B-INT02` explicitly builds an empty-authority B1.5-shaped bundle and proves only that the real Builder returns canonical BLOCKED rather than raising due to bad keyword names. That is useful contract evidence, but it is not the required successful default:
 
-The adapter's `_z_of` does not support the real `Sketchup::Vertex#position` shape. Real SketchUp vertices expose their Point3d through `position`.
+`WorkingModeRunner.capture_prepared_cad_input_bundle -> PreparedCadDatasetBuilder -> PreparedCadDatasetValidator -> SemanticFootprintProjector -> Stage0B`
 
-The current post-validation also omits required proof of:
+integration proof.
 
-- root ownership;
-- Face + Edge presence;
-- explicit base z≈0 vertex;
-- explicit top z≈probe_height vertex;
-- footprint_id_full attribute round-trip;
-- source_content_digest attribute round-trip.
+Required: reuse the already-proven truthful V2-0A runner fixture pattern and run Stage0B with default capture/build/validate/projector seams; only the SketchUp host boundary may be fake.
 
-It also introduces a hidden fallback epsilon (`1e-6`) instead of requiring the footprint's frozen `coordinate_epsilon` authority.
+## R1 surfaces accepted / frozen
 
-## BLOCK R1-04 — confirmed rollback incorrectly locks the session
+Do not reopen without new evidence:
 
-In `HostOperationGuard#commit`, commit failure followed by `abort_operation == true` returns `COMMIT_FAILED_ROLLED_BACK` but also calls `lock!`.
+- R1-01 production `_default_build_seam` keyword wiring itself;
+- R1-02 unexpected post-start adapter exception -> exactly one abort attempt;
+- R1-03 real `Sketchup::Vertex#position` Z reading;
+- no hidden coordinate_epsilon fallback;
+- R1-04 confirmed rollback keeps session READY; unconfirmed rollback locks;
+- R1-05 geometry consumes current re-resolved footprint;
+- success result exposes host-only Group handle;
+- R1-06 Owner injected failure creates real geometry then raises before commit;
+- V1 and V2-0A production boundaries remain frozen.
 
-The frozen contract says confirmed rollback is known-safe and MUST NOT enter HOST_STATE_UNCERTAIN. Only unconfirmed rollback may lock later writes.
+## Current automated evidence
 
-The current OP09 test encodes the implementation bug rather than the Blueprint: it expects the guard to be uncertain after confirmed rollback.
+Pi reports R1:
 
-## BLOCK R1-05 — current footprint/host-handle result seam is incomplete
+- V2-0B focused: 42/42 PASS;
+- V2-0A: 43/43 PASS;
+- V1.7: 127/127 PASS;
+- V1.8: 74/74 PASS;
+- B1.2: 83/83 PASS;
+- B1.5: 17/17 PASS;
+- full runner: 1509 tests / 1500 pass / 5 fail / 4 error;
+- no new fail/error versus established debt.
 
-Freshness re-resolution finds a current matched footprint but discards it; construction still uses the caller's original footprint.
-
-The success result also omits the generated Group handle even though the Owner probe reads `result['group']`.
-
-V2-0B must build from the re-resolved current footprint and expose the generated group as a host-only result field.
-
-## BLOCK R1-06 — Owner injected-failure proof is not yet a rollback proof
-
-The probe comments promise failure after mutation has begun, but `_inject_failure_build_mass` raises immediately before real adapter construction.
-
-The corrected probe must create real V2 geometry inside the open operation and then raise before commit, allowing the production exception boundary to abort and prove zero residue.
-
-## Source facts accepted
-
-The following direction remains correct and should not be redesigned:
-
-- one normal non-transparent operation;
-- model-root independent group;
-- empty `add_group` then geometry inside group;
-- +Z orientation before positive pushpull;
-- ownership dictionary inside the same operation;
-- full content_digest stale authority;
-- exact footprint_id_full re-resolution;
-- root-context checks before capture and immediately before start;
-- V2 session uncertainty lock when rollback cannot be confirmed;
-- V1 and V2-0A frozen boundaries.
-
-## Automated evidence status
-
-Pi reported:
-
-- V2-0B focused 28/28 PASS;
-- V2-0A 43/43 PASS;
-- V1.7 127/127 PASS;
-- V1.8 74/74 PASS;
-- B1.2 83/83 PASS;
-- B1.5 17/17 PASS;
-- full runner 1495 / 1486 pass / 5 fail / 4 error with no new fail/error.
-
-These are useful regression evidence, but they do not close the source-review BLOCKs above.
+These regressions are accepted but do not close R2-01..03.
 
 ## Required correction authority
 
 Pi must follow:
 
-`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R1_CORRECTION_2026-09-16.md`
+`Prompt/AIPM_V2_0B_SOURCE_REVIEW_R2_CORRECTION_2026-09-17.md`
 
-No Owner real-SU test before the correction passes direct source review.
+No real SU2020 Owner test until R2 passes direct AIPM source review.
 
 END
