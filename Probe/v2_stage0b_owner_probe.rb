@@ -56,6 +56,24 @@ module SUAnalysis
       # ENV['V2_S0B_PROBE_HEIGHT'].
       DEFAULT_PROBE_HEIGHT = 120.0
 
+      # Deterministic one-click synthetic data. These
+      # values are intentionally fixed so the Owner gate
+      # is reproducible across runs and across developers.
+      ONE_CLICK_RECT_W         = 240.0
+      ONE_CLICK_RECT_H         = 180.0
+      ONE_CLICK_PROBE_HEIGHT   = 120.0
+      ONE_CLICK_COORD_EPSILON  = 1.0e-6
+      ONE_CLICK_FOOTPRINT_ID_FULL =
+        ('a' * 64).freeze
+      ONE_CLICK_SOURCE_CONTENT_DIGEST =
+        ('b' * 64).freeze
+      ONE_CLICK_DATASET_ID =
+        'ds-v2-owner-probe-one-click'.freeze
+      ONE_CLICK_LAYER_NAME =
+        'V2_OWNER_PROBE'.freeze
+      ONE_CLICK_SEMANTIC_ROLE =
+        'body'.freeze
+
       attr_reader :guard, :adapter, :probe
 
       def initialize(model_provider: nil)
@@ -67,6 +85,248 @@ module SUAnalysis
           guard:   @guard,
           adapter: @adapter
         )
+      end
+
+      # ------------------------------------------------------------
+      # Owner-facing class-level one-click entry points.
+      #
+      # The Owner loads this Probe file and calls these
+      # two methods directly from the SU Ruby console.
+      # No footprint / analysis_result / PCD / Runner /
+      # Builder / Validator / Projector object construction
+      # is required.
+      #
+      # Both methods are deliberately self-contained:
+      # they DO NOT mutate, prepare, or reset the
+      # Runner / CAD Prep session; they DO NOT touch
+      # source CAD or V1 Derived Workspace; they use a
+      # fixed Probe-only synthetic freshness package to
+      # satisfy Stage0B's existing injected-seam
+      # contract so that ONLY the real SketchUp host
+      # mutation / native Undo / abort-rollback
+      # behavior is exercised.
+      #
+      # Optional `model_provider:` is exposed ONLY for
+      # host-free test injection; in real SU2020 the
+      # adapter's normal `Sketchup.active_model` provider
+      # is used.
+      # ------------------------------------------------------------
+
+      def self.run_success_one_click(model_provider: nil)
+        new(model_provider: model_provider).run_success_one_click
+      end
+
+      def self.run_injected_failure_one_click(model_provider: nil)
+        new(model_provider: model_provider).run_injected_failure_one_click
+      end
+
+      # ------------------------------------------------------------
+      # Instance-level one-click probes.
+      # ------------------------------------------------------------
+
+      # One-click SUCCESS probe against the real SketchUp
+      # host boundary. Returns the normal Stage0B result
+      # Hash; prints an Owner-readable summary.
+      def run_success_one_click
+        seams   = _one_click_synthetic_seams
+        footprint = _one_click_synthetic_footprint
+        # Stage0BMassProbe takes the synthetic seams via
+        # the constructor, NOT via run kwargs. We construct
+        # a dedicated Stage0BMassProbe instance per
+        # invocation so the seams cannot leak into
+        # subsequent probe calls.
+        probe = SUAnalysis::V2::Stage0BMassProbe.new(
+          guard:        @guard,
+          adapter:      @adapter,
+          capture_seam: seams[:capture],
+          build_seam:   seams[:build],
+          validate_seam: seams[:validate],
+          projector:    seams[:projector]
+        )
+        result = probe.run(
+          footprint:        footprint,
+          analysis_result:  nil,
+          probe_height:     ONE_CLICK_PROBE_HEIGHT
+        )
+        _print_success_result(result)
+        result
+      end
+
+      # One-click INJECTED-FAILURE probe against the real
+      # SketchUp host boundary. Delegates to the real
+      # adapter FIRST (so Group + Face + extrusion +
+      # ownership attributes are actually created inside
+      # the open operation), then raises a Probe-only
+      # exception so Stage0B's exception boundary
+      # performs exactly one abort attempt.
+      #
+      # The failure probe MUST NOT require Owner to press
+      # Undo. Confirmed abort removes the V2 group with
+      # zero visible residue.
+      def run_injected_failure_one_click
+        seams   = _one_click_synthetic_seams
+        footprint = _one_click_synthetic_footprint
+        decorator = PushpullRaisingAdapterDecorator.new(@adapter)
+        probe = SUAnalysis::V2::Stage0BMassProbe.new(
+          guard:        @guard,
+          adapter:      decorator,
+          capture_seam: seams[:capture],
+          build_seam:   seams[:build],
+          validate_seam: seams[:validate],
+          projector:    seams[:projector]
+        )
+        result = probe.run(
+          footprint:        footprint,
+          analysis_result:  nil,
+          probe_height:     ONE_CLICK_PROBE_HEIGHT
+        )
+        _print_injected_failure_result(result)
+        result
+      end
+
+      # ------------------------------------------------------------
+      # Probe-only synthetic freshness package.
+      #
+      # The truthful production-default V1 -> Builder ->
+      # Validator -> Projector -> Stage0B integration is
+      # already separately proven by V2-S0B-R2-INT04. The
+      # purpose of this Owner gate is specifically to
+      # isolate and verify real SketchUp host mutation /
+      # native Undo / abort-rollback behavior, NOT to
+      # retest the V1 pure-data chain.
+      #
+      # Therefore the one-click wrappers use a fixed
+      # synthetic freshness package that satisfies
+      # Stage0B's existing injected-seam contract without
+      # disturbing the user CAD Prep session.
+      # ------------------------------------------------------------
+
+      private
+
+      # Deterministic rectangular SemanticFootprint-shaped
+      # Hash that satisfies the V2-0A SemanticFootprint
+      # Blueprint §3.2 contract shape and Stage0B input
+      # validation (Blueprint §4). The fingerprint values
+      # are intentionally fixed.
+      def _one_click_synthetic_footprint
+        {
+          'schema_version'      => 'v2.semantic-footprint.v1',
+          'footprint_id'        => 'v2fp-' + ONE_CLICK_FOOTPRINT_ID_FULL[0, 20],
+          'footprint_id_full'   => ONE_CLICK_FOOTPRINT_ID_FULL,
+          'semantic_role'       => ONE_CLICK_SEMANTIC_ROLE,
+          'source_layer_name'   => ONE_CLICK_LAYER_NAME,
+          'source_dataset_id'   => ONE_CLICK_DATASET_ID,
+          'source_content_digest' => ONE_CLICK_SOURCE_CONTENT_DIGEST,
+          'coordinate_epsilon'  => ONE_CLICK_COORD_EPSILON,
+          'source_node_ids'     => %w[n1 n2 n3 n4],
+          'source_edge_ids'     => %w[e1 e2 e3 e4],
+          'projected_world_coordinates' => [
+            [0.0,                  0.0,                  0.0],
+            [ONE_CLICK_RECT_W,     0.0,                  0.0],
+            [ONE_CLICK_RECT_W,     ONE_CLICK_RECT_H,     0.0],
+            [0.0,                  ONE_CLICK_RECT_H,     0.0]
+          ],
+          'area_xy'   => ONE_CLICK_RECT_W * ONE_CLICK_RECT_H,
+          'perimeter' => 2.0 * (ONE_CLICK_RECT_W + ONE_CLICK_RECT_H)
+        }
+      end
+
+      # Duck-typed final PreparedCadDataset stand-in.
+      # Stage0B's freshness check uses two accessors:
+      # - `dataset.respond_to?(:final?) && dataset.final?`
+      # - `dataset.respond_to?(:content_digest) ? dataset.content_digest.to_s : ''`
+      # We provide only those accessors plus a minimal
+      # marker. This stand-in is constructed ONCE per
+      # probe invocation (closure-shared across the four
+      # seams so object identity is stable).
+      def _one_click_synthetic_dataset
+        digest = ONE_CLICK_SOURCE_CONTENT_DIGEST
+        ds = Object.new
+        ds.define_singleton_method(:final?) { true }
+        ds.define_singleton_method(:content_digest) { digest }
+        ds
+      end
+
+      # Returns a Hash of four Procs that satisfy
+      # Stage0B's injected-seam contract. The four seams
+      # are intentionally synthetic and self-contained;
+      # they DO NOT touch source CAD or V1 Derived
+      # Workspace.
+      def _one_click_synthetic_seams
+        dataset   = _one_click_synthetic_dataset
+        footprint = _one_click_synthetic_footprint
+        capture_seam = ->(analysis_result:) {
+          {
+            'status' => 'CAPTURED',
+            'bundle' => {
+              'source_snapshot'    => nil,
+              'workflow_snapshot'  => {},
+              'topology_snapshot'  => nil,
+              'canonical_graph'    => nil,
+              'structure_result'   => nil,
+              'analysis_result'    => analysis_result
+            }
+          }
+        }
+        build_seam = ->(bundle) {
+          { 'status' => 'BUILT', 'dataset' => dataset }
+        }
+        validate_seam = ->(dataset:, workflow_snapshot:) {
+          { 'status' => 'READY', 'dataset' => dataset }
+        }
+        projector = ->(dataset:, semantic_role:, layer_name:) {
+          {
+            'status'    => 'PROJECTED',
+            'footprints' => [footprint]
+          }
+        }
+        {
+          capture:  capture_seam,
+          build:    build_seam,
+          validate: validate_seam,
+          projector: projector
+        }
+      end
+
+      def _print_success_result(result)
+        if result['status'] == SUAnalysis::V2::Stage0BMassProbe::STATUS_SUCCESS
+          group = result['group']
+          puts '[V2-0B Owner-Gate one-click SUCCESS]'
+          puts "  status:    #{result['status']}"
+          puts "  group:     #{group.respond_to?(:name) ? group.name : '<unknown>'}"
+          puts "  fpid:      #{result['footprint_id_full']}"
+          puts "  probe_height: #{ONE_CLICK_PROBE_HEIGHT}"
+          puts '  Owner action required:'
+          puts '    Press native SketchUp Undo ONCE.'
+          puts '    Expected: the entire SU-AI-V2-Probe-* Group'
+          puts '    disappears in a single Undo.'
+        else
+          puts '[V2-0B Owner-Gate one-click NON-SUCCESS]'
+          result.each do |k, v|
+            puts "  #{k}: #{v.inspect}"
+          end
+          puts '  Owner action required:'
+          puts '    Inspect the failure status / error and'
+          puts '    return the console output to AIPM.'
+        end
+      end
+
+      def _print_injected_failure_result(result)
+        puts '[V2-0B Owner-Gate one-click INJECTED FAILURE]'
+        result.each do |k, v|
+          puts "  #{k}: #{v.inspect}"
+        end
+        if result['status'] ==
+           SUAnalysis::V2::Stage0BMassProbe::STATUS_FAILED_ROLLED_BACK
+          puts '  Owner action required:'
+          puts '    Confirm no SU-AI-V2-Probe-* Group remains'
+          puts '    visible in the model. Expected: zero visible'
+          puts '    V2 probe residue remains. Do NOT press Undo.'
+        else
+          puts '  Owner action required:'
+          puts '    Inspect the failure status / error and'
+          puts '    return the console output to AIPM.'
+        end
       end
 
       # Success probe. Owner invokes this in real SU2020,
@@ -234,3 +494,25 @@ end
 #
 # After completion, the model should contain no visible
 # V2 probe residue.
+#
+# ----------------------------------------------------------------
+# V2-0B Owner Gate ONE-CLICK entry points (added 2026-09-17
+# per Prompt/AIPM_V2_0B_OWNER_GATE_ONE_CLICK_PROBE_2026-09-17.md).
+#
+# After loading this Probe file, the Owner runs ONLY:
+#
+#   SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click
+#
+# then presses native SketchUp Undo ONCE and confirms the
+# SU-AI-V2-Probe-* Group disappears. Next:
+#
+#   SUAnalysis::Probe::V2Stage0BOwnerProbe.run_injected_failure_one_click
+#
+# then confirms zero visible V2 residue remains. Do NOT
+# press Undo for the injected-failure probe.
+#
+# The one-click wrappers do NOT touch source CAD or V1
+# Derived Workspace; they do NOT require the Owner to
+# construct any footprint / analysis_result / PCD / Runner
+# / Builder / Validator / Projector object.
+# ----------------------------------------------------------------

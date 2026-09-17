@@ -1,4 +1,303 @@
-## V2-0B SOURCE REVIEW R2 CORRECTION — 2026-09-17 (THIS UPDATE)
+## V2-0B OWNER GATE ONE-CLICK PROBE — 2026-09-17 (THIS UPDATE)
+
+Updated: 2026-09-17 (V2-0B Owner Gate one-click Probe
+implementation on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0B_OWNER_GATE_ONE_CLICK_PROBE_2026-09-17.md`).
+The V2-0B R2 source gate is closed
+(`5a3c8cd02cad1948a46901b80f5463f6d994bfff`). This
+packet adds a Probe-only one-click Owner entry point so
+the Owner can run the real-SU2020 host gate from the SU
+Ruby Console without constructing internal V1/V2 data
+objects. NO production file is modified.
+
+### Probe-only one-click API
+
+Two class-level entry points exposed on the existing
+`SUAnalysis::Probe::V2Stage0BOwnerProbe`:
+
+```ruby
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_injected_failure_one_click
+```
+
+Both accept an optional `model_provider:` keyword for
+host-free test injection. In real SU2020 the production
+`V2SketchupMassAdapter` uses its normal
+`Sketchup.active_model` default.
+
+The Owner loads the Probe file and runs ONLY these two
+calls:
+
+```ruby
+load 'D:/Projects/SU-AI-Plugin/Probe/v2_stage0b_owner_probe.rb'
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click
+# (press native Undo ONCE; confirm SU-AI-V2-Probe-* Group
+# disappears)
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_injected_failure_one_click
+# (confirm zero visible V2 residue remains; do NOT press Undo)
+```
+
+No footprint / analysis_result / PCD / Runner / Builder /
+Validator / Projector object construction is required
+from the Owner.
+
+### Probe-only synthetic freshness package
+
+The one-click wrappers use a fixed synthetic freshness
+package that satisfies Stage0B's existing injected-seam
+contract without disturbing WorkingModeRunner or any
+user CAD Prep session.
+
+- Deterministic rectangular footprint (240 x 180 inches
+  at z=0) with probe height 120 inches.
+- `footprint_id_full` = 64 lowercase `'a'`;
+- `source_content_digest` = 64 lowercase `'b'`;
+- `semantic_role` = `'body'`;
+- `source_layer_name` = `'V2_OWNER_PROBE'`;
+- `coordinate_epsilon` = `1.0e-6`.
+- Final dataset stand-in (duck-typed):
+  `final? == true` and `content_digest` exactly equal to
+  the footprint's `source_content_digest`.
+- Synthetic seams:
+  - capture => `{ 'status' => 'CAPTURED', 'bundle' => Hash }`;
+  - build => `{ 'status' => 'BUILT', 'dataset' => stand-in }`;
+  - validate => `{ 'status' => 'READY', 'dataset' => stand-in }`;
+  - projector =>
+    `{ 'status' => 'PROJECTED', 'footprints' => [footprint] }`.
+
+The truthful production-default V1 -> Builder ->
+Validator -> Projector -> Stage0B integration is
+already separately proven by `V2-S0B-R2-INT04`. The
+purpose of this Owner gate is specifically to isolate
+and verify real SketchUp host mutation / native Undo /
+abort-rollback behavior, NOT to retest the V1 pure-data
+chain.
+
+### Real-host success one-click behavior
+
+`run_success_one_click`:
+
+1. instantiates a fresh `HostOperationGuard`;
+2. instantiates the real `V2SketchupMassAdapter` with
+   its normal real-host model provider
+   (`Sketchup.active_model` in real SU2020);
+3. instantiates a dedicated `Stage0BMassProbe` with the
+   Probe-only synthetic freshness seams;
+5. runs one deterministic rectangular mass at the
+   default probe height;
+6. prints a compact Owner-readable result.
+
+On `SUCCESS` the console clearly says:
+- `SUCCESS`;
+- generated Group name;
+- expected next action: press native SketchUp Undo
+  ONCE;
+- expected observation: the entire
+  `SU-AI-V2-Probe-*` Group disappears in a single Undo.
+
+The wrapper returns the normal Stage0B result Hash so
+debugging remains possible. If the model is not at root
+edit context, the existing Stage0B context failure is
+returned / printed. The wrapper does NOT auto-close
+edit context.
+
+### Real-host injected-failure one-click behavior
+
+`run_injected_failure_one_click` uses the existing
+Probe-only `PushpullRaisingAdapterDecorator`:
+
+1. real `V2SketchupMassAdapter`;
+2. real production `Stage0BMassProbe`;
+3. decorator delegates to real adapter FIRST so Group +
+   Face + extrusion + ownership attributes are actually
+   created inside the open operation;
+4. then raises a Probe-only exception before commit;
+5. production Stage0B exception boundary performs
+   exactly one abort attempt.
+
+Expected result when real SketchUp confirms abort:
+
+`FAILED_ROLLED_BACK`
+
+Console output tells the Owner:
+- do NOT press Undo;
+- confirm no `SU-AI-V2-Probe-*` Group remains visible;
+- expected observation: zero visible generated mass
+  residue remains.
+
+### Owner-state isolation
+
+The one-click host diagnostics MUST NOT:
+- reset or replace current WorkingModeRunner state
+  (enforced by `OG-04` runtime spy on
+  `reset_for_tests` / `prepare` / `discard`);
+- mutate source CAD;
+- mutate V1 Derived Workspace;
+- create toolbar / menu / HtmlDialog UI;
+- persist synthetic dataset / footprint into model
+  metadata beyond the existing generated probe Group
+  attributes;
+- modify user selection;
+- change camera;
+- save the model;
+- automatically invoke Undo;
+- automatically erase a successfully committed probe
+  Group before Owner can verify Undo.
+
+The success probe intentionally leaves the committed
+Group in the model until the Owner presses native Undo
+once. The injected-failure probe leaves zero visible
+residue when abort is confirmed.
+
+### Validation
+
+- `ruby -c` on modified / new Ruby files: **Syntax OK**.
+- `git diff --check`: clean.
+- OG focused suite (`OG-` filter):
+  **7 / 7 PASS, 0 fail, 0 error**. Coverage of the
+  required Owner-Gate acceptance matrix:
+
+  | ID | Description | Result |
+  |----|-------------|--------|
+  | OG-01 | one-click success returns SUCCESS + exactly one root probe Group + correct ownership attrs + 1 start + 1 commit + 0 abort | PASS |
+  | OG-02 | success wrapper self-contained (no caller footprint / analysis_result) + class-level invocation path | PASS |
+  | OG-03 | one-click injected failure -> FAILED_ROLLED_BACK + zero surviving root probe Group + exactly one abort attempt | PASS |
+  | OG-04 | one-click wrapper does NOT call WorkingModeRunner.reset_for_tests / .prepare / .discard (runtime spy) | PASS |
+  | OG-04-ST | source guard: probe file code lines have no forbidden WorkingModeRunner method-name patterns (supplementary) | PASS |
+  | OG-05 | production scope frozen: test file does not require any V1 / V2-0A / out-of-allowed production file | PASS |
+  | OG-COMPAT | Probe file uses only Ruby 2.2-era helpers (no `match?`, no `Array#sum`, no `Hash#compact`, no `filter_map`, no `transform_keys`, no safe navigation, no `then`/`yield_self`, no case-in) | PASS |
+
+- V2-0B focused (`V2-S0B-` filter):
+  **50 / 50 PASS** (unchanged).
+- V2-0A focused (`V2-S0A-` filter):
+  **43 / 43 PASS** (unchanged).
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS** (unchanged).
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS** (unchanged).
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**.
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**.
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS**.
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1524 tests, 1515 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R2 baseline (1517 / 1508 / 5 / 4):
+
+  - +7 OG tests, all passing;
+  - +7 pass;
+  - 0 new fail;
+  - 0 new error;
+  - the 5 fail / 4 error set is the SAME pre-existing
+    baseline unchanged by this packet (identical
+    failure IDs as the R2 record):
+
+    - 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+      FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+      (V1.9A FINAL P1-C) = 5 issues on `html_render`;
+    - 1 FAIL on `capability.HtmlDialog`
+      (R002 + S2-BLOCK-006);
+    - 1 ERROR on `V14 production call chain`
+      (FakeUI limitation);
+    - 1 ERROR on `V17-L1 host_state_changed`
+      (FakeUI limitation);
+    - 1 ERROR on `v19a_presenter (FINAL P1-B)`
+      (presenter test guard).
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the OG
+implementation commit:
+
+```
+Probe/v2_stage0b_owner_probe.rb     | modified
+tests/test_v2_stage0b_owner_probe.rb| new
+CURRENT_STATE.md                     | modified
+Review/CURRENT_PI_REPORT.md          | modified
+```
+
+NO production file is modified by this packet. In
+particular, the following production files are unchanged:
+- `extension/su_ai_plugin/v2/host_operation_guard.rb`;
+- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`;
+- `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`;
+- any V1 production file;
+- any V2-0A production file.
+
+The pre-existing `Probe/v2_stage0b_owner_probe.rb`
+public probe contract for `run_success_probe` /
+`run_injected_failure_probe` is preserved unchanged;
+the one-click additions are purely additive.
+
+The V2-0B host mass probe test
+`tests/test_v2_stage0b_host_mass_probe.rb` is unchanged.
+
+### Frozen / forbidden — confirmed not touched
+
+- V1 production files unchanged.
+- `pcd.v1` / `PreparedCadDataset` / Validator /
+  Runner unchanged.
+- `CanonicalStructureReconstructor` unchanged.
+- Three V2-0A production files unchanged
+  (`layer_local_graph_adapter.rb` /
+  `semantic_footprint.rb` /
+  `semantic_footprint_projector.rb`).
+- `host_operation_guard.rb` unchanged.
+- `stage0b_mass_probe.rb` unchanged.
+- `v2_sketchup_mass_adapter.rb` unchanged.
+- Loader / UI / Tool / HtmlDialog untouched.
+- No selection Tool / pickray / highlight.
+- No Residential Stage 1 / floors / seams / balconies /
+  parapets.
+- No update / regenerate.
+- No site / raised community / roads / landscape.
+- No materials.
+- No MCP / LLM / Agent.
+- V2 Residential Stage 1 NOT STARTED.
+- Codex NOT invoked.
+- `main` NOT pushed / force-pushed / rewritten.
+- Owner real SU2020 gate NOT RUN by Pi.
+- No production `failure_stage` switch added.
+
+### Real-SketchUp Gate
+
+Automated + source evidence is now sufficient for the
+Owner to run the real-SU2020 gate. The Owner must
+run in real SU2020:
+
+```ruby
+load 'D:/Projects/SU-AI-Plugin/Probe/v2_stage0b_owner_probe.rb'
+
+# 1. Success probe
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click
+# Press native SketchUp Undo ONCE.
+# Expected: the entire SU-AI-V2-Probe-* Group disappears.
+
+# 2. Injected-failure probe
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_injected_failure_one_click
+# Expected: status FAILED_ROLLED_BACK, zero visible V2
+# residue remains.
+```
+
+If both real-host probes pass, AIPM may declare:
+
+`V2-0B = CLOSED / PASS`
+
+If either probe fails, real-host evidence overrides
+automated tests. STOP and return the exact console
+output / visible behavior to AIPM for a narrow
+correction.
+
+Pi STOPs here. No Owner real-SU2020 probe is run by
+Pi. No Residential Stage 1 is started.
+
+---
+
+## V2-0B SOURCE REVIEW R2 CORRECTION — 2026-09-17 (PREVIOUS)
 
 Updated: 2026-09-17 (V2-0B SOURCE REVIEW R2 CORRECTION
 implementation on assigned `dev/v2` per
