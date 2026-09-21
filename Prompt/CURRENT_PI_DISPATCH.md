@@ -1,89 +1,60 @@
-# CURRENT PI DISPATCH — V2-0B OWNER GATE R1 NAMESPACE CORRECTION
+# CURRENT PI DISPATCH — V2-0B OWNER RETEST HOLD
 
 Date: 2026-09-21
 Project: SU-AI-Plugin
 TARGET_BRANCH: dev/v2
-STATUS: ACTIVE
+STATUS: COMPLETE — WAITING FOR OWNER REAL SU2020 RETEST
 
 ## Current truth
 
 V2-0A = CLOSED / PASS.
 
-V2-0B automated/source gate had passed, and the one-click Owner Probe implementation is present at:
+Owner Gate R1 namespace correction implementation:
 
-`befbf89f1ee552f036909053351c9f14bd0c04cf`
+`513353592b82c5ab439b797d256ff5c73cb93011`
 
-Real SU2020 Owner Gate was then executed and FAILED before intended geometry mutation with:
+AIPM direct source review:
 
-`NameError: uninitialized constant SUAnalysis::V2::Stage0BMassProbe::V2SketchupMassAdapter`
+`PASS — SOURCE CORRECTION CLOSED`
 
-Real-host evidence overrides automated tests.
+The next gate is NOT a Pi coding task.
 
-Residential Stage 1 remains NOT STARTED.
+## Pi authority
 
-## Current authority
+Pi has NO ACTIVE implementation task.
 
-Execute exactly:
+Do NOT:
 
-`Prompt/AIPM_V2_0B_OWNER_GATE_R1_NAMESPACE_CORRECTION_2026-09-21.md`
+- modify code;
+- start Residential Stage 1;
+- run real SU2020 Owner retest;
+- invoke Codex;
+- infer work from historical Prompt/Review files.
 
-Frozen Stage Blueprint remains:
+Wait for AIPM/Owner after the real-SU2020 retest.
 
-`Prompt/AIPM_STAGE_TECHNICAL_BLUEPRINT_V2_0B_HOST_GEOMETRY_PROBE_2026-09-16.md`
+## Owner gate
 
-## Before work
+Owner will run in a clean SU2020 session:
 
-```bash
-cd "D:/Projects/SU-AI-Plugin"
-git fetch origin
-git switch dev/v2
-git pull --ff-only origin dev/v2
+```ruby
+load 'D:/Projects/SU-AI-Plugin/Probe/v2_stage0b_owner_probe.rb'
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click
 ```
 
-Verify:
+Then press native Undo exactly once and confirm the complete probe Group disappears.
 
-- branch == dev/v2;
-- local == latest origin/dev/v2;
-- Owner Probe commit `befbf89f1ee552f036909053351c9f14bd0c04cf` is ancestor of HEAD;
-- current correction file exists;
-- this dispatch is ACTIVE.
+Then:
 
-If not, STOP.
+```ruby
+SUAnalysis::Probe::V2Stage0BOwnerProbe.run_injected_failure_one_click
+```
 
-## Scope
+Expected:
+- status = FAILED_ROLLED_BACK;
+- zero visible SU-AI-V2-Probe-* residue;
+- do NOT press Undo after the failure probe.
 
-This is a narrow production namespace correction + anti-regression test.
-
-Allowed production file:
-
-- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
-
-Allowed tests:
-
-- existing V2-0B focused tests;
-- existing Owner Probe focused tests;
-- one new narrow namespace-isolation regression file if useful.
-
-Completion docs:
-
-- `CURRENT_STATE.md`
-- `Review/CURRENT_PI_REPORT.md`
-
-## Required outcome
-
-1. Stage0B must reference the adapter through the explicit authority:
-   `SUAnalysis::Compatibility::V2SketchupMassAdapter`.
-2. Do not add an alias under `SUAnalysis::V2`.
-3. Add a real runtime anti-regression test that does NOT depend on top-level
-   `include SUAnalysis::Compatibility`.
-4. No V1 / V2-0A / HostOperationGuard / architecture changes.
-5. No real SU2020 test by Pi.
-6. No Residential / UI / Tool / MCP / LLM / Agent work.
-
-After tests, commit + push dev/v2 and STOP.
-
-Completion state:
-
-`V2-0B OWNER GATE R1 IMPLEMENTED — PENDING AIPM SOURCE REVIEW + OWNER REAL SU2020 RETEST`
+Only after Owner PASS may AIPM close V2-0B and authorize the next Stage.
 
 END
