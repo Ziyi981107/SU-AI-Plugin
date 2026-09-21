@@ -1,80 +1,123 @@
-# CURRENT AIPM REVIEW — V2-0B REAL SU2020 OWNER GATE FAIL
+# CURRENT AIPM REVIEW — V2-0B OWNER GATE R1 SOURCE PASS
 
 Project: SU-AI-Plugin
 Stage: V2-0B Host Geometry Probe
 Date: 2026-09-21
 Reviewer: ChatGPT / AIPM
 Final Product Owner: Owner
+Reviewed implementation: `513353592b82c5ab439b797d256ff5c73cb93011`
 
-VERDICT: **NOT PASS — REAL HOST NAMESPACE BLOCK**
+VERDICT: **PASS — SOURCE CORRECTION CLOSED**
 V2-0A: **CLOSED / PASS — DO NOT REOPEN**
-V2-0B AUTOMATED/SOURCE EVIDENCE: **PREVIOUSLY PASS**
-V2-0B REAL SU2020 OWNER TEST: **FAILED / CORRECTION REQUIRED**
+V2-0B AUTOMATED/SOURCE EVIDENCE: **PASS**
+V2-0B REAL SU2020 OWNER RETEST: **AUTHORIZED / REQUIRED**
 RESIDENTIAL STAGE 1: **NOT STARTED**
 CODEX: **NOT REQUIRED**
 
-## Owner evidence
+## Owner summary
 
-The Owner loaded the one-click Probe in real SketchUp 2020 and invoked:
+The real-SU2020 namespace failure is corrected in production.
 
-`SUAnalysis::Probe::V2Stage0BOwnerProbe.run_success_one_click`
+AIPM directly reviewed the real remote commit and diff. The production change is narrow and confined to:
 
-Real host returned:
+`extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+
+All Stage0B references to the real SketchUp mass adapter now use the explicit authority:
+
+`SUAnalysis::Compatibility::V2SketchupMassAdapter`
+
+No alias was introduced under `SUAnalysis::V2`. No V1, V2-0A, HostOperationGuard, adapter, freshness, rollback, ownership, UI, Residential, MCP/LLM/Agent surface was changed.
+
+## Real diff verification
+
+Base:
+`2673f666cc805c3d0779441226cd9d0bdd46bc06`
+
+Head:
+`513353592b82c5ab439b797d256ff5c73cb93011`
+
+Exactly one commit ahead.
+
+Changed files:
+
+- `CURRENT_STATE.md`
+- `Review/CURRENT_PI_REPORT.md`
+- `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+- `tests/test_v2_stage0b_namespace_isolation.rb`
+
+Only one production file changed.
+
+## Production correction — PASS
+
+The four execution references are explicitly qualified:
+
+- `OPERATION_LABEL`
+- `STATUS_CONSTRUCTION_FAILED`
+- `STATUS_SUCCESS`
+- `STATUS_POST_VALIDATION_FAILED`
+
+through:
+
+`SUAnalysis::Compatibility::V2SketchupMassAdapter`
+
+This directly resolves the Owner-observed:
 
 `NameError: uninitialized constant SUAnalysis::V2::Stage0BMassProbe::V2SketchupMassAdapter`
 
-The failure occurs in production `stage0b_mass_probe.rb` before intended geometry construction.
+## Anti-regression evidence — accepted
 
-## Root cause
+- NS-01 fresh Ruby subprocess executes Stage0B success path without top-level `include SUAnalysis::Compatibility` and reaches SUCCESS.
+- NS-02 fresh Ruby subprocess executes the failure/abort path and reaches FAILED_ROLLED_BACK.
+- NS-04 transforms the production file back to the unqualified regression form and proves the clean subprocess no longer reaches SUCCESS.
 
-`Stage0BMassProbe` is defined under `SUAnalysis::V2`, while the adapter class is defined under:
+Non-blocking note:
 
-`SUAnalysis::Compatibility::V2SketchupMassAdapter`
+NS-03's supplementary source-text regex is malformed/vacuous (`/ok\s*V2SketchupMassAdapter::/`) and therefore does not itself prove the claimed source scan. This does NOT block this gate because:
+1. AIPM directly inspected the current production file and verified the four execution references;
+2. NS-01 and NS-02 are real clean-namespace runtime proofs;
+3. NS-04 is the authoritative negative runtime proof.
 
-Production Stage0B directly uses unqualified `V2SketchupMassAdapter::...` references.
+Do not open another correction solely for NS-03.
 
-The focused test environment masked the bug because
-`tests/test_v2_stage0b_host_mass_probe.rb` performs top-level:
+## Regression evidence accepted
 
-`include SUAnalysis::Compatibility`
+Pi reports:
 
-which pollutes constant lookup in tests but is absent from normal real SketchUp runtime.
+- namespace isolation: 4 / 4 PASS;
+- V2-0B: 54 / 54 PASS;
+- Owner-Gate focused: 7 / 7 PASS;
+- V2-0A: 43 / 43 PASS;
+- V1.7: 127 / 127 PASS;
+- V1.8: 74 / 74 PASS;
+- V1.9B1 B1.2: 83 / 83 PASS;
+- V1.9B1 B1.5: 17 / 17 PASS;
+- RBZ smoke: 9 / 9 PASS;
+- Ruby 2.2-era compatibility guard: PASS;
+- full runner: 1528 tests / 1519 pass / 5 fail / 4 error, same established pre-existing failure set and no new fail/error.
 
-## Duplicate-constant warnings
+## Final Owner real-SU2020 retest
 
-The Owner also saw `already initialized constant` warnings for V1 classes.
+Use a CLEAN SketchUp 2020 session.
 
-These came from having an installed AppData SU-AI-Plugin copy already loaded while also loading repository source with the developer Probe.
+Because the previous Owner run had both the installed AppData extension and repository source loaded, duplicate-constant warnings appeared. For the retest:
 
-They are not the primary BLOCK and must not be “fixed” by namespace aliases or reload hacks.
+1. disable the installed SU-AI-Plugin in Extension Manager;
+2. fully restart SketchUp 2020;
+3. open a blank model at root edit context;
+4. load only the repository Probe source;
+5. run success one-click probe;
+6. confirm one probe mass appears;
+7. press native Undo exactly once;
+8. confirm the entire probe Group disappears;
+9. run injected-failure one-click probe;
+10. confirm FAILED_ROLLED_BACK and zero visible probe residue; do NOT press Undo after the failure probe.
 
-For the next Owner retest, use a clean SU2020 session with the installed extension disabled/restarted before loading repo Probe source.
+If both pass, AIPM may declare:
 
-## Required correction
+`V2-0B = CLOSED / PASS`
 
-See:
+If either fails, real-host evidence overrides this source PASS and a new narrow correction is required.
 
-`Prompt/AIPM_V2_0B_OWNER_GATE_R1_NAMESPACE_CORRECTION_2026-09-21.md`
-
-Required production direction:
-
-all Stage0B adapter constant references must be fully qualified to:
-
-`SUAnalysis::Compatibility::V2SketchupMassAdapter`
-
-A runtime namespace-isolation regression must prove the production path no longer relies on test pollution.
-
-## Gate
-
-STOP V2-0B closure.
-Do not start Residential Stage 1.
-
-After Pi correction:
-1. AIPM direct source review;
-2. clean-session real SU2020 success probe;
-3. one native Undo => full Group disappears;
-4. injected-failure probe => FAILED_ROLLED_BACK + zero residue.
-
-Only then may V2-0B become CLOSED / PASS.
+Do NOT start Residential Stage 1 until Owner retest passes.
 
 END
