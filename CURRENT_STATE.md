@@ -1,4 +1,224 @@
-## V2-0B OWNER GATE ONE-CLICK PROBE — 2026-09-17 (THIS UPDATE)
+## V2-0B OWNER GATE R1 NAMESPACE CORRECTION — 2026-09-21 (THIS UPDATE)
+
+Updated: 2026-09-21 (V2-0B Owner Gate R1 namespace
+correction on assigned `dev/v2` per
+`Prompt/CURRENT_PI_DISPATCH.md` +
+`Prompt/AIPM_V2_0B_OWNER_GATE_R1_NAMESPACE_CORRECTION_2026-09-21.md`).
+V2-0B automated/source gates were PASS and the
+one-click Owner Probe is present at
+`befbf89f1ee552f036909053351c9f14bd0c04cf`. The Owner
+then executed the real-SU2020 gate which FAILED before
+intended geometry mutation with:
+
+```text
+NameError: uninitialized constant
+SUAnalysis::V2::Stage0BMassProbe::V2SketchupMassAdapter
+```
+
+Real-host evidence overrides automated tests. This
+packet is a NARROW production namespace correction +
+anti-regression test only. No V1 / V2-0A /
+HostOperationGuard / freshness / rollback / ownership
+contract change.
+
+### Production correction
+
+`extension/su_ai_plugin/v2/stage0b_mass_probe.rb` is
+lexically nested under
+`SUAnalysis::V2::Stage0BMassProbe` but the production
+file directly referenced the unqualified
+`V2SketchupMassAdapter` constant. The real class lives at
+`SUAnalysis::Compatibility::V2SketchupMassAdapter`. In
+real SketchUp the lookup fails because no top-level
+`include SUAnalysis::Compatibility` is performed.
+
+Four production call-sites are now qualified:
+
+- `@guard.start(
+     m,
+     SUAnalysis::Compatibility::V2SketchupMassAdapter::OPERATION_LABEL
+   )`
+- `rescue StandardError => e` → `{ status: SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_CONSTRUCTION_FAILED, ... }`
+- `if build[:status] == SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_SUCCESS`
+- `if build_status == SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_POST_VALIDATION_FAILED`
+
+No alias under `SUAnalysis::V2` is added. The adapter
+class is not moved. Namespace ownership is unchanged.
+
+### Anti-regression proof
+
+`tests/test_v2_stage0b_namespace_isolation.rb` —
+focused runtime tests (NS-01..NS-04):
+
+- **NS-01**: fresh Ruby subprocess loads the three V2-0B
+  production files WITHOUT top-level
+  `include SUAnalysis::Compatibility`, injects the
+  minimum host-free fake model + seams, and runs
+  `Stage0BMassProbe.run(...)` end-to-end. Asserts
+  `status == 'SUCCESS'` + one start + one commit. If
+  the production file regressed to unqualified
+  references the subprocess raises NameError.
+- **NS-02**: same harness, but the adapter is wrapped
+  in a decorator that returns
+  `STATUS_CONSTRUCTION_FAILED` so the probe reaches the
+  abort branch. Asserts `status == 'FAILED_ROLLED_BACK'`
+  + one start + one abort + zero commit. This drives the
+  `SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_SUCCESS`
+  branch on the negative side.
+- **NS-03**: source-text proof that
+  `extension/su_ai_plugin/v2/stage0b_mass_probe.rb`
+  contains no code-line unqualified
+  `V2SketchupMassAdapter::` reference (comments are
+  exempt).
+- **NS-04**: negative runtime proof. A fresh subprocess
+  writes a transformed copy of the production file in
+  which `SUAnalysis::Compatibility::V2SketchupMassAdapter`
+  is replaced by the unqualified
+  `V2SketchupMassAdapter` (the exact regression), then
+  loads the transformed file in isolation and runs the
+  same NS-01 success path. The subprocess MUST NOT
+  silently return `NS04_RESULT=SUCCESS`; it must show
+  either NameError or a non-SUCCESS status. The
+  production file is NEVER mutated -- the transformed
+  copy is written to
+  `tests/_v2_stage0b_namespace_isolation_scratch/`
+  and deleted in the test's `ensure` block.
+
+### Validation
+
+- `ruby -c` on modified / new Ruby files: **Syntax OK**.
+- `git diff --check`: clean.
+- V2-0B NS focused suite (`V2-S0B-NS-` filter):
+  **4 / 4 PASS, 0 fail, 0 error** (NS-01 / NS-02 /
+  NS-03 / NS-04).
+- V2-0B focused suite (`V2-S0B-` filter):
+  **54 / 54 PASS, 0 fail, 0 error** (was 50 pre-this
+  packet; +4 new NS tests, all passing).
+- V2-0B Owner Gate one-click suite (`OG-` filter):
+  **7 / 7 PASS** (unchanged).
+- V2-0A focused suite (`V2-S0A-` filter):
+  **43 / 43 PASS** (unchanged).
+- V1.7 reconstruction / topology (`V17-` filter):
+  **127 / 127 PASS** (unchanged).
+- V1.8 structure reconstruction (`V18-` filter):
+  **74 / 74 PASS** (unchanged).
+- V1.9B1 B1.2 (`B1.2-` filter): **83 / 83 PASS**
+  (unchanged).
+- V1.9B1 B1.5 (`B15-` filter): **17 / 17 PASS**
+  (unchanged).
+- RBZ smoke (`RBZ` filter): **9 / 9 PASS** (unchanged).
+- Ruby 2.2-era source compatibility guard
+  (`V2-S0B-COMPAT01`): **PASS** (unchanged).
+- Project full test runner
+  (`./.vendor/ruby/.../ruby.exe tests/run_all.rb`):
+
+  ```text
+  1528 tests, 1519 pass, 5 fail, 4 error.
+  ```
+
+  Delta from R2 OG baseline (1524 / 1515 / 5 / 4):
+
+  - +4 NS tests, all passing;
+  - +4 pass;
+  - 0 new fail;
+  - 0 new error;
+  - the 5 fail / 4 error set is the SAME pre-existing
+    baseline unchanged by this packet (identical
+    failure IDs as the OG record):
+
+    - 4 FAIL on `html_render` (V1.9A HIDDEN-SEMANTICS
+      FOLLOW-UP / FINAL P1-A) + 1 ERROR on `html_render`
+      (V1.9A FINAL P1-C) = 5 issues on `html_render`;
+    - 1 FAIL on `capability.HtmlDialog`
+      (R002 + S2-BLOCK-006);
+    - 1 ERROR on `V14 production call chain`
+      (FakeUI limitation);
+    - 1 ERROR on `V17-L1 host_state_changed`
+      (FakeUI limitation);
+    - 1 ERROR on `v19a_presenter (FINAL P1-B)`
+      (presenter test guard).
+
+### Frozen-file delta
+
+`git diff --name-only HEAD..working-tree` for the R1
+namespace-correction implementation commit:
+
+```
+extension/su_ai_plugin/v2/stage0b_mass_probe.rb        | modified
+tests/test_v2_stage0b_namespace_isolation.rb            | new
+CURRENT_STATE.md                                         | modified
+Review/CURRENT_PI_REPORT.md                              | modified
+```
+
+NO other production file is modified by this packet.
+The R1 correction leaves the following production files
+byte-for-byte unchanged:
+
+- `extension/su_ai_plugin/v2/host_operation_guard.rb`;
+- `extension/su_ai_plugin/compatibility/v2_sketchup_mass_adapter.rb`;
+- any V1 production file;
+- any V2-0A production file
+  (`layer_local_graph_adapter.rb` /
+  `semantic_footprint.rb` /
+  `semantic_footprint_projector.rb`);
+- `Probe/v2_stage0b_owner_probe.rb`.
+
+The focused V2-0B host mass probe test
+`tests/test_v2_stage0b_host_mass_probe.rb` is also
+unchanged (the existing test file already used the
+fully-qualified
+`SUAnalysis::Compatibility::V2SketchupMassAdapter`
+everywhere; no test-level qualification reduction was
+required).
+
+### Frozen / forbidden — confirmed not touched
+
+- V1 production files unchanged.
+- `pcd.v1` / `PreparedCadDataset` / Validator /
+  Runner unchanged.
+- `CanonicalStructureReconstructor` unchanged.
+- Three V2-0A production files unchanged.
+- `host_operation_guard.rb` unchanged.
+- `v2_sketchup_mass_adapter.rb` unchanged.
+- Loader / UI / Tool / HtmlDialog untouched.
+- No selection Tool / pickray / highlight.
+- No Residential Stage 1 / floors / seams / balconies /
+  parapets.
+- No update / regenerate.
+- No site / raised community / roads / landscape.
+- No materials.
+- No MCP / LLM / Agent.
+- V2 Residential Stage 1 NOT STARTED.
+- Codex NOT invoked.
+- `main` NOT pushed / force-pushed / rewritten.
+- Owner real SU2020 gate NOT RUN by Pi.
+- No production `failure_stage` switch added.
+- No new `SUAnalysis::V2::V2SketchupMassAdapter`
+  alias.
+
+### Real-SketchUp Gate
+
+After this R1 namespace correction + anti-regression
+proof:
+
+1. AIPM direct source / diff review of this R1 commit
+   (next gate);
+2. Owner real-SU2020 success probe via
+   `Probe/v2_stage0b_owner_probe.rb`
+   `run_success_one_click` (success mass + one native
+   Undo removes the entire probe mass);
+3. Owner real-SU2020 injected-failure probe
+   `run_injected_failure_one_click` (zero visible
+   residue after confirmed abort).
+
+Only after Owner confirmation of native Undo +
+zero-residue abort does V2-0B close. Pi STOPs here. No
+Owner real-SU2020 probe was run by Pi. No Residential
+Stage 1 is started. No Codex is invoked.
+
+---
+
+## V2-0B OWNER GATE ONE-CLICK PROBE — 2026-09-17 (PREVIOUS)
 
 Updated: 2026-09-17 (V2-0B Owner Gate one-click Probe
 implementation on assigned `dev/v2` per

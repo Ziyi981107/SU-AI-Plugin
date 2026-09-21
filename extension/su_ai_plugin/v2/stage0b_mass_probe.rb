@@ -145,7 +145,25 @@ module SUAnalysis
         return _context_changed unless _root_context?(m)
 
         # ---- Operation lifecycle ----
-        start_status = @guard.start(m, V2SketchupMassAdapter::OPERATION_LABEL)
+        # R1-NAMESPACE-OWNER-GATE-R1: every reference to the
+        # mass adapter class constant MUST go through the
+        # explicit stable authority
+        # `SUAnalysis::Compatibility::V2SketchupMassAdapter`.
+        # This module is lexically nested under
+        # `SUAnalysis::V2::Stage0BMassProbe`; an unqualified
+        # `V2SketchupMassAdapter` is invisible in real SketchUp
+        # and a normal `require 'set'`-style top-level
+        # `include SUAnalysis::Compatibility` is not how
+        # production SketchUp loads this extension. The real
+        # SU2020 Owner Gate surfaced this exactly:
+        #   NameError: uninitialized constant
+        #   SUAnalysis::V2::Stage0BMassProbe::V2SketchupMassAdapter
+        # Real-host evidence overrides focused host-free
+        # tests that masked the bug via top-level pollution.
+        start_status = @guard.start(
+          m,
+          SUAnalysis::Compatibility::V2SketchupMassAdapter::OPERATION_LABEL
+        )
         unless start_status == HostOperationGuard::STATUS_STARTED
           # Per Blueprint §6.1: no abort attempt when start was
           # not confirmed. Zero geometry mutation expected.
@@ -158,17 +176,25 @@ module SUAnalysis
         # start is converted to a construction failure and
         # goes through exactly one abort attempt. Never let
         # an open operation be left to the caller.
+        #
+        # R1-NAMESPACE-OWNER-GATE-R1: the wrapped adapter
+        # status codes are referenced through the explicit
+        # authority
+        # `SUAnalysis::Compatibility::V2SketchupMassAdapter`,
+        # not through an unqualified sibling constant lookup.
         build = begin
           @adapter.build_mass(
             footprint:   current_footprint,
             probe_height: probe_height.to_f
           )
         rescue StandardError => e
-          { status: V2SketchupMassAdapter::STATUS_CONSTRUCTION_FAILED,
-            error:  'adapter_exception:' + e.class.name + ':' + e.message }
+          {
+            status: SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_CONSTRUCTION_FAILED,
+            error:  'adapter_exception:' + e.class.name + ':' + e.message
+          }
         end
 
-        if build[:status] == V2SketchupMassAdapter::STATUS_SUCCESS
+        if build[:status] == SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_SUCCESS
           # Commit the operation.
           commit_status = @guard.commit(m)
           return _host_status_to_result(commit_status, build, current_footprint)
@@ -183,7 +209,9 @@ module SUAnalysis
         when HostOperationGuard::STATUS_FAILED_ROLLED_BACK
           build_status = build[:status]
           reason       = build[:error].to_s
-          if build_status == V2SketchupMassAdapter::STATUS_POST_VALIDATION_FAILED
+          # R1-NAMESPACE-OWNER-GATE-R1: explicit authority
+          # for the post-validation status symbol too.
+          if build_status == SUAnalysis::Compatibility::V2SketchupMassAdapter::STATUS_POST_VALIDATION_FAILED
             { 'status' => STATUS_FAILED_ROLLED_BACK,
               'error'  => 'post_validation_failed:' + reason }
           else
